@@ -57,6 +57,13 @@ python3Packages.buildPythonPackage rec {
 
   dontStrip = true;
 
+  postInstall = ''
+    metadata="$out/${python3Packages.python.sitePackages}/torch-${version}.dist-info/METADATA"
+    if [ -f "$metadata" ]; then
+      sed -i -E '/^Requires-Dist: (intel-cmplr-lib-rt|intel-cmplr-lib-ur|intel-cmplr-lic-rt|intel-sycl-rt|oneccl|oneccl-devel|impi-rt|onemkl-license|onemkl-sycl-blas|onemkl-sycl-dft|onemkl-sycl-lapack|onemkl-sycl-rng|onemkl-sycl-sparse|intel-opencl-rt|intel-openmp|intel-pti|mkl|dpcpp-cpp-rt|tcmlib|umf|tbb|triton-xpu)([^A-Za-z]|$)/d' "$metadata"
+    fi
+  '';
+
   pythonImportsCheck = [ "torch" ];
 
   meta = {

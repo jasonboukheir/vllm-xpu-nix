@@ -1,0 +1,68 @@
+{
+  lib,
+  fetchurl,
+  python3Packages,
+  autoPatchelfHook,
+  stdenv,
+  intel-oneapi-base,
+  intel-pti,
+  oneccl-bmg,
+  level-zero,
+  intel-compute-runtime,
+  ocl-icd,
+  zlib,
+}:
+
+python3Packages.buildPythonPackage rec {
+  pname = "torch";
+  version = "2.11.0+xpu";
+  format = "wheel";
+
+  src = fetchurl {
+    url = "https://download.pytorch.org/whl/xpu/torch-2.11.0%2Bxpu-cp312-cp312-linux_x86_64.whl";
+    hash = "sha256-WQyeVKmeRdgOrv/nC1OCa0m3GmV44S6bqiJ+ibYceuI=";
+  };
+
+  nativeBuildInputs = [
+    autoPatchelfHook
+  ];
+
+  buildInputs = [
+    stdenv.cc.cc.lib
+    intel-oneapi-base
+    intel-pti
+    oneccl-bmg
+    level-zero
+    intel-compute-runtime
+    ocl-icd
+    zlib
+  ];
+
+  propagatedBuildInputs = with python3Packages; [
+    filelock
+    typing-extensions
+    sympy
+    networkx
+    jinja2
+    fsspec
+    setuptools
+    numpy
+  ];
+
+  autoPatchelfIgnoreMissingDeps = [
+    "libcuda.so.1"
+  ];
+
+  dontCheckRuntimeDeps = true;
+
+  dontStrip = true;
+
+  pythonImportsCheck = [ "torch" ];
+
+  meta = {
+    description = "PyTorch 2.11.0 with Intel XPU (SYCL/Level-Zero) backend";
+    homepage = "https://pytorch.org";
+    license = lib.licenses.bsd3;
+    platforms = [ "x86_64-linux" ];
+  };
+}

@@ -22,12 +22,22 @@
           ];
         };
 
+        intel-pti = pkgs.callPackage ./nix/intel-pti.nix {
+          intel-oneapi-base = intel-oneapi;
+        };
+
         oneccl-bmg = pkgs.callPackage ./nix/oneccl-bmg.nix {
           intel-oneapi-base = intel-oneapi;
         };
+
+        torch-xpu = pkgs.callPackage ./nix/torch-xpu.nix {
+          intel-oneapi-base = intel-oneapi;
+          inherit oneccl-bmg intel-pti;
+          python3Packages = pkgs.python312Packages;
+        };
       in {
         packages = {
-          inherit intel-oneapi oneccl-bmg;
+          inherit intel-oneapi intel-pti oneccl-bmg torch-xpu;
           default = intel-oneapi;
         };
 

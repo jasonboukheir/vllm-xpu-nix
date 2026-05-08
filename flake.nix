@@ -35,9 +35,15 @@
           inherit oneccl-bmg intel-pti;
           python3Packages = pkgs.python312Packages;
         };
+
+        triton-xpu = pkgs.callPackage ./nix/triton-xpu.nix {
+          intel-oneapi-base = intel-oneapi;
+          inherit intel-pti;
+          python3Packages = pkgs.python312Packages;
+        };
       in {
         packages = {
-          inherit intel-oneapi intel-pti oneccl-bmg torch-xpu;
+          inherit intel-oneapi intel-pti oneccl-bmg torch-xpu triton-xpu;
           default = intel-oneapi;
         };
 

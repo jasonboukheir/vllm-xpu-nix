@@ -23,7 +23,7 @@
         };
 
         oneccl-bmg = pkgs.callPackage ./nix/oneccl-bmg.nix {
-          inherit (pkgs) intel-oneapi;
+          intel-oneapi-base = intel-oneapi;
         };
       in {
         packages = {

@@ -19,13 +19,15 @@
             "intel.oneapi.lin.dpcpp-cpp-compiler"
             "intel.oneapi.lin.mkl.devel"
             "intel.oneapi.lin.dpl"
-            "intel.oneapi.lin.dnnl.devel"
-            "intel.oneapi.lin.tbb.devel"
           ];
+        };
+
+        oneccl-bmg = pkgs.callPackage ./nix/oneccl-bmg.nix {
+          inherit (pkgs) intel-oneapi;
         };
       in {
         packages = {
-          inherit intel-oneapi;
+          inherit intel-oneapi oneccl-bmg;
           default = intel-oneapi;
         };
 

@@ -46,6 +46,7 @@ intel-oneapi.mkIntelOneApi (finalAttrs: {
 
   postInstall = ''
     rm -f $out/{lib,etc,bin,share,opt}
+    ln -s ccl/2021.15/lib $out/lib
   '';
 
   meta = {

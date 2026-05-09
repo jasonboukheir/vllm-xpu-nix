@@ -38,7 +38,8 @@
   };
 
   outputs = { self, nixpkgs, flake-utils, vllm-xpu-kernels-src, vllm-xpu-kernels-unstable-src, vllm-xpu-src, vllm-xpu-unstable-src, sycl-tla-src }:
-    flake-utils.lib.eachSystem [ "x86_64-linux" ] (system:
+    let
+      systemOutputs = flake-utils.lib.eachSystem [ "x86_64-linux" ] (system:
       let
         pkgs = import nixpkgs {
           inherit system;
@@ -432,4 +433,29 @@
           '';
         };
       });
+    in
+    systemOutputs // {
+      # System-independent outputs (NixOS modules, overlays).
+      nixosModules.vllm-xpu = ./nix/modules/vllm-xpu.nix;
+
+      # Overlay that injects the XPU package set into a host's pkgs. Pair with
+      # the nixosModules.vllm-xpu module so `services.vllm-xpu.package` defaults
+      # to `pkgs.vllm-xpu`.
+      overlays.default = final: _prev:
+        let
+          pkgs = systemOutputs.packages.${final.system} or { };
+          pick = name: lib.optionalAttrs (pkgs ? ${name}) { ${name} = pkgs.${name}; };
+          inherit (nixpkgs) lib;
+        in
+        pick "torch-xpu"
+        // pick "triton-xpu"
+        // pick "intel-pti"
+        // pick "oneccl-bmg"
+        // pick "flash-linear-attention"
+        // pick "auto-round-xpu"
+        // pick "vllm-xpu-kernels"
+        // pick "vllm-xpu-kernels-unstable"
+        // pick "vllm-xpu"
+        // pick "vllm-xpu-unstable";
+    };
 }

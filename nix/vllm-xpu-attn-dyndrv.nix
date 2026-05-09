@@ -20,32 +20,39 @@
   which,
 }:
 
-# Dynamic-derivations POC for attn_kernels_xe_2.
+# Dynamic-derivations build of attn_kernels_xe_2.
 #
 # Three stages:
-#   1. configureDrv  — runs cmake configure (-DCMAKE_EXPORT_COMPILE_COMMANDS=ON)
-#                      on the upstream tree so configure_file expansions
-#                      materialise under build/csrc/xpu/attn/xe_2/. Captures
-#                      the whole tree at $out/repo/ and rewrites
-#                      compile_commands.json paths from the build sandbox to
-#                      $out/repo so per-TU drvs can replay commands directly.
+#   1. configureDrv  — runs cmake configure on the upstream tree, captures
+#                      compile_commands.json + build.ninja, then extracts
+#                      (via vllm-xpu-attn-dyndrv-extract.py):
+#                        - tu_manifest.json: every .cpp the link consumes,
+#                          with absolute src path under $out/repo and the
+#                          ninja-relative .o path it expects.
+#                        - link_meta.json: cmake's full link command for
+#                          attn_kernels_xe_2 with all $vars resolved except
+#                          $in (replaced with the sentinel __INPUTS__).
 #   2. mkTU          — one drv per .cpp TU. Reads its compile command from
-#                      configureDrv's compile_commands.json, strips dep-tracking
-#                      flags (-MD/-MT/-MF) and overrides -o → $out. The .o
-#                      ends up at $out (single-file output).
-#   3. linkDrv       — icpx -fsycl -shared with the upstream
-#                      SYCL_DEVICE_LINK_FLAGS, AOT for bmg. Produces
-#                      $out/lib/libattn_kernels_xe_2.so.
+#                      configureDrv's compile_commands.json (matched by
+#                      absolute src path), strips dep-tracking flags
+#                      (-MD/-MT/-MF) and overrides -o → $out/tu.o. The .o
+#                      extension is load-bearing — without it icpx -fsycl
+#                      at link time skips the offload pipeline.
+#   3. linkDrv       — replays cmake's captured link command verbatim,
+#                      with __INPUTS__ replaced (at Nix eval time) by the
+#                      per-TU $out/tu.o paths in the same order ninja
+#                      listed them. Produces $out/lib/libattn_kernels_xe_2.so
+#                      with real torch linkage and full XE2_GPU_LINK_FLAGS
+#                      (AOT'd for bmg).
 #
-# Scope: 2-3 hand-picked generated TUs only. The launcher TUs (fmha_xe2.cpp,
-# paged_decode_xe2.cpp) reference every policy specialisation by name and
-# would fail to link with this subset, so they are deliberately excluded.
-# The resulting .so is NOT functionally complete; it exists to validate that
-# (a) per-TU compile-then-link via separate Nix derivations works on
-# Determinate Nix 3.19.0 with the experimental flags turned on, and
-# (b) SYCL device images survive per-.o linking — i.e. the resulting .so
-# still contains _GLOBAL__sub_I_* static initializers and __CLANG_OFFLOAD_BUNDLE__
-# / sycl_offloading sections (verifiable via scripts/verify-attn-shards.sh).
+# Step 2 of the dyn-drv plan: scaled from the 3-TU POC (which validated
+# that SYCL device-image registration survives per-.o linking) to the
+# full ~600-TU kernel set. TU enumeration goes through IFD on
+# $out/tu_manifest.json rather than pure builtins.outputOf so the per-TU
+# drv graph can be built at eval time once configureDrv realises. This
+# keeps the link drv free of build-time recursive-nix calls; if we later
+# need to push enumeration into the build phase, configureDrv would also
+# need __contentAddressed = true for builtins.outputOf to resolve cleanly.
 
 let
   syclHome = "${intel-oneapi-base}/compiler/latest";
@@ -67,6 +74,10 @@ let
     export LIBRARY_PATH=${stdenv.cc.libc}/lib:${stdenv.cc.cc.lib}/lib''${LIBRARY_PATH:+:$LIBRARY_PATH}
     export CPATH=${stdenv.cc.libc.dev}/include''${CPATH:+:$CPATH}
     export CMAKE_PREFIX_PATH=${intel-oneapi-base}''${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}
+    # Match the consumer (vllm-xpu-kernels.nix) — only AOT for bmg, not the
+    # default pvc,bmg,bmg-g21-a0,bmg-g31-a0 list. ocloc runs once per device
+    # variant at link time, so this cuts the SYCL link ~4x.
+    export VLLM_XPU_XE2_AOT_DEVICES=bmg
   '';
 
   baseBuildInputs = [
@@ -118,7 +129,6 @@ let
         -DVLLM_PYTHON_EXECUTABLE=${python3Packages.python}/bin/python \
         -DVLLM_CUTLASS_SRC_DIR=${cutlass-src} \
         -DCMAKE_BUILD_TYPE=Release \
-        -DXE2_AOT_DEVICES=bmg \
         -DBUILD_SYCL_TLA_KERNELS=ON \
         -DVLLM_XPU_ENABLE_XE_DEFAULT=OFF \
         -DBASIC_KERNELS_ENABLED=OFF \
@@ -139,40 +149,28 @@ let
       cp -a . $out/repo/
 
       src_root="$(cat .src-root-path)"
-      python3 - <<PYEOF
-import json
-cc_path = "$out/repo/build/compile_commands.json"
-src_root = "$src_root"
-new_root = "$out/repo"
-with open(cc_path) as f:
-    cc = json.load(f)
-def sub(s):
-    return s.replace(src_root, new_root)
-for entry in cc:
-    for k in ("directory", "file"):
-        if k in entry:
-            entry[k] = sub(entry[k])
-    if "command" in entry:
-        entry["command"] = sub(entry["command"])
-    if "arguments" in entry:
-        entry["arguments"] = [sub(a) for a in entry["arguments"]]
-with open(cc_path, "w") as f:
-    json.dump(cc, f, indent=2)
-print(f"rewrote {len(cc)} compile_commands.json entries: {src_root} -> {new_root}")
-PYEOF
+      python3 ${./vllm-xpu-attn-dyndrv-extract.py} \
+        --repo "$out/repo" \
+        --src-root "$src_root" \
+        --target attn_kernels_xe_2 \
+        --soname libattn_kernels_xe_2.so
 
       runHook postInstall
     '';
+
+    meta.description = "vllm-xpu-kernels cmake configure output + per-TU manifest + captured attn_kernels_xe_2 link command";
   };
 
-  pocTUNames = [
-    "chunk_prefill_kernel_template_chunk_policy_head64_fffff.cpp"
-    "paged_decode_kernel_template_q8_h64_p16_fff.cpp"
-    "paged_decode_kernel_template_q16_h128_p32_fff.cpp"
-  ];
+  manifest = builtins.fromJSON (
+    builtins.readFile "${configureDrv}/repo/tu_manifest.json"
+  );
 
-  mkTU = relName: stdenv.mkDerivation {
-    pname = "vllm-xpu-attn-dyndrv-tu-${lib.removeSuffix ".cpp" relName}";
+  linkMeta = builtins.fromJSON (
+    builtins.readFile "${configureDrv}/repo/link_meta.json"
+  );
+
+  mkTU = tu: stdenv.mkDerivation {
+    pname = "vllm-xpu-attn-dyndrv-tu-${tu.safe_name}";
     version = "0.1.7-dev";
 
     dontUnpack = true;
@@ -185,8 +183,8 @@ PYEOF
 
     buildInputs = baseBuildInputs;
 
-    # Output is a directory containing tu.o; the .o extension is load-bearing.
-    # Without it, icpx at link time treats the file as something other than
+    # Output is a directory containing tu.o. The .o extension is load-bearing:
+    # without it, icpx at link time treats the file as something other than
     # an object and skips the SYCL offload-bundler / device-image pipeline,
     # silently producing a host-only .so with no kernels.
     buildPhase = ''
@@ -196,13 +194,13 @@ PYEOF
       cat > "$TMPDIR/extract-cmd.py" <<'PYEOF'
 import json, os, shlex, sys
 cc_json = os.environ["CC_JSON"]
-tu_name = os.environ["TU_NAME"]
+src_path = os.environ["SRC_PATH"]
 out_obj = os.environ["OUT_OBJ"]
 with open(cc_json) as f:
     cc = json.load(f)
-match = next((e for e in cc if e["file"].endswith("/" + tu_name)), None)
+match = next((e for e in cc if e["file"] == src_path), None)
 if match is None:
-    sys.stderr.write(f"TU {tu_name} not in compile_commands.json\n")
+    sys.stderr.write(f"src {src_path} not in compile_commands.json\n")
     sys.exit(1)
 if "arguments" in match:
     args = list(match["arguments"])
@@ -225,14 +223,16 @@ print(shlex.join(cleaned))
 PYEOF
 
       mkdir -p $out
+      src_path="${configureDrv}/repo/${tu.src_rel_path}"
       cmd=$(env \
         CC_JSON="${configureDrv}/repo/build/compile_commands.json" \
-        TU_NAME="${relName}" \
+        SRC_PATH="$src_path" \
         OUT_OBJ="$out/tu.o" \
         python3 "$TMPDIR/extract-cmd.py")
 
-      echo "POC TU compile:"
-      echo "  $cmd"
+      echo "TU compile (${tu.safe_name}):"
+      echo "  src: $src_path"
+      echo "  cmd: $cmd"
       eval "$cmd"
 
       runHook postBuild
@@ -241,11 +241,19 @@ PYEOF
     dontInstall = true;
   };
 
-  pocObjs = map mkTU pocTUNames;
-  pocObjPaths = map (o: "${o}/tu.o") pocObjs;
+  # Look up TUs by their ninja .o path. The link command's input list is
+  # the canonical order; we materialise per-TU drvs in that order so the
+  # final link command keeps ninja's link-time ordering.
+  tuByObjPath = lib.listToAttrs (
+    map (tu: { name = tu.obj_rel_path; value = mkTU tu; }) manifest
+  );
+
+  inputObjPaths = map
+    (objRel: "${tuByObjPath.${objRel}}/tu.o")
+    linkMeta.inputs;
 
   linkDrv = stdenv.mkDerivation {
-    pname = "vllm-xpu-attn-kernels-xe-2-dyndrv-poc";
+    pname = "vllm-xpu-attn-kernels-xe-2";
     version = "0.1.7-dev";
 
     dontUnpack = true;
@@ -258,28 +266,29 @@ PYEOF
 
     buildInputs = baseBuildInputs;
 
+    # The cmake-emitted link command (with __INPUTS__ as the placeholder
+    # for $in) lives at ${configureDrv}/repo/link_command.txt. We read it
+    # at build time and substitute the per-TU .o store paths in ninja's
+    # original input order. inputObjPaths is interpolated directly so the
+    # /nix/store/.../tu.o references become proper store deps of linkDrv.
     buildPhase = ''
       runHook preBuild
       ${envSetup}
 
-      # POC: skip torch link to keep the experiment focused on the SYCL
-      # link pipeline. The .o files reference torch types but we let those
-      # become undefined dynamic symbols (--unresolved-symbols=ignore-all).
-      # The resulting .so won't be dlopen'able but it lets us verify that
-      # OFFLOAD_DEVICE_CODE / .tgtimg / .tgtsym sections survive the link.
-      $CXX -fsycl -shared -fPIC \
-        --gcc-toolchain=${stdenv.cc.cc} \
-        -B${stdenv.cc.libc}/lib \
-        -L${stdenv.cc.libc}/lib \
-        -L${stdenv.cc.cc.lib}/lib \
-        -fsycl-max-parallel-link-jobs=''${NIX_BUILD_CORES:-1} \
-        -flink-huge-device-code \
-        -Xspirv-translator -spirv-ext=+SPV_INTEL_split_barrier,+SPV_INTEL_2d_block_io,+SPV_INTEL_subgroup_matrix_multiply_accumulate \
-        -fsycl-targets=spir64_gen \
-        -Xsycl-target-backend=spir64_gen '-device bmg -internal_options -cl-intel-256-GRF-per-thread' \
-        ${lib.concatStringsSep " " pocObjPaths} \
-        -Wl,--unresolved-symbols=ignore-all \
-        -o libattn_kernels_xe_2.so
+      cd "$TMPDIR"
+
+      inputs=${lib.escapeShellArg (lib.concatStringsSep " " inputObjPaths)}
+      cmd=$(cat ${configureDrv}/repo/link_command.txt)
+      cmd=''${cmd//__INPUTS__/$inputs}
+
+      printf '%s\n' "$cmd" > cmd.sh
+      echo "=== link command (first 4 KB) ==="
+      head -c 4096 cmd.sh || true
+      echo
+      echo "=== link command size ==="
+      wc -c cmd.sh
+      echo "=== running ==="
+      bash cmd.sh
 
       runHook postBuild
     '';
@@ -287,14 +296,14 @@ PYEOF
     installPhase = ''
       runHook preInstall
       mkdir -p $out/lib
-      cp libattn_kernels_xe_2.so $out/lib/
+      cp "$TMPDIR/${linkMeta.target_path}" $out/lib/libattn_kernels_xe_2.so
       runHook postInstall
     '';
 
     autoPatchelfIgnoreMissingDeps = [ "libcuda.so.1" ];
 
     meta = {
-      description = "POC: dynamic-derivations build of attn_kernels_xe_2 (2-3 TUs only, NOT functionally complete)";
+      description = "vLLM XPU attn_kernels_xe_2 (dynamic-derivations build, AOT'd for bmg)";
       homepage = "https://github.com/vllm-project/vllm-xpu-kernels";
       license = lib.licenses.asl20;
       platforms = [ "x86_64-linux" ];

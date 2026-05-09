@@ -469,11 +469,26 @@
     in
     systemOutputs // {
       # System-independent outputs (NixOS modules, overlays).
+      #
+      # Two modules are exposed:
+      #   - `nixosModules.vllm-xpu`: the pure option module. Reads
+      #     `pkgs.vllm-xpu` etc., so the consumer must apply
+      #     `overlays.default` themselves (or supply the package
+      #     explicitly via `services.vllm-xpu.package`).
+      #   - `nixosModules.default`: the batteries-included entry point.
+      #     Applies `overlays.default` AND imports the option module, so
+      #     consumers just `imports = [ inputs.vllm-xpu-nix.nixosModules.default ]`
+      #     and `pkgs.vllm-xpu` / `pkgs.vllm-xpu-unstable` are visible
+      #     without writing their own overlay.
       nixosModules.vllm-xpu = ./nix/modules/vllm-xpu.nix;
+      nixosModules.default = { ... }: {
+        imports = [ ./nix/modules/vllm-xpu.nix ];
+        nixpkgs.overlays = [ self.overlays.default ];
+      };
 
-      # Overlay that injects the XPU package set into a host's pkgs. Pair with
-      # the nixosModules.vllm-xpu module so `services.vllm-xpu.package` defaults
-      # to `pkgs.vllm-xpu`.
+      # Overlay that injects the XPU package set into a host's pkgs.
+      # Pair with the bare `nixosModules.vllm-xpu`, or just import
+      # `nixosModules.default` which applies this for you.
       overlays.default = final: _prev:
         let
           pkgs = systemOutputs.packages.${final.system} or { };

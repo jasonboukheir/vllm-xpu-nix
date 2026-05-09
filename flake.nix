@@ -19,13 +19,25 @@
       flake = false;
     };
 
+    vllm-xpu-src = {
+      type = "git";
+      url = "https://github.com/vllm-project/vllm.git";
+      flake = false;
+    };
+
+    vllm-xpu-unstable-src = {
+      type = "git";
+      url = "https://github.com/jasonboukheir/vllm.git";
+      flake = false;
+    };
+
     sycl-tla-src = {
       url = "github:intel/sycl-tla/cd763790ad2f74d7294435ecf77682bac0062c3a";
       flake = false;
     };
   };
 
-  outputs = { self, nixpkgs, flake-utils, vllm-xpu-kernels-src, vllm-xpu-kernels-unstable-src, sycl-tla-src }:
+  outputs = { self, nixpkgs, flake-utils, vllm-xpu-kernels-src, vllm-xpu-kernels-unstable-src, vllm-xpu-src, vllm-xpu-unstable-src, sycl-tla-src }:
     flake-utils.lib.eachSystem [ "x86_64-linux" ] (system:
       let
         pkgs = import nixpkgs {
@@ -168,6 +180,32 @@
         vllm-xpu-kernels = mkVllmXpuKernels vllm-xpu-kernels-src;
         vllm-xpu-kernels-unstable = mkVllmXpuKernels vllm-xpu-kernels-unstable-src;
 
+        # mkVllm pairs a vllm source pin with the matching kernels build:
+        # the upstream stable variant gets vllm-xpu-kernels (vllm-project),
+        # the unstable variant gets vllm-xpu-kernels-unstable (jasonboukheir
+        # fork). Pre-release version stamp is fine — VLLM_VERSION_OVERRIDE
+        # in vllm-xpu.nix forwards to setuptools-scm's PRETEND_VERSION, so
+        # setuptools-scm doesn't need a .git in the unpacked store path.
+        mkVllm = { src, version, kernels }: pkgs.callPackage ./nix/vllm-xpu.nix {
+          intel-oneapi-base = intel-oneapi;
+          inherit intel-pti oneccl-bmg torch-xpu triton-xpu flash-linear-attention;
+          python3Packages = pkgs.python312Packages;
+          vllm-xpu-kernels = kernels;
+          inherit src version;
+        };
+
+        vllm-xpu = mkVllm {
+          src = vllm-xpu-src;
+          version = "0.20.2.dev";
+          kernels = vllm-xpu-kernels;
+        };
+
+        vllm-xpu-unstable = mkVllm {
+          src = vllm-xpu-unstable-src;
+          version = "0.20.2.dev0+xpu.unstable";
+          kernels = vllm-xpu-kernels-unstable;
+        };
+
         syclToolchainShellHook = ''
           syclHome="${intel-oneapi}/compiler/latest"
           mkdir -p .dev-bin
@@ -194,7 +232,8 @@
             intel-oneapi intel-pti oneccl-bmg
             torch-xpu triton-xpu
             flash-linear-attention
-            vllm-xpu-kernels vllm-xpu-kernels-unstable;
+            vllm-xpu-kernels vllm-xpu-kernels-unstable
+            vllm-xpu vllm-xpu-unstable;
           inherit (stableLibs)
             attn-kernels-xe-2
             gdn-attn-kernels-xe-2

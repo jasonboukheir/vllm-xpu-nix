@@ -25,13 +25,12 @@ container, no host-managed `~/.local/lib/python*/site-packages`, no
 | `vllm-xpu-kernels` | upstream `vllm-project/vllm-xpu-kernels` with split-kernel-libs patch | `nix/vllm-xpu-kernels.nix` |
 | `vllm-xpu-kernels-unstable` | same, but pinning the `jasonboukheir/vllm-xpu-kernels` fork's `main` | same factory |
 | `attn-kernels-xe-2`, `gdn-attn-kernels-xe-2`, `mqa-logits-kernels-xe-2`, `grouped-gemm-xe-{2,default}` | individual SYCL-TLA `.so`s, built in parallel and stitched into `vllm-xpu-kernels` | `nix/vllm-xpu-lib.nix`, `nix/vllm-xpu-attn-dyndrv.nix` |
-
-`vllm-xpu` itself (a source build of vLLM linked against the above) is
-tracked in [#5][i5]; the `services.vllm-xpu` NixOS module is tracked in
-[#1][i1]. Until those land, you can already build the kernel + runtime
-substrate against your own checkout of vLLM via `--override-input` (see
-[Iterating against a local checkout](#iterating-against-a-local-checkout)
-below).
+| `vllm-xpu` | source build of vLLM with `VLLM_TARGET_DEVICE=xpu`, linked against the above | `nix/vllm-xpu.nix` |
+| `vllm-xpu-unstable` | same, but pinning the `jasonboukheir/vllm` fork's `main` | same factory |
+| `flash-linear-attention` | qwen3_5_moe gated-delta-rule kernels (Triton, fla-org) | `nix/flash-linear-attention.nix` |
+| `auto-round-xpu` | AutoRound + transformers ≥5.2.0 + FLA, no IPEX, no causal-conv1d | `nix/auto-round-xpu.nix` |
+| `quantize`, `kl-eval` | flake apps wrapping the AutoRound recipe + KL-eval workflow | `nix/{quantize,kl-eval}.nix` |
+| `nixosModules.vllm-xpu` | systemd unit running `vllm serve` natively (no container) | `nix/modules/vllm-xpu.nix` |
 
 [i1]: https://github.com/jasonboukheir/vllm-xpu-nix/issues/1
 [i5]: https://github.com/jasonboukheir/vllm-xpu-nix/issues/5
@@ -108,23 +107,27 @@ etc.).
 
 ### 3. Import the NixOS module
 
-Once [#1][i1] lands:
-
 ```nix
 # host config
 { pkgs, inputs, ... }: {
   imports = [ inputs.vllm-xpu-nix.nixosModules.vllm-xpu ];
 
   services.vllm-xpu = {
-    enable      = true;
-    package     = pkgs.vllm-xpu-unstable;
-    model       = "palmfuture/Qwen3.6-35B-A3B-GPTQ-Int4";
-    servedName  = "qwen3.6-35b-a3b";
-    dtype       = "bfloat16";
+    enable       = true;
+    package      = pkgs.vllm-xpu-unstable;
+    model        = "palmfuture/Qwen3.6-35B-A3B-GPTQ-Int4";
+    servedName   = "qwen3.6-35b-a3b";
+    dtype        = "bfloat16";
     quantization = "inc";
   };
 }
 ```
+
+The module brings in a `vllm-xpu` systemd unit that runs `vllm serve`
+under a dedicated `vllm` user, with `render`/`video` supplementary groups
+for `/dev/dri` access and `HF_HOME=/var/lib/vllm` for the model cache.
+The default `cclEnv` is the BMG single-card oneCCL configuration; override
+per host if you have a multi-card setup.
 
 ### 4. allowUnfree
 
@@ -319,24 +322,41 @@ To enable the matrix build:
 3. Set the repo variable `SELF_HOSTED_RUNNER_AVAILABLE=true` to
    un-gate the `build` job.
 
+## Quantize / eval
+
+```bash
+# Quantize a model to W4A16 with the default (200-iter) recipe:
+nix run .#quantize -- AEON-7/Qwen3.6-27B-AEON-Ultimate-Uncensored-BF16 int4
+
+# KL-divergence eval of a quantized model vs its BF16 reference:
+nix run .#kl-eval -- \
+  --bf16-model AEON-7/Qwen3.6-27B-AEON-Ultimate-Uncensored-BF16 \
+  --quant-model output/auto-round/Qwen3.6-27B-W4A16
+```
+
+Recipe overrides: `AUTOROUND_QUANTIZE_RECIPE=overnight`,
+`AUTOROUND_QUANTIZE_BS=8`, etc. — see `scripts/quantize.sh` for the full
+list. Output dir defaults to `$PWD/output/auto-round`.
+
+## Stable vs unstable
+
+The `vllm-xpu` and `vllm-xpu-kernels` outputs both come in stable and
+`-unstable` variants. The unstable variants pin
+`jasonboukheir/{vllm,vllm-xpu-kernels}` `main`, where in-flight patches
+land before they make it upstream — they will rebase, may break, and
+should be considered consumer-side opt-in.
+
+Bumping a fork pin:
+
+```bash
+nix flake update vllm-xpu-unstable-src         # for vllm
+nix flake update vllm-xpu-kernels-unstable-src # for kernels
+git commit flake.lock -m "bump <input> pin to <short rev>"
+```
+
 ## Roadmap
 
-The non-trivial roadmap lives in the issue tracker:
-
-- [#1][i1] — `services.vllm-xpu` NixOS module
-- [#5][i5] — `vllm-xpu` source-build derivation
-- [#6][i6] — `vllm-xpu-unstable` fork variant
-- [#7][i7] — `flash-linear-attention` (qwen3_5_moe gated-delta-rule)
-- [#8][i8] — CI: `nix flake check` + per-package build verification
-- [#10][i10] — `auto-round-xpu` (replaces the auto-round Containerfile)
-- [#11][i11] — `quantize` / `kl-eval` flake apps
-- [#12][i12] — editable `kernels-dev` / `vllm-dev` shells
-
-[i7]: https://github.com/jasonboukheir/vllm-xpu-nix/issues/7
-[i8]: https://github.com/jasonboukheir/vllm-xpu-nix/issues/8
-[i10]: https://github.com/jasonboukheir/vllm-xpu-nix/issues/10
-[i11]: https://github.com/jasonboukheir/vllm-xpu-nix/issues/11
-[i12]: https://github.com/jasonboukheir/vllm-xpu-nix/issues/12
+The non-trivial roadmap lives in the issue tracker.
 
 ## License
 

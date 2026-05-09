@@ -240,6 +240,7 @@
           python3Packages = python312PackagesXpu;
           vllm-xpu-kernels = kernels;
           inherit src version;
+          inherit (pkgs) level-zero intel-graphics-compiler intel-compute-runtime;
         };
 
         vllm-xpu = mkVllm {

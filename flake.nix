@@ -489,9 +489,9 @@
       # Overlay that injects the XPU package set into a host's pkgs.
       # Pair with the bare `nixosModules.vllm-xpu`, or just import
       # `nixosModules.default` which applies this for you.
-      overlays.default = final: _prev:
+      overlays.default = _final: prev:
         let
-          pkgs = systemOutputs.packages.${final.system} or { };
+          pkgs = systemOutputs.packages.${prev.stdenv.hostPlatform.system} or { };
           pick = name: lib.optionalAttrs (pkgs ? ${name}) { ${name} = pkgs.${name}; };
           inherit (nixpkgs) lib;
         in

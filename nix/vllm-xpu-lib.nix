@@ -62,6 +62,17 @@ stdenv.mkDerivation {
   cmakeBuildType = "Release";
   enableParallelBuilding = true;
 
+  # Each SYCL-TLA template instantiation peaks ~5 GiB RSS in icpx, with
+  # the heavier head-dim/policy combos pushing ~40 GiB. ninja -j$(nproc)
+  # on a 24-core box stacks ~24 of these and OOM-kills the build long
+  # before any head128/b16 TU finishes. Match the dev-shell default
+  # (MAX_JOBS=2) so multiple lib drvs can still run concurrently under
+  # Nix's outer scheduler without overrunning a 96 GiB box. Raise via
+  # cores= override on builders with more RAM headroom.
+  preBuild = ''
+    export NIX_BUILD_CORES=2
+  '';
+
   preConfigure = ''
     mkdir -p $TMPDIR/bin
     ln -sf ${intel-compute-runtime}/bin/ocloc-* $TMPDIR/bin/ocloc

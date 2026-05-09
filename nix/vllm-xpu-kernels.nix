@@ -78,6 +78,7 @@ python3Packages.buildPythonPackage {
   patches = [
     ./patches/0001-split-kernel-libs.patch
     ./patches/0002-dev-lib-override.patch
+    ./patches/0003-include-project-root.patch
   ];
 
   postPatch = ''

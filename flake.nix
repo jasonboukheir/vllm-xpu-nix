@@ -61,6 +61,11 @@
           python3Packages = pkgs.python312Packages;
         };
 
+        flash-linear-attention = pkgs.callPackage ./nix/flash-linear-attention.nix {
+          inherit torch-xpu triton-xpu;
+          python3Packages = pkgs.python312Packages;
+        };
+
         mkXpuLibFactory = src: pkgs.callPackage ./nix/vllm-xpu-lib.nix {
           intel-oneapi-base = intel-oneapi;
           inherit intel-pti oneccl-bmg torch-xpu;
@@ -162,11 +167,33 @@
 
         vllm-xpu-kernels = mkVllmXpuKernels vllm-xpu-kernels-src;
         vllm-xpu-kernels-unstable = mkVllmXpuKernels vllm-xpu-kernels-unstable-src;
+
+        syclToolchainShellHook = ''
+          syclHome="${intel-oneapi}/compiler/latest"
+          mkdir -p .dev-bin
+          ln -sf ${pkgs.intel-compute-runtime}/bin/ocloc-* .dev-bin/ocloc 2>/dev/null || true
+          export PATH="$PWD/.dev-bin:$syclHome/bin:$PATH"
+          export LD_LIBRARY_PATH="${pkgs.intel-graphics-compiler}/lib:${pkgs.intel-compute-runtime}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          export SYCL_HOME="$syclHome"
+          export CMPLR_ROOT="$syclHome"
+          export MKLROOT="${intel-oneapi}/mkl/latest"
+          export CC="$syclHome/bin/icx"
+          export CXX="$syclHome/bin/icpx"
+          icpxToolchainFlags="--gcc-toolchain=${pkgs.stdenv.cc.cc} -B${pkgs.stdenv.cc.libc}/lib -L${pkgs.stdenv.cc.libc}/lib -L${pkgs.stdenv.cc.cc.lib}/lib -idirafter ${pkgs.stdenv.cc.libc.dev}/include"
+          export CFLAGS="$icpxToolchainFlags ''${CFLAGS:-}"
+          export CXXFLAGS="$icpxToolchainFlags ''${CXXFLAGS:-}"
+          export LDFLAGS="-L${pkgs.stdenv.cc.libc}/lib -L${pkgs.stdenv.cc.cc.lib}/lib ''${LDFLAGS:-}"
+          export LIBRARY_PATH="${pkgs.stdenv.cc.libc}/lib:${pkgs.stdenv.cc.cc.lib}/lib''${LIBRARY_PATH:+:$LIBRARY_PATH}"
+          export CPATH="${pkgs.stdenv.cc.libc.dev}/include''${CPATH:+:$CPATH}"
+          export CMAKE_PREFIX_PATH="${intel-oneapi}''${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}"
+          export VLLM_CUTLASS_SRC_DIR="${sycl-tla-src}"
+        '';
       in {
         packages = {
           inherit
             intel-oneapi intel-pti oneccl-bmg
             torch-xpu triton-xpu
+            flash-linear-attention
             vllm-xpu-kernels vllm-xpu-kernels-unstable;
           inherit (stableLibs)
             attn-kernels-xe-2
@@ -207,6 +234,11 @@
             Fast in-tree kernel iteration (impure, ~10s incrementals):
               nix develop .#attn-dev
               make dev-attn KERNELS_SRC=/path/to/vllm-xpu-kernels
+
+            Editable install of all kernels:
+              cd /path/to/vllm-xpu-kernels
+              nix develop /path/to/vllm-xpu-nix#kernels-dev
+              pip install -e . --no-build-isolation
             EOF
           '';
         };
@@ -219,25 +251,7 @@
             ninja
             git
           ];
-          shellHook = ''
-            syclHome="${intel-oneapi}/compiler/latest"
-            mkdir -p .dev-bin
-            ln -sf ${pkgs.intel-compute-runtime}/bin/ocloc-* .dev-bin/ocloc 2>/dev/null || true
-            export PATH="$PWD/.dev-bin:$syclHome/bin:$PATH"
-            export LD_LIBRARY_PATH="${pkgs.intel-graphics-compiler}/lib:${pkgs.intel-compute-runtime}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-            export SYCL_HOME="$syclHome"
-            export CMPLR_ROOT="$syclHome"
-            export MKLROOT="${intel-oneapi}/mkl/latest"
-            export CC="$syclHome/bin/icx"
-            export CXX="$syclHome/bin/icpx"
-            icpxToolchainFlags="--gcc-toolchain=${pkgs.stdenv.cc.cc} -B${pkgs.stdenv.cc.libc}/lib -L${pkgs.stdenv.cc.libc}/lib -L${pkgs.stdenv.cc.cc.lib}/lib -idirafter ${pkgs.stdenv.cc.libc.dev}/include"
-            export CFLAGS="$icpxToolchainFlags ''${CFLAGS:-}"
-            export CXXFLAGS="$icpxToolchainFlags ''${CXXFLAGS:-}"
-            export LDFLAGS="-L${pkgs.stdenv.cc.libc}/lib -L${pkgs.stdenv.cc.cc.lib}/lib ''${LDFLAGS:-}"
-            export LIBRARY_PATH="${pkgs.stdenv.cc.libc}/lib:${pkgs.stdenv.cc.cc.lib}/lib''${LIBRARY_PATH:+:$LIBRARY_PATH}"
-            export CPATH="${pkgs.stdenv.cc.libc.dev}/include''${CPATH:+:$CPATH}"
-            export CMAKE_PREFIX_PATH="${intel-oneapi}''${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}"
-            export VLLM_CUTLASS_SRC_DIR="${sycl-tla-src}"
+          shellHook = syclToolchainShellHook + ''
             cat <<'EOF'
             vllm-xpu-nix attn-dev shell.
 
@@ -250,6 +264,52 @@
 
             Edit any kernel .cpp/.hpp and rerun 'make dev-attn' for incremental rebuild.
             Tear down with 'make dev-attn-clean'.
+            EOF
+          '';
+        };
+
+        devShells.kernels-dev = pkgs.mkShell {
+          name = "vllm-xpu-kernels-dev";
+          inputsFrom = [ vllm-xpu-kernels ];
+          packages = with pkgs; [
+            cmake
+            ninja
+            git
+          ] ++ (with pkgs.python312Packages; [
+            pip
+            setuptools
+            wheel
+            packaging
+            jinja2
+            psutil
+            torch-xpu
+            triton-xpu
+          ]);
+          shellHook = syclToolchainShellHook + ''
+            export VLLM_XPU_AOT_DEVICES="''${VLLM_XPU_AOT_DEVICES:-bmg}"
+            export VLLM_XPU_XE2_AOT_DEVICES="''${VLLM_XPU_XE2_AOT_DEVICES:-bmg}"
+            export MAX_JOBS="''${MAX_JOBS:-2}"
+            cat <<'EOF'
+            vllm-xpu-nix kernels-dev shell.
+
+            Toolchain + the full vllm-xpu-kernels closure (torch-xpu, triton-xpu,
+            oneAPI MKL/SYCL, cutlass src) wired up. MAX_JOBS=2 by default — each
+            SYCL-TLA template instantiation holds ~40 GiB during icpx, raise with
+            care.
+
+            Quick start (against a local kernels checkout):
+              cd /path/to/vllm-xpu-kernels
+              git submodule update --init --recursive
+              pip install -e . --no-build-isolation
+
+            Incremental rebuild after editing a .cpp:
+              ninja -C build/temp.*/release install
+
+            Tests:
+              pytest tests/
+
+            Tune feature flags via cmake -D… or env (BASIC_KERNELS_ENABLED,
+            FA2_KERNELS_ENABLED, MOE_KERNELS_ENABLED, GDN_KERNELS_ENABLED, etc.).
             EOF
           '';
         };

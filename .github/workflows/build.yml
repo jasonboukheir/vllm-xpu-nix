@@ -1,0 +1,51 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  flake-check:
+    name: flake check (eval-only)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: cachix/install-nix-action@v33
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            accept-flake-config = true
+      - run: nix flake check --no-build
+
+  build:
+    name: build ${{ matrix.package }}
+    needs: flake-check
+    if: vars.SELF_HOSTED_RUNNER_AVAILABLE == 'true'
+    runs-on: [self-hosted, x86_64-linux, vllm-xpu-nix]
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - intel-oneapi
+          - intel-pti
+          - oneccl-bmg
+          - torch-xpu
+          - triton-xpu
+          - attn-kernels-xe-2
+          - gdn-attn-kernels-xe-2
+          - mqa-logits-kernels-xe-2
+          - grouped-gemm-xe-2
+          - grouped-gemm-xe-default
+          - vllm-xpu-kernels
+    steps:
+      - uses: actions/checkout@v5
+      - run: nix build .#${{ matrix.package }} --no-link --print-out-paths

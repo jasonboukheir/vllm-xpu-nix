@@ -1,18 +1,18 @@
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 7110bf4..4b1f4ec 100644
+index 7110bf4..72045d9 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -323,6 +323,9 @@ set(GROUPED_GEMM_LIB_NAME "")
  set(GDN_ATTN_LIB_NAME "")
  set(MQA_LOGITS_LIB_NAME "")
-
+ 
 +option(VLLM_XPU_LIBS_ONLY
 +       "Build only kernel SHARED libs, skip extension modules" OFF)
 +
  if(BUILD_SYCL_TLA_KERNELS)
-
+ 
    set(SYCL_TLA_INCLUDE_DIRS
-@@ -338,26 +341,59 @@ if(BUILD_SYCL_TLA_KERNELS)
+@@ -338,26 +341,69 @@ if(BUILD_SYCL_TLA_KERNELS)
    set(SYCL_TLA_COMPILE_OPTIONS "")
    if(VLLM_XPU_ENABLE_XE_DEFAULT)
      if(MOE_KERNELS_ENABLED)
@@ -21,7 +21,9 @@ index 7110bf4..4b1f4ec 100644
 +        add_library(grouped_gemm_xe_default SHARED IMPORTED GLOBAL)
 +        set_target_properties(grouped_gemm_xe_default PROPERTIES
 +          IMPORTED_LOCATION
-+            "${VLLM_XPU_PREBUILT_GROUPED_GEMM_XE_DEFAULT_LIB}")
++            "${VLLM_XPU_PREBUILT_GROUPED_GEMM_XE_DEFAULT_LIB}"
++          INTERFACE_INCLUDE_DIRECTORIES
++            "${CMAKE_SOURCE_DIR}/csrc/xpu/grouped_gemm/xe_default;${CMAKE_SOURCE_DIR}/csrc/xpu/grouped_gemm")
 +      else()
 +        add_subdirectory(csrc/xpu/grouped_gemm/xe_default)
 +      endif()
@@ -35,7 +37,9 @@ index 7110bf4..4b1f4ec 100644
 +      if(VLLM_XPU_PREBUILT_GROUPED_GEMM_XE_2_LIB)
 +        add_library(grouped_gemm_xe_2 SHARED IMPORTED GLOBAL)
 +        set_target_properties(grouped_gemm_xe_2 PROPERTIES
-+          IMPORTED_LOCATION "${VLLM_XPU_PREBUILT_GROUPED_GEMM_XE_2_LIB}")
++          IMPORTED_LOCATION "${VLLM_XPU_PREBUILT_GROUPED_GEMM_XE_2_LIB}"
++          INTERFACE_INCLUDE_DIRECTORIES
++            "${CMAKE_SOURCE_DIR}/csrc/xpu/grouped_gemm/xe_2;${CMAKE_SOURCE_DIR}/csrc/xpu/grouped_gemm")
 +      else()
 +        add_subdirectory(csrc/xpu/grouped_gemm/xe_2)
 +      endif()
@@ -46,7 +50,9 @@ index 7110bf4..4b1f4ec 100644
 +      if(VLLM_XPU_PREBUILT_ATTN_KERNELS_XE_2_LIB)
 +        add_library(attn_kernels_xe_2 SHARED IMPORTED GLOBAL)
 +        set_target_properties(attn_kernels_xe_2 PROPERTIES
-+          IMPORTED_LOCATION "${VLLM_XPU_PREBUILT_ATTN_KERNELS_XE_2_LIB}")
++          IMPORTED_LOCATION "${VLLM_XPU_PREBUILT_ATTN_KERNELS_XE_2_LIB}"
++          INTERFACE_INCLUDE_DIRECTORIES
++            "${CMAKE_SOURCE_DIR}/csrc/xpu/attn/xe_2;${CMAKE_SOURCE_DIR}/csrc/xpu/attn")
 +      else()
 +        add_subdirectory(csrc/xpu/attn/xe_2)
 +      endif()
@@ -58,7 +64,9 @@ index 7110bf4..4b1f4ec 100644
 +        add_library(gdn_attn_kernels_xe_2 SHARED IMPORTED GLOBAL)
 +        set_target_properties(gdn_attn_kernels_xe_2 PROPERTIES
 +          IMPORTED_LOCATION
-+            "${VLLM_XPU_PREBUILT_GDN_ATTN_KERNELS_XE_2_LIB}")
++            "${VLLM_XPU_PREBUILT_GDN_ATTN_KERNELS_XE_2_LIB}"
++          INTERFACE_INCLUDE_DIRECTORIES
++            "${CMAKE_SOURCE_DIR}/csrc/xpu/gdn_attn/xe_2;${CMAKE_SOURCE_DIR}/csrc/xpu/gdn_attn")
 +      else()
 +        add_subdirectory(csrc/xpu/gdn_attn/xe_2)
 +      endif()
@@ -70,17 +78,19 @@ index 7110bf4..4b1f4ec 100644
 +        add_library(mqa_logits_kernels_xe_2 SHARED IMPORTED GLOBAL)
 +        set_target_properties(mqa_logits_kernels_xe_2 PROPERTIES
 +          IMPORTED_LOCATION
-+            "${VLLM_XPU_PREBUILT_MQA_LOGITS_KERNELS_XE_2_LIB}")
++            "${VLLM_XPU_PREBUILT_MQA_LOGITS_KERNELS_XE_2_LIB}"
++          INTERFACE_INCLUDE_DIRECTORIES
++            "${CMAKE_SOURCE_DIR}/csrc/xpu/mqa_logits/xe_2;${CMAKE_SOURCE_DIR}/csrc/xpu/mqa_logits")
 +      else()
 +        add_subdirectory(csrc/xpu/mqa_logits/xe_2)
 +      endif()
        list(APPEND MQA_LOGITS_LIB_NAME "mqa_logits_kernels_xe_2")
      endif()
      list(APPEND SYCL_TLA_COMPILE_OPTIONS -DVLLM_XPU_ENABLE_XE2)
-@@ -366,6 +402,11 @@ if(BUILD_SYCL_TLA_KERNELS)
-
+@@ -366,6 +412,11 @@ if(BUILD_SYCL_TLA_KERNELS)
+ 
  endif()
-
+ 
 +if(VLLM_XPU_LIBS_ONLY)
 +  message(STATUS "VLLM_XPU_LIBS_ONLY is ON, skipping extension modules.")
 +  return()
@@ -96,7 +106,7 @@ index 42ce5b9..6cdf670 100755
 @@ -200,6 +200,19 @@ class cmake_build_ext(build_ext):
              cmake_args.append('-D{}={}'.format(
                  opt, "ON" if _is_enabled(opt) else "OFF"))
-
+ 
 +        # Forward prebuilt-library overrides so packagers can supply
 +        # pre-built kernel SHARED libs and skip recompilation.
 +        _prebuilt_lib_options = [

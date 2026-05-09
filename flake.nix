@@ -69,11 +69,10 @@
           cutlass-src = sycl-tla-src;
         };
 
-        # POC: dynamic-derivations attn build (2-3 TUs). Validates whether
-        # SYCL device-image registration survives per-.o linking before we
-        # scale to ~600 TUs. Lives alongside the production mkLib path until
-        # validated; not yet wired into the vllm-xpu-kernels consumer.
-        mkAttnDynDrvPoc = src: pkgs.callPackage ./nix/vllm-xpu-attn-dyndrv.nix {
+        # Dynamic-derivations build of attn_kernels_xe_2: per-TU compile
+        # drvs + a final link drv replaying cmake's captured link command.
+        # See nix/vllm-xpu-attn-dyndrv.nix for the staging.
+        mkAttnDynDrv = src: pkgs.callPackage ./nix/vllm-xpu-attn-dyndrv.nix {
           intel-oneapi-base = intel-oneapi;
           inherit intel-pti oneccl-bmg torch-xpu;
           python3Packages = pkgs.python312Packages;
@@ -138,7 +137,10 @@
 
         mkKernelLibs = src:
           let mkLib = mkXpuLibFactory src; in {
-            attn-kernels-xe-2 = mkLib { libName = "attn_kernels_xe_2"; featureFlags = attnFlags; };
+            # attn_kernels_xe_2 is built via the dynamic-derivations path
+            # (per-TU compile drvs + replayed cmake link). All other libs
+            # still go through the cmake-builds-the-whole-target mkLib.
+            attn-kernels-xe-2 = mkAttnDynDrv src;
             gdn-attn-kernels-xe-2 = mkLib { libName = "gdn_attn_kernels_xe_2"; featureFlags = gdnAttnFlags; };
             mqa-logits-kernels-xe-2 = mkLib { libName = "mqa_logits_kernels_xe_2"; featureFlags = mqaLogitsFlags; };
             grouped-gemm-xe-2 = mkLib { libName = "grouped_gemm_xe_2"; featureFlags = groupedGemmXe2Flags; };
@@ -160,15 +162,12 @@
 
         vllm-xpu-kernels = mkVllmXpuKernels vllm-xpu-kernels-src;
         vllm-xpu-kernels-unstable = mkVllmXpuKernels vllm-xpu-kernels-unstable-src;
-
-        attn-kernels-xe-2-dyndrv-poc = mkAttnDynDrvPoc vllm-xpu-kernels-src;
       in {
         packages = {
           inherit
             intel-oneapi intel-pti oneccl-bmg
             torch-xpu triton-xpu
-            vllm-xpu-kernels vllm-xpu-kernels-unstable
-            attn-kernels-xe-2-dyndrv-poc;
+            vllm-xpu-kernels vllm-xpu-kernels-unstable;
           inherit (stableLibs)
             attn-kernels-xe-2
             gdn-attn-kernels-xe-2

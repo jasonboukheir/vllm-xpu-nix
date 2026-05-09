@@ -37,7 +37,27 @@
     "root": {
       "inputs": {
         "flake-utils": "flake-utils",
-        "nixpkgs": "nixpkgs"
+        "nixpkgs": "nixpkgs",
+        "sycl-tla-src": "sycl-tla-src",
+        "vllm-xpu-kernels-src": "vllm-xpu-kernels-src",
+        "vllm-xpu-kernels-unstable-src": "vllm-xpu-kernels-unstable-src"
+      }
+    },
+    "sycl-tla-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1773801054,
+        "narHash": "sha256-F69uPgmeQ1fpkCMYZujq0JG2uhmIgf3L+BK29//gxig=",
+        "owner": "intel",
+        "repo": "sycl-tla",
+        "rev": "cd763790ad2f74d7294435ecf77682bac0062c3a",
+        "type": "github"
+      },
+      "original": {
+        "owner": "intel",
+        "repo": "sycl-tla",
+        "rev": "cd763790ad2f74d7294435ecf77682bac0062c3a",
+        "type": "github"
       }
     },
     "systems": {
@@ -53,6 +73,42 @@
         "owner": "nix-systems",
         "repo": "default",
         "type": "github"
+      }
+    },
+    "vllm-xpu-kernels-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1778228941,
+        "narHash": "sha256-9bXCO13jV4Hl/XUBSCDiXVd/yJTCmijcjEXzalS8Vx0=",
+        "ref": "refs/heads/main",
+        "rev": "024cb45970cfe8cdbc064505087c367c28086081",
+        "revCount": 222,
+        "submodules": true,
+        "type": "git",
+        "url": "https://github.com/vllm-project/vllm-xpu-kernels.git"
+      },
+      "original": {
+        "submodules": true,
+        "type": "git",
+        "url": "https://github.com/vllm-project/vllm-xpu-kernels.git"
+      }
+    },
+    "vllm-xpu-kernels-unstable-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1778263946,
+        "narHash": "sha256-5MlHv1yjlPBwo/SVjALldIsu7ylFxwykwozc9tVUDSw=",
+        "ref": "refs/heads/main",
+        "rev": "99e9a4ab562cf7de0c25d711425981b96a04b97d",
+        "revCount": 224,
+        "submodules": true,
+        "type": "git",
+        "url": "https://github.com/jasonboukheir/vllm-xpu-kernels.git"
+      },
+      "original": {
+        "submodules": true,
+        "type": "git",
+        "url": "https://github.com/jasonboukheir/vllm-xpu-kernels.git"
       }
     }
   },

@@ -66,6 +66,17 @@ python3Packages.buildPythonPackage rec {
 
   pythonImportsCheck = [ "torch" ];
 
+  # Stock nixpkgs torch exposes these for downstream consumers (notably
+  # torchvision) that do `inherit (torch) cudaCapabilities cudaPackages
+  # cudaSupport;`. torch-xpu has no CUDA, so stub them with the same
+  # cudaSupport=false defaults a CPU-only torch would carry.
+  passthru = {
+    cudaSupport = false;
+    cudaCapabilities = [ ];
+    cudaPackages = { };
+    rocmSupport = false;
+  };
+
   meta = {
     description = "PyTorch 2.11.0 with Intel XPU (SYCL/Level-Zero) backend";
     homepage = "https://pytorch.org";

@@ -62,6 +62,13 @@ stdenv.mkDerivation {
   cmakeBuildType = "Release";
   enableParallelBuilding = true;
 
+  # Content-addressed: the kernel .so is mostly SYCL device-image binary
+  # produced by the SYCL-TLA compile pipeline. RUNPATH does encode some
+  # store-path inputs (torch-xpu, intel-oneapi), so torch-xpu bumps will
+  # invalidate; smaller upstream churn (nativeBuildInputs, helper tools)
+  # leaves the .so byte-identical and the CA hash hits.
+  __contentAddressed = true;
+
   # Each SYCL-TLA template instantiation peaks ~5 GiB RSS in icpx, with
   # the heavier head-dim/policy combos pushing ~40 GiB. ninja -j$(nproc)
   # on a 24-core box stacks ~24 of these and OOM-kills the build long

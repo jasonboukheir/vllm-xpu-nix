@@ -1,8 +1,8 @@
-# Using on a NixOS server (overlay pattern)
+# Using on a NixOS server
 
-The intended consumption story is "add an input + overlay + import the
-NixOS module to your existing system flake" — not "vendor this whole
-flake into your config".
+The intended consumption story is "add an input + import the NixOS
+module to your existing system flake" — not "vendor this whole flake
+into your config".
 
 ## 1. Add the input
 
@@ -21,33 +21,16 @@ flake into your config".
 ```
 
 `inputs.nixpkgs.follows = "nixpkgs"` keeps a single `glibc`/`libstdc++`
-across the closure. This flake is developed against `nixos-unstable`; any
-consumer pin recent enough to expose `pkgs.intel-oneapi.base` (added Feb
-2026) is fine.
+across the closure. This flake is developed against `nixos-unstable`;
+any consumer pin recent enough to expose `pkgs.intel-oneapi.base`
+(added Feb 2026) is fine.
 
-## 2. Wire packages via an overlay
-
-```nix
-# ~/.config/nix/modules/nixpkgs/overlays/vllm-xpu-nix.nix
-{ inputs, ... }: final: prev: {
-  inherit (inputs.vllm-xpu-nix.packages.${prev.system})
-    intel-oneapi intel-pti oneccl-bmg
-    torch-xpu triton-xpu
-    vllm-xpu-kernels vllm-xpu-kernels-unstable
-    vllm-xpu vllm-xpu-unstable;
-}
-```
-
-Register the overlay through whichever overlay-loader your flake uses
-(`nixpkgs.overlays = [ … ]`, flake-parts' `perSystem.nixpkgs.overlays`,
-etc.).
-
-## 3. Import the NixOS module
+## 2. Import the NixOS module
 
 ```nix
 # host config
 { pkgs, inputs, ... }: {
-  imports = [ inputs.vllm-xpu-nix.nixosModules.vllm-xpu ];
+  imports = [ inputs.vllm-xpu-nix.nixosModules.default ];
 
   services.vllm-xpu = {
     package = pkgs.vllm-xpu-unstable;
@@ -83,14 +66,34 @@ etc.).
 }
 ```
 
+`nixosModules.default` does two things in one import:
+
+1. Adds `overlays.default` to `nixpkgs.overlays`, so `pkgs.vllm-xpu`,
+   `pkgs.vllm-xpu-unstable`, `pkgs.torch-xpu`, etc. are visible without
+   the consumer writing their own overlay file.
+2. Imports the option module that defines `services.vllm-xpu`.
+
 Each enabled `instances.<name>` becomes a `vllm-xpu-<name>.service`
 systemd unit running under a shared `vllm` user with `render`/`video`
-supplementary groups for `/dev/dri` access. Per-instance state lives at
-`/var/lib/vllm-xpu/<name>` (used as `HF_HOME` and `VLLM_CACHE_ROOT`).
-The default `cclEnv` is the BMG single-card oneCCL configuration;
-override per host for multi-card setups.
+supplementary groups for `/dev/dri` access. Per-instance state lives
+at `/var/lib/vllm-xpu/<name>` (used as `HF_HOME` and
+`VLLM_CACHE_ROOT`). The default `cclEnv` is the BMG single-card
+oneCCL configuration; override per host for multi-card setups.
 
-## 4. allowUnfree
+### BYO-overlay variant
+
+If you already manage overlays explicitly (e.g. you want to scope the
+XPU package set to certain hosts only) use the bare option module and
+apply the overlay yourself:
+
+```nix
+{
+  imports = [ inputs.vllm-xpu-nix.nixosModules.vllm-xpu ];
+  nixpkgs.overlays = [ inputs.vllm-xpu-nix.overlays.default ];
+}
+```
+
+## 3. allowUnfree
 
 `intel-oneapi-base-toolkit` is unfree. Scope the predicate narrowly
 rather than flipping `allowUnfree = true` globally:

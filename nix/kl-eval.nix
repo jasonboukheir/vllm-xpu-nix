@@ -8,9 +8,6 @@ let
   evalEnv = python3Packages.python.withPackages (ps: [
     auto-round-xpu
     ps.numpy
-    ps.datasets
-    ps.transformers
-    ps.accelerate
   ]);
   klEvalScript = ../scripts/kl_eval.py;
 in

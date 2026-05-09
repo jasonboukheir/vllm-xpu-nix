@@ -14,6 +14,9 @@
   triton-xpu,
   flash-linear-attention,
   vllm-xpu-kernels,
+  level-zero,
+  intel-graphics-compiler,
+  intel-compute-runtime,
 }:
 
 let
@@ -42,6 +45,22 @@ python3Packages.buildPythonPackage {
     intel-oneapi-base
     intel-pti
     oneccl-bmg
+  ];
+
+  # SYCL runtime dlopen()s libze_loader, libze_intel_gpu, and libigc at load
+  # time. None are captured by libtorch_xpu's DT_NEEDED, so autoPatchelfHook
+  # can't add them to RUNPATH. Inject them into bin/vllm's LD_LIBRARY_PATH so
+  # the wrapper works on any host (NixOS or otherwise) without relying on the
+  # host's /run/opengl-driver/lib being populated with the right packages.
+  # Note: intel-compute-runtime ships libze_intel_gpu.so.1 in its `drivers`
+  # output, separate from the default `out`.
+  makeWrapperArgs = [
+    "--prefix LD_LIBRARY_PATH : ${lib.makeLibraryPath [
+      level-zero
+      intel-graphics-compiler
+      intel-compute-runtime
+      intel-compute-runtime.drivers
+    ]}"
   ];
 
   propagatedBuildInputs = with python3Packages; [

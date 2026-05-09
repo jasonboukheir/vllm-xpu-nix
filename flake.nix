@@ -384,5 +384,52 @@
             EOF
           '';
         };
+
+        devShells.vllm-dev = pkgs.mkShell {
+          name = "vllm-xpu-vllm-dev";
+          inputsFrom = [ vllm-xpu ];
+          packages = with pkgs; [
+            git
+          ] ++ (with pkgs.python312Packages; [
+            pip
+            setuptools
+            wheel
+            packaging
+            jinja2
+            torch-xpu
+            triton-xpu
+            vllm-xpu-kernels
+          ]);
+          shellHook = syclToolchainShellHook + ''
+            export VLLM_TARGET_DEVICE=xpu
+            export VLLM_VERSION_OVERRIDE="''${VLLM_VERSION_OVERRIDE:-0.0.0.dev}"
+
+            # BMG single-card oneCCL safe defaults — match what the systemd
+            # module bakes in. Override per-session to taste.
+            export CCL_PROCESS_LAUNCHER="''${CCL_PROCESS_LAUNCHER:-none}"
+            export CCL_ATL_TRANSPORT="''${CCL_ATL_TRANSPORT:-ofi}"
+            export CCL_ZE_IPC_EXCHANGE="''${CCL_ZE_IPC_EXCHANGE:-sockets}"
+            export CCL_LOG_LEVEL="''${CCL_LOG_LEVEL:-warn}"
+
+            cat <<'EOF'
+            vllm-xpu-nix vllm-dev shell.
+
+            Toolchain + full vllm-xpu closure (torch-xpu, triton-xpu, vllm-xpu-
+            kernels, runtime python deps) wired up. VLLM_TARGET_DEVICE=xpu and
+            BMG single-card oneCCL env are pre-set.
+
+            Editable install:
+              cd /path/to/vllm
+              pip install -e . --no-build-isolation --no-deps
+              python -c 'import vllm; print(vllm.__version__)'
+
+            Run server:
+              vllm serve <model> --enforce-eager
+
+            Tests:
+              pytest tests/
+            EOF
+          '';
+        };
       });
 }

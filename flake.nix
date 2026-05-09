@@ -4,9 +4,28 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
+
+    vllm-xpu-kernels-src = {
+      type = "git";
+      url = "https://github.com/vllm-project/vllm-xpu-kernels.git";
+      submodules = true;
+      flake = false;
+    };
+
+    vllm-xpu-kernels-unstable-src = {
+      type = "git";
+      url = "https://github.com/jasonboukheir/vllm-xpu-kernels.git";
+      submodules = true;
+      flake = false;
+    };
+
+    sycl-tla-src = {
+      url = "github:intel/sycl-tla/cd763790ad2f74d7294435ecf77682bac0062c3a";
+      flake = false;
+    };
   };
 
-  outputs = { self, nixpkgs, flake-utils }:
+  outputs = { self, nixpkgs, flake-utils, vllm-xpu-kernels-src, vllm-xpu-kernels-unstable-src, sycl-tla-src }:
     flake-utils.lib.eachSystem [ "x86_64-linux" ] (system:
       let
         pkgs = import nixpkgs {
@@ -41,9 +60,121 @@
           inherit intel-pti;
           python3Packages = pkgs.python312Packages;
         };
+
+        mkXpuLibFactory = src: pkgs.callPackage ./nix/vllm-xpu-lib.nix {
+          intel-oneapi-base = intel-oneapi;
+          inherit intel-pti oneccl-bmg torch-xpu;
+          python3Packages = pkgs.python312Packages;
+          inherit src;
+          cutlass-src = sycl-tla-src;
+        };
+
+        # POC: dynamic-derivations attn build (2-3 TUs). Validates whether
+        # SYCL device-image registration survives per-.o linking before we
+        # scale to ~600 TUs. Lives alongside the production mkLib path until
+        # validated; not yet wired into the vllm-xpu-kernels consumer.
+        mkAttnDynDrvPoc = src: pkgs.callPackage ./nix/vllm-xpu-attn-dyndrv.nix {
+          intel-oneapi-base = intel-oneapi;
+          inherit intel-pti oneccl-bmg torch-xpu;
+          python3Packages = pkgs.python312Packages;
+          inherit src;
+          cutlass-src = sycl-tla-src;
+        };
+
+        # Per-lib feature flag matrices: enable only the chosen lib's source
+        # subdir, disable all other libs and ext modules. VLLM_XPU_LIBS_ONLY
+        # short-circuits the ext-module section.
+        attnFlags = [
+          "-DVLLM_XPU_ENABLE_XE_DEFAULT=OFF"
+          "-DBASIC_KERNELS_ENABLED=OFF"
+          "-DFA2_KERNELS_ENABLED=ON"
+          "-DMOE_KERNELS_ENABLED=OFF"
+          "-DGDN_KERNELS_ENABLED=OFF"
+          "-DMQA_LOGITS_KERNELS_ENABLED=OFF"
+          "-DXPU_SPECIFIC_KERNELS_ENABLED=OFF"
+          "-DXPUMEM_ALLOCATOR_ENABLED=OFF"
+        ];
+        gdnAttnFlags = [
+          "-DVLLM_XPU_ENABLE_XE_DEFAULT=OFF"
+          "-DBASIC_KERNELS_ENABLED=OFF"
+          "-DFA2_KERNELS_ENABLED=OFF"
+          "-DMOE_KERNELS_ENABLED=OFF"
+          "-DGDN_KERNELS_ENABLED=ON"
+          "-DMQA_LOGITS_KERNELS_ENABLED=OFF"
+          "-DXPU_SPECIFIC_KERNELS_ENABLED=OFF"
+          "-DXPUMEM_ALLOCATOR_ENABLED=OFF"
+        ];
+        mqaLogitsFlags = [
+          "-DVLLM_XPU_ENABLE_XE_DEFAULT=OFF"
+          "-DBASIC_KERNELS_ENABLED=OFF"
+          "-DFA2_KERNELS_ENABLED=OFF"
+          "-DMOE_KERNELS_ENABLED=OFF"
+          "-DGDN_KERNELS_ENABLED=OFF"
+          "-DMQA_LOGITS_KERNELS_ENABLED=ON"
+          "-DXPU_SPECIFIC_KERNELS_ENABLED=OFF"
+          "-DXPUMEM_ALLOCATOR_ENABLED=OFF"
+        ];
+        groupedGemmXe2Flags = [
+          "-DVLLM_XPU_ENABLE_XE_DEFAULT=OFF"
+          "-DBASIC_KERNELS_ENABLED=OFF"
+          "-DFA2_KERNELS_ENABLED=OFF"
+          "-DMOE_KERNELS_ENABLED=ON"
+          "-DGDN_KERNELS_ENABLED=OFF"
+          "-DMQA_LOGITS_KERNELS_ENABLED=OFF"
+          "-DXPU_SPECIFIC_KERNELS_ENABLED=OFF"
+          "-DXPUMEM_ALLOCATOR_ENABLED=OFF"
+        ];
+        groupedGemmXeDefaultFlags = [
+          "-DVLLM_XPU_ENABLE_XE2=OFF"
+          "-DVLLM_XPU_ENABLE_XE_DEFAULT=ON"
+          "-DBASIC_KERNELS_ENABLED=OFF"
+          "-DFA2_KERNELS_ENABLED=OFF"
+          "-DMOE_KERNELS_ENABLED=ON"
+          "-DGDN_KERNELS_ENABLED=OFF"
+          "-DMQA_LOGITS_KERNELS_ENABLED=OFF"
+          "-DXPU_SPECIFIC_KERNELS_ENABLED=OFF"
+          "-DXPUMEM_ALLOCATOR_ENABLED=OFF"
+        ];
+
+        mkKernelLibs = src:
+          let mkLib = mkXpuLibFactory src; in {
+            attn-kernels-xe-2 = mkLib { libName = "attn_kernels_xe_2"; featureFlags = attnFlags; };
+            gdn-attn-kernels-xe-2 = mkLib { libName = "gdn_attn_kernels_xe_2"; featureFlags = gdnAttnFlags; };
+            mqa-logits-kernels-xe-2 = mkLib { libName = "mqa_logits_kernels_xe_2"; featureFlags = mqaLogitsFlags; };
+            grouped-gemm-xe-2 = mkLib { libName = "grouped_gemm_xe_2"; featureFlags = groupedGemmXe2Flags; };
+            grouped-gemm-xe-default = mkLib { libName = "grouped_gemm_xe_default"; featureFlags = groupedGemmXeDefaultFlags; };
+          };
+
+        mkVllmXpuKernels = src:
+          let libs = mkKernelLibs src; in
+          pkgs.callPackage ./nix/vllm-xpu-kernels.nix ({
+            intel-oneapi-base = intel-oneapi;
+            inherit intel-pti oneccl-bmg torch-xpu;
+            python3Packages = pkgs.python312Packages;
+            inherit src;
+            cutlass-src = sycl-tla-src;
+          } // libs);
+
+        stableLibs = mkKernelLibs vllm-xpu-kernels-src;
+        unstableLibs = mkKernelLibs vllm-xpu-kernels-unstable-src;
+
+        vllm-xpu-kernels = mkVllmXpuKernels vllm-xpu-kernels-src;
+        vllm-xpu-kernels-unstable = mkVllmXpuKernels vllm-xpu-kernels-unstable-src;
+
+        attn-kernels-xe-2-dyndrv-poc = mkAttnDynDrvPoc vllm-xpu-kernels-src;
       in {
         packages = {
-          inherit intel-oneapi intel-pti oneccl-bmg torch-xpu triton-xpu;
+          inherit
+            intel-oneapi intel-pti oneccl-bmg
+            torch-xpu triton-xpu
+            vllm-xpu-kernels vllm-xpu-kernels-unstable
+            attn-kernels-xe-2-dyndrv-poc;
+          inherit (stableLibs)
+            attn-kernels-xe-2
+            gdn-attn-kernels-xe-2
+            mqa-logits-kernels-xe-2
+            grouped-gemm-xe-2
+            grouped-gemm-xe-default;
           default = intel-oneapi;
         };
 
@@ -53,14 +184,74 @@
             git
             nix-tree
             nix-diff
-            nixfmt-rfc-style
+            nixfmt
             nil
             patchelf
             file
             skopeo
           ];
           shellHook = ''
-            echo "vllm-xpu-nix dev shell. Try: nix build .#intel-oneapi --no-link --print-out-paths"
+            cat <<'EOF'
+            vllm-xpu-nix dev shell.
+
+            Build packages:
+              nix build .#intel-oneapi
+              nix build .#torch-xpu
+              nix build .#triton-xpu
+              nix build .#vllm-xpu-kernels             # upstream vllm-project (stable)
+              nix build .#vllm-xpu-kernels-unstable    # jasonboukheir fork (work-in-progress)
+
+            Iterate against a local kernels checkout (no flake edit needed):
+              nix build .#vllm-xpu-kernels-unstable \
+                --override-input vllm-xpu-kernels-unstable-src path:/path/to/local/checkout
+
+            Fast in-tree kernel iteration (impure, ~10s incrementals):
+              nix develop .#attn-dev
+              make dev-attn KERNELS_SRC=/path/to/vllm-xpu-kernels
+            EOF
+          '';
+        };
+
+        devShells.attn-dev = pkgs.mkShell {
+          name = "vllm-xpu-attn-dev";
+          inputsFrom = [ stableLibs.attn-kernels-xe-2 ];
+          packages = with pkgs; [
+            cmake
+            ninja
+            git
+          ];
+          shellHook = ''
+            syclHome="${intel-oneapi}/compiler/latest"
+            mkdir -p .dev-bin
+            ln -sf ${pkgs.intel-compute-runtime}/bin/ocloc-* .dev-bin/ocloc 2>/dev/null || true
+            export PATH="$PWD/.dev-bin:$syclHome/bin:$PATH"
+            export LD_LIBRARY_PATH="${pkgs.intel-graphics-compiler}/lib:${pkgs.intel-compute-runtime}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+            export SYCL_HOME="$syclHome"
+            export CMPLR_ROOT="$syclHome"
+            export MKLROOT="${intel-oneapi}/mkl/latest"
+            export CC="$syclHome/bin/icx"
+            export CXX="$syclHome/bin/icpx"
+            icpxToolchainFlags="--gcc-toolchain=${pkgs.stdenv.cc.cc} -B${pkgs.stdenv.cc.libc}/lib -L${pkgs.stdenv.cc.libc}/lib -L${pkgs.stdenv.cc.cc.lib}/lib -idirafter ${pkgs.stdenv.cc.libc.dev}/include"
+            export CFLAGS="$icpxToolchainFlags ''${CFLAGS:-}"
+            export CXXFLAGS="$icpxToolchainFlags ''${CXXFLAGS:-}"
+            export LDFLAGS="-L${pkgs.stdenv.cc.libc}/lib -L${pkgs.stdenv.cc.cc.lib}/lib ''${LDFLAGS:-}"
+            export LIBRARY_PATH="${pkgs.stdenv.cc.libc}/lib:${pkgs.stdenv.cc.cc.lib}/lib''${LIBRARY_PATH:+:$LIBRARY_PATH}"
+            export CPATH="${pkgs.stdenv.cc.libc.dev}/include''${CPATH:+:$CPATH}"
+            export CMAKE_PREFIX_PATH="${intel-oneapi}''${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}"
+            export VLLM_CUTLASS_SRC_DIR="${sycl-tla-src}"
+            cat <<'EOF'
+            vllm-xpu-nix attn-dev shell.
+
+            Toolchain: icpx, cmake, ninja, oneAPI MKL/SYCL, cutlass src all set up.
+
+            Quick start:
+              make dev-attn KERNELS_SRC=/path/to/vllm-xpu-kernels
+              export VLLM_XPU_DEV_LIB_DIR=$PWD/build-dev/csrc/xpu/attn/xe_2
+              python -c 'import vllm_xpu_kernels'
+
+            Edit any kernel .cpp/.hpp and rerun 'make dev-attn' for incremental rebuild.
+            Tear down with 'make dev-attn-clean'.
+            EOF
           '';
         };
       });

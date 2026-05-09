@@ -83,6 +83,16 @@
           python3Packages = pkgs.python312Packages;
         };
 
+        quantize = pkgs.callPackage ./nix/quantize.nix {
+          inherit auto-round-xpu;
+          python3Packages = pkgs.python312Packages;
+        };
+
+        kl-eval = pkgs.callPackage ./nix/kl-eval.nix {
+          inherit auto-round-xpu;
+          python3Packages = pkgs.python312Packages;
+        };
+
         mkXpuLibFactory = src: pkgs.callPackage ./nix/vllm-xpu-lib.nix {
           intel-oneapi-base = intel-oneapi;
           inherit intel-pti oneccl-bmg torch-xpu;
@@ -247,6 +257,22 @@
             grouped-gemm-xe-2
             grouped-gemm-xe-default;
           default = intel-oneapi;
+          inherit quantize kl-eval;
+        };
+
+        apps = {
+          autoround = {
+            type = "app";
+            program = "${auto-round-xpu}/bin/auto-round";
+          };
+          quantize = {
+            type = "app";
+            program = "${quantize}/bin/quantize";
+          };
+          kl-eval = {
+            type = "app";
+            program = "${kl-eval}/bin/kl-eval";
+          };
         };
 
         devShells.default = pkgs.mkShell {

@@ -33,7 +33,8 @@ consumer pin recent enough to expose `pkgs.intel-oneapi.base` (added Feb
   inherit (inputs.vllm-xpu-nix.packages.${prev.system})
     intel-oneapi intel-pti oneccl-bmg
     torch-xpu triton-xpu
-    vllm-xpu-kernels vllm-xpu-kernels-unstable;
+    vllm-xpu-kernels vllm-xpu-kernels-unstable
+    vllm-xpu vllm-xpu-unstable;
 }
 ```
 
@@ -49,21 +50,45 @@ etc.).
   imports = [ inputs.vllm-xpu-nix.nixosModules.vllm-xpu ];
 
   services.vllm-xpu = {
-    enable       = true;
-    package      = pkgs.vllm-xpu-unstable;
-    model        = "palmfuture/Qwen3.6-35B-A3B-GPTQ-Int4";
-    servedName   = "qwen3.6-35b-a3b";
-    dtype        = "bfloat16";
-    quantization = "inc";
+    package = pkgs.vllm-xpu-unstable;
+    instances.chat = {
+      enable               = true;
+      model                = "palmfuture/Qwen3.6-35B-A3B-GPTQ-Int4";
+      servedName           = "qwen3.6-35b-a3b";
+      dtype                = "bfloat16";
+      quantization         = "inc";
+      kvCacheDtype         = "turboquant_k3v4_nc";
+      maxModelLen          = 65536;
+      maxNumSeqs           = 32;
+      gpuMemoryUtilization = 0.85;
+      enableXpuGraph       = true;
+      cudagraphCaptureSizes = [ 1 4 ];
+      reasoningParser      = "qwen3";
+      enableAutoToolChoice = true;
+      toolCallParser       = "qwen3_coder";
+      languageModelOnly    = true;
+    };
+    instances.embedding = {
+      enable               = true;
+      port                 = 8001;
+      runner               = "pooling";
+      model                = "Qwen/Qwen3-Embedding-0.6B";
+      servedName           = "qwen3-embedding-0.6b";
+      maxModelLen          = 8192;
+      maxNumSeqs           = 8;
+      gpuMemoryUtilization = 0.07;
+      enforceEager         = true;
+    };
   };
 }
 ```
 
-The module brings in a `vllm-xpu` systemd unit that runs `vllm serve`
-under a dedicated `vllm` user, with `render`/`video` supplementary groups
-for `/dev/dri` access and `HF_HOME=/var/lib/vllm` for the model cache.
-The default `cclEnv` is the BMG single-card oneCCL configuration; override
-per host if you have a multi-card setup.
+Each enabled `instances.<name>` becomes a `vllm-xpu-<name>.service`
+systemd unit running under a shared `vllm` user with `render`/`video`
+supplementary groups for `/dev/dri` access. Per-instance state lives at
+`/var/lib/vllm-xpu/<name>` (used as `HF_HOME` and `VLLM_CACHE_ROOT`).
+The default `cclEnv` is the BMG single-card oneCCL configuration;
+override per host for multi-card setups.
 
 ## 4. allowUnfree
 

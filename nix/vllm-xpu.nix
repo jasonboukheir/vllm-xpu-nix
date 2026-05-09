@@ -33,6 +33,8 @@ python3Packages.buildPythonPackage {
     python3Packages.wheel
     python3Packages.packaging
     python3Packages.jinja2
+    python3Packages.cmake
+    python3Packages.ninja
   ];
 
   buildInputs = [
@@ -72,6 +74,7 @@ python3Packages.buildPythonPackage {
     lm-format-enforcer
     mcp
     mistral-common
+    pycountry
     model-hosting-container-standards
     msgspec
     numba

@@ -1,0 +1,46 @@
+diff --git a/vllm_xpu_kernels/__init__.py b/vllm_xpu_kernels/__init__.py
+index 8635cc2..47cb379 100644
+--- a/vllm_xpu_kernels/__init__.py
++++ b/vllm_xpu_kernels/__init__.py
+@@ -1,3 +1,41 @@
+ # SPDX-License-Identifier: Apache-2.0
+ 
++# Dev-time kernel-lib override.
++#
++# When VLLM_XPU_DEV_LIB_DIR points at a directory containing locally-built
++# kernel .so files (e.g. produced by an out-of-tree CMake/ninja iteration on
++# csrc/xpu/), pre-load them with RTLD_GLOBAL before the bundled extension
++# modules import. The dynamic linker then satisfies the extensions' DT_NEEDED
++# entries from the dev libs already in the global scope, so the dev kernel
++# code wins over the bundled wheel build.
++#
++# This is opt-in via env var; with VLLM_XPU_DEV_LIB_DIR unset the package
++# behaves identically to the prebuilt wheel.
++import os as _os
++import ctypes as _ctypes
++
++_dev_lib_dir = _os.environ.get("VLLM_XPU_DEV_LIB_DIR")
++if _dev_lib_dir:
++    _candidates = (
++        "libattn_kernels_xe_2.so",
++        "libgdn_attn_kernels_xe_2.so",
++        "libmqa_logits_kernels_xe_2.so",
++        "libgrouped_gemm_xe_2.so",
++        "libgrouped_gemm_xe_default.so",
++    )
++    _loaded = []
++    for _libname in _candidates:
++        _path = _os.path.join(_dev_lib_dir, _libname)
++        if _os.path.isfile(_path):
++            _ctypes.CDLL(_path, mode=_ctypes.RTLD_GLOBAL)
++            _loaded.append(_libname)
++    if _loaded:
++        import sys as _sys
++        _sys.stderr.write(
++            "vllm_xpu_kernels: dev override active, loaded "
++            f"{len(_loaded)} lib(s) from {_dev_lib_dir}: "
++            f"{', '.join(_loaded)}\n"
++        )
++del _dev_lib_dir, _os, _ctypes
++
+ from .flash_attn_interface import flash_attn_varlen_func  # noqa: F401

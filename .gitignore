@@ -1,4 +1,7 @@
+build-dev/
+.dev-bin/
 result
 result-*
-.direnv
 .claude/settings.local.json
+.claude/*.lock
+.direnv

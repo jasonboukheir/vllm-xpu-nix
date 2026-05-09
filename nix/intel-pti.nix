@@ -48,7 +48,10 @@ stdenv.mkDerivation rec {
   meta = {
     description = "Intel Profiling Tools Interface (PTI) shared libraries";
     homepage = "https://github.com/intel/pti-gpu";
-    license = with lib.licenses; [ mit asl20 ];
+    license = with lib.licenses; [
+      mit
+      asl20
+    ];
     platforms = [ "x86_64-linux" ];
   };
 }

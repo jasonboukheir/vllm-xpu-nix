@@ -78,6 +78,11 @@
           python3Packages = pkgs.python312Packages;
         };
 
+        auto-round-xpu = pkgs.callPackage ./nix/auto-round-xpu.nix {
+          inherit torch-xpu triton-xpu flash-linear-attention;
+          python3Packages = pkgs.python312Packages;
+        };
+
         mkXpuLibFactory = src: pkgs.callPackage ./nix/vllm-xpu-lib.nix {
           intel-oneapi-base = intel-oneapi;
           inherit intel-pti oneccl-bmg torch-xpu;
@@ -232,6 +237,7 @@
             intel-oneapi intel-pti oneccl-bmg
             torch-xpu triton-xpu
             flash-linear-attention
+            auto-round-xpu
             vllm-xpu-kernels vllm-xpu-kernels-unstable
             vllm-xpu vllm-xpu-unstable;
           inherit (stableLibs)

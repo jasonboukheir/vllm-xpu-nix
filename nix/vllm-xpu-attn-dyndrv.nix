@@ -115,6 +115,17 @@ let
     dontUseCmakeConfigure = true;
     dontStrip = true;
 
+    # NOT content-addressed: the eval-time IFD `builtins.readFile
+    # "${configureDrv}/.../link_meta.json"` would force a CA realisation
+    # at evaluation, requiring `ca-derivations` enabled at the daemon
+    # level even for `nix eval`. Keeping configureDrv input-addressed
+    # confines the CA experimental-feature requirement to actual builds
+    # of the per-TU + link drvs. The downstream per-TU drvs are still
+    # CA, so cmake/torch bumps that change configureDrv's input hash
+    # don't necessarily invalidate per-TU caches — only the configure
+    # step re-runs.
+
+
     buildPhase = ''
       runHook preBuild
       ${envSetup}
@@ -182,6 +193,14 @@ let
     ];
 
     buildInputs = baseBuildInputs;
+
+    # Content-addressed: the .o is just a SYCL device-image bundle for one
+    # source file. icpx with -O3 -DNDEBUG (no -g) doesn't embed sandbox
+    # paths, so the bytes stay stable across nixpkgs / torch-xpu store-path
+    # bumps that don't actually change a header. This is the single
+    # highest-leverage CA target — 600+ TUs all share their cache entries
+    # whenever input churn doesn't touch what they actually compile.
+    __contentAddressed = true;
 
     # Output is a directory containing tu.o. The .o extension is load-bearing:
     # without it, icpx at link time treats the file as something other than
@@ -265,6 +284,15 @@ PYEOF
     ];
 
     buildInputs = baseBuildInputs;
+
+    # Content-addressed: the link output is libattn_kernels_xe_2.so. Its
+    # bytes embed RUNPATH/NEEDED entries pointing at torch-xpu /
+    # intel-oneapi store paths, so a torch-xpu rev bump WILL change the
+    # CA hash. CA still helps when input churn doesn't reach the linker
+    # line (e.g. only nativeBuildInputs / patchelf hook updated). When
+    # the link genuinely changes, the per-TU CA cache is still preserved
+    # — only this single drv re-realises.
+    __contentAddressed = true;
 
     # The cmake-emitted link command (with __INPUTS__ as the placeholder
     # for $in) lives at ${configureDrv}/repo/link_command.txt. We read it

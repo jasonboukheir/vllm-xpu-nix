@@ -74,24 +74,37 @@
           python3Packages = pkgs.python312Packages;
         };
 
+        # accelerate's nixpkgs definition propagates stock `torch`, which
+        # collides with torch-xpu on functorch/*.pyc when both end up in a
+        # python.withPackages buildEnv. Rebuild accelerate with its `torch`
+        # arg pointing at torch-xpu so the buildEnv merge sees only one
+        # torch. Surgical override (vs. python set-wide packageOverrides)
+        # avoids re-evaluating unrelated python packages whose passthru
+        # references attrs torch-xpu doesn't carry.
+        python312PackagesXpu = pkgs.python312Packages // {
+          accelerate = pkgs.python312Packages.accelerate.override {
+            torch = torch-xpu;
+          };
+        };
+
         flash-linear-attention = pkgs.callPackage ./nix/flash-linear-attention.nix {
           inherit torch-xpu triton-xpu;
-          python3Packages = pkgs.python312Packages;
+          python3Packages = python312PackagesXpu;
         };
 
         auto-round-xpu = pkgs.callPackage ./nix/auto-round-xpu.nix {
           inherit torch-xpu triton-xpu flash-linear-attention;
-          python3Packages = pkgs.python312Packages;
+          python3Packages = python312PackagesXpu;
         };
 
         quantize = pkgs.callPackage ./nix/quantize.nix {
           inherit auto-round-xpu;
-          python3Packages = pkgs.python312Packages;
+          python3Packages = python312PackagesXpu;
         };
 
         kl-eval = pkgs.callPackage ./nix/kl-eval.nix {
           inherit auto-round-xpu;
-          python3Packages = pkgs.python312Packages;
+          python3Packages = python312PackagesXpu;
         };
 
         mkXpuLibFactory = src: pkgs.callPackage ./nix/vllm-xpu-lib.nix {

@@ -81,10 +81,29 @@
         # torch. Surgical override (vs. python set-wide packageOverrides)
         # avoids re-evaluating unrelated python packages whose passthru
         # references attrs torch-xpu doesn't carry.
+        # nixpkgs ships mistral-common 1.8.8; vllm 0.20.x imports
+        # NamedToolChoice from mistral_common.protocol.instruct.tool_calls,
+        # which only exists from 1.11+. Bump to 1.11.2 (vllm's pin).
+        # overridePythonAttrs preserves the nixpkgs build recipe and just
+        # swaps version+src, keeping the package self-contained against
+        # whatever nixpkgs revision is in flake.lock.
+        mistral-common-1_11 = pkgs.python312Packages.mistral-common.overridePythonAttrs (oldAttrs: rec {
+          version = "1.11.2";
+          src = pkgs.fetchFromGitHub {
+            owner = "mistralai";
+            repo = "mistral-common";
+            rev = "v${version}";
+            hash = "sha256-EXdZcBR61GNye8LqwIqRO8lP1lK6fqPJufWFO9XkkYQ=";
+          };
+          pythonRelaxDeps = (oldAttrs.pythonRelaxDeps or [ ]) ++ [ "numpy" ];
+          doCheck = false;
+        });
+
         python312PackagesXpu = pkgs.python312Packages // {
           accelerate = pkgs.python312Packages.accelerate.override {
             torch = torch-xpu;
           };
+          mistral-common = mistral-common-1_11;
         };
 
         flash-linear-attention = pkgs.callPackage ./nix/flash-linear-attention.nix {
@@ -218,7 +237,7 @@
         mkVllm = { src, version, kernels }: pkgs.callPackage ./nix/vllm-xpu.nix {
           intel-oneapi-base = intel-oneapi;
           inherit intel-pti oneccl-bmg torch-xpu triton-xpu flash-linear-attention;
-          python3Packages = pkgs.python312Packages;
+          python3Packages = python312PackagesXpu;
           vllm-xpu-kernels = kernels;
           inherit src version;
         };

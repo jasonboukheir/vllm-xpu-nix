@@ -104,25 +104,6 @@ def strip_link_artefacts(cmd: str) -> str:
     return re.sub(r"-Wl,--dependency-file=\S+\s*", "", cmd)
 
 
-NO_RDC_FLAG = "-fno-sycl-rdc"
-
-
-def inject_no_sycl_rdc_compile(cc: list[dict]) -> int:
-    """Append -fno-sycl-rdc to every compile entry. FA2 TUs are self-contained
-    SYCL device images (no cross-TU SYCL_EXTERNAL); RDC is dead weight here
-    and icpx's docs cite 10-20% compile-time/RSS savings from disabling it."""
-    touched = 0
-    for entry in cc:
-        if "arguments" in entry:
-            if NO_RDC_FLAG not in entry["arguments"]:
-                entry["arguments"].append(NO_RDC_FLAG)
-                touched += 1
-        if "command" in entry:
-            if NO_RDC_FLAG not in entry["command"].split():
-                entry["command"] = entry["command"] + " " + NO_RDC_FLAG
-    return touched
-
-
 # Heavy-TU classification (used downstream to chain icpx RSS-spiking TUs
 # through a serial DAG edge) used to live here as a filename heuristic
 # keyed on head_dim. It moved to the Nix layer in #20: the new profile
@@ -215,12 +196,10 @@ def main() -> None:
         if "arguments" in e:
             e["arguments"] = [a.replace(args.src_root, repo) for a in e["arguments"]]
         rewritten.append(e)
-    touched = inject_no_sycl_rdc_compile(rewritten)
     with open(cc_path, "w") as f:
         json.dump(rewritten, f, indent=2)
     print(f"[extract] rewrote {len(rewritten)} compile_commands.json entries: "
           f"{args.src_root} -> {repo}")
-    print(f"[extract] appended {NO_RDC_FLAG} to {touched} compile entries")
 
     # 2. Parse build.ninja + rules.ninja for the link edge of <target>.
     with open(os.path.join(build, "build.ninja")) as f:
@@ -252,8 +231,6 @@ def main() -> None:
     # once configureDrv finishes; rewrite to $out/repo where we keep a
     # stable copy of the source tree.
     resolved = resolved.replace(args.src_root, repo)
-    if NO_RDC_FLAG not in resolved.split():
-        resolved = resolved + " " + NO_RDC_FLAG
 
     # Sanity: no ninja vars should remain. `$$` (ninja-escaped literal $) is fine.
     leftover = re.findall(r"(?<!\$)\$[A-Za-z_][A-Za-z0-9_]*", resolved.replace("$$", ""))

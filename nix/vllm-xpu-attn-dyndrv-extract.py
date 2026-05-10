@@ -124,13 +124,17 @@ def inject_no_sycl_rdc_compile(cc: list[dict]) -> int:
 
 
 # SYCL-TLA TUs have wildly skewed peak RSS in icpx (~5 GiB median, ~40 GiB
-# heavy tail). On a single-host consumer the heavy tail caps usable max-jobs
-# even when most TUs would happily run at higher concurrency. Patterns listed
-# here are matched against the TU's repo-relative source path; matches get
-# `is_heavy: true` in the manifest, and the dyn-drv nix wires those into a
-# serial DAG chain so they never overlap. Empty list = behaviour-preserving;
-# populate after profiling per-TU max RSS on a fat-RAM builder.
-HEAVY_PATTERNS: list[str] = []
+# heavy tail). The heavy tail tracks head_dim — chunk_prefill kernel tile
+# area scales linearly with kHeadSize, and head_dim ∈ {192, 256, 512} are
+# the variants that push past the 32 GiB-per-TU mark on bmg builds.
+#
+# Heuristic, not measured. Will misclassify a few TUs at the boundary
+# (some 128 policies actually exceed some 192 policies under heavy
+# template instantiation), but right on the dominant axis. Refine via
+# the preprocessor-size profiling pass once that infra lands (#20).
+HEAVY_PATTERNS: list[str] = [
+    r"head(192|256|512)_",
+]
 
 
 def classify_heavy(src_rel: str) -> bool:

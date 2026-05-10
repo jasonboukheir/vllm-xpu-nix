@@ -137,6 +137,44 @@ def classify_heavy(src_rel: str) -> bool:
     return any(re.search(p, src_rel) for p in HEAVY_PATTERNS)
 
 
+# Decode TU template parameters from the generated filename.
+#
+# Two naming schemes in csrc/xpu/attn/xe_2:
+#   chunk_prefill_kernel_template_chunk_policy_head{N}[_b16]_<flags>.cpp
+#   paged_decode_kernel_template_q{Q}_h{N}_p{P}_<flags>.cpp
+#
+# Anything else (e.g. fmha_xe2.cpp, paged_decode_xe2.cpp launchers) is
+# unclassifiable here and always kept — pruning a launcher would leave the
+# dispatcher with no entry point.
+_CHUNK_PREFILL_RE = re.compile(r"head(\d+)(_b16)?_[ft]+\.cpp$")
+_PAGED_DECODE_RE = re.compile(r"_h(\d+)_p\d+_[ft]+\.cpp$")
+
+
+def parse_tu_params(src_rel: str) -> dict | None:
+    base = os.path.basename(src_rel)
+    if (m := _CHUNK_PREFILL_RE.search(base)):
+        return {"head_dim": int(m.group(1)), "dtype": "bf16" if m.group(2) else "fp16"}
+    if (m := _PAGED_DECODE_RE.search(base)):
+        # paged_decode dtype is encoded in the boolean flag suffix; decoding
+        # it reliably needs the upstream generator. Leave dtype=None so the
+        # dtype filter never excludes a paged_decode TU.
+        return {"head_dim": int(m.group(1)), "dtype": None}
+    return None
+
+
+def keep_tu(src_rel: str, kernel_set: dict) -> bool:
+    params = parse_tu_params(src_rel)
+    if params is None:
+        return True
+    head_dims = kernel_set.get("head_dims")
+    if head_dims is not None and params["head_dim"] not in head_dims:
+        return False
+    dtypes = kernel_set.get("dtypes")
+    if dtypes is not None and params["dtype"] is not None and params["dtype"] not in dtypes:
+        return False
+    return True
+
+
 def safe_drv_name(rel_name: str) -> str:
     name = rel_name
     for suffix in (".cpp", ".cc", ".cxx"):
@@ -152,7 +190,18 @@ def main() -> None:
     ap.add_argument("--src-root", required=True, help="cmake's original src root (will be rewritten away)")
     ap.add_argument("--target", required=True, help="cmake target name (e.g. attn_kernels_xe_2)")
     ap.add_argument("--soname", required=True, help="output soname (e.g. libattn_kernels_xe_2.so)")
+    ap.add_argument("--kernel-set", default=None,
+                    help='JSON: {"head_dims": [128], "dtypes": ["bf16"]}. '
+                         'Omit or pass "{}" to keep all TUs.')
     args = ap.parse_args()
+
+    kernel_set: dict = {}
+    if args.kernel_set:
+        kernel_set = json.loads(args.kernel_set)
+        if "head_dims" in kernel_set and kernel_set["head_dims"] is not None:
+            kernel_set["head_dims"] = set(kernel_set["head_dims"])
+        if "dtypes" in kernel_set and kernel_set["dtypes"] is not None:
+            kernel_set["dtypes"] = set(kernel_set["dtypes"])
 
     repo = args.repo
     build = os.path.join(repo, "build")
@@ -240,6 +289,31 @@ def main() -> None:
         else:
             src = src.replace(args.src_root, repo)
         obj_to_src[obj] = src
+
+    # Apply the kernel-set filter (if any) before the manifest + link_meta
+    # are built, so both the per-TU drv enumeration and the link inputs
+    # see the same pruned set. Unclassifiable TUs (launchers etc) are
+    # always kept; mis-pruning a launcher would leave the dispatcher with
+    # no entry point.
+    if kernel_set:
+        kept_obj_inputs = []
+        dropped_by_dim: dict[str, int] = {}
+        for obj_rel in obj_inputs:
+            src = obj_to_src[obj_rel]
+            src_rel = src[len(repo) + 1:] if src.startswith(repo + "/") else src
+            if keep_tu(src_rel, kernel_set):
+                kept_obj_inputs.append(obj_rel)
+            else:
+                params = parse_tu_params(src_rel) or {}
+                key = ",".join(f"{k}={v}" for k, v in sorted(params.items()) if v is not None)
+                dropped_by_dim[key] = dropped_by_dim.get(key, 0) + 1
+        if not kept_obj_inputs:
+            sys.exit(f"FATAL: kernel-set filter {kernel_set} dropped every TU; "
+                     "either widen the filter or omit it")
+        print(f"[extract] kernel-set filter kept {len(kept_obj_inputs)}/{len(obj_inputs)} TUs")
+        for k, n in sorted(dropped_by_dim.items()):
+            print(f"[extract]   dropped {n} ({k or 'unclassified'})")
+        obj_inputs = kept_obj_inputs
 
     # 4. Build the per-TU manifest. Paths are stored RELATIVE to $repo,
     # not as absolute /nix/store paths — Nix's builtins.fromJSON returns

@@ -18,6 +18,12 @@
   ocl-icd,
   zlib,
   which,
+  # Optional pruning of the FA2 Cartesian TU set. null -> keep all (current
+  # behaviour). Attrs with `headDims` / `dtypes` lists drop any TU whose
+  # parsed parameters fall outside the filter. Hard-fails at configure time
+  # if the filter has empty intersection. Per-TU CA caching is unaffected:
+  # filtering changes which TUs are realized, not the bytes of any single TU.
+  kernelSet ? null,
 }:
 
 # Dynamic-derivations build of attn_kernels_xe_2.
@@ -164,7 +170,12 @@ let
         --repo "$out/repo" \
         --src-root "$src_root" \
         --target attn_kernels_xe_2 \
-        --soname libattn_kernels_xe_2.so
+        --soname libattn_kernels_xe_2.so \
+        ${lib.optionalString (kernelSet != null)
+          "--kernel-set ${lib.escapeShellArg (builtins.toJSON {
+            head_dims = kernelSet.headDims or null;
+            dtypes = kernelSet.dtypes or null;
+          })}"}
 
       runHook postInstall
     '';

@@ -137,12 +137,21 @@
         # Dynamic-derivations build of attn_kernels_xe_2: per-TU compile
         # drvs + a final link drv replaying cmake's captured link command.
         # See nix/vllm-xpu-attn-dyndrv.nix for the staging.
+        #
+        # Set `attnKernelSet` to prune the FA2 Cartesian sweep down to the
+        # parameter set a deployed model actually dispatches to (e.g.
+        # `{ headDims = [ 128 ]; dtypes = [ "bf16" ]; }` for Qwen3-class
+        # bf16 models). null = build the full ~600 TUs (current behaviour).
+        # vLLM raises at runtime if a request hits a head_dim/dtype combo
+        # that wasn't built — single-model deployments only.
+        attnKernelSet = null;
         mkAttnDynDrv = src: pkgs.callPackage ./nix/vllm-xpu-attn-dyndrv.nix {
           intel-oneapi-base = intel-oneapi;
           inherit intel-pti oneccl-bmg torch-xpu;
           python3Packages = pkgs.python312Packages;
           inherit src;
           cutlass-src = sycl-tla-src;
+          kernelSet = attnKernelSet;
         };
 
         # Per-lib feature flag matrices: enable only the chosen lib's source

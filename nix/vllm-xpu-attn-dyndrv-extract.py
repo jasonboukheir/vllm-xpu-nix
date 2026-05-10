@@ -123,6 +123,20 @@ def inject_no_sycl_rdc_compile(cc: list[dict]) -> int:
     return touched
 
 
+# SYCL-TLA TUs have wildly skewed peak RSS in icpx (~5 GiB median, ~40 GiB
+# heavy tail). On a single-host consumer the heavy tail caps usable max-jobs
+# even when most TUs would happily run at higher concurrency. Patterns listed
+# here are matched against the TU's repo-relative source path; matches get
+# `is_heavy: true` in the manifest, and the dyn-drv nix wires those into a
+# serial DAG chain so they never overlap. Empty list = behaviour-preserving;
+# populate after profiling per-TU max RSS on a fat-RAM builder.
+HEAVY_PATTERNS: list[str] = []
+
+
+def classify_heavy(src_rel: str) -> bool:
+    return any(re.search(p, src_rel) for p in HEAVY_PATTERNS)
+
+
 def safe_drv_name(rel_name: str) -> str:
     name = rel_name
     for suffix in (".cpp", ".cc", ".cxx"):
@@ -251,12 +265,15 @@ def main() -> None:
             "safe_name": safe,
             "src_rel_path": src_rel,
             "obj_rel_path": obj_rel,
+            "is_heavy": classify_heavy(src_rel),
         })
     launcher_count = sum(
         1 for m in manifest
         if m["src_rel_path"].endswith(("fmha_xe2.cpp", "paged_decode_xe2.cpp"))
     )
-    print(f"[extract] tu_manifest: {len(manifest)} TUs ({launcher_count} launchers)")
+    heavy_count = sum(1 for m in manifest if m["is_heavy"])
+    print(f"[extract] tu_manifest: {len(manifest)} TUs "
+          f"({launcher_count} launchers, {heavy_count} heavy)")
 
     with open(os.path.join(repo, "tu_manifest.json"), "w") as f:
         json.dump(manifest, f, indent=2)

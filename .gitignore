@@ -5,3 +5,4 @@ result-*
 .claude/settings.local.json
 .claude/*.lock
 .direnv
+__pycache__

@@ -158,6 +158,14 @@ python3Packages.buildPythonPackage {
     # the nixpkgs toolkit layout already provides. --set-default leaves it
     # overridable for users pointing at a system install.
     "--set-default ONEAPI_ROOT ${intel-oneapi-base}"
+    # The same spirv_utils JIT path also needs <level_zero/ze_api.h> and
+    # libze_loader, because triton/backends/intel/include/sycl_functions.h
+    # transitively pulls in level_zero. CompilationHelper.__init__ reads
+    # $LEVEL_ZERO_V1_SDK_PATH and feeds <root>/include + <root>/lib into the
+    # cc invocation (driver.py:104). Without it the compile fails with
+    # `fatal error: level_zero/ze_api.h: No such file or directory` immediately
+    # after the CC fix below lets cc run at all.
+    "--set-default LEVEL_ZERO_V1_SDK_PATH ${level-zero}"
     # Triton's first-touch of the Intel XPU driver JIT-compiles
     # triton/backends/intel/driver.py's bundled `driver.c` into a `spirv_utils`
     # CPython extension via triton/runtime/build.py:_build. That helper consults

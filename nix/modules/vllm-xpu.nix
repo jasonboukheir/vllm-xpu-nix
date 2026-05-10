@@ -3,6 +3,58 @@
 let
   cfg = config.services.vllm-xpu;
 
+  hfLib = pkgs.callPackage ../hf-metadata.nix { };
+
+  modelMetadataType = lib.types.submodule {
+    options = {
+      headDim = lib.mkOption {
+        type = lib.types.nullOr lib.types.ints.positive;
+        default = null;
+        description = ''
+          The model's `text_config.head_dim`, in elements. Drives the
+          FA2 kernel-set prune: an `attnKernelSet = "auto"` setup unions
+          this across every enabled instance to decide which head_dim
+          template instantiations to compile. `null` opts the model out
+          of the union (kernels for every head_dim get built).
+        '';
+        example = 128;
+      };
+      dtype = lib.mkOption {
+        type = lib.types.nullOr (lib.types.enum [ "bf16" "fp16" "fp32" ]);
+        default = null;
+        description = ''
+          The model's compute dtype, normalised to vllm-xpu-kernels'
+          short form (`bfloat16` -> `bf16`, etc). Drives the FA2 dtype
+          prune the same way `headDim` does. `null` opts out.
+        '';
+        example = "bf16";
+      };
+    };
+  };
+
+  enabledInstanceModels = lib.unique (
+    map (i: i.model) (lib.attrValues (lib.filterAttrs (_: i: i.enable) cfg.instances))
+  );
+
+  missingModelMetadata = lib.filter
+    (m: !(cfg.modelMetadata ? ${m}))
+    enabledInstanceModels;
+
+  derivedAttnKernelSet =
+    if cfg.attnKernelSet == "auto" then
+      hfLib.unionKernelSet (map (m: cfg.modelMetadata.${m}) enabledInstanceModels)
+    else
+      cfg.attnKernelSet;
+
+  # Auto-apply the resolved kernelSet to cfg.package via the
+  # `withKernelSet` passthru if the package exposes it. Falls back to
+  # cfg.package unchanged so a user who supplies a custom package
+  # without the passthru (e.g. a hand-built wheel) still works.
+  effectivePackage =
+    if derivedAttnKernelSet != null && (cfg.package ? withKernelSet)
+    then cfg.package.withKernelSet derivedAttnKernelSet
+    else cfg.package;
+
   bmgCclEnv = {
     CCL_PROCESS_LAUNCHER = "none";
     CCL_ATL_TRANSPORT = "ofi";
@@ -16,13 +68,18 @@ let
 
       package = lib.mkOption {
         type = lib.types.package;
-        default = cfg.package;
-        defaultText = lib.literalExpression "config.services.vllm-xpu.package";
+        default = effectivePackage;
+        defaultText = lib.literalExpression ''
+          config.services.vllm-xpu.package, with .withKernelSet
+          applied if attnKernelSet resolves non-null
+        '';
         description = ''
           vLLM-XPU package providing `bin/vllm`. Defaults to the
-          flake-level `services.vllm-xpu.package`. Override per
-          instance to e.g. mix the stable build for chat with the
-          unstable fork for an experimental embedder.
+          flake-level `services.vllm-xpu.package`, automatically
+          re-derived through `.withKernelSet` if
+          `services.vllm-xpu.attnKernelSet` produces a non-null prune.
+          Override per instance to e.g. mix the stable build for chat
+          with the unstable fork for an experimental embedder.
         '';
       };
 
@@ -526,6 +583,90 @@ in
       description = "Group account paired with `user`.";
     };
 
+    modelMetadata = lib.mkOption {
+      type = lib.types.attrsOf modelMetadataType;
+      default = {};
+      description = ''
+        Per-model FA2-relevant metadata (`headDim`, `dtype`), keyed by
+        the same string passed to an instance's `model` field. Used by
+        `attnKernelSet = "auto"` to derive the per-host kernel prune
+        without round-tripping through HF at every nixos-rebuild.
+
+        Fill in by hand if you know the values, or use the
+        `lib.<system>.fromHfConfig` helper exposed by the flake to
+        derive them from a hash-pinned `config.json` fetch:
+
+        ```nix
+        services.vllm-xpu.modelMetadata = {
+          "Qwen/Qwen3-Embedding-0.6B" = inputs.vllm-xpu-nix.lib.''${pkgs.system}.fromHfConfig {
+            repo = "Qwen/Qwen3-Embedding-0.6B";
+            rev  = "<40-char-commit-sha>";
+            hash = "sha256-...";
+          };
+        };
+        ```
+      '';
+      example = lib.literalExpression ''
+        {
+          "Qwen/Qwen3-Embedding-0.6B"             = { headDim = 128; dtype = "bf16"; };
+          "palmfuture/Qwen3.6-35B-A3B-GPTQ-Int4"  = { headDim = 256; dtype = "bf16"; };
+        }
+      '';
+    };
+
+    attnKernelSet = lib.mkOption {
+      type = lib.types.nullOr (lib.types.either
+        (lib.types.enum [ "auto" ])
+        (lib.types.submodule {
+          options = {
+            headDims = lib.mkOption {
+              type = lib.types.listOf lib.types.ints.positive;
+              default = [];
+            };
+            dtypes = lib.mkOption {
+              type = lib.types.listOf (lib.types.enum [ "bf16" "fp16" "fp32" ]);
+              default = [];
+            };
+          };
+        }));
+      default = null;
+      description = ''
+        FA2 kernel-set prune passed to the underlying
+        `attn-kernels-xe-2` dyn-drv. Three modes:
+
+        - `null` (default): build every TU in the Cartesian sweep
+          (~600). No prune, no risk of a runtime "kernel not built"
+          dispatch error if a request hits an unexpected head_dim.
+        - `"auto"`: derive from `modelMetadata` keyed by every enabled
+          instance's `model`. Fails the build if any enabled instance's
+          model has no `modelMetadata` entry.
+        - explicit attrset (`{ headDims = [...]; dtypes = [...]; }`):
+          pass through to the dyn-drv verbatim.
+
+        Auto-applied: when this resolves non-null, the module re-derives
+        every instance's package through `cfg.package.withKernelSet` so
+        the running services pick up the prune without a manual override.
+        A custom `cfg.package` that doesn't expose the `withKernelSet`
+        passthru is left unchanged (and silently unpruned).
+      '';
+      example = "auto";
+    };
+
+    derivedAttnKernelSet = lib.mkOption {
+      type = lib.types.nullOr lib.types.attrs;
+      readOnly = true;
+      default = derivedAttnKernelSet;
+      defaultText = lib.literalMD ''
+        Resolved `attnKernelSet` after `"auto"` expansion. Read-only —
+        consumers reference this when overriding the package's
+        `kernelSet`.
+      '';
+      description = ''
+        The fully-resolved kernel-set attrset (or `null` if no prune is
+        requested). Wire this into your flake's package override.
+      '';
+    };
+
     instances = lib.mkOption {
       type = lib.types.attrsOf (lib.types.submodule instanceModule);
       default = {};
@@ -565,6 +706,21 @@ in
   };
 
   config = lib.mkIf (enabledInstances != {}) {
+    assertions = [
+      {
+        assertion = cfg.attnKernelSet != "auto" || missingModelMetadata == [];
+        message = ''
+          services.vllm-xpu.attnKernelSet = "auto" requires a
+          services.vllm-xpu.modelMetadata entry for every enabled
+          instance's model. Missing: ${lib.concatStringsSep ", " missingModelMetadata}.
+
+          Either drop attnKernelSet back to null (build all kernels) or
+          add an entry for each missing model. See the modelMetadata
+          option doc for the lib.fromHfConfig helper.
+        '';
+      }
+    ];
+
     users.users.${cfg.user} = {
       isSystemUser = true;
       group = cfg.group;

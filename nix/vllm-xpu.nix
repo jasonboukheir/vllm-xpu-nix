@@ -21,49 +21,8 @@
 
 let
   syclHome = "${intel-oneapi-base}/compiler/latest";
-in
-python3Packages.buildPythonPackage {
-  pname = "vllm-xpu";
-  inherit version src;
-  format = "pyproject";
 
-  nativeBuildInputs = [
-    cmake
-    ninja
-    which
-    python3Packages.setuptools
-    python3Packages.setuptools-scm
-    python3Packages.wheel
-    python3Packages.packaging
-    python3Packages.jinja2
-    python3Packages.cmake
-    python3Packages.ninja
-  ];
-
-  buildInputs = [
-    stdenv.cc.cc.lib
-    intel-oneapi-base
-    intel-pti
-    oneccl-bmg
-  ];
-
-  # SYCL runtime dlopen()s libze_loader, libze_intel_gpu, and libigc at load
-  # time. None are captured by libtorch_xpu's DT_NEEDED, so autoPatchelfHook
-  # can't add them to RUNPATH. Inject them into bin/vllm's LD_LIBRARY_PATH so
-  # the wrapper works on any host (NixOS or otherwise) without relying on the
-  # host's /run/opengl-driver/lib being populated with the right packages.
-  # Note: intel-compute-runtime ships libze_intel_gpu.so.1 in its `drivers`
-  # output, separate from the default `out`.
-  makeWrapperArgs = [
-    "--prefix LD_LIBRARY_PATH : ${lib.makeLibraryPath [
-      level-zero
-      intel-graphics-compiler
-      intel-compute-runtime
-      intel-compute-runtime.drivers
-    ]}"
-  ];
-
-  propagatedBuildInputs = with python3Packages; [
+  pythonDeps = with python3Packages; [
     # Core XPU stack
     torch-xpu
     triton-xpu
@@ -130,7 +89,58 @@ python3Packages.buildPythonPackage {
     typing-extensions
     watchfiles
     xgrammar
-  ] ++ fastapi.optional-dependencies.standard;
+  ] ++ python3Packages.fastapi.optional-dependencies.standard;
+in
+python3Packages.buildPythonPackage {
+  pname = "vllm-xpu";
+  inherit version src;
+  format = "pyproject";
+
+  nativeBuildInputs = [
+    cmake
+    ninja
+    which
+    python3Packages.setuptools
+    python3Packages.setuptools-scm
+    python3Packages.wheel
+    python3Packages.packaging
+    python3Packages.jinja2
+    python3Packages.cmake
+    python3Packages.ninja
+  ];
+
+  buildInputs = [
+    stdenv.cc.cc.lib
+    intel-oneapi-base
+    intel-pti
+    oneccl-bmg
+  ];
+
+  # SYCL runtime dlopen()s libze_loader, libze_intel_gpu, and libigc at load
+  # time. None are captured by libtorch_xpu's DT_NEEDED, so autoPatchelfHook
+  # can't add them to RUNPATH. Inject them into bin/vllm's LD_LIBRARY_PATH so
+  # the wrapper works on any host (NixOS or otherwise) without relying on the
+  # host's /run/opengl-driver/lib being populated with the right packages.
+  # Note: intel-compute-runtime ships libze_intel_gpu.so.1 in its `drivers`
+  # output, separate from the default `out`.
+  #
+  # vLLM's model registry shells out via `subprocess.run([sys.executable, "-m",
+  # "vllm.model_executor.models.registry"])` — that subprocess inherits env but
+  # bypasses the inline `site.addsitedir(...)` block in `.vllm-wrapped`. Without
+  # PYTHONPATH set, the subprocess can't find `vllm` and every model load fails
+  # at engine init. Match the sitedirs the inline block already injects: vllm
+  # itself plus the propagated deps.
+  makeWrapperArgs = [
+    "--prefix LD_LIBRARY_PATH : ${lib.makeLibraryPath [
+      level-zero
+      intel-graphics-compiler
+      intel-compute-runtime
+      intel-compute-runtime.drivers
+    ]}"
+    "--prefix PYTHONPATH : ${placeholder "out"}/${python3Packages.python.sitePackages}:${python3Packages.makePythonPath pythonDeps}"
+  ];
+
+  propagatedBuildInputs = pythonDeps;
 
   # vLLM's XPU build path produces no native ext_modules
   # (_build_custom_ops()=False on XPU; see setup.py:845-846). The whole

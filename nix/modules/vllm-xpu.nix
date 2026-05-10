@@ -406,10 +406,14 @@ let
         default = "/var/lib/vllm-xpu/${name}";
         defaultText = lib.literalExpression "\"/var/lib/vllm-xpu/\${name}\"";
         description = ''
-          Per-instance state directory used as `HF_HOME` and
-          `VLLM_CACHE_ROOT`. Each instance gets its own subdirectory
-          so concurrent downloads of different models can't race over
-          the same `~/.cache/huggingface/locks`.
+          Per-instance state directory used as `HOME`, `HF_HOME`, and
+          `VLLM_CACHE_ROOT`. Each instance gets its own subdirectory so
+          concurrent downloads of different models can't race over the
+          same `~/.cache/huggingface/locks`. Pointing `HOME` here also
+          keeps `~/.X` writes (Triton's `~/.triton`, anything else that
+          defaults to a home-relative cache) inside the unit's
+          `ReadWritePaths` sandbox — `users.users.vllm.home` is the
+          parent `/var/lib/vllm-xpu`, which is read-only to the unit.
         '';
       };
 
@@ -509,6 +513,9 @@ let
     ++ map lib.escapeShellArg inst.extraArgs
   );
 
+  hfHomeFor = inst:
+    if cfg.sharedHfCache != null then cfg.sharedHfCache else inst.cacheDir;
+
   mkUnit = name: inst: lib.nameValuePair "vllm-xpu-${name}" {
     description = "vLLM XPU serve (${inst.servedName})";
     wantedBy = [ "multi-user.target" ];
@@ -517,7 +524,8 @@ let
 
     environment = {
       VLLM_TARGET_DEVICE = "xpu";
-      HF_HOME = inst.cacheDir;
+      HOME = inst.cacheDir;
+      HF_HOME = hfHomeFor inst;
       VLLM_CACHE_ROOT = inst.cacheDir;
     } // inst.cclEnv
       // lib.optionalAttrs inst.enableXpuGraph {
@@ -529,7 +537,8 @@ let
       Type = "simple";
       User = cfg.user;
       Group = cfg.group;
-      SupplementaryGroups = [ "render" "video" ];
+      SupplementaryGroups = [ "render" "video" ]
+        ++ lib.optional (cfg.sharedHfCache != null) cfg.sharedHfCacheGroup;
 
       ExecStart = "${inst.package}/bin/vllm serve ${mkServeArgs inst}";
 
@@ -545,7 +554,10 @@ let
       ProtectSystem = "strict";
       ProtectHome = true;
       NoNewPrivileges = true;
-      ReadWritePaths = [ inst.cacheDir ];
+      ReadWritePaths = [ inst.cacheDir ]
+        ++ lib.optional (cfg.sharedHfCache != null) cfg.sharedHfCache;
+    } // lib.optionalAttrs (cfg.sharedHfCache != null) {
+      UMask = "0002";
     } // lib.optionalAttrs (inst.environmentFile != null) {
       EnvironmentFile = inst.environmentFile;
     };
@@ -581,6 +593,53 @@ in
       type = lib.types.str;
       default = "vllm";
       description = "Group account paired with `user`.";
+    };
+
+    sharedHfCache = lib.mkOption {
+      type = lib.types.nullOr lib.types.path;
+      default = "/var/cache/huggingface";
+      defaultText = lib.literalExpression "\"/var/cache/huggingface\"";
+      description = ''
+        System-wide HuggingFace cache shared across every instance
+        and (via the configured group) interactive dev shells.
+        Overrides each instance's `HF_HOME` so the same model pulled
+        by `chat`, `embedding`, or a developer running
+        `huggingface-cli download` lands on one content-addressed
+        `hub/models--…/blobs/<sha>` tree instead of being duplicated
+        under `''${cacheDir}/huggingface`. Set to `null` to disable
+        and fall back to a per-instance `HF_HOME` rooted at
+        `cacheDir`.
+
+        The module creates the directory mode `2775` (setgid +
+        group-writable) owned by `cfg.user`:`sharedHfCacheGroup` so
+        files written by the service user or by humans in the group
+        inherit group ownership and stay cross-readable, adds the
+        path to each unit's `ReadWritePaths`, adds the group to the
+        unit's `SupplementaryGroups`, and sets `UMask=0002` on the
+        unit so newly-written files keep the group-writable bit.
+
+        Per-instance compiled artefacts stay in the per-instance
+        `cacheDir` — only `HF_HOME` (Hub weights, datasets,
+        transformers cache) is consolidated. `VLLM_CACHE_ROOT` and
+        Triton's `~/.triton` (via `HOME`) remain per-instance because
+        they're tied to the running build, not the model weights.
+
+        Dev side: `export HF_HOME=/var/cache/huggingface` (or symlink
+        `~/.cache/huggingface` to it) and add yourself to the group
+        named by `sharedHfCacheGroup`.
+      '';
+    };
+
+    sharedHfCacheGroup = lib.mkOption {
+      type = lib.types.str;
+      default = "huggingface";
+      description = ''
+        Group that owns `sharedHfCache`. The module creates the group
+        if it doesn't already exist and adds `cfg.user` to it. Add
+        interactive users to the same group via
+        `users.users.<name>.extraGroups` so they can read and write
+        the shared cache. Has no effect when `sharedHfCache = null`.
+      '';
     };
 
     modelMetadata = lib.mkOption {
@@ -726,15 +785,22 @@ in
       group = cfg.group;
       home = "/var/lib/vllm-xpu";
       createHome = false;
-      extraGroups = [ "render" "video" ];
+      extraGroups = [ "render" "video" ]
+        ++ lib.optional (cfg.sharedHfCache != null) cfg.sharedHfCacheGroup;
     };
-    users.groups.${cfg.group} = { };
+    users.groups = {
+      ${cfg.group} = { };
+    } // lib.optionalAttrs (cfg.sharedHfCache != null) {
+      ${cfg.sharedHfCacheGroup} = { };
+    };
 
     systemd.tmpfiles.rules =
       [ "d /var/lib/vllm-xpu 0750 ${cfg.user} ${cfg.group} - -" ]
       ++ lib.mapAttrsToList
         (_: inst: "d ${inst.cacheDir} 0750 ${cfg.user} ${cfg.group} - -")
-        enabledInstances;
+        enabledInstances
+      ++ lib.optional (cfg.sharedHfCache != null)
+        "d ${cfg.sharedHfCache} 2775 ${cfg.user} ${cfg.sharedHfCacheGroup} - -";
 
     systemd.services = lib.mapAttrs' mkUnit enabledInstances;
   };

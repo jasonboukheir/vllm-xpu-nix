@@ -260,12 +260,39 @@ PYEOF
     dontInstall = true;
   };
 
-  # Look up TUs by their ninja .o path. The link command's input list is
-  # the canonical order; we materialise per-TU drvs in that order so the
-  # final link command keeps ninja's link-time ordering.
-  tuByObjPath = lib.listToAttrs (
-    map (tu: { name = tu.obj_rel_path; value = mkTU tu; }) manifest
+  # SYCL-TLA's per-TU peak RSS is bimodal: most TUs land near a ~5 GiB
+  # median in icpx, a tail spikes to ~40 GiB. With pure independent drvs
+  # the consumer's nix.settings.max-jobs has to be sized for the heavy
+  # tail, leaving cores idle on the median. We chain heavy TUs into a
+  # serial DAG via a fake buildInput edge — Nix's scheduler then runs
+  # them one at a time regardless of max-jobs, while light TUs stay
+  # fully parallel. Per-TU CA caching is preserved (the chain edge
+  # changes the drv graph, not the build inputs icpx sees).
+  heavyTUs = lib.filter (tu: tu.is_heavy or false) manifest;
+  lightTUs = lib.filter (tu: !(tu.is_heavy or false)) manifest;
+
+  heavyChain = lib.foldl' (acc: tu:
+    let
+      prev = if acc == [] then null else (lib.last acc).drv;
+      drv = (mkTU tu).overrideAttrs (old: {
+        buildInputs = (old.buildInputs or [])
+          ++ lib.optional (prev != null) prev;
+      });
+    in acc ++ [ { inherit tu drv; } ]
+  ) [] heavyTUs;
+
+  heavyDrvByObj = lib.listToAttrs (
+    map (e: { name = e.tu.obj_rel_path; value = e.drv; }) heavyChain
   );
+
+  lightDrvByObj = lib.listToAttrs (
+    map (tu: { name = tu.obj_rel_path; value = mkTU tu; }) lightTUs
+  );
+
+  # Look up TUs by their ninja .o path. The link command's input list is
+  # the canonical order; we reassemble per-TU drvs in that order so the
+  # final link command keeps ninja's link-time ordering.
+  tuByObjPath = lightDrvByObj // heavyDrvByObj;
 
   inputObjPaths = map
     (objRel: "${tuByObjPath.${objRel}}/tu.o")

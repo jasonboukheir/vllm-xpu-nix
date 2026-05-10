@@ -88,3 +88,23 @@ pytest tests/
 
 `MAX_JOBS=2` by default — each SYCL-TLA template instantiation holds
 ~40 GiB during icpx; raise only if your box has >100 GiB of free RAM.
+
+## Editable install of vllm (`vllm-dev`)
+
+For iterating on a local `vllm` checkout, use the `vllm-dev` shell —
+it pulls the full `vllm-xpu` closure (`torch-xpu`, `triton-xpu`,
+`vllm-xpu-kernels`, runtime python deps), pre-sets `VLLM_TARGET_DEVICE=xpu`,
+and bakes in the BMG single-card oneCCL env:
+
+```bash
+cd /path/to/vllm
+nix develop /path/to/vllm-xpu-nix#vllm-dev
+pip install -e . --no-build-isolation --no-deps
+python -c 'import vllm; print(vllm.__version__)'
+vllm serve <model> --enforce-eager
+```
+
+The `--no-deps` is load-bearing — without it pip would try to resolve
+torch from PyPI, which would either pull in stock CPU torch (and fight
+the XPU build) or fail outright. The shell already supplies torch-xpu
+via `inputsFrom = [ vllm-xpu ]`.

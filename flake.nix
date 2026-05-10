@@ -340,6 +340,8 @@
               nix build .#triton-xpu
               nix build .#vllm-xpu-kernels             # upstream vllm-project (stable)
               nix build .#vllm-xpu-kernels-unstable    # jasonboukheir fork (work-in-progress)
+              nix build .#vllm-xpu                     # upstream vllm-project (stable)
+              nix build .#vllm-xpu-unstable            # jasonboukheir fork (work-in-progress)
 
             Iterate against a local kernels checkout (no flake edit needed):
               nix build .#vllm-xpu-kernels-unstable \

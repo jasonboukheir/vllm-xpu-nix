@@ -24,32 +24,55 @@
   # if the filter has empty intersection. Per-TU CA caching is unaffected:
   # filtering changes which TUs are realized, not the bytes of any single TU.
   kernelSet ? null,
+  # Fraction of TUs (by measured `icpx -E` byte count) to classify as
+  # heavy and serialise via the heavy chain. Default 10 ⇒ top 10% by
+  # preprocessed-source size are chained one-at-a-time; the rest run
+  # at full max-jobs parallelism. Picking by percentile (rather than
+  # absolute byte threshold) means upstream additions of cheap TUs
+  # don't accidentally promote previous mediums to heavy.
+  heavyPercentile ? 10,
 }:
 
 # Dynamic-derivations build of attn_kernels_xe_2.
 #
-# Three stages:
-#   1. configureDrv  — runs cmake configure on the upstream tree, captures
-#                      compile_commands.json + build.ninja, then extracts
-#                      (via vllm-xpu-attn-dyndrv-extract.py):
-#                        - tu_manifest.json: every .cpp the link consumes,
-#                          with absolute src path under $out/repo and the
-#                          ninja-relative .o path it expects.
-#                        - link_meta.json: cmake's full link command for
-#                          attn_kernels_xe_2 with all $vars resolved except
-#                          $in (replaced with the sentinel __INPUTS__).
-#   2. mkTU          — one drv per .cpp TU. Reads its compile command from
-#                      configureDrv's compile_commands.json (matched by
-#                      absolute src path), strips dep-tracking flags
-#                      (-MD/-MT/-MF) and overrides -o → $out/tu.o. The .o
-#                      extension is load-bearing — without it icpx -fsycl
-#                      at link time skips the offload pipeline.
-#   3. linkDrv       — replays cmake's captured link command verbatim,
-#                      with __INPUTS__ replaced (at Nix eval time) by the
-#                      per-TU $out/tu.o paths in the same order ninja
-#                      listed them. Produces $out/lib/libattn_kernels_xe_2.so
-#                      with real torch linkage and full XE2_GPU_LINK_FLAGS
-#                      (AOT'd for bmg).
+# Five stages:
+#   1. configureDrv      — runs cmake configure on the upstream tree, captures
+#                          compile_commands.json + build.ninja, then extracts
+#                          (via vllm-xpu-attn-dyndrv-extract.py):
+#                            - tu_manifest.json: every .cpp the link consumes,
+#                              with absolute src path under $out/repo and the
+#                              ninja-relative .o path it expects.
+#                            - link_meta.json: cmake's full link command for
+#                              attn_kernels_xe_2 with all $vars resolved except
+#                              $in (replaced with the sentinel __INPUTS__).
+#   2. mkProfileTU       — per-TU CA drv that runs the TU's compile command
+#                          with `-E` (preprocessor only) and writes the
+#                          resulting byte count to $out/preproc.bytes.
+#                          Bounded by header expansion (~250–500 MB peak),
+#                          no template instantiation or codegen — safe at
+#                          full max-jobs parallelism.
+#   3. profileAggregator — single CA drv that ingests every profileTU's
+#                          preproc.bytes into $out/tu_profile.json
+#                          ({ src_rel_path = bytes; }). One IFD on this
+#                          batches all 600 profile drvs into one
+#                          eval-time realisation pass, instead of
+#                          serialising IFDs per TU.
+#   4. mkTU              — one drv per .cpp TU. Reads its compile command from
+#                          configureDrv's compile_commands.json (matched by
+#                          absolute src path), strips dep-tracking flags
+#                          (-MD/-MT/-MF) and overrides -o → $out/tu.o. The .o
+#                          extension is load-bearing — without it icpx -fsycl
+#                          at link time skips the offload pipeline. Top
+#                          heavyPercentile% of TUs (by profile bytes) are
+#                          chained via fake buildInputs to serialise the
+#                          icpx RSS-spiking heavy tail without throttling
+#                          the light TUs.
+#   5. linkDrv           — replays cmake's captured link command verbatim,
+#                          with __INPUTS__ replaced (at Nix eval time) by the
+#                          per-TU $out/tu.o paths in the same order ninja
+#                          listed them. Produces $out/lib/libattn_kernels_xe_2.so
+#                          with real torch linkage and full XE2_GPU_LINK_FLAGS
+#                          (AOT'd for bmg).
 #
 # Step 2 of the dyn-drv plan: scaled from the 3-TU POC (which validated
 # that SYCL device-image registration survives per-.o linking) to the
@@ -191,6 +214,138 @@ let
     builtins.readFile "${configureDrv}/repo/link_meta.json"
   );
 
+  # Per-TU preprocessor-only drv. Mirrors mkTU's compile-command extraction
+  # but rewrites the command to `-E` (preprocess to stdout) and counts the
+  # bytes. The byte count is the proxy for compile cost used downstream to
+  # classify heavy TUs — preprocessed-source size correlates with the
+  # depth of header / template-policy expansion that drives icpx RSS
+  # during the actual `-c` compile.
+  #
+  # CA so that single-TU upstream changes invalidate only the affected
+  # profile, not all 600. Output is one tiny file ($out/preproc.bytes
+  # holding a single integer), which keeps store-write cost negligible.
+  mkProfileTU = tu: stdenv.mkDerivation {
+    pname = "vllm-xpu-attn-dyndrv-profile-${tu.safe_name}";
+    version = "0.1.7-dev";
+
+    dontUnpack = true;
+    dontStrip = true;
+
+    __contentAddressed = true;
+
+    nativeBuildInputs = [
+      which
+      python3Packages.python
+    ];
+
+    buildInputs = baseBuildInputs;
+
+    buildPhase = ''
+      runHook preBuild
+      ${envSetup}
+
+      cat > "$TMPDIR/extract-cmd.py" <<'PYEOF'
+import json, os, shlex, sys
+cc_json = os.environ["CC_JSON"]
+src_path = os.environ["SRC_PATH"]
+with open(cc_json) as f:
+    cc = json.load(f)
+match = next((e for e in cc if e["file"] == src_path), None)
+if match is None:
+    sys.stderr.write(f"src {src_path} not in compile_commands.json\n")
+    sys.exit(1)
+if "arguments" in match:
+    args = list(match["arguments"])
+else:
+    args = shlex.split(match["command"])
+cleaned, i = [], 0
+while i < len(args):
+    a = args[i]
+    if a in ("-MD", "-MMD"):
+        i += 1
+    elif a in ("-MT", "-MF"):
+        i += 2
+    elif a == "-o":
+        i += 2
+    elif a == "-c":
+        i += 1
+    else:
+        cleaned.append(a)
+        i += 1
+cleaned.append("-E")
+print(shlex.join(cleaned))
+PYEOF
+
+      mkdir -p $out
+      src_path="${configureDrv}/repo/${tu.src_rel_path}"
+      cmd=$(env \
+        CC_JSON="${configureDrv}/repo/build/compile_commands.json" \
+        SRC_PATH="$src_path" \
+        python3 "$TMPDIR/extract-cmd.py")
+
+      echo "TU profile (${tu.safe_name}):"
+      echo "  src: $src_path"
+      echo "  cmd: $cmd"
+      out_size=$(eval "$cmd" | wc -c)
+      printf '%s' "$out_size" > $out/preproc.bytes
+      echo "  preproc bytes: $out_size"
+
+      runHook postBuild
+    '';
+
+    dontInstall = true;
+  };
+
+  profileTUs = lib.listToAttrs (
+    map (tu: { name = tu.obj_rel_path; value = mkProfileTU tu; }) manifest
+  );
+
+  # Aggregates per-TU preproc byte counts into one JSON map. Separate
+  # stage (rather than IFD per profileTU) so eval-time realisation
+  # batches all 600 profile drvs in a single Nix scheduler pass instead
+  # of serialising one realisation per IFD. The JSON values are plain
+  # integers, no store paths, so the downstream `builtins.fromJSON` does
+  # not run into the context-less-store-path footgun documented in
+  # vllm-xpu-attn-dyndrv-extract.py.
+  profileAggregator = stdenv.mkDerivation {
+    pname = "vllm-xpu-attn-dyndrv-profile-aggregator";
+    version = "0.1.7-dev";
+
+    dontUnpack = true;
+    dontStrip = true;
+
+    __contentAddressed = true;
+
+    nativeBuildInputs = [ python3Packages.python ];
+
+    buildInputs = lib.attrValues profileTUs;
+
+    buildPhase = let
+      profileEntries = lib.concatMapStringsSep "\n    " (tu:
+        ''"${tu.src_rel_path}": int(open("${profileTUs.${tu.obj_rel_path}}/preproc.bytes").read()),''
+      ) manifest;
+    in ''
+      runHook preBuild
+
+      mkdir -p $out
+      python3 - > $out/tu_profile.json <<'PROFEOF'
+import json
+profiles = {
+    ${profileEntries}
+}
+print(json.dumps(profiles, indent=2, sort_keys=True))
+PROFEOF
+
+      runHook postBuild
+    '';
+
+    dontInstall = true;
+  };
+
+  profile = builtins.fromJSON (
+    builtins.readFile "${profileAggregator}/tu_profile.json"
+  );
+
   mkTU = tu: stdenv.mkDerivation {
     pname = "vllm-xpu-attn-dyndrv-tu-${tu.safe_name}";
     version = "0.1.7-dev";
@@ -279,8 +434,25 @@ PYEOF
   # them one at a time regardless of max-jobs, while light TUs stay
   # fully parallel. Per-TU CA caching is preserved (the chain edge
   # changes the drv graph, not the build inputs icpx sees).
-  heavyTUs = lib.filter (tu: tu.is_heavy or false) manifest;
-  lightTUs = lib.filter (tu: !(tu.is_heavy or false)) manifest;
+  #
+  # Heavy/light split is driven by measured profileAggregator output:
+  # top heavyPercentile% by preprocessor byte count are heavy. Sort
+  # descending by bytes, take the prefix, then re-sort the heavy set
+  # alphabetically by safe_name so chain-successor identity stays
+  # stable across upstream reorderings of cmake's build input list
+  # (the boundary case becomes "a new upstream TU" rather than "cmake
+  # reshuffled inputs"). At least one TU is always classified heavy
+  # so the chain is well-defined for tiny pruned kernel sets.
+  heavyCount = lib.max 1 ((lib.length manifest * heavyPercentile) / 100);
+  manifestSortedBySize = lib.sort
+    (a: b: (profile.${a.src_rel_path} or 0) > (profile.${b.src_rel_path} or 0))
+    manifest;
+  heavySrcSet = lib.genAttrs
+    (map (tu: tu.src_rel_path) (lib.take heavyCount manifestSortedBySize))
+    (_: true);
+  heavyTUs = lib.sort (a: b: a.safe_name < b.safe_name)
+    (lib.filter (tu: heavySrcSet.${tu.src_rel_path} or false) manifest);
+  lightTUs = lib.filter (tu: !(heavySrcSet.${tu.src_rel_path} or false)) manifest;
 
   heavyChain = lib.foldl' (acc: tu:
     let

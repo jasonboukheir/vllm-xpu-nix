@@ -123,22 +123,12 @@ def inject_no_sycl_rdc_compile(cc: list[dict]) -> int:
     return touched
 
 
-# SYCL-TLA TUs have wildly skewed peak RSS in icpx (~5 GiB median, ~40 GiB
-# heavy tail). The heavy tail tracks head_dim — chunk_prefill kernel tile
-# area scales linearly with kHeadSize, and head_dim ∈ {192, 256, 512} are
-# the variants that push past the 32 GiB-per-TU mark on bmg builds.
-#
-# Heuristic, not measured. Will misclassify a few TUs at the boundary
-# (some 128 policies actually exceed some 192 policies under heavy
-# template instantiation), but right on the dominant axis. Refine via
-# the preprocessor-size profiling pass once that infra lands (#20).
-HEAVY_PATTERNS: list[str] = [
-    r"head(192|256|512)_",
-]
-
-
-def classify_heavy(src_rel: str) -> bool:
-    return any(re.search(p, src_rel) for p in HEAVY_PATTERNS)
+# Heavy-TU classification (used downstream to chain icpx RSS-spiking TUs
+# through a serial DAG edge) used to live here as a filename heuristic
+# keyed on head_dim. It moved to the Nix layer in #20: the new profile
+# stage runs `icpx -E` per TU and the dyndrv module reads measured
+# preproc byte counts at eval time, so the manifest no longer carries
+# an `is_heavy` field.
 
 
 # Decode TU template parameters from the generated filename.
@@ -343,15 +333,12 @@ def main() -> None:
             "safe_name": safe,
             "src_rel_path": src_rel,
             "obj_rel_path": obj_rel,
-            "is_heavy": classify_heavy(src_rel),
         })
     launcher_count = sum(
         1 for m in manifest
         if m["src_rel_path"].endswith(("fmha_xe2.cpp", "paged_decode_xe2.cpp"))
     )
-    heavy_count = sum(1 for m in manifest if m["is_heavy"])
-    print(f"[extract] tu_manifest: {len(manifest)} TUs "
-          f"({launcher_count} launchers, {heavy_count} heavy)")
+    print(f"[extract] tu_manifest: {len(manifest)} TUs ({launcher_count} launchers)")
 
     with open(os.path.join(repo, "tu_manifest.json"), "w") as f:
         json.dump(manifest, f, indent=2)

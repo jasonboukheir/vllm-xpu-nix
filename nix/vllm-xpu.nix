@@ -158,6 +158,19 @@ python3Packages.buildPythonPackage {
     # the nixpkgs toolkit layout already provides. --set-default leaves it
     # overridable for users pointing at a system install.
     "--set-default ONEAPI_ROOT ${intel-oneapi-base}"
+    # Triton's first-touch of the Intel XPU driver JIT-compiles
+    # triton/backends/intel/driver.py's bundled `driver.c` into a `spirv_utils`
+    # CPython extension via triton/runtime/build.py:_build. That helper consults
+    # $CC (and $CXX), then falls back to clang/gcc on PATH. A bare systemd unit
+    # ships only the systemd-default PATH, so without CC set the import path
+    # under torch._inductor (triton_backend → XPUUtils.__init__) raises
+    # `RuntimeError: Failed to find C compiler` and EngineCore exits during the
+    # first compile pass after weight load. Pin CC/CXX from this package's own
+    # stdenv.cc so every consumer (systemd unit, dev shell, manual run) gets a
+    # working toolchain regardless of host PATH. --set-default keeps it
+    # overridable via CC=... in the unit env or shell.
+    "--set-default CC ${stdenv.cc}/bin/cc"
+    "--set-default CXX ${stdenv.cc}/bin/c++"
   ];
 
   propagatedBuildInputs = pythonDeps;

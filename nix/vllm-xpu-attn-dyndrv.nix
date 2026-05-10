@@ -320,19 +320,30 @@ PYEOF
 
     buildInputs = lib.attrValues profileTUs;
 
-    buildPhase = let
-      profileEntries = lib.concatMapStringsSep "\n    " (tu:
-        ''"${tu.src_rel_path}": int(open("${profileTUs.${tu.obj_rel_path}}/preproc.bytes").read()),''
-      ) manifest;
-    in ''
+    # The manifest holds ~600 entries; once each profileTU's CA placeholder
+    # is replaced with its resolved store path, an inline `${profileEntries}`
+    # in `buildPhase` clears Linux's MAX_ARG_STRLEN (32 pages = 128 KiB) per
+    # envp string. Hand the entries off via a sidecar file so `buildPhase`
+    # stays small.
+    profileEntries = lib.concatMapStringsSep "\n" (tu:
+      "${tu.src_rel_path}\t${profileTUs.${tu.obj_rel_path}}/preproc.bytes"
+    ) manifest;
+    passAsFile = [ "profileEntries" ];
+
+    buildPhase = ''
       runHook preBuild
 
       mkdir -p $out
       python3 - > $out/tu_profile.json <<'PROFEOF'
-import json
-profiles = {
-    ${profileEntries}
-}
+import json, os
+profiles = {}
+with open(os.environ["profileEntriesPath"]) as f:
+    for line in f:
+        line = line.rstrip("\n")
+        if not line:
+            continue
+        src, path = line.split("\t", 1)
+        profiles[src] = int(open(path).read())
 print(json.dumps(profiles, indent=2, sort_keys=True))
 PROFEOF
 

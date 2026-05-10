@@ -74,6 +74,16 @@
           python3Packages = pkgs.python312Packages;
         };
 
+        torchvision-xpu = pkgs.callPackage ./nix/torchvision-xpu.nix {
+          inherit torch-xpu;
+          python3Packages = pkgs.python312Packages;
+        };
+
+        torchaudio-xpu = pkgs.callPackage ./nix/torchaudio-xpu.nix {
+          inherit torch-xpu;
+          python3Packages = pkgs.python312Packages;
+        };
+
         # accelerate's nixpkgs definition propagates stock `torch`, which
         # collides with torch-xpu on functorch/*.pyc when both end up in a
         # python.withPackages buildEnv. Rebuild accelerate with its `torch`
@@ -104,6 +114,8 @@
             torch = torch-xpu;
           };
           mistral-common = mistral-common-1_11;
+          torchvision = torchvision-xpu;
+          torchaudio = torchaudio-xpu;
         };
 
         flash-linear-attention = pkgs.callPackage ./nix/flash-linear-attention.nix {
@@ -259,26 +271,42 @@
         #
         # Like mkVllmXpuKernels, the result carries a `withKernelSet`
         # passthru: `pkgs.vllm-xpu-unstable.withKernelSet { headDims = [128 256]; dtypes = ["bf16"]; }`
-        # cascades the prune through the kernels package too.
-        mkVllm = { src, version, kernels }:
+        # cascades the prune through the kernels package too. Also exposes
+        # `withTorchvision` and `withTorchaudio` passthrus so consumers can
+        # opt into the +xpu wheels for VL / audio model families without
+        # spelling out a full `.override`. All three passthrus compose:
+        # `pkgs.vllm-xpu-unstable.withKernelSet { ... } |> .withTorchvision true`.
+        mkVllm = {
+          src, version, kernels,
+          withTorchvision ? false,
+          withTorchaudio ? false,
+        }:
           let
             base = pkgs.callPackage ./nix/vllm-xpu.nix {
               intel-oneapi-base = intel-oneapi;
               inherit intel-pti oneccl-bmg torch-xpu triton-xpu flash-linear-attention;
               python3Packages = python312PackagesXpu;
               vllm-xpu-kernels = kernels;
-              inherit src version;
+              inherit src version withTorchvision withTorchaudio;
               inherit (pkgs) level-zero intel-graphics-compiler intel-compute-runtime;
             };
           in
             base.overrideAttrs (old: {
               passthru = (old.passthru or {}) // {
                 withKernelSet = ks: mkVllm {
-                  inherit src version;
+                  inherit src version withTorchvision withTorchaudio;
                   kernels =
                     if kernels ? withKernelSet
                     then kernels.withKernelSet ks
                     else kernels;
+                };
+                withTorchvision = b: mkVllm {
+                  inherit src version kernels withTorchaudio;
+                  withTorchvision = b;
+                };
+                withTorchaudio = b: mkVllm {
+                  inherit src version kernels withTorchvision;
+                  withTorchaudio = b;
                 };
               };
             });
@@ -333,7 +361,7 @@
         packages = {
           inherit
             intel-oneapi intel-pti oneccl-bmg
-            torch-xpu triton-xpu
+            torch-xpu triton-xpu torchvision-xpu torchaudio-xpu
             flash-linear-attention
             auto-round-xpu
             vllm-xpu-kernels vllm-xpu-kernels-unstable

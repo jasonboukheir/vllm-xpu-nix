@@ -120,6 +120,22 @@ let
         example = "pooling";
       };
 
+      task = lib.mkOption {
+        type = lib.types.nullOr (lib.types.enum [ "generate" "transcription" "embed" "score" ]);
+        default = null;
+        description = ''
+          Pass `--task <kind>`. Required for Whisper-family
+          transcription instances (`task = "transcription"`
+          auto-exposes `/v1/audio/transcriptions` because the
+          Whisper checkpoint implements the `SupportsTranscription`
+          mixin rather than the default text generation runner).
+          Independent of `runner` — vLLM derives the runner from the
+          task when both are unset, but transcription needs the
+          explicit task to pick up the transcription dispatch path.
+        '';
+        example = "transcription";
+      };
+
       host = lib.mkOption {
         type = lib.types.str;
         default = "127.0.0.1";
@@ -475,6 +491,7 @@ let
       "--gpu-memory-utilization" (toString inst.gpuMemoryUtilization)
     ]
     ++ lib.optionals (inst.runner != null) [ "--runner" (lib.escapeShellArg inst.runner) ]
+    ++ lib.optionals (inst.task != null) [ "--task" (lib.escapeShellArg inst.task) ]
     ++ lib.optionals (inst.quantization != null) [ "--quantization" (lib.escapeShellArg inst.quantization) ]
     ++ lib.optionals (inst.kvCacheDtype != null) [ "--kv-cache-dtype" (lib.escapeShellArg inst.kvCacheDtype) ]
     ++ lib.optionals (inst.maxModelLen != null) [ "--max-model-len" (toString inst.maxModelLen) ]

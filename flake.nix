@@ -138,20 +138,20 @@
         # drvs + a final link drv replaying cmake's captured link command.
         # See nix/vllm-xpu-attn-dyndrv.nix for the staging.
         #
-        # Set `attnKernelSet` to prune the FA2 Cartesian sweep down to the
-        # parameter set a deployed model actually dispatches to (e.g.
-        # `{ headDims = [ 128 ]; dtypes = [ "bf16" ]; }` for Qwen3-class
-        # bf16 models). null = build the full ~600 TUs (current behaviour).
-        # vLLM raises at runtime if a request hits a head_dim/dtype combo
-        # that wasn't built — single-model deployments only.
-        attnKernelSet = null;
-        mkAttnDynDrv = src: pkgs.callPackage ./nix/vllm-xpu-attn-dyndrv.nix {
+        # `kernelSet` (default null) prunes the FA2 Cartesian sweep down
+        # to the parameter set a deployed model actually dispatches to
+        # (e.g. `{ headDims = [ 128 ]; dtypes = [ "bf16" ]; }`). null =
+        # build the full ~600 TUs. Threaded through mkKernelLibs ->
+        # mkVllmXpuKernels -> mkVllm so consumers can re-derive the full
+        # closure with `pkgs.vllm-xpu-unstable.withKernelSet { ... }`.
+        # The NixOS module wires this automatically when
+        # `services.vllm-xpu.attnKernelSet` resolves non-null.
+        mkAttnDynDrv = { src, kernelSet ? null }: pkgs.callPackage ./nix/vllm-xpu-attn-dyndrv.nix {
           intel-oneapi-base = intel-oneapi;
           inherit intel-pti oneccl-bmg torch-xpu;
           python3Packages = pkgs.python312Packages;
-          inherit src;
+          inherit src kernelSet;
           cutlass-src = sycl-tla-src;
-          kernelSet = attnKernelSet;
         };
 
         # Per-lib feature flag matrices: enable only the chosen lib's source
@@ -209,33 +209,46 @@
           "-DXPUMEM_ALLOCATOR_ENABLED=OFF"
         ];
 
-        mkKernelLibs = src:
+        mkKernelLibs = { src, attnKernelSet ? null }:
           let mkLib = mkXpuLibFactory src; in {
             # attn_kernels_xe_2 is built via the dynamic-derivations path
             # (per-TU compile drvs + replayed cmake link). All other libs
             # still go through the cmake-builds-the-whole-target mkLib.
-            attn-kernels-xe-2 = mkAttnDynDrv src;
+            attn-kernels-xe-2 = mkAttnDynDrv { inherit src; kernelSet = attnKernelSet; };
             gdn-attn-kernels-xe-2 = mkLib { libName = "gdn_attn_kernels_xe_2"; featureFlags = gdnAttnFlags; };
             mqa-logits-kernels-xe-2 = mkLib { libName = "mqa_logits_kernels_xe_2"; featureFlags = mqaLogitsFlags; };
             grouped-gemm-xe-2 = mkLib { libName = "grouped_gemm_xe_2"; featureFlags = groupedGemmXe2Flags; };
             grouped-gemm-xe-default = mkLib { libName = "grouped_gemm_xe_default"; featureFlags = groupedGemmXeDefaultFlags; };
           };
 
-        mkVllmXpuKernels = src:
-          let libs = mkKernelLibs src; in
-          pkgs.callPackage ./nix/vllm-xpu-kernels.nix ({
-            intel-oneapi-base = intel-oneapi;
-            inherit intel-pti oneccl-bmg torch-xpu;
-            python3Packages = pkgs.python312Packages;
-            inherit src;
-            cutlass-src = sycl-tla-src;
-          } // libs);
+        # mkVllmXpuKernels carries a `withKernelSet` passthru so consumers
+        # (and the NixOS module) can re-derive a pruned variant in one
+        # call: `pkgs.vllm-xpu-kernels-unstable.withKernelSet { headDims = [ 128 ]; }`.
+        # The new variant rebuilds attn-kernels-xe-2 and the wrapping
+        # python package; other libs are byte-identical and reuse the CA
+        # cache.
+        mkVllmXpuKernels = { src, attnKernelSet ? null }:
+          let
+            libs = mkKernelLibs { inherit src attnKernelSet; };
+            base = pkgs.callPackage ./nix/vllm-xpu-kernels.nix ({
+              intel-oneapi-base = intel-oneapi;
+              inherit intel-pti oneccl-bmg torch-xpu;
+              python3Packages = pkgs.python312Packages;
+              inherit src;
+              cutlass-src = sycl-tla-src;
+            } // libs);
+          in
+            base.overrideAttrs (old: {
+              passthru = (old.passthru or {}) // {
+                withKernelSet = ks: mkVllmXpuKernels { inherit src; attnKernelSet = ks; };
+              };
+            });
 
-        stableLibs = mkKernelLibs vllm-xpu-kernels-src;
-        unstableLibs = mkKernelLibs vllm-xpu-kernels-unstable-src;
+        stableLibs = mkKernelLibs { src = vllm-xpu-kernels-src; };
+        unstableLibs = mkKernelLibs { src = vllm-xpu-kernels-unstable-src; };
 
-        vllm-xpu-kernels = mkVllmXpuKernels vllm-xpu-kernels-src;
-        vllm-xpu-kernels-unstable = mkVllmXpuKernels vllm-xpu-kernels-unstable-src;
+        vllm-xpu-kernels = mkVllmXpuKernels { src = vllm-xpu-kernels-src; };
+        vllm-xpu-kernels-unstable = mkVllmXpuKernels { src = vllm-xpu-kernels-unstable-src; };
 
         # mkVllm pairs a vllm source pin with the matching kernels build:
         # the upstream stable variant gets vllm-xpu-kernels (vllm-project),
@@ -243,14 +256,32 @@
         # fork). Pre-release version stamp is fine — VLLM_VERSION_OVERRIDE
         # in vllm-xpu.nix forwards to setuptools-scm's PRETEND_VERSION, so
         # setuptools-scm doesn't need a .git in the unpacked store path.
-        mkVllm = { src, version, kernels }: pkgs.callPackage ./nix/vllm-xpu.nix {
-          intel-oneapi-base = intel-oneapi;
-          inherit intel-pti oneccl-bmg torch-xpu triton-xpu flash-linear-attention;
-          python3Packages = python312PackagesXpu;
-          vllm-xpu-kernels = kernels;
-          inherit src version;
-          inherit (pkgs) level-zero intel-graphics-compiler intel-compute-runtime;
-        };
+        #
+        # Like mkVllmXpuKernels, the result carries a `withKernelSet`
+        # passthru: `pkgs.vllm-xpu-unstable.withKernelSet { headDims = [128 256]; dtypes = ["bf16"]; }`
+        # cascades the prune through the kernels package too.
+        mkVllm = { src, version, kernels }:
+          let
+            base = pkgs.callPackage ./nix/vllm-xpu.nix {
+              intel-oneapi-base = intel-oneapi;
+              inherit intel-pti oneccl-bmg torch-xpu triton-xpu flash-linear-attention;
+              python3Packages = python312PackagesXpu;
+              vllm-xpu-kernels = kernels;
+              inherit src version;
+              inherit (pkgs) level-zero intel-graphics-compiler intel-compute-runtime;
+            };
+          in
+            base.overrideAttrs (old: {
+              passthru = (old.passthru or {}) // {
+                withKernelSet = ks: mkVllm {
+                  inherit src version;
+                  kernels =
+                    if kernels ? withKernelSet
+                    then kernels.withKernelSet ks
+                    else kernels;
+                };
+              };
+            });
 
         vllm-xpu = mkVllm {
           src = vllm-xpu-src;
@@ -284,7 +315,21 @@
           export CMAKE_PREFIX_PATH="${intel-oneapi}''${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}"
           export VLLM_CUTLASS_SRC_DIR="${sycl-tla-src}"
         '';
+        hfMetadata = pkgs.callPackage ./nix/hf-metadata.nix { };
       in {
+        # Per-system helpers consumers reach via
+        # `inputs.vllm-xpu-nix.lib.${pkgs.system}.fromHfConfig`.
+        # `lib.${system}` (rather than just `lib`) is intentional —
+        # the helpers wrap `pkgs.fetchurl`, which is system-scoped.
+        lib = {
+          inherit (hfMetadata)
+            fetchHfConfig
+            readHfConfig
+            attnParamsFromConfig
+            fromHfConfig
+            unionKernelSet;
+        };
+
         packages = {
           inherit
             intel-oneapi intel-pti oneccl-bmg

@@ -17,6 +17,16 @@
   level-zero,
   intel-graphics-compiler,
   intel-compute-runtime,
+  # torchvision is only loaded by VL architectures (e.g. Qwen3.5/3.6's qwen3_vl
+  # sibling, transformers' Qwen2VLImageProcessor); plain text models don't need
+  # it. Default off to keep the closure lean — opt in with
+  # `vllm-xpu.override { withTorchvision = true; }` or `vllm-xpu.withTorchvision`
+  # passthru when serving VL models.
+  withTorchvision ? false,
+  # torchaudio is only loaded by a few niche audio architectures (FunASR,
+  # MiDashengLM, MiMoV2Omni, Cohere ASR processor); Whisper, Qwen2-Audio, and
+  # Voxtral don't import it. Same opt-in pattern as withTorchvision.
+  withTorchaudio ? false,
 }:
 
 let
@@ -29,8 +39,8 @@ let
     vllm-xpu-kernels
     flash-linear-attention
 
-    # Runtime deps — common.txt + xpu.txt (minus torchaudio/torchvision which
-    # would drag CUDA-linked torch into the env).
+    # Runtime deps — common.txt + xpu.txt. torchvision and torchaudio are
+    # gated on the corresponding `with*` toggles (see argument comments).
     aiohttp
     anthropic
     blake3
@@ -89,7 +99,10 @@ let
     typing-extensions
     watchfiles
     xgrammar
-  ] ++ python3Packages.fastapi.optional-dependencies.standard;
+  ]
+  ++ lib.optional withTorchvision python3Packages.torchvision
+  ++ lib.optional withTorchaudio python3Packages.torchaudio
+  ++ python3Packages.fastapi.optional-dependencies.standard;
 in
 python3Packages.buildPythonPackage {
   pname = "vllm-xpu";
@@ -163,15 +176,13 @@ python3Packages.buildPythonPackage {
       --replace-fail 'setuptools>=77.0.3,<81.0.0' 'setuptools'
 
     # Strip the wheel-URL pin and the torch+xpu local-version pin from
-    # xpu.txt. vllm_xpu_kernels and torch are provided by the nix store.
-    # Also drop torchaudio/torchvision: nixpkgs builds them against its own
-    # torch (CUDA-flavored), which would conflict with torch-xpu in the
-    # python env. vLLM core doesn't need them; downstream apps that do can
-    # add them explicitly.
+    # xpu.txt. vllm_xpu_kernels and torch are nix-provided. torchvision and
+    # torchaudio are gated on the `with*` toggles, so don't claim them as
+    # always-required in the wheel metadata; consumers opt in via override.
     substituteInPlace requirements/xpu.txt \
       --replace-fail 'torch==2.11.0+xpu' 'torch' \
-      --replace-fail 'torchaudio' '# torchaudio (provided by app, not vllm)' \
-      --replace-fail 'torchvision' '# torchvision (provided by app, not vllm)'
+      --replace-fail 'torchaudio' '# torchaudio (opt-in via withTorchaudio)' \
+      --replace-fail 'torchvision' '# torchvision (opt-in via withTorchvision)'
     sed -i '/^vllm_xpu_kernels @ /d' requirements/xpu.txt
   '';
 

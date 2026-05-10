@@ -138,6 +138,13 @@ python3Packages.buildPythonPackage {
       intel-compute-runtime.drivers
     ]}"
     "--prefix PYTHONPATH : ${placeholder "out"}/${python3Packages.python.sitePackages}:${python3Packages.makePythonPath pythonDeps}"
+    # Triton's Intel backend (triton/backends/intel/driver.py:find_sycl) needs
+    # to locate libsycl.so + sycl headers at JIT-compile time. With no icpx on
+    # PATH and no intel-sycl-rt wheel installed, it falls through to ONEAPI_ROOT
+    # and looks under <root>/compiler/latest/{include,include/sycl,lib} — which
+    # the nixpkgs toolkit layout already provides. --set-default leaves it
+    # overridable for users pointing at a system install.
+    "--set-default ONEAPI_ROOT ${intel-oneapi-base}"
   ];
 
   propagatedBuildInputs = pythonDeps;

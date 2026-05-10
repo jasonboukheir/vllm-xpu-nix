@@ -406,10 +406,14 @@ let
         default = "/var/lib/vllm-xpu/${name}";
         defaultText = lib.literalExpression "\"/var/lib/vllm-xpu/\${name}\"";
         description = ''
-          Per-instance state directory used as `HF_HOME` and
-          `VLLM_CACHE_ROOT`. Each instance gets its own subdirectory
-          so concurrent downloads of different models can't race over
-          the same `~/.cache/huggingface/locks`.
+          Per-instance state directory used as `HOME`, `HF_HOME`, and
+          `VLLM_CACHE_ROOT`. Each instance gets its own subdirectory so
+          concurrent downloads of different models can't race over the
+          same `~/.cache/huggingface/locks`. Pointing `HOME` here also
+          keeps `~/.X` writes (Triton's `~/.triton`, anything else that
+          defaults to a home-relative cache) inside the unit's
+          `ReadWritePaths` sandbox — `users.users.vllm.home` is the
+          parent `/var/lib/vllm-xpu`, which is read-only to the unit.
         '';
       };
 
@@ -517,6 +521,7 @@ let
 
     environment = {
       VLLM_TARGET_DEVICE = "xpu";
+      HOME = inst.cacheDir;
       HF_HOME = inst.cacheDir;
       VLLM_CACHE_ROOT = inst.cacheDir;
     } // inst.cclEnv

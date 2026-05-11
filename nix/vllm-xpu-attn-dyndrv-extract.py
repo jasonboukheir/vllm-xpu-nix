@@ -128,12 +128,16 @@ _PAGED_DECODE_RE = re.compile(r"_h(\d+)_p\d+_[ft]+\.cpp$")
 def parse_tu_params(src_rel: str) -> dict | None:
     base = os.path.basename(src_rel)
     if (m := _CHUNK_PREFILL_RE.search(base)):
-        return {"head_dim": int(m.group(1)), "dtype": "bf16" if m.group(2) else "fp16"}
+        return {
+            "family": "chunk_prefill",
+            "head_dim": int(m.group(1)),
+            "dtype": "bf16" if m.group(2) else "fp16",
+        }
     if (m := _PAGED_DECODE_RE.search(base)):
         # paged_decode dtype is encoded in the boolean flag suffix; decoding
         # it reliably needs the upstream generator. Leave dtype=None so the
         # dtype filter never excludes a paged_decode TU.
-        return {"head_dim": int(m.group(1)), "dtype": None}
+        return {"family": "paged_decode", "head_dim": int(m.group(1)), "dtype": None}
     return None
 
 
@@ -141,8 +145,17 @@ def keep_tu(src_rel: str, kernel_set: dict) -> bool:
     params = parse_tu_params(src_rel)
     if params is None:
         return True
+    # The head_dim prune is only safe for chunk_prefill TUs. paged_decode_xe2.cpp
+    # (kept as a launcher) hardcodes a decode_policy_dispatch_impl instantiation
+    # list across every head_dim the upstream generator emits, so dropping
+    # _h{N} paged_decode TUs leaves libattn_kernels_xe_2.so with undefined
+    # symbols and dlopen fails at runtime. See issue #47.
     head_dims = kernel_set.get("head_dims")
-    if head_dims is not None and params["head_dim"] not in head_dims:
+    if (
+        head_dims is not None
+        and params["family"] == "chunk_prefill"
+        and params["head_dim"] not in head_dims
+    ):
         return False
     dtypes = kernel_set.get("dtypes")
     if dtypes is not None and params["dtype"] is not None and params["dtype"] not in dtypes:

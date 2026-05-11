@@ -171,6 +171,27 @@ let
         '';
       };
 
+      attentionBackend = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        example = "TRITON_ATTN";
+        description = ''
+          Pass `--attention-backend <name>`. Overrides vLLM's per-platform
+          backend default. On XPU the platform default is `FLASH_ATTN`,
+          which dispatches through `torch.ops._vllm_fa2_C.varlen_fwd` — a
+          CUDA-only kernel — and crashes any model whose architecture
+          isn't covered by the IPEX attention path (e.g. Whisper
+          cross-attention). Set to `"TRITON_ATTN"` for those cases; it's
+          the portable XPU fallback the vLLM docs recommend.
+
+          Replaces the `VLLM_ATTENTION_BACKEND` env var which vLLM 0.20+
+          no longer reads (it emits "Unknown vLLM environment variable
+          detected" and silently falls back to the platform default).
+          Configs that still pass it through `extraEnvironment` should
+          migrate to this option.
+        '';
+      };
+
       kvCacheDtype = lib.mkOption {
         type = lib.types.nullOr lib.types.str;
         default = null;
@@ -480,6 +501,9 @@ let
     ]
     ++ lib.optionals (inst.runner != null) [ "--runner" (lib.escapeShellArg inst.runner) ]
     ++ lib.optionals (inst.quantization != null) [ "--quantization" (lib.escapeShellArg inst.quantization) ]
+    ++ lib.optionals (inst.attentionBackend != null) [
+      "--attention-backend" (lib.escapeShellArg inst.attentionBackend)
+    ]
     ++ lib.optionals (inst.kvCacheDtype != null) [ "--kv-cache-dtype" (lib.escapeShellArg inst.kvCacheDtype) ]
     ++ lib.optionals (inst.maxModelLen != null) [ "--max-model-len" (toString inst.maxModelLen) ]
     ++ lib.optionals (inst.maxNumSeqs != null) [ "--max-num-seqs" (toString inst.maxNumSeqs) ]

@@ -34,7 +34,10 @@ stdenv.mkDerivation {
 
   inherit src;
 
-  patches = [ ./patches/0001-split-kernel-libs.patch ];
+  patches = [
+    ./patches/0001-split-kernel-libs.patch
+    ./patches/0005-reduce-kernel-build-memory.patch
+  ];
 
   nativeBuildInputs = [
     cmake

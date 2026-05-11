@@ -5,11 +5,6 @@ Cuts the peak compile-/link-time RAM of the SYCL kernel libraries
 (attn_kernels_xe_2 and friends), which otherwise pushes 24-core builders
 into swap or OOM.
 
-  * `-fsycl-device-code-split=per_source` on every per-TU compile so each
-    source's device IR stays an independent module instead of getting
-    merged by the default `auto` heuristic. Shrinks the inputs the AOT
-    backend (spirv-translator + ocloc) processes at link time.
-
   * `-fsycl-max-parallel-link-jobs` becomes a CMake cache var
     (`VLLM_XPU_SYCL_LINK_PARALLELISM`, default 4) instead of being
     hardcoded at 16. Device link is the memory peak: every inner job
@@ -29,21 +24,13 @@ into swap or OOM.
 `-flink-huge-device-code` is intentionally left in place — at this
 kernel scale the device linker truncates relocations without it.
 ---
- CMakeLists.txt | 10 +++++++---
- 1 file changed, 7 insertions(+), 3 deletions(-)
+ CMakeLists.txt | 9 +++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -197,6 +197,7 @@
-
-   set(SYCL_COMPILE_FLAGS ${SYCL_FLAGS})
-   set(SYCL_COMPILE_FLAGS ${SYCL_COMPILE_FLAGS} "-O3" "-DNDEBUG")
-+  set(SYCL_COMPILE_FLAGS ${SYCL_COMPILE_FLAGS} "-fsycl-device-code-split=per_source")
-   if(AOT_DEVICES)
-     set(SYCL_COMPILE_FLAGS ${SYCL_COMPILE_FLAGS} -fsycl-targets=spir64_gen)
-   endif()
-@@ -206,11 +207,14 @@
+@@ -206,11 +206,14 @@
    set(VLLM_GPU_COMPILE_FLAGS ${SYCL_COMPILE_FLAGS})
 
    # ============= LINK OPTIONS ==================
@@ -59,7 +46,7 @@ diff --git a/CMakeLists.txt b/CMakeLists.txt
        -flink-huge-device-code)
    set(SYCL_DEVICE_LINK_FLAGS
        ${SYCL_DEVICE_LINK_FLAGS}
-@@ -314,7 +318,7 @@
+@@ -314,7 +317,7 @@
    list(APPEND VLLM_CUTLASS_FLAGS "-DCUTLASS_ENABLE_SYCL")
    list(APPEND VLLM_CUTLASS_FLAGS "-DSYCL_INTEL_TARGET")
    list(APPEND VLLM_CUTLASS_FLAGS "-DCUTLASS_VERSIONS_GENERATED")

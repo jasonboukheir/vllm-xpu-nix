@@ -18,19 +18,19 @@ into swap or OOM.
     16 inner jobs is far more aggressive than typical hardware can
     absorb. Override at configure time to raise on memory-rich machines.
 
-  * `-ftemplate-backtrace-limit=10` (was 0/unlimited) and
-    `-fno-pretty-templates` on the CUTLASS-SYCL TUs. The unlimited
-    backtrace makes the frontend retain the entire template
-    instantiation chain for diagnostics that almost never fire;
+  * `-ftemplate-backtrace-limit=10` (was 0/unlimited) on the CUTLASS-SYCL
+    TUs. The unlimited backtrace makes the frontend retain the entire
+    template instantiation chain for diagnostics that almost never fire;
     CUTLASS-SYCL is template-pathological and pays this cost across
     ~200 TUs. Real errors still get a 10-frame trace; devs debugging
-    deeper template chains can override locally.
+    deeper template chains can override locally. (icpx rejects the
+    companion `-fno-pretty-templates` clang flag, so it is omitted.)
 
 `-flink-huge-device-code` is intentionally left in place — at this
 kernel scale the device linker truncates relocations without it.
 ---
- CMakeLists.txt | 11 ++++++++---
- 1 file changed, 8 insertions(+), 3 deletions(-)
+ CMakeLists.txt | 10 +++++++---
+ 1 file changed, 7 insertions(+), 3 deletions(-)
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt
 --- a/CMakeLists.txt
@@ -59,13 +59,12 @@ diff --git a/CMakeLists.txt b/CMakeLists.txt
        -flink-huge-device-code)
    set(SYCL_DEVICE_LINK_FLAGS
        ${SYCL_DEVICE_LINK_FLAGS}
-@@ -314,7 +318,8 @@
+@@ -314,7 +318,7 @@
    list(APPEND VLLM_CUTLASS_FLAGS "-DCUTLASS_ENABLE_SYCL")
    list(APPEND VLLM_CUTLASS_FLAGS "-DSYCL_INTEL_TARGET")
    list(APPEND VLLM_CUTLASS_FLAGS "-DCUTLASS_VERSIONS_GENERATED")
 -  list(APPEND VLLM_CUTLASS_FLAGS "-ftemplate-backtrace-limit=0")
 +  list(APPEND VLLM_CUTLASS_FLAGS "-ftemplate-backtrace-limit=10")
-+  list(APPEND VLLM_CUTLASS_FLAGS "-fno-pretty-templates")
    list(APPEND VLLM_CUTLASS_FLAGS "-fdiagnostics-color=always")
  endif()
 

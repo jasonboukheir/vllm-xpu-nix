@@ -6,6 +6,7 @@
   cmake,
   ninja,
   which,
+  runCommandLocal,
   stdenv,
   intel-oneapi-base,
   intel-pti,
@@ -31,6 +32,25 @@
 
 let
   syclHome = "${intel-oneapi-base}/compiler/latest";
+
+  # triton-xpu's spirv_utils init_devices() (driver.c:383) hard-requires
+  # *either* an OpenCL SYCL platform *or* `ocloc` on PATH; without either it
+  # returns NULL from the C extension without setting a Python exception, so
+  # CPython segfaults dereferencing the result. intel-compute-runtime ships
+  # the binary as `ocloc-<ver>` (versioned), while triton's check uses the
+  # literal filename "ocloc" (driver.c:369). Expose a `bin/ocloc` symlink so
+  # the wrapper PATH satisfies the lookup. Fires during the first triton-XPU
+  # driver init — e.g. importing `vllm.model_executor.layers.fla.ops` (any
+  # GDN-attention model: Qwen3-Next, Qwen3.5/3.6).
+  #
+  # Removable once either (a) triton-xpu's `has_ocloc_in_path` learns to
+  # match `ocloc-*`, or (b) nixpkgs' intel-compute-runtime ships an
+  # unversioned `bin/ocloc` symlink.
+  oclocSymlink = runCommandLocal "ocloc-symlink" { } ''
+    mkdir -p $out/bin
+    ln -s ${intel-compute-runtime}/bin/ocloc-* $out/bin/ocloc
+    test -e $out/bin/ocloc
+  '';
 
   pythonDeps = with python3Packages; [
     # Core XPU stack
@@ -190,6 +210,8 @@ python3Packages.buildPythonPackage {
     # overridable via CC=... in the unit env or shell.
     "--set-default CC ${stdenv.cc}/bin/cc"
     "--set-default CXX ${stdenv.cc}/bin/c++"
+    # ocloc shim — see `oclocSymlink` let-binding above for rationale.
+    "--prefix PATH : ${oclocSymlink}/bin"
   ];
 
   propagatedBuildInputs = pythonDeps;

@@ -158,6 +158,25 @@ python3Packages.buildPythonPackage {
     # the nixpkgs toolkit layout already provides. --set-default leaves it
     # overridable for users pointing at a system install.
     "--set-default ONEAPI_ROOT ${intel-oneapi-base}"
+    # Triton's spirv_utils JIT (triton/backends/intel/driver.py:_compute_compilation_options_lazy)
+    # needs the level_zero SDK at JIT-compile time, separately from ONEAPI_ROOT:
+    # the intel-oneapi-base toolkit ships SYCL headers under
+    # compiler/latest/include but does NOT include `level_zero/ze_api.h` or
+    # `libze_loader.so`. Triton looks up the level_zero SDK via
+    # `LEVEL_ZERO_V1_SDK_PATH` (falling back to `ZE_PATH`, default `/usr/local`)
+    # and appends `<root>/include` to its include search list. Point that at
+    # the `level-zero` package already in the closure as an LD_LIBRARY_PATH
+    # dep — without this, `#include <level_zero/ze_api.h>` in
+    # `triton/backends/intel/include/sycl_functions.h` fails and EngineCore
+    # exits during torch._inductor's first XPU compile pass.
+    "--set-default LEVEL_ZERO_V1_SDK_PATH ${level-zero}"
+    # The same JIT links `-lze_loader` (triton driver.py `libraries` list).
+    # Triton's Linux library-search path does NOT include
+    # `LEVEL_ZERO_V1_SDK_PATH/lib` (the `os.name == "nt"` branch only); GCC
+    # consults `LIBRARY_PATH` at link time to extend `-L` search, so injecting
+    # level-zero/lib here lets the linker resolve `libze_loader.so` without
+    # patching the upstream triton driver.
+    "--prefix LIBRARY_PATH : ${level-zero}/lib"
     # Triton's first-touch of the Intel XPU driver JIT-compiles
     # triton/backends/intel/driver.py's bundled `driver.c` into a `spirv_utils`
     # CPython extension via triton/runtime/build.py:_build. That helper consults

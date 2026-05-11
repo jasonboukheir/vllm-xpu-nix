@@ -32,6 +32,28 @@
 let
   syclHome = "${intel-oneapi-base}/compiler/latest";
 
+  # triton-xpu's spirv_utils init_devices() (driver.c:383) hard-requires
+  # *either* an OpenCL SYCL platform *or* `ocloc` on PATH; without either it
+  # returns NULL from the C extension without setting a Python exception, so
+  # CPython segfaults dereferencing the result. intel-compute-runtime ships
+  # the binary as `ocloc-<ver>` (versioned), while triton's check uses the
+  # literal filename "ocloc" (driver.c:369). Expose a `bin/ocloc` symlink so
+  # the wrapper PATH satisfies the lookup. Fires during the first triton-XPU
+  # driver init — e.g. importing `vllm.model_executor.layers.fla.ops` (any
+  # GDN-attention model: Qwen3-Next, Qwen3.5/3.6).
+  oclocSymlink = stdenv.mkDerivation {
+    name = "ocloc-symlink";
+    dontUnpack = true;
+    preferLocalBuild = true;
+    allowSubstitutes = false;
+    installPhase = ''
+      runHook preInstall
+      mkdir -p $out/bin
+      ln -s ${intel-compute-runtime}/bin/ocloc-* $out/bin/ocloc
+      runHook postInstall
+    '';
+  };
+
   pythonDeps = with python3Packages; [
     # Core XPU stack
     torch-xpu
@@ -190,6 +212,11 @@ python3Packages.buildPythonPackage {
     # overridable via CC=... in the unit env or shell.
     "--set-default CC ${stdenv.cc}/bin/cc"
     "--set-default CXX ${stdenv.cc}/bin/c++"
+    # See `oclocSymlink` above: triton-xpu's `init_devices` segfaults if
+    # `ocloc` is not on PATH (and no OpenCL SYCL backend platform is
+    # registered). Inject the renamed binary onto PATH for every consumer
+    # — systemd unit, dev shell, manual `vllm serve`.
+    "--prefix PATH : ${oclocSymlink}/bin"
   ];
 
   propagatedBuildInputs = pythonDeps;

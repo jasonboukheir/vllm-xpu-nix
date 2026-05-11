@@ -1,0 +1,71 @@
+From: vllm-xpu-nix <noreply@anthropic.com>
+Subject: [PATCH] cmake: reduce kernel-build peak memory
+
+Cuts the peak compile-/link-time RAM of the SYCL kernel libraries
+(attn_kernels_xe_2 and friends), which otherwise pushes 24-core builders
+into swap or OOM.
+
+  * `-fsycl-device-code-split=per_source` on every per-TU compile so each
+    source's device IR stays an independent module instead of getting
+    merged by the default `auto` heuristic. Shrinks the inputs the AOT
+    backend (spirv-translator + ocloc) processes at link time.
+
+  * `-fsycl-max-parallel-link-jobs` becomes a CMake cache var
+    (`VLLM_XPU_SYCL_LINK_PARALLELISM`, default 4) instead of being
+    hardcoded at 16. Device link is the memory peak: every inner job
+    holds the full fat-module bitcode plus its own LLVM context plus the
+    AOT backend, and up to four kernel libraries link concurrently, so
+    16 inner jobs is far more aggressive than typical hardware can
+    absorb. Override at configure time to raise on memory-rich machines.
+
+  * `-ftemplate-backtrace-limit=10` (was 0/unlimited) and
+    `-fno-pretty-templates` on the CUTLASS-SYCL TUs. The unlimited
+    backtrace makes the frontend retain the entire template
+    instantiation chain for diagnostics that almost never fire;
+    CUTLASS-SYCL is template-pathological and pays this cost across
+    ~200 TUs. Real errors still get a 10-frame trace; devs debugging
+    deeper template chains can override locally.
+
+`-flink-huge-device-code` is intentionally left in place — at this
+kernel scale the device linker truncates relocations without it.
+---
+ CMakeLists.txt | 11 ++++++++---
+ 1 file changed, 8 insertions(+), 3 deletions(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -197,6 +197,7 @@
+
+   set(SYCL_COMPILE_FLAGS ${SYCL_FLAGS})
+   set(SYCL_COMPILE_FLAGS ${SYCL_COMPILE_FLAGS} "-O3" "-DNDEBUG")
++  set(SYCL_COMPILE_FLAGS ${SYCL_COMPILE_FLAGS} "-fsycl-device-code-split=per_source")
+   if(AOT_DEVICES)
+     set(SYCL_COMPILE_FLAGS ${SYCL_COMPILE_FLAGS} -fsycl-targets=spir64_gen)
+   endif()
+@@ -206,11 +207,14 @@
+   set(VLLM_GPU_COMPILE_FLAGS ${SYCL_COMPILE_FLAGS})
+
+   # ============= LINK OPTIONS ==================
++  set(VLLM_XPU_SYCL_LINK_PARALLELISM "4" CACHE STRING
++      "Inner parallelism for SYCL device link (-fsycl-max-parallel-link-jobs). Lower values reduce peak link-time memory.")
+   set(SYCL_LINK_FLAGS "")
+   list(APPEND SYCL_LINK_FLAGS "-fsycl")
+   set(SYCL_DEVICE_LINK_FLAGS ${SYCL_LINK_FLAGS})
+   set(SYCL_DEVICE_LINK_FLAGS
+-      ${SYCL_DEVICE_LINK_FLAGS} -fsycl-max-parallel-link-jobs=16
++      ${SYCL_DEVICE_LINK_FLAGS}
++      -fsycl-max-parallel-link-jobs=${VLLM_XPU_SYCL_LINK_PARALLELISM}
+       -flink-huge-device-code)
+   set(SYCL_DEVICE_LINK_FLAGS
+       ${SYCL_DEVICE_LINK_FLAGS}
+@@ -314,7 +318,8 @@
+   list(APPEND VLLM_CUTLASS_FLAGS "-DCUTLASS_ENABLE_SYCL")
+   list(APPEND VLLM_CUTLASS_FLAGS "-DSYCL_INTEL_TARGET")
+   list(APPEND VLLM_CUTLASS_FLAGS "-DCUTLASS_VERSIONS_GENERATED")
+-  list(APPEND VLLM_CUTLASS_FLAGS "-ftemplate-backtrace-limit=0")
++  list(APPEND VLLM_CUTLASS_FLAGS "-ftemplate-backtrace-limit=10")
++  list(APPEND VLLM_CUTLASS_FLAGS "-fno-pretty-templates")
+   list(APPEND VLLM_CUTLASS_FLAGS "-fdiagnostics-color=always")
+ endif()
+

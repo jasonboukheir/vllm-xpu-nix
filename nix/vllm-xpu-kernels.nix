@@ -80,6 +80,7 @@ python3Packages.buildPythonPackage {
     ./patches/0002-dev-lib-override.patch
     ./patches/0003-include-project-root.patch
     ./patches/0004-skip-prebuilt-additional-libs.patch
+    ./patches/0005-reduce-kernel-build-memory.patch
   ];
 
   postPatch = ''

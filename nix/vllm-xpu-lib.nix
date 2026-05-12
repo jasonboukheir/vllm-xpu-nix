@@ -23,10 +23,14 @@
 {
   libName,
   featureFlags ? [ ],
+  # SYCL AOT target list. Empty list (default) -> JIT. See
+  # vllm-xpu-kernels.nix for the upstream-cmake env-var override path.
+  aotDevices ? [ ],
 }:
 
 let
   syclHome = "${intel-oneapi-base}/compiler/latest";
+  aotDevicesStr = lib.concatStringsSep "," aotDevices;
 in
 stdenv.mkDerivation {
   pname = "vllm-xpu-${lib.replaceStrings [ "_" ] [ "-" ] libName}";
@@ -100,6 +104,8 @@ stdenv.mkDerivation {
     export LIBRARY_PATH=${stdenv.cc.libc}/lib:${stdenv.cc.cc.lib}/lib:$LIBRARY_PATH
     export CPATH=${stdenv.cc.libc.dev}/include:$CPATH
     export CMAKE_PREFIX_PATH=${intel-oneapi-base}:$CMAKE_PREFIX_PATH
+    export VLLM_XPU_AOT_DEVICES="${aotDevicesStr}"
+    export VLLM_XPU_XE2_AOT_DEVICES="${aotDevicesStr}"
   '';
 
   cmakeFlags = [
@@ -108,7 +114,6 @@ stdenv.mkDerivation {
     "-DVLLM_PYTHON_EXECUTABLE=${python3Packages.python}/bin/python"
     "-DVLLM_CUTLASS_SRC_DIR=${cutlass-src}"
     "-DCMAKE_BUILD_TYPE=Release"
-    "-DXE2_AOT_DEVICES=bmg"
     "-DBUILD_SYCL_TLA_KERNELS=ON"
   ]
   ++ featureFlags;

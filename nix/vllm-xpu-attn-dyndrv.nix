@@ -31,6 +31,9 @@
   # absolute byte threshold) means upstream additions of cheap TUs
   # don't accidentally promote previous mediums to heavy.
   heavyPercentile ? 10,
+  # SYCL AOT target list. Empty list (default) -> JIT. See
+  # vllm-xpu-kernels.nix for the upstream-cmake env-var override path.
+  aotDevices ? [ ],
 }:
 
 # Dynamic-derivations build of attn_kernels_xe_2.
@@ -85,6 +88,7 @@
 
 let
   syclHome = "${intel-oneapi-base}/compiler/latest";
+  aotDevicesStr = lib.concatStringsSep "," aotDevices;
 
   envSetup = ''
     mkdir -p $TMPDIR/bin
@@ -103,10 +107,15 @@ let
     export LIBRARY_PATH=${stdenv.cc.libc}/lib:${stdenv.cc.cc.lib}/lib''${LIBRARY_PATH:+:$LIBRARY_PATH}
     export CPATH=${stdenv.cc.libc.dev}/include''${CPATH:+:$CPATH}
     export CMAKE_PREFIX_PATH=${intel-oneapi-base}''${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}
-    # Match the consumer (vllm-xpu-kernels.nix) — only AOT for bmg, not the
-    # default pvc,bmg,bmg-g21-a0,bmg-g31-a0 list. ocloc runs once per device
-    # variant at link time, so this cuts the SYCL link ~4x.
-    export VLLM_XPU_XE2_AOT_DEVICES=bmg
+    # Honoured by upstream's CMakeLists.txt (DEFINED ENV check at line
+    # ~186). Default is the empty string, which disables AOT entirely:
+    # the link drops -fsycl-targets=spir64_gen and the .o bundles ship
+    # as SPIR-V for the runtime JIT. Pre-compiling for `bmg` cost
+    # tens of minutes of ocloc work per kernel link, swap to JIT to
+    # get those minutes back at the cost of a one-shot first-dispatch
+    # JIT pause.
+    export VLLM_XPU_AOT_DEVICES="${aotDevicesStr}"
+    export VLLM_XPU_XE2_AOT_DEVICES="${aotDevicesStr}"
   '';
 
   baseBuildInputs = [

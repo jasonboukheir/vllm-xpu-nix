@@ -23,10 +23,18 @@
   mqa-logits-kernels-xe-2,
   grouped-gemm-xe-2,
   grouped-gemm-xe-default,
+  # SYCL AOT target list. Empty list (the default) -> JIT: kernels
+  # ship as SPIR-V and the Level Zero runtime / IGC specializes them
+  # on first dispatch. Pre-compiling for `bmg` was order-of-magnitude
+  # slower to build for ~zero runtime win once the JIT cache is warm.
+  # Exported as both VLLM_XPU_AOT_DEVICES and VLLM_XPU_XE2_AOT_DEVICES
+  # so upstream's cmake honours the override (CMakeLists.txt:186).
+  aotDevices ? [ ],
 }:
 
 let
   syclHome = "${intel-oneapi-base}/compiler/latest";
+  aotDevicesStr = lib.concatStringsSep "," aotDevices;
 in
 python3Packages.buildPythonPackage {
   pname = "vllm-xpu-kernels";
@@ -107,8 +115,8 @@ python3Packages.buildPythonPackage {
     export CPATH=${stdenv.cc.libc.dev}/include:$CPATH
     export CMAKE_PREFIX_PATH=${intel-oneapi-base}:$CMAKE_PREFIX_PATH
     export VLLM_CUTLASS_SRC_DIR=${cutlass-src}
-    export VLLM_XPU_AOT_DEVICES="bmg"
-    export VLLM_XPU_XE2_AOT_DEVICES="bmg"
+    export VLLM_XPU_AOT_DEVICES="${aotDevicesStr}"
+    export VLLM_XPU_XE2_AOT_DEVICES="${aotDevicesStr}"
     export CMAKE_BUILD_TYPE=Release
 
     export VLLM_XPU_PREBUILT_ATTN_KERNELS_XE_2_LIB=${attn-kernels-xe-2}/lib/libattn_kernels_xe_2.so

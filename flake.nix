@@ -138,7 +138,7 @@
           python3Packages = python312PackagesXpu;
         };
 
-        mkXpuLibFactory = { src, aotDevices ? [ ] }:
+        mkXpuLibFactory = { src, aotDevices ? null }:
           let factory = pkgs.callPackage ./nix/vllm-xpu-lib.nix {
             intel-oneapi-base = intel-oneapi;
             inherit intel-pti oneccl-bmg torch-xpu;
@@ -161,7 +161,7 @@
         # closure with `pkgs.vllm-xpu-unstable.withKernelSet { ... }`.
         # The NixOS module wires this automatically when
         # `services.vllm-xpu.attnKernelSet` resolves non-null.
-        mkAttnDynDrv = { src, kernelSet ? null, aotDevices ? [ ] }:
+        mkAttnDynDrv = { src, kernelSet ? null, aotDevices ? null }:
           pkgs.callPackage ./nix/vllm-xpu-attn-dyndrv.nix {
             intel-oneapi-base = intel-oneapi;
             inherit intel-pti oneccl-bmg torch-xpu;
@@ -225,7 +225,7 @@
           "-DXPUMEM_ALLOCATOR_ENABLED=OFF"
         ];
 
-        mkKernelLibs = { src, attnKernelSet ? null, aotDevices ? [ ] }:
+        mkKernelLibs = { src, attnKernelSet ? null, aotDevices ? null }:
           let mkLib = mkXpuLibFactory { inherit src aotDevices; }; in {
             # attn_kernels_xe_2 is built via the dynamic-derivations path
             # (per-TU compile drvs + replayed cmake link). All other libs
@@ -245,14 +245,17 @@
         # cache.
         #
         # `withAotDevices` / `withJIT` / `withAOT` re-derive with a
-        # different SYCL AOT target list. Default is JIT (no AOT
-        # devices) — kernels ship as SPIR-V, IGC specializes them on
-        # first dispatch; build is order-of-magnitude faster at the
-        # cost of a one-shot JIT pause per kernel at first inference.
-        # `withAOT` switches to AOT for `bmg` (production deployment
-        # where the first-token TTFT matters); `withAotDevices [ ... ]`
-        # for any other target list.
-        mkVllmXpuKernels = { src, attnKernelSet ? null, aotDevices ? [ ] }:
+        # different SYCL AOT target list. The default leaves upstream's
+        # cmake default in place (pvc,bmg,bmg-g21-a0,bmg-g31-a0 — every
+        # ocloc target the upstream generator emits). `withJIT` flips
+        # to JIT: kernels ship as SPIR-V and IGC specializes them at
+        # first dispatch (the 256-GRF hint is preserved via
+        # patches/0006-decouple-256grf-from-aot.patch so JIT codegen
+        # matches AOT codegen quality, only the first-dispatch pause
+        # differs). `withAOT` snaps back to that null default;
+        # `withAotDevices [ ... ]` for any other explicit target list
+        # (e.g. `[ "bmg" ]` to cut ocloc work to one device).
+        mkVllmXpuKernels = { src, attnKernelSet ? null, aotDevices ? null }:
           let
             libs = mkKernelLibs { inherit src attnKernelSet aotDevices; };
             base = pkgs.callPackage ./nix/vllm-xpu-kernels.nix ({
@@ -275,7 +278,7 @@
                   inherit src attnKernelSet; aotDevices = [];
                 };
                 withAOT = mkVllmXpuKernels {
-                  inherit src attnKernelSet; aotDevices = [ "bmg" ];
+                  inherit src attnKernelSet; aotDevices = null;
                 };
               };
             });

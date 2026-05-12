@@ -31,9 +31,10 @@
   # absolute byte threshold) means upstream additions of cheap TUs
   # don't accidentally promote previous mediums to heavy.
   heavyPercentile ? 10,
-  # SYCL AOT target list. Empty list (default) -> JIT. See
-  # vllm-xpu-kernels.nix for the upstream-cmake env-var override path.
-  aotDevices ? [ ],
+  # SYCL AOT target list. See vllm-xpu-kernels.nix for the three
+  # modes (null = upstream default; [] = JIT; non-empty list = AOT
+  # for the listed devices).
+  aotDevices ? null,
 }:
 
 # Dynamic-derivations build of attn_kernels_xe_2.
@@ -88,7 +89,10 @@
 
 let
   syclHome = "${intel-oneapi-base}/compiler/latest";
-  aotDevicesStr = lib.concatStringsSep "," aotDevices;
+  aotDevicesExport = lib.optionalString (aotDevices != null) ''
+    export VLLM_XPU_AOT_DEVICES="${lib.concatStringsSep "," aotDevices}"
+    export VLLM_XPU_XE2_AOT_DEVICES="${lib.concatStringsSep "," aotDevices}"
+  '';
 
   envSetup = ''
     mkdir -p $TMPDIR/bin
@@ -107,15 +111,12 @@ let
     export LIBRARY_PATH=${stdenv.cc.libc}/lib:${stdenv.cc.cc.lib}/lib''${LIBRARY_PATH:+:$LIBRARY_PATH}
     export CPATH=${stdenv.cc.libc.dev}/include''${CPATH:+:$CPATH}
     export CMAKE_PREFIX_PATH=${intel-oneapi-base}''${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}
-    # Honoured by upstream's CMakeLists.txt (DEFINED ENV check at line
-    # ~186). Default is the empty string, which disables AOT entirely:
-    # the link drops -fsycl-targets=spir64_gen and the .o bundles ship
-    # as SPIR-V for the runtime JIT. Pre-compiling for `bmg` cost
-    # tens of minutes of ocloc work per kernel link, swap to JIT to
-    # get those minutes back at the cost of a one-shot first-dispatch
-    # JIT pause.
-    export VLLM_XPU_AOT_DEVICES="${aotDevicesStr}"
-    export VLLM_XPU_XE2_AOT_DEVICES="${aotDevicesStr}"
+    # Honoured by upstream's CMakeLists.txt (DEFINED ENV check at
+    # line ~186). Skipped entirely (no export) when aotDevices is
+    # null so upstream's CMake default of
+    # pvc,bmg,bmg-g21-a0,bmg-g31-a0 takes effect; pass `[]` (JIT) or
+    # an explicit list (AOT for those) to override.
+    ${aotDevicesExport}
   '';
 
   baseBuildInputs = [
@@ -141,6 +142,7 @@ let
     patches = [
       ./patches/0001-split-kernel-libs.patch
       ./patches/0005-reduce-kernel-build-memory.patch
+      ./patches/0006-decouple-256grf-from-aot.patch
     ];
 
     nativeBuildInputs = [

@@ -4,7 +4,7 @@ let
   cfg = config.services.vllm-xpu;
 
   effectivePackage =
-    if cfg.aotDevices != null && (cfg.package ? withAotDevices)
+    if cfg.package ? withAotDevices
     then cfg.package.withAotDevices cfg.aotDevices
     else cfg.package;
 
@@ -24,15 +24,15 @@ let
         default = effectivePackage;
         defaultText = lib.literalExpression ''
           config.services.vllm-xpu.package, with .withAotDevices
-          applied if services.vllm-xpu.aotDevices is set
+          services.vllm-xpu.aotDevices applied
         '';
         description = ''
           vLLM-XPU package providing `bin/vllm`. Defaults to the
           flake-level `services.vllm-xpu.package`, automatically
-          re-derived through `.withAotDevices` if
-          `services.vllm-xpu.aotDevices` is non-null. Override per
-          instance to e.g. mix the stable build for chat with the
-          unstable fork for an experimental embedder.
+          re-derived through `.withAotDevices
+          services.vllm-xpu.aotDevices`. Override per instance to
+          e.g. mix the stable build for chat with the unstable fork
+          for an experimental embedder.
         '';
       };
 
@@ -620,20 +620,18 @@ in
     };
 
     aotDevices = lib.mkOption {
-      type = lib.types.nullOr (lib.types.listOf lib.types.str);
-      default = null;
+      type = lib.types.listOf lib.types.str;
+      default = [ ];
       example = lib.literalExpression ''[ "bmg" ]'';
       description = ''
         SYCL AOT target list compiled into the kernel `.so`s. Passed
-        through to `cfg.package.withAotDevices`. Modes:
+        through to `cfg.package.withAotDevices`.
 
-        - `null` (default): leave upstream's cmake default in place
-          (`pvc,bmg,bmg-g21-a0,bmg-g31-a0` — every ocloc target the
-          generator emits). No env-var override is exported.
-        - `[]`: JIT mode. Exports `VLLM_XPU_AOT_DEVICES=""` so
-          upstream skips AOT; kernels ship as SPIR-V and IGC
+        - `[]` (default): JIT mode. Kernels ship as SPIR-V and IGC
           specializes them at first dispatch. The 256-GRF hint is
-          preserved via patches/0006-decouple-256grf-from-aot.patch.
+          preserved via patches/0006-decouple-256grf-from-aot.patch
+          so JIT codegen matches AOT codegen quality; the only
+          difference is a one-shot first-dispatch pause per kernel.
         - explicit list (`[ "bmg" ]`, `[ "bmg" "pvc" ]`): AOT for
           the listed devices. Each entry triggers a separate ocloc
           invocation at link time, so multi-device builds get

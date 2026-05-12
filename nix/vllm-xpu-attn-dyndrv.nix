@@ -31,10 +31,9 @@
   # absolute byte threshold) means upstream additions of cheap TUs
   # don't accidentally promote previous mediums to heavy.
   heavyPercentile ? 10,
-  # SYCL AOT target list. See vllm-xpu-kernels.nix for the three
-  # modes (null = upstream default; [] = JIT; non-empty list = AOT
-  # for the listed devices).
-  aotDevices ? null,
+  # SYCL AOT target list. See vllm-xpu-kernels.nix: [] (default) is
+  # JIT, non-empty list is AOT for those devices.
+  aotDevices ? [ ],
 }:
 
 # Dynamic-derivations build of attn_kernels_xe_2.
@@ -89,10 +88,7 @@
 
 let
   syclHome = "${intel-oneapi-base}/compiler/latest";
-  aotDevicesExport = lib.optionalString (aotDevices != null) ''
-    export VLLM_XPU_AOT_DEVICES="${lib.concatStringsSep "," aotDevices}"
-    export VLLM_XPU_XE2_AOT_DEVICES="${lib.concatStringsSep "," aotDevices}"
-  '';
+  aotDevicesStr = lib.concatStringsSep "," aotDevices;
 
   envSetup = ''
     mkdir -p $TMPDIR/bin
@@ -112,11 +108,10 @@ let
     export CPATH=${stdenv.cc.libc.dev}/include''${CPATH:+:$CPATH}
     export CMAKE_PREFIX_PATH=${intel-oneapi-base}''${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}
     # Honoured by upstream's CMakeLists.txt (DEFINED ENV check at
-    # line ~186). Skipped entirely (no export) when aotDevices is
-    # null so upstream's CMake default of
-    # pvc,bmg,bmg-g21-a0,bmg-g31-a0 takes effect; pass `[]` (JIT) or
-    # an explicit list (AOT for those) to override.
-    ${aotDevicesExport}
+    # line ~186). Empty string -> upstream skips AOT (JIT mode);
+    # comma-joined device list -> AOT for those devices.
+    export VLLM_XPU_AOT_DEVICES="${aotDevicesStr}"
+    export VLLM_XPU_XE2_AOT_DEVICES="${aotDevicesStr}"
   '';
 
   baseBuildInputs = [

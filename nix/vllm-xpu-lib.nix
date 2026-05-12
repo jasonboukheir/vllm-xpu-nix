@@ -23,18 +23,14 @@
 {
   libName,
   featureFlags ? [ ],
-  # SYCL AOT target list. See vllm-xpu-kernels.nix for the three
-  # modes (null = upstream default; [] = JIT; non-empty list = AOT
-  # for the listed devices).
-  aotDevices ? null,
+  # SYCL AOT target list. See vllm-xpu-kernels.nix: [] (default)
+  # is JIT, non-empty list is AOT for those devices.
+  aotDevices ? [ ],
 }:
 
 let
   syclHome = "${intel-oneapi-base}/compiler/latest";
-  aotDevicesExport = lib.optionalString (aotDevices != null) ''
-    export VLLM_XPU_AOT_DEVICES="${lib.concatStringsSep "," aotDevices}"
-    export VLLM_XPU_XE2_AOT_DEVICES="${lib.concatStringsSep "," aotDevices}"
-  '';
+  aotDevicesStr = lib.concatStringsSep "," aotDevices;
 in
 stdenv.mkDerivation {
   pname = "vllm-xpu-${lib.replaceStrings [ "_" ] [ "-" ] libName}";
@@ -109,7 +105,8 @@ stdenv.mkDerivation {
     export LIBRARY_PATH=${stdenv.cc.libc}/lib:${stdenv.cc.cc.lib}/lib:$LIBRARY_PATH
     export CPATH=${stdenv.cc.libc.dev}/include:$CPATH
     export CMAKE_PREFIX_PATH=${intel-oneapi-base}:$CMAKE_PREFIX_PATH
-    ${aotDevicesExport}
+    export VLLM_XPU_AOT_DEVICES="${aotDevicesStr}"
+    export VLLM_XPU_XE2_AOT_DEVICES="${aotDevicesStr}"
   '';
 
   cmakeFlags = [

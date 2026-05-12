@@ -625,17 +625,19 @@ in
       example = lib.literalExpression ''[ "bmg" ]'';
       description = ''
         SYCL AOT target list compiled into the kernel `.so`s. Passed
-        through to `cfg.package.withAotDevices` (and on to
-        `VLLM_XPU_AOT_DEVICES` / `VLLM_XPU_XE2_AOT_DEVICES` at build
-        time). Modes:
+        through to `cfg.package.withAotDevices`. Modes:
 
-        - `null` (default): use the package default. The flake's
-          default is JIT (no AOT) — kernels ship as SPIR-V and IGC
-          specializes them on first dispatch.
-        - `[]`: force JIT regardless of package default.
+        - `null` (default): leave upstream's cmake default in place
+          (`pvc,bmg,bmg-g21-a0,bmg-g31-a0` — every ocloc target the
+          generator emits). No env-var override is exported.
+        - `[]`: JIT mode. Exports `VLLM_XPU_AOT_DEVICES=""` so
+          upstream skips AOT; kernels ship as SPIR-V and IGC
+          specializes them at first dispatch. The 256-GRF hint is
+          preserved via patches/0006-decouple-256grf-from-aot.patch.
         - explicit list (`[ "bmg" ]`, `[ "bmg" "pvc" ]`): AOT for
           the listed devices. Each entry triggers a separate ocloc
-          run at link time, so multi-device builds get expensive.
+          invocation at link time, so multi-device builds get
+          expensive.
 
         A custom `cfg.package` that doesn't expose the `withAotDevices`
         passthru is left unchanged.

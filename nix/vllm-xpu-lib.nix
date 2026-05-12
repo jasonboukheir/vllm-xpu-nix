@@ -23,14 +23,18 @@
 {
   libName,
   featureFlags ? [ ],
-  # SYCL AOT target list. Empty list (default) -> JIT. See
-  # vllm-xpu-kernels.nix for the upstream-cmake env-var override path.
-  aotDevices ? [ ],
+  # SYCL AOT target list. See vllm-xpu-kernels.nix for the three
+  # modes (null = upstream default; [] = JIT; non-empty list = AOT
+  # for the listed devices).
+  aotDevices ? null,
 }:
 
 let
   syclHome = "${intel-oneapi-base}/compiler/latest";
-  aotDevicesStr = lib.concatStringsSep "," aotDevices;
+  aotDevicesExport = lib.optionalString (aotDevices != null) ''
+    export VLLM_XPU_AOT_DEVICES="${lib.concatStringsSep "," aotDevices}"
+    export VLLM_XPU_XE2_AOT_DEVICES="${lib.concatStringsSep "," aotDevices}"
+  '';
 in
 stdenv.mkDerivation {
   pname = "vllm-xpu-${lib.replaceStrings [ "_" ] [ "-" ] libName}";
@@ -41,6 +45,7 @@ stdenv.mkDerivation {
   patches = [
     ./patches/0001-split-kernel-libs.patch
     ./patches/0005-reduce-kernel-build-memory.patch
+    ./patches/0006-decouple-256grf-from-aot.patch
   ];
 
   nativeBuildInputs = [
@@ -104,8 +109,7 @@ stdenv.mkDerivation {
     export LIBRARY_PATH=${stdenv.cc.libc}/lib:${stdenv.cc.cc.lib}/lib:$LIBRARY_PATH
     export CPATH=${stdenv.cc.libc.dev}/include:$CPATH
     export CMAKE_PREFIX_PATH=${intel-oneapi-base}:$CMAKE_PREFIX_PATH
-    export VLLM_XPU_AOT_DEVICES="${aotDevicesStr}"
-    export VLLM_XPU_XE2_AOT_DEVICES="${aotDevicesStr}"
+    ${aotDevicesExport}
   '';
 
   cmakeFlags = [

@@ -298,14 +298,16 @@
         # Like mkVllmXpuKernels, the result carries a `withKernelSet`
         # passthru: `pkgs.vllm-xpu-unstable.withKernelSet { headDims = [128 256]; dtypes = ["bf16"]; }`
         # cascades the prune through the kernels package too. Also exposes
-        # `withTorchvision` and `withTorchaudio` passthrus so consumers can
-        # opt into the +xpu wheels for VL / audio model families without
-        # spelling out a full `.override`. All three passthrus compose:
-        # `pkgs.vllm-xpu-unstable.withKernelSet { ... } |> .withTorchvision true`.
+        # `withTorchvision`, `withTorchaudio`, and `withAudio` passthrus so
+        # consumers can opt into the +xpu wheels for VL / audio model families
+        # (or audio decoders for transcription endpoints) without spelling out
+        # a full `.override`. All passthrus compose:
+        # `pkgs.vllm-xpu-unstable.withKernelSet { ... } |> .withTorchvision true |> .withAudio true`.
         mkVllm = {
           src, version, kernels,
           withTorchvision ? false,
           withTorchaudio ? false,
+          withAudio ? false,
         }:
           let
             base = pkgs.callPackage ./nix/vllm-xpu.nix {
@@ -313,47 +315,51 @@
               inherit intel-pti oneccl-bmg torch-xpu triton-xpu flash-linear-attention;
               python3Packages = python312PackagesXpu;
               vllm-xpu-kernels = kernels;
-              inherit src version withTorchvision withTorchaudio;
+              inherit src version withTorchvision withTorchaudio withAudio;
               inherit (pkgs) level-zero intel-graphics-compiler intel-compute-runtime;
             };
           in
             base.overrideAttrs (old: {
               passthru = (old.passthru or {}) // {
                 withKernelSet = ks: mkVllm {
-                  inherit src version withTorchvision withTorchaudio;
+                  inherit src version withTorchvision withTorchaudio withAudio;
                   kernels =
                     if kernels ? withKernelSet
                     then kernels.withKernelSet ks
                     else kernels;
                 };
                 withAotDevices = ds: mkVllm {
-                  inherit src version withTorchvision withTorchaudio;
+                  inherit src version withTorchvision withTorchaudio withAudio;
                   kernels =
                     if kernels ? withAotDevices
                     then kernels.withAotDevices ds
                     else kernels;
                 };
                 withJIT = mkVllm {
-                  inherit src version withTorchvision withTorchaudio;
+                  inherit src version withTorchvision withTorchaudio withAudio;
                   kernels =
                     if kernels ? withJIT
                     then kernels.withJIT
                     else kernels;
                 };
                 withAOT = mkVllm {
-                  inherit src version withTorchvision withTorchaudio;
+                  inherit src version withTorchvision withTorchaudio withAudio;
                   kernels =
                     if kernels ? withAOT
                     then kernels.withAOT
                     else kernels;
                 };
                 withTorchvision = b: mkVllm {
-                  inherit src version kernels withTorchaudio;
+                  inherit src version kernels withTorchaudio withAudio;
                   withTorchvision = b;
                 };
                 withTorchaudio = b: mkVllm {
-                  inherit src version kernels withTorchvision;
+                  inherit src version kernels withTorchvision withAudio;
                   withTorchaudio = b;
+                };
+                withAudio = b: mkVllm {
+                  inherit src version kernels withTorchvision withTorchaudio;
+                  withAudio = b;
                 };
               };
             });

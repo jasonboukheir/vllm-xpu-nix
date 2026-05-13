@@ -28,6 +28,14 @@
   # MiDashengLM, MiMoV2Omni, Cohere ASR processor); Whisper, Qwen2-Audio, and
   # Voxtral don't import it. Same opt-in pattern as withTorchvision.
   withTorchaudio ? false,
+  # Audio decoders for /v1/audio/transcriptions and any model that calls
+  # vllm/multimodal/media/audio.py:load_audio (Whisper, Qwen2-Audio, Voxtral).
+  # soundfile (libsndfile) handles wav/flac/ogg; pyav (FFmpeg) handles the rest
+  # — mp3/mp4/webm/m4a/aac/opus. The loader tries soundfile first and falls
+  # back to pyav, so OpenAI-style clients sending arbitrary container formats
+  # need pyav present. Off by default to keep libsndfile and ffmpeg out of the
+  # closure for text-only deployments.
+  withAudio ? false,
 }:
 
 let
@@ -122,6 +130,7 @@ let
   ]
   ++ lib.optional withTorchvision python3Packages.torchvision
   ++ lib.optional withTorchaudio python3Packages.torchaudio
+  ++ lib.optionals withAudio [ python3Packages.soundfile python3Packages.av ]
   ++ python3Packages.fastapi.optional-dependencies.standard;
 in
 python3Packages.buildPythonPackage {

@@ -116,6 +116,8 @@ stdenv.mkDerivation {
     "-DVLLM_CUTLASS_SRC_DIR=${cutlass-src}"
     "-DCMAKE_BUILD_TYPE=Release"
     "-DBUILD_SYCL_TLA_KERNELS=ON"
+    "-DVLLM_XPU_SYCL_LINK_PARALLELISM=$NIX_BUILD_CORES"
+    "-DVLLM_XPU_CUTLASS_TEMPLATE_BACKTRACE_LIMIT=10"
   ]
   ++ featureFlags;
 

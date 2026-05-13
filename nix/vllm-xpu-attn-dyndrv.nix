@@ -24,13 +24,6 @@
   # if the filter has empty intersection. Per-TU CA caching is unaffected:
   # filtering changes which TUs are realized, not the bytes of any single TU.
   kernelSet ? null,
-  # Fraction of TUs (by measured `icpx -E` byte count) to classify as
-  # heavy and serialise via the heavy chain. Default 10 ⇒ top 10% by
-  # preprocessed-source size are chained one-at-a-time; the rest run
-  # at full max-jobs parallelism. Picking by percentile (rather than
-  # absolute byte threshold) means upstream additions of cheap TUs
-  # don't accidentally promote previous mediums to heavy.
-  heavyPercentile ? 10,
   # SYCL AOT target list. See vllm-xpu-kernels.nix: [] (default) is
   # JIT, non-empty list is AOT for those devices.
   aotDevices ? [ ],
@@ -38,53 +31,51 @@
 
 # Dynamic-derivations build of attn_kernels_xe_2.
 #
-# Five stages:
-#   1. configureDrv      — runs cmake configure on the upstream tree, captures
-#                          compile_commands.json + build.ninja, then extracts
-#                          (via vllm-xpu-attn-dyndrv-extract.py):
-#                            - tu_manifest.json: every .cpp the link consumes,
-#                              with absolute src path under $out/repo and the
-#                              ninja-relative .o path it expects.
-#                            - link_meta.json: cmake's full link command for
-#                              attn_kernels_xe_2 with all $vars resolved except
-#                              $in (replaced with the sentinel __INPUTS__).
-#   2. mkProfileTU       — per-TU CA drv that runs the TU's compile command
-#                          with `-E` (preprocessor only) and writes the
-#                          resulting byte count to $out/preproc.bytes.
-#                          Bounded by header expansion (~250–500 MB peak),
-#                          no template instantiation or codegen — safe at
-#                          full max-jobs parallelism.
-#   3. profileAggregator — single CA drv that ingests every profileTU's
-#                          preproc.bytes into $out/tu_profile.json
-#                          ({ src_rel_path = bytes; }). One IFD on this
-#                          batches all 600 profile drvs into one
-#                          eval-time realisation pass, instead of
-#                          serialising IFDs per TU.
-#   4. mkTU              — one drv per .cpp TU. Reads its compile command from
-#                          configureDrv's compile_commands.json (matched by
-#                          absolute src path), strips dep-tracking flags
-#                          (-MD/-MT/-MF) and overrides -o → $out/tu.o. The .o
-#                          extension is load-bearing — without it icpx -fsycl
-#                          at link time skips the offload pipeline. Top
-#                          heavyPercentile% of TUs (by profile bytes) are
-#                          chained via fake buildInputs to serialise the
-#                          icpx RSS-spiking heavy tail without throttling
-#                          the light TUs.
-#   5. linkDrv           — replays cmake's captured link command verbatim,
-#                          with __INPUTS__ replaced (at Nix eval time) by the
-#                          per-TU $out/tu.o paths in the same order ninja
-#                          listed them. Produces $out/lib/libattn_kernels_xe_2.so
-#                          with real torch linkage and full XE2_GPU_LINK_FLAGS
-#                          (AOT'd for bmg).
+# Four stages:
+#   1. configureDrv — runs cmake configure on the upstream tree, captures
+#                     compile_commands.json + build.ninja, then extracts
+#                     (via vllm-xpu-attn-dyndrv-extract.py):
+#                       - tu_manifest.json: every .cpp the link consumes,
+#                         with absolute src path under $out/repo and the
+#                         ninja-relative .o path it expects.
+#                       - link_meta.json: cmake's full link command for
+#                         attn_kernels_xe_2 with all $vars resolved except
+#                         $in (replaced with the sentinel __INPUTS__).
+#                       - pch_meta.json: cmake's PCH compile command +
+#                         the .pch path embedded into every per-TU command.
+#   2. pchDrv      — runs the cmake-emitted PCH compile command once,
+#                    producing $out/cmake_pch.hxx.pch. Every mkTU build
+#                    consumes this artifact via -Xclang -include-pch.
+#                    Frontend-parse cost for cute / CUTLASS-SYCL / sycl
+#                    is paid here once, not per-TU. CA so torch / nixpkgs
+#                    bumps that don't touch the umbrella header don't
+#                    invalidate downstream TUs.
+#   3. mkTU        — one drv per .cpp TU. Reads its compile command from
+#                    configureDrv's compile_commands.json (matched by
+#                    absolute src path), strips dep-tracking flags
+#                    (-MD/-MT/-MF), overrides -o → $out/tu.o, and rewrites
+#                    the -include-pch path to point at pchDrv's .pch.
+#                    The .o extension is load-bearing — without it
+#                    icpx -fsycl at link time skips the offload pipeline.
+#   4. linkDrv     — replays cmake's captured link command verbatim,
+#                    with __INPUTS__ replaced (at Nix eval time) by the
+#                    per-TU $out/tu.o paths in the same order ninja listed
+#                    them. Produces $out/lib/libattn_kernels_xe_2.so with
+#                    real torch linkage and full XE2_GPU_LINK_FLAGS.
 #
-# Step 2 of the dyn-drv plan: scaled from the 3-TU POC (which validated
-# that SYCL device-image registration survives per-.o linking) to the
-# full ~600-TU kernel set. TU enumeration goes through IFD on
-# $out/tu_manifest.json rather than pure builtins.outputOf so the per-TU
-# drv graph can be built at eval time once configureDrv realises. This
-# keeps the link drv free of build-time recursive-nix calls; if we later
-# need to push enumeration into the build phase, configureDrv would also
-# need __contentAddressed = true for builtins.outputOf to resolve cleanly.
+# Previous design (kept here for historical context, ripped out in this
+# revision): a profileTU stage measured each TU's preprocessed source
+# size, an aggregator collapsed those into tu_profile.json, and a
+# `heavyChain` arrangement serialised the top 10% (by byte count) via
+# fake buildInput edges to keep concurrent icpx processes under the
+# memory budget. After patches 0007-fa2-dtype-split and 0008-fa2-pch
+# land in the kernel src, per-TU peak RSS drops from ~40 GB worst-case
+# to ~4-5 GB across the whole matrix — the heavy tail no longer exists
+# and the profile + chain machinery is dead weight.
+#
+# TU enumeration goes through IFD on $out/tu_manifest.json rather than
+# pure builtins.outputOf so the per-TU drv graph can be built at eval
+# time once configureDrv realises.
 
 let
   syclHome = "${intel-oneapi-base}/compiler/latest";
@@ -138,6 +129,8 @@ let
       ./patches/0001-split-kernel-libs.patch
       ./patches/0005-reduce-kernel-build-memory.patch
       ./patches/0006-decouple-256grf-from-aot.patch
+      ./patches/0007-fa2-dtype-split.patch
+      ./patches/0008-fa2-pch.patch
     ];
 
     nativeBuildInputs = [
@@ -186,7 +179,9 @@ let
         -DGDN_KERNELS_ENABLED=OFF \
         -DMQA_LOGITS_KERNELS_ENABLED=OFF \
         -DXPU_SPECIFIC_KERNELS_ENABLED=OFF \
-        -DXPUMEM_ALLOCATOR_ENABLED=OFF
+        -DXPUMEM_ALLOCATOR_ENABLED=OFF \
+        -DVLLM_XPU_SYCL_LINK_PARALLELISM=__VLLM_XPU_LINK_PAR__ \
+        -DVLLM_XPU_CUTLASS_TEMPLATE_BACKTRACE_LIMIT=10
 
       runHook postBuild
     '';
@@ -223,18 +218,23 @@ let
     builtins.readFile "${configureDrv}/repo/link_meta.json"
   );
 
-  # Per-TU preprocessor-only drv. Mirrors mkTU's compile-command extraction
-  # but rewrites the command to `-E` (preprocess to stdout) and counts the
-  # bytes. The byte count is the proxy for compile cost used downstream to
-  # classify heavy TUs — preprocessed-source size correlates with the
-  # depth of header / template-policy expansion that drives icpx RSS
-  # during the actual `-c` compile.
+  pchMeta = builtins.fromJSON (
+    builtins.readFile "${configureDrv}/repo/pch_meta.json"
+  );
+
+  # Single drv that runs cmake's PCH compile command once. Output is
+  # $out/cmake_pch.hxx.pch — the same .pch every per-TU compile would
+  # otherwise pay to re-parse the headers for. The PCH source
+  # (cmake_pch.hxx.cxx) and its sibling cmake_pch.hxx (a thin include
+  # wrapper cmake generates) both live inside ${configureDrv}/repo/${...},
+  # so this drv just realises and reads from configureDrv.
   #
-  # CA so that single-TU upstream changes invalidate only the affected
-  # profile, not all 600. Output is one tiny file ($out/preproc.bytes
-  # holding a single integer), which keeps store-write cost negligible.
-  mkProfileTU = tu: stdenv.mkDerivation {
-    pname = "vllm-xpu-attn-dyndrv-profile-${tu.safe_name}";
+  # Content-addressed: PCH bytes are deterministic given the umbrella
+  # header content + compile flags. CUTLASS-SYCL / cute bumps invalidate
+  # the PCH (correctly); torch / nixpkgs bumps that don't change the
+  # umbrella header's textual closure get to keep their PCH cache entry.
+  pchDrv = stdenv.mkDerivation {
+    pname = "vllm-xpu-attn-dyndrv-pch";
     version = "0.1.7-dev";
 
     dontUnpack = true;
@@ -253,118 +253,45 @@ let
       runHook preBuild
       ${envSetup}
 
-      cat > "$TMPDIR/extract-cmd.py" <<'PYEOF'
-import json, os, shlex, sys
-cc_json = os.environ["CC_JSON"]
-src_path = os.environ["SRC_PATH"]
-with open(cc_json) as f:
-    cc = json.load(f)
-match = next((e for e in cc if e["file"] == src_path), None)
-if match is None:
-    sys.stderr.write(f"src {src_path} not in compile_commands.json\n")
-    sys.exit(1)
-if "arguments" in match:
-    args = list(match["arguments"])
-else:
-    args = shlex.split(match["command"])
-cleaned, i = [], 0
+      mkdir -p $out
+
+      # The pch_meta.json command embeds the configureDrv's repo path
+      # already (extract.py rewrites $src_root -> ${configureDrv}/repo).
+      # Only the -o argument has to move from cmake's build-dir layout
+      # to $out/cmake_pch.hxx.pch.
+      cmd=$(python3 -c '
+import json, shlex, sys
+with open("${configureDrv}/repo/pch_meta.json") as f:
+    pm = json.load(f)
+args = shlex.split(pm["command"])
+out_args = []
+i = 0
 while i < len(args):
-    a = args[i]
-    if a in ("-MD", "-MMD"):
-        i += 1
-    elif a in ("-MT", "-MF"):
+    if args[i] == "-o" and i + 1 < len(args):
+        out_args += ["-o", sys.argv[1]]
         i += 2
-    elif a == "-o":
-        i += 2
-    elif a == "-c":
-        i += 1
     else:
-        cleaned.append(a)
+        out_args.append(args[i])
         i += 1
-cleaned.append("-E")
-print(shlex.join(cleaned))
-PYEOF
+print(shlex.join(out_args))
+' "$out/cmake_pch.hxx.pch")
 
-      mkdir -p $out
-      src_path="${configureDrv}/repo/${tu.src_rel_path}"
-      cmd=$(env \
-        CC_JSON="${configureDrv}/repo/build/compile_commands.json" \
-        SRC_PATH="$src_path" \
-        python3 "$TMPDIR/extract-cmd.py")
-
-      echo "TU profile (${tu.safe_name}):"
-      echo "  src: $src_path"
+      echo "PCH compile:"
       echo "  cmd: $cmd"
-      out_size=$(eval "$cmd" | wc -c)
-      printf '%s' "$out_size" > $out/preproc.bytes
-      echo "  preproc bytes: $out_size"
+      eval "$cmd"
 
       runHook postBuild
     '';
 
     dontInstall = true;
+
+    meta.description = "Shared precompiled header for attn_kernels_xe_2 per-TU compiles";
   };
 
-  profileTUs = lib.listToAttrs (
-    map (tu: { name = tu.obj_rel_path; value = mkProfileTU tu; }) manifest
-  );
-
-  # Aggregates per-TU preproc byte counts into one JSON map. Separate
-  # stage (rather than IFD per profileTU) so eval-time realisation
-  # batches all 600 profile drvs in a single Nix scheduler pass instead
-  # of serialising one realisation per IFD. The JSON values are plain
-  # integers, no store paths, so the downstream `builtins.fromJSON` does
-  # not run into the context-less-store-path footgun documented in
-  # vllm-xpu-attn-dyndrv-extract.py.
-  profileAggregator = stdenv.mkDerivation {
-    pname = "vllm-xpu-attn-dyndrv-profile-aggregator";
-    version = "0.1.7-dev";
-
-    dontUnpack = true;
-    dontStrip = true;
-
-    __contentAddressed = true;
-
-    nativeBuildInputs = [ python3Packages.python ];
-
-    buildInputs = lib.attrValues profileTUs;
-
-    # The manifest holds ~600 entries; once each profileTU's CA placeholder
-    # is replaced with its resolved store path, an inline `${profileEntries}`
-    # in `buildPhase` clears Linux's MAX_ARG_STRLEN (32 pages = 128 KiB) per
-    # envp string. Hand the entries off via a sidecar file so `buildPhase`
-    # stays small.
-    profileEntries = lib.concatMapStringsSep "\n" (tu:
-      "${tu.src_rel_path}\t${profileTUs.${tu.obj_rel_path}}/preproc.bytes"
-    ) manifest;
-    passAsFile = [ "profileEntries" ];
-
-    buildPhase = ''
-      runHook preBuild
-
-      mkdir -p $out
-      python3 - > $out/tu_profile.json <<'PROFEOF'
-import json, os
-profiles = {}
-with open(os.environ["profileEntriesPath"]) as f:
-    for line in f:
-        line = line.rstrip("\n")
-        if not line:
-            continue
-        src, path = line.split("\t", 1)
-        profiles[src] = int(open(path).read())
-print(json.dumps(profiles, indent=2, sort_keys=True))
-PROFEOF
-
-      runHook postBuild
-    '';
-
-    dontInstall = true;
-  };
-
-  profile = builtins.fromJSON (
-    builtins.readFile "${profileAggregator}/tu_profile.json"
-  );
+  # Absolute path of the .pch as embedded in cmake's compile_commands.json
+  # (after extract.py's repo-path rewrite). mkTU rewrites this substring
+  # to ${pchDrv}/cmake_pch.hxx.pch inside the per-TU compile command.
+  originalPchPath = "${configureDrv}/repo/${pchMeta.pch_out_rel_path}";
 
   mkTU = tu: stdenv.mkDerivation {
     pname = "vllm-xpu-attn-dyndrv-tu-${tu.safe_name}";
@@ -392,6 +319,12 @@ PROFEOF
     # without it, icpx at link time treats the file as something other than
     # an object and skips the SYCL offload-bundler / device-image pipeline,
     # silently producing a host-only .so with no kernels.
+    #
+    # ORIGINAL_PCH_PATH is the .pch path cmake embedded in the per-TU
+    # command (pointing into ${configureDrv}/repo/build/...). We rewrite
+    # it to ${pchDrv}/cmake_pch.hxx.pch so icpx loads the shared,
+    # CA-cached PCH from pchDrv instead of failing on the configureDrv
+    # path (which never holds the .pch — only pchDrv produces it).
     buildPhase = ''
       runHook preBuild
       ${envSetup}
@@ -401,6 +334,8 @@ import json, os, shlex, sys
 cc_json = os.environ["CC_JSON"]
 src_path = os.environ["SRC_PATH"]
 out_obj = os.environ["OUT_OBJ"]
+old_pch = os.environ["ORIGINAL_PCH_PATH"]
+new_pch = os.environ["NEW_PCH_PATH"]
 with open(cc_json) as f:
     cc = json.load(f)
 match = next((e for e in cc if e["file"] == src_path), None)
@@ -422,7 +357,7 @@ while i < len(args):
         cleaned += ["-o", out_obj]
         i += 2
     else:
-        cleaned.append(a)
+        cleaned.append(a.replace(old_pch, new_pch) if a == old_pch else a)
         i += 1
 print(shlex.join(cleaned))
 PYEOF
@@ -433,6 +368,8 @@ PYEOF
         CC_JSON="${configureDrv}/repo/build/compile_commands.json" \
         SRC_PATH="$src_path" \
         OUT_OBJ="$out/tu.o" \
+        ORIGINAL_PCH_PATH="${originalPchPath}" \
+        NEW_PCH_PATH="${pchDrv}/cmake_pch.hxx.pch" \
         python3 "$TMPDIR/extract-cmd.py")
 
       echo "TU compile (${tu.safe_name}):"
@@ -446,56 +383,11 @@ PYEOF
     dontInstall = true;
   };
 
-  # SYCL-TLA's per-TU peak RSS is bimodal: most TUs land near a ~5 GiB
-  # median in icpx, a tail spikes to ~40 GiB. With pure independent drvs
-  # the consumer's nix.settings.max-jobs has to be sized for the heavy
-  # tail, leaving cores idle on the median. We chain heavy TUs into a
-  # serial DAG via a fake buildInput edge — Nix's scheduler then runs
-  # them one at a time regardless of max-jobs, while light TUs stay
-  # fully parallel. Per-TU CA caching is preserved (the chain edge
-  # changes the drv graph, not the build inputs icpx sees).
-  #
-  # Heavy/light split is driven by measured profileAggregator output:
-  # top heavyPercentile% by preprocessor byte count are heavy. Sort
-  # descending by bytes, take the prefix, then re-sort the heavy set
-  # alphabetically by safe_name so chain-successor identity stays
-  # stable across upstream reorderings of cmake's build input list
-  # (the boundary case becomes "a new upstream TU" rather than "cmake
-  # reshuffled inputs"). At least one TU is always classified heavy
-  # so the chain is well-defined for tiny pruned kernel sets.
-  heavyCount = lib.max 1 ((lib.length manifest * heavyPercentile) / 100);
-  manifestSortedBySize = lib.sort
-    (a: b: (profile.${a.src_rel_path} or 0) > (profile.${b.src_rel_path} or 0))
-    manifest;
-  heavySrcSet = lib.genAttrs
-    (map (tu: tu.src_rel_path) (lib.take heavyCount manifestSortedBySize))
-    (_: true);
-  heavyTUs = lib.sort (a: b: a.safe_name < b.safe_name)
-    (lib.filter (tu: heavySrcSet.${tu.src_rel_path} or false) manifest);
-  lightTUs = lib.filter (tu: !(heavySrcSet.${tu.src_rel_path} or false)) manifest;
-
-  heavyChain = lib.foldl' (acc: tu:
-    let
-      prev = if acc == [] then null else (lib.last acc).drv;
-      drv = (mkTU tu).overrideAttrs (old: {
-        buildInputs = (old.buildInputs or [])
-          ++ lib.optional (prev != null) prev;
-      });
-    in acc ++ [ { inherit tu drv; } ]
-  ) [] heavyTUs;
-
-  heavyDrvByObj = lib.listToAttrs (
-    map (e: { name = e.tu.obj_rel_path; value = e.drv; }) heavyChain
+  # All TUs are independent — patches 0007/0008 collapsed the per-TU
+  # peak RSS so the heavy-tail serial chain is no longer needed.
+  tuByObjPath = lib.listToAttrs (
+    map (tu: { name = tu.obj_rel_path; value = mkTU tu; }) manifest
   );
-
-  lightDrvByObj = lib.listToAttrs (
-    map (tu: { name = tu.obj_rel_path; value = mkTU tu; }) lightTUs
-  );
-
-  # Look up TUs by their ninja .o path. The link command's input list is
-  # the canonical order; we reassemble per-TU drvs in that order so the
-  # final link command keeps ninja's link-time ordering.
-  tuByObjPath = lightDrvByObj // heavyDrvByObj;
 
   inputObjPaths = map
     (objRel: "${tuByObjPath.${objRel}}/tu.o")
@@ -525,10 +417,15 @@ PYEOF
     __contentAddressed = true;
 
     # The cmake-emitted link command (with __INPUTS__ as the placeholder
-    # for $in) lives at ${configureDrv}/repo/link_command.txt. We read it
-    # at build time and substitute the per-TU .o store paths in ninja's
-    # original input order. inputObjPaths is interpolated directly so the
-    # /nix/store/.../tu.o references become proper store deps of linkDrv.
+    # for $in, and __VLLM_XPU_LINK_PAR__ as the placeholder for
+    # -fsycl-max-parallel-link-jobs) lives at
+    # ${configureDrv}/repo/link_command.txt. We read it at build time
+    # and substitute:
+    #   - __INPUTS__ → per-TU .o store paths in ninja's original order
+    #   - __VLLM_XPU_LINK_PAR__ → this drv's NIX_BUILD_CORES, so the
+    #     SYCL device-link parallelism scales with whatever --cores
+    #     budget the consumer allocated to linkDrv specifically (which
+    #     can differ from configureDrv's --cores).
     buildPhase = ''
       runHook preBuild
       ${envSetup}
@@ -538,6 +435,7 @@ PYEOF
       inputs=${lib.escapeShellArg (lib.concatStringsSep " " inputObjPaths)}
       cmd=$(cat ${configureDrv}/repo/link_command.txt)
       cmd=''${cmd//__INPUTS__/$inputs}
+      cmd=''${cmd//__VLLM_XPU_LINK_PAR__/$NIX_BUILD_CORES}
 
       printf '%s\n' "$cmd" > cmd.sh
       echo "=== link command (first 4 KB) ==="
@@ -545,7 +443,7 @@ PYEOF
       echo
       echo "=== link command size ==="
       wc -c cmd.sh
-      echo "=== running ==="
+      echo "=== running with -fsycl-max-parallel-link-jobs=$NIX_BUILD_CORES ==="
       bash cmd.sh
 
       runHook postBuild

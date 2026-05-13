@@ -2,14 +2,22 @@
 """Configure-time extractor for the dyn-drv attn_kernels_xe_2 build.
 
 Run from configureDrv.installPhase after `cmake -GNinja` has populated
-$out/repo/build/. Produces three artefacts in $out/repo/:
+$out/repo/build/. Produces four artefacts in $out/repo/:
 
   - compile_commands.json (rewritten in-place: cmake's $build paths -> $out/repo)
   - tu_manifest.json: every .cpp the link target consumes, each with the
         absolute src path under $out/repo and the ninja-relative .o path.
+        Excludes the cmake-synthesised cmake_pch.hxx.cxx source — its compile
+        command lives in pch_meta.json instead, and a dedicated pchDrv
+        realises it once per (configure) and feeds the .pch to every TU.
   - link_meta.json: the resolved link command for the target SO with $in
         replaced by the sentinel __INPUTS__. linkDrv substitutes that token
         with the per-TU .o store paths in the order ninja listed them.
+  - pch_meta.json: the cmake-emitted PCH compile command + the .pch path
+        embedded into every per-TU command. pchDrv reads the command (with
+        -o rewritten to $out/cmake_pch.hxx.pch); mkTU's extract-cmd.py
+        rewrites the embedded .pch path in each per-TU command to point at
+        ${pchDrv}/cmake_pch.hxx.pch.
 
 build.ninja parsing is intentionally minimal: it handles cmake's emitted
 syntax (one top-level build.ninja that `include`s CMakeFiles/rules.ninja)
@@ -114,15 +122,27 @@ def strip_link_artefacts(cmd: str) -> str:
 
 # Decode TU template parameters from the generated filename.
 #
-# Two naming schemes in csrc/xpu/attn/xe_2:
-#   chunk_prefill_kernel_template_chunk_policy_head{N}[_b16]_<flags>.cpp
-#   paged_decode_kernel_template_q{Q}_h{N}_p{P}_<flags>.cpp
+# Two naming schemes in csrc/xpu/attn/xe_2 (post the 0007 dtype-split patch):
+#   chunk_prefill_kernel_template_chunk_policy_head{N}[_b16]_<bool-flags>_<dt>.cpp
+#   paged_decode_kernel_template_q{Q}_h{N}_p{P}_<bool-flags>_<dt>.cpp
+#
+# <dt> is a 2-char dtype token from chunk_prefill_configure.cmake /
+# paged_decode_configure.cmake: hh, h4, h5, bb, b4, b5 where the first
+# char is Q dtype (half / bfloat) and the second is KV dtype (half /
+# bfloat / fp8_e4m3 / fp8_e5m2).
 #
 # Anything else (e.g. fmha_xe2.cpp, paged_decode_xe2.cpp launchers) is
 # unclassifiable here and always kept — pruning a launcher would leave the
 # dispatcher with no entry point.
-_CHUNK_PREFILL_RE = re.compile(r"head(\d+)(_b16)?_[ft]+\.cpp$")
-_PAGED_DECODE_RE = re.compile(r"_h(\d+)_p\d+_[ft]+\.cpp$")
+_DTYPE_TOKEN_RE = r"[hb][hb45]"
+_CHUNK_PREFILL_RE = re.compile(
+    rf"head(\d+)(_b16)?_[ft]+_({_DTYPE_TOKEN_RE})\.cpp$"
+)
+_PAGED_DECODE_RE = re.compile(
+    rf"_h(\d+)_p\d+_[ft]+_({_DTYPE_TOKEN_RE})\.cpp$"
+)
+
+_QTOKEN_TO_DTYPE = {"h": "fp16", "b": "bf16"}
 
 
 def parse_tu_params(src_rel: str) -> dict | None:
@@ -131,13 +151,14 @@ def parse_tu_params(src_rel: str) -> dict | None:
         return {
             "family": "chunk_prefill",
             "head_dim": int(m.group(1)),
-            "dtype": "bf16" if m.group(2) else "fp16",
+            "dtype": _QTOKEN_TO_DTYPE[m.group(3)[0]],
         }
     if (m := _PAGED_DECODE_RE.search(base)):
-        # paged_decode dtype is encoded in the boolean flag suffix; decoding
-        # it reliably needs the upstream generator. Leave dtype=None so the
-        # dtype filter never excludes a paged_decode TU.
-        return {"family": "paged_decode", "head_dim": int(m.group(1)), "dtype": None}
+        return {
+            "family": "paged_decode",
+            "head_dim": int(m.group(1)),
+            "dtype": _QTOKEN_TO_DTYPE[m.group(2)[0]],
+        }
     return None
 
 
@@ -145,11 +166,22 @@ def keep_tu(src_rel: str, kernel_set: dict) -> bool:
     params = parse_tu_params(src_rel)
     if params is None:
         return True
-    # The head_dim prune is only safe for chunk_prefill TUs. paged_decode_xe2.cpp
-    # (kept as a launcher) hardcodes a decode_policy_dispatch_impl instantiation
-    # list across every head_dim the upstream generator emits, so dropping
-    # _h{N} paged_decode TUs leaves libattn_kernels_xe_2.so with undefined
-    # symbols and dlopen fails at runtime. See issue #47.
+    # Both prune dimensions (head_dim, dtype) require a corresponding
+    # launcher rewrite to be fully safe. The launchers (fmha_xe2.cpp,
+    # paged_decode_xe2.cpp) hardcode dispatch over the full (head_dim,
+    # Q dtype, KV dtype) cross-product; pruning a dimension here drops
+    # the matching extern template instantiation but leaves the launcher
+    # referring to it, which fails at link time (or at dlopen for kernels
+    # marked optional).
+    #
+    # Currently we only apply the head_dim prune to chunk_prefill (the
+    # paged_decode launcher is fully hardcoded); see issue #47 for the
+    # chunk_prefill case (also still technically unsafe — see
+    # chunk-prefill-prune-bug.md). The dtype prune is left in place for
+    # exploratory builds but is similarly unsafe after the dtype-split
+    # patch (0007-fa2-dtype-split.patch) widened the launcher dispatch
+    # to all 6 (Q, KV) combos. A future patch should make the launcher
+    # dispatch conditional on cmake-time toggles matching this prune.
     head_dims = kernel_set.get("head_dims")
     if (
         head_dims is not None
@@ -161,6 +193,30 @@ def keep_tu(src_rel: str, kernel_set: dict) -> bool:
     if dtypes is not None and params["dtype"] is not None and params["dtype"] not in dtypes:
         return False
     return True
+
+
+def _strip_dep_flags(args: list[str]) -> list[str]:
+    """Drop -MD/-MMD/-MT/-MF dep-tracking flags from a compile command."""
+    cleaned, i = [], 0
+    while i < len(args):
+        a = args[i]
+        if a in ("-MD", "-MMD"):
+            i += 1
+        elif a in ("-MT", "-MF"):
+            i += 2
+        else:
+            cleaned.append(a)
+            i += 1
+    return cleaned
+
+
+def _find_pch_pch_path(args: list[str]) -> str | None:
+    """Return the absolute path embedded after a `-Xclang -include-pch` pair, if any."""
+    for i in range(len(args) - 3):
+        if (args[i] == "-Xclang" and args[i + 1] == "-include-pch"
+                and args[i + 2] == "-Xclang"):
+            return args[i + 3]
+    return None
 
 
 def safe_drv_name(rel_name: str) -> str:
@@ -213,6 +269,46 @@ def main() -> None:
         json.dump(rewritten, f, indent=2)
     print(f"[extract] rewrote {len(rewritten)} compile_commands.json entries: "
           f"{args.src_root} -> {repo}")
+
+    # 1a. Extract the cmake-synthesised PCH compile entry. cmake emits one
+    # source file named `cmake_pch.hxx.cxx` per target with
+    # `target_precompile_headers(...)`. Its command produces the .pch the
+    # rest of the TUs consume via `-Xclang -include-pch -Xclang <path>`.
+    pch_entry = next(
+        (e for e in rewritten
+         if os.path.basename(e.get("file", "")) == "cmake_pch.hxx.cxx"),
+        None,
+    )
+    pch_meta = None
+    if pch_entry is not None:
+        if "arguments" in pch_entry:
+            pch_args = list(pch_entry["arguments"])
+        else:
+            pch_args = shlex.split(pch_entry["command"])
+        pch_args = _strip_dep_flags(pch_args)
+        # Capture the output .pch path so mkTU can find-and-replace it.
+        pch_out_path = None
+        for i, a in enumerate(pch_args):
+            if a == "-o" and i + 1 < len(pch_args):
+                pch_out_path = pch_args[i + 1]
+                break
+        if pch_out_path is None:
+            sys.exit("FATAL: PCH compile entry has no -o argument")
+        if not pch_out_path.startswith(repo + "/"):
+            sys.exit(
+                f"FATAL: PCH -o path {pch_out_path} is outside $repo {repo}")
+        pch_out_rel = pch_out_path[len(repo) + 1:]
+        pch_src_path = pch_entry["file"]
+        if not pch_src_path.startswith(repo + "/"):
+            sys.exit(
+                f"FATAL: PCH src path {pch_src_path} is outside $repo {repo}")
+        pch_meta = {
+            "command": shlex.join(pch_args),
+            "src_rel_path": pch_src_path[len(repo) + 1:],
+            "pch_out_rel_path": pch_out_rel,
+        }
+        print(f"[extract] pch_meta: src={pch_meta['src_rel_path']} "
+              f"out={pch_meta['pch_out_rel_path']}")
 
     # 2. Parse build.ninja + rules.ninja for the link edge of <target>.
     with open(os.path.join(build, "build.ninja")) as f:
@@ -350,6 +446,10 @@ def main() -> None:
     # `${configureDrv}` interpolation already carries the right context.
     with open(os.path.join(repo, "link_command.txt"), "w") as f:
         f.write(resolved + "\n")
+
+    if pch_meta is not None:
+        with open(os.path.join(repo, "pch_meta.json"), "w") as f:
+            json.dump(pch_meta, f, indent=2)
 
 
 if __name__ == "__main__":

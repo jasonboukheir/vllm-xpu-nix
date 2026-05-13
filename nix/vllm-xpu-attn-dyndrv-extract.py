@@ -294,6 +294,15 @@ def main() -> None:
                 break
         if pch_out_path is None:
             sys.exit("FATAL: PCH compile entry has no -o argument")
+        # cmake-Ninja emits the PCH -o as a path relative to the build
+        # directory (compile_commands.json's `directory` field). Every
+        # other path in the entry — `file`, `-c` source, and sibling
+        # TUs' `-include-pch` refs — is absolute; only this one isn't.
+        # Resolve against `directory` so the absolute form lines up with
+        # the embedded PCH refs the downstream substring rewrite expects.
+        if not os.path.isabs(pch_out_path):
+            pch_out_path = os.path.normpath(
+                os.path.join(pch_entry["directory"], pch_out_path))
         if not pch_out_path.startswith(repo + "/"):
             sys.exit(
                 f"FATAL: PCH -o path {pch_out_path} is outside $repo {repo}")

@@ -204,16 +204,23 @@ let
     dontUseCmakeConfigure = true;
     dontStrip = true;
 
-    # NOT content-addressed: the eval-time IFD `builtins.readFile
-    # "${configureDrv}/.../link_meta.json"` would force a CA realisation
-    # at evaluation, requiring `ca-derivations` enabled at the daemon
-    # level even for `nix eval`. Keeping configureDrv input-addressed
-    # confines the CA experimental-feature requirement to actual builds
-    # of the per-TU + link drvs. The downstream per-TU drvs are still
-    # CA, so cmake/torch bumps that change configureDrv's input hash
-    # don't necessarily invalidate per-TU caches — only the configure
-    # step re-runs.
-
+    # Content-addressed: when irrelevant inputs bump (cmake patch
+    # refresh, unrelated nixpkgs churn, a torch revision that doesn't
+    # actually change cmake's output) the configureDrv input hash
+    # changes but its output bytes (compile_commands.json,
+    # link_meta.json, tu_manifest.json, the unpacked repo) are
+    # byte-identical, so the CA output path stays the same. Per-TU
+    # drvs string-interpolate `${configureDrv}/repo/...` literally
+    # into their buildPhase, so a stable configureDrv output path
+    # preserves per-TU drv hashes and the realisation cache.
+    #
+    # Eval-time IFD via `builtins.readFile "${configureDrv}/.../..."`
+    # forces a CA realisation at evaluation, which is fine: every
+    # consumer of this flake already passes
+    # `--extra-experimental-features 'dynamic-derivations
+    # ca-derivations recursive-nix'` (the per-TU + link drvs are CA
+    # too), so the daemon-level requirement holds anyway.
+    __contentAddressed = true;
 
     buildPhase = ''
       runHook preBuild

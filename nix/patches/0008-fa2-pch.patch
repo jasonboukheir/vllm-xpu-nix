@@ -28,6 +28,17 @@ icpx 2025.3 blocks the PCH path outright:
     -Xarch_device is CUDA-only and is filtered out before reaching the
     SYCL frontend).
 
+Upstream tracking: intel/llvm#11657 (feature request, labeled
+`confirmed`, filed 2023-10) and intel/llvm#21491 "[SYCL] Add Support
+for Precompiled Headers" (in-flight PR by premanandrao @ Intel, opened
+2026-03-11, REVIEW_REQUIRED as of 2026-05). #21491 registers `.pchi`
+as a clang-offload-bundler file type so `-fsycl -c -x c++-header foo.h`
+produces a fat bundle with one PCH per offload target plus a host PCH;
+`-fsycl -c -include-pch foo.pchi bar.cpp` unbundles it per pass. That
+is the flag shape this umbrella is staged for — once #21491 lands and
+an oneAPI base toolkit ships with the fix (post-2025.3), finishing
+this patch is a two-line change (see attn_pch.hpp).
+
 Force-including the umbrella header textually via `target_compile_-
 options(... -include attn_pch.hpp)` is also a regression on launcher
 TUs (fmha_xe2.cpp pulls only chunk_prefill.hpp; paged_decode_xe2.cpp
@@ -40,12 +51,12 @@ per-TU peak RSS; re-bloating the launchers via a textual umbrella
 defeats that.
 
 This patch lands the umbrella file as a no-op sentinel for now. It
-documents the PCH intent, captures the icpx 2025.3 blocker for future
-reference, and gives `target_precompile_headers(...)` a single place to
-point at once the toolchain ships SYCL+PCH support. CMakeLists.txt is
-not touched: TUs continue to include only the kernel-template surface
-they dispatch into, so the patch is a true no-op on build wall time
-and per-TU peak RSS today.
+documents the PCH intent, captures the icpx 2025.3 blocker + upstream
+tracking for future reference, and gives `target_precompile_headers(...)`
+a single place to point at once the toolchain ships SYCL+PCH support.
+CMakeLists.txt is not touched: TUs continue to include only the
+kernel-template surface they dispatch into, so the patch is a true
+no-op on build wall time and per-TU peak RSS today.
 
 When a post-2025.3 icpx fixes the bundler quirk, finishing this patch
 is a two-line change: add the `#include "chunk_prefill.hpp"` /
@@ -65,10 +76,10 @@ amortised once per cmake configure). Effect today: none.
 
 diff --git a/csrc/xpu/attn/xe_2/attn_pch.hpp b/csrc/xpu/attn/xe_2/attn_pch.hpp
 new file mode 100644
-index 0000000..3a32d39
+index 0000000..2624ded
 --- /dev/null
 +++ b/csrc/xpu/attn/xe_2/attn_pch.hpp
-@@ -0,0 +1,57 @@
+@@ -0,0 +1,69 @@
 +#pragma once
 +
 +// Umbrella header for the attn_kernels_xe_2 library — staged for a
@@ -95,11 +106,23 @@ index 0000000..3a32d39
 +// 2025.3 has no flag that routes a per-pass `-include-pch` to skip PCH
 +// loading on the device pass.
 +//
-+// Until a post-2025.3 icpx ships SYCL+PCH support this header is a
-+// no-op — it is intentionally NOT referenced from CMakeLists.txt. Both
-+// kernel-template `#include`s below are commented out so a stray
-+// `-include attn_pch.hpp` (or a partial cherry-pick) cannot bloat
-+// launcher TUs by pulling in the other kernel-template surface.
++// Upstream tracking: intel/llvm#11657 (feature request, confirmed) and
++// the in-flight intel/llvm#21491 "[SYCL] Add Support for Precompiled
++// Headers" (premanandrao @ Intel, open as of May 2026). #21491
++// registers a fat `.pchi` bundle that holds one PCH per offload target
++// plus a host PCH; `-fsycl -emit-pch` builds the bundle and
++// `-fsycl -include-pch foo.pchi` unbundles it per pass. That is the
++// flag shape this header is staged for — once a post-2025.3 icpx /
++// oneAPI release ships the merged fix, dropping in
++// `target_precompile_headers(attn_kernels_xe_2 PRIVATE attn_pch.hpp)`
++// in CMakeLists.txt is the entire follow-up.
++//
++// Until then this header is a no-op — it is intentionally NOT
++// referenced from CMakeLists.txt. Both kernel-template `#include`s
++// below are commented out so a stray `-include attn_pch.hpp` (or a
++// partial cherry-pick) cannot bloat launcher TUs by pulling in the
++// other kernel-template surface.
++//
 +// Finishing the PCH adoption is a two-line change in this file plus
 +// one line in CMakeLists.txt — uncomment the includes here, and add:
 +//

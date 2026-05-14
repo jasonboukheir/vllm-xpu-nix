@@ -244,9 +244,19 @@ let
     builtins.readFile "${configureDrv}/repo/link_meta.json"
   );
 
-  pchMeta = builtins.fromJSON (
-    builtins.readFile "${configureDrv}/repo/pch_meta.json"
-  );
+  # PCH metadata is optional. extract.py only writes pch_meta.json /
+  # pch_command.txt when cmake produces a `cmake_pch.hxx.cxx` source,
+  # which is gated on `target_precompile_headers(...)` being wired into
+  # the attn_kernels_xe_2 target. patches/0008-fa2-pch.patch currently
+  # stages the umbrella header as a no-op sentinel (icpx 2025.3 blocks
+  # SYCL+PCH — see intel/llvm#21491 for the in-flight upstream fix), so
+  # the PCH artifacts are absent today. When the patch flips on, the
+  # files appear and pchDrv + per-TU PCH-path rewrite kick in
+  # automatically.
+  pchMeta =
+    if builtins.pathExists "${configureDrv}/repo/pch_meta.json"
+    then builtins.fromJSON (builtins.readFile "${configureDrv}/repo/pch_meta.json")
+    else null;
 
   # Single drv that runs cmake's PCH compile command once. Output is
   # $out/cmake_pch.hxx.pch — the same .pch every per-TU compile would
@@ -259,7 +269,7 @@ let
   # header content + compile flags. CUTLASS-SYCL / cute bumps invalidate
   # the PCH (correctly); torch / nixpkgs bumps that don't change the
   # umbrella header's textual closure get to keep their PCH cache entry.
-  pchDrv = stdenv.mkDerivation {
+  pchDrv = if pchMeta == null then null else stdenv.mkDerivation {
     pname = "vllm-xpu-attn-dyndrv-pch";
     version = "0.1.7-dev";
 
@@ -306,7 +316,10 @@ let
   # Absolute path of the .pch as embedded in cmake's compile_commands.json
   # (after extract.py's repo-path rewrite). mkTU rewrites this substring
   # to ${pchDrv}/cmake_pch.hxx.pch inside the per-TU compile command.
-  originalPchPath = "${configureDrv}/repo/${pchMeta.pch_out_rel_path}";
+  # Both are empty strings when PCH is disabled — the per-TU
+  # extract-cmd.py sees no matching arg and skips the rewrite cleanly.
+  originalPchPath = if pchMeta == null then "" else "${configureDrv}/repo/${pchMeta.pch_out_rel_path}";
+  newPchPath = if pchDrv == null then "" else "${pchDrv}/cmake_pch.hxx.pch";
 
   mkTU = tu: stdenv.mkDerivation {
     pname = "vllm-xpu-attn-dyndrv-tu-${tu.safe_name}";
@@ -384,7 +397,7 @@ PYEOF
         SRC_PATH="$src_path" \
         OUT_OBJ="$out/tu.o" \
         ORIGINAL_PCH_PATH="${originalPchPath}" \
-        NEW_PCH_PATH="${pchDrv}/cmake_pch.hxx.pch" \
+        NEW_PCH_PATH="${newPchPath}" \
         python3 "$TMPDIR/extract-cmd.py")
 
       echo "TU compile (${tu.safe_name}):"

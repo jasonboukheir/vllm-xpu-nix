@@ -41,8 +41,11 @@
 #                       - link_meta.json: cmake's full link command for
 #                         attn_kernels_xe_2 with all $vars resolved except
 #                         $in (replaced with the sentinel __INPUTS__).
-#                       - pch_meta.json: cmake's PCH compile command +
-#                         the .pch path embedded into every per-TU command.
+#                       - pch_meta.json + pch_command.txt: the cmake-
+#                         emitted PCH compile command (with -o replaced
+#                         by __PCH_OUT__) and the .pch path embedded into
+#                         every per-TU command. Split so readFile+fromJSON
+#                         at eval time stays free of /nix/store mentions.
 #   2. pchDrv      — runs the cmake-emitted PCH compile command once,
 #                    producing $out/cmake_pch.hxx.pch. Every mkTU build
 #                    consumes this artifact via -Xclang -include-pch.
@@ -255,26 +258,15 @@ let
 
       mkdir -p $out
 
-      # The pch_meta.json command embeds the configureDrv's repo path
-      # already (extract.py rewrites $src_root -> ${configureDrv}/repo).
-      # Only the -o argument has to move from cmake's build-dir layout
-      # to $out/cmake_pch.hxx.pch.
-      cmd=$(python3 -c '
-import json, shlex, sys
-with open("${configureDrv}/repo/pch_meta.json") as f:
-    pm = json.load(f)
-args = shlex.split(pm["command"])
-out_args = []
-i = 0
-while i < len(args):
-    if args[i] == "-o" and i + 1 < len(args):
-        out_args += ["-o", sys.argv[1]]
-        i += 2
-    else:
-        out_args.append(args[i])
-        i += 1
-print(shlex.join(out_args))
-' "$out/cmake_pch.hxx.pch")
+      # pch_command.txt is the cmake-emitted PCH compile command with
+      # the configureDrv repo path already baked in (extract.py rewrote
+      # $src_root -> ${configureDrv}/repo) and the -o argument replaced
+      # by the placeholder __PCH_OUT__. Reading via $(cat ...) at build
+      # time keeps the icpx / torch / sycl store paths out of eval-time
+      # readFile+fromJSON, which would trip Nix's context safety check
+      # (same pattern linkDrv uses for link_command.txt + __INPUTS__).
+      cmd=$(cat ${configureDrv}/repo/pch_command.txt)
+      cmd=''${cmd//__PCH_OUT__/$out/cmake_pch.hxx.pch}
 
       echo "PCH compile:"
       echo "  cmd: $cmd"

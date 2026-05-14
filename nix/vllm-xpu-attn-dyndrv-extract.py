@@ -13,11 +13,15 @@ $out/repo/build/. Produces four artefacts in $out/repo/:
   - link_meta.json: the resolved link command for the target SO with $in
         replaced by the sentinel __INPUTS__. linkDrv substitutes that token
         with the per-TU .o store paths in the order ninja listed them.
-  - pch_meta.json: the cmake-emitted PCH compile command + the .pch path
-        embedded into every per-TU command. pchDrv reads the command (with
-        -o rewritten to $out/cmake_pch.hxx.pch); mkTU's extract-cmd.py
-        rewrites the embedded .pch path in each per-TU command to point at
-        ${pchDrv}/cmake_pch.hxx.pch.
+  - pch_meta.json: just the src + .pch paths (relative to $out/repo).
+        Plain JSON with no /nix/store/... mentions so Nix's
+        readFile+fromJSON at eval time stays within store-path context.
+  - pch_command.txt: the cmake-emitted PCH compile command with -o
+        rewritten to the placeholder __PCH_OUT__. pchDrv substitutes
+        $out/cmake_pch.hxx.pch at build time (same shell-substitute
+        pattern linkDrv uses for link_command.txt + __INPUTS__).
+        mkTU's extract-cmd.py rewrites the embedded .pch path in each
+        per-TU command to point at ${pchDrv}/cmake_pch.hxx.pch.
 
 build.ninja parsing is intentionally minimal: it handles cmake's emitted
 syntax (one top-level build.ninja that `include`s CMakeFiles/rules.ninja)
@@ -280,6 +284,7 @@ def main() -> None:
         None,
     )
     pch_meta = None
+    pch_command = None
     if pch_entry is not None:
         if "arguments" in pch_entry:
             pch_args = list(pch_entry["arguments"])
@@ -311,11 +316,20 @@ def main() -> None:
         if not pch_src_path.startswith(repo + "/"):
             sys.exit(
                 f"FATAL: PCH src path {pch_src_path} is outside $repo {repo}")
+        # Rewrite -o to a placeholder. pchDrv substitutes the real $out
+        # path at build time. Keeping the command out of pch_meta.json
+        # (it lives in pch_command.txt instead) means readFile+fromJSON
+        # at eval time doesn't see icpx / torch / sycl /nix/store paths
+        # — same trick link_meta.json + link_command.txt already use.
+        for k, a in enumerate(pch_args):
+            if a == "-o" and k + 1 < len(pch_args):
+                pch_args[k + 1] = "__PCH_OUT__"
+                break
         pch_meta = {
-            "command": shlex.join(pch_args),
             "src_rel_path": pch_src_path[len(repo) + 1:],
             "pch_out_rel_path": pch_out_rel,
         }
+        pch_command = shlex.join(pch_args)
         print(f"[extract] pch_meta: src={pch_meta['src_rel_path']} "
               f"out={pch_meta['pch_out_rel_path']}")
 
@@ -459,6 +473,8 @@ def main() -> None:
     if pch_meta is not None:
         with open(os.path.join(repo, "pch_meta.json"), "w") as f:
             json.dump(pch_meta, f, indent=2)
+        with open(os.path.join(repo, "pch_command.txt"), "w") as f:
+            f.write(pch_command + "\n")
 
 
 if __name__ == "__main__":

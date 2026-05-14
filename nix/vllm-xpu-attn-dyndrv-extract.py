@@ -316,6 +316,26 @@ def main() -> None:
         if not pch_src_path.startswith(repo + "/"):
             sys.exit(
                 f"FATAL: PCH src path {pch_src_path} is outside $repo {repo}")
+        # The PCH compile command pulls in cmake_pch.hxx (the thin
+        # wrapper cmake generates next to cmake_pch.hxx.cxx) via
+        # `-Xclang -include -Xclang <path>`. Its single #include bakes
+        # an absolute path to attn_pch.hpp using CMAKE_CURRENT_SOURCE_DIR
+        # — which at configure time is the sandbox dir (/build/source/...).
+        # Rewrite in-place so pchDrv's icpx loads the umbrella header
+        # from $repo, not the long-vanished sandbox path. compile_commands
+        # paths got the same treatment in step 1; this file is the one
+        # other generated artifact in the PCH plumbing that contains
+        # baked source paths.
+        pch_wrapper = pch_src_path[:-len(".cxx")]
+        if os.path.exists(pch_wrapper):
+            with open(pch_wrapper) as f:
+                wrap_text = f.read()
+            wrap_new = wrap_text.replace(args.src_root, repo)
+            if wrap_new != wrap_text:
+                with open(pch_wrapper, "w") as f:
+                    f.write(wrap_new)
+                print(f"[extract] rewrote {os.path.basename(pch_wrapper)}: "
+                      f"{args.src_root} -> {repo}")
         # Rewrite -o to a placeholder. pchDrv substitutes the real $out
         # path at build time. Keeping the command out of pch_meta.json
         # (it lives in pch_command.txt instead) means readFile+fromJSON

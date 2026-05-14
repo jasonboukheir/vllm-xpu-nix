@@ -19,10 +19,23 @@ automatically for icpx (clang-style PCH), so the per-TU compile
 commands now load the pre-parsed AST snapshot in milliseconds instead
 of re-parsing.
 
+icpx 2025.3 SYCL+PCH quirk: cmake injects `-fpch-instantiate-templates`
+into the PCH compile, which eagerly instantiates every template the
+PCH-emit pass encounters. cute/util/compat/memory.hpp uses
+sycl::handler::parallel_for<class T> elaborated-type-specifiers to
+forward-declare its kernel-name tags inline; under
+-fpch-instantiate-templates icpx runs the SYCL kernel-name validator
+against the ETS tag before its implicit namespace-scope declaration has
+propagated, and the PCH-emit fails with "kernel name should be forward
+declarable at namespace scope". Forward-declaring both kernel-name
+classes at ::compat::detail in the umbrella header resolves the ETS to
+a redeclaration of an already-visible class, which the validator
+accepts. See attn_pch.hpp for the workaround.
+
 Effect on cmake-driven builds: ~20-30% wall-time reduction on the FA2
 kernel TUs, and the dtype-split's "more TUs" wall-time penalty
-disappears entirely. Effect on per-TU peak RSS: 1-2 GB reduction
-(frontend parse cost no longer paid per-TU).
+disappears entirely. Per-TU peak RSS drops a further 1-2 GB (frontend
+parse cost is no longer paid per-TU).
 
 Downstream non-cmake consumers (Nix per-TU dynamic-derivations builds)
 extract the PCH compile command from compile_commands.json and realise
@@ -36,7 +49,7 @@ index 83f1719..444fd92 100644
 +++ b/csrc/xpu/attn/xe_2/CMakeLists.txt
 @@ -8,3 +8,13 @@ include("paged_decode_configure.cmake")
  paged_decode_configure(paged_decode_kernel_template)
- 
+
  add_xe2_kernel_library(attn_kernels_xe_2 INCLUDE_CMAKE_SOURCE_DIR)
 +
 +# Shared PCH for the ~3.6k generated kernel TUs. The chunk_prefill +
@@ -50,10 +63,10 @@ index 83f1719..444fd92 100644
 +target_precompile_headers(attn_kernels_xe_2 PRIVATE attn_pch.hpp)
 diff --git a/csrc/xpu/attn/xe_2/attn_pch.hpp b/csrc/xpu/attn/xe_2/attn_pch.hpp
 new file mode 100644
-index 0000000..5c79342
+index 0000000..1f00209
 --- /dev/null
 +++ b/csrc/xpu/attn/xe_2/attn_pch.hpp
-@@ -0,0 +1,20 @@
+@@ -0,0 +1,39 @@
 +#pragma once
 +
 +// Umbrella precompiled-header for the attn_kernels_xe_2 library.
@@ -71,6 +84,25 @@ index 0000000..5c79342
 +// build systems that bypass cmake (e.g. per-TU dynamic-derivations
 +// builds in Nix) must propagate the PCH compile command's flags
 +// verbatim and rewrite only `-o` / dep-tracking flags.
++
++// Pre-declare the SYCL kernel-name tags used inside
++// cute/util/compat/memory.hpp's parallel_for<class T> ETS forward
++// declarations. cmake injects -fpch-instantiate-templates into the PCH
++// compile, which eagerly instantiates sycl::handler::parallel_for at
++// PCH-emit time. icpx 2025.3 runs the SYCL kernel-name validator
++// against the ETS tag before the implicit namespace-scope declaration
++// has propagated, so the eager instantiation fails with "kernel name
++// should be forward declarable at namespace scope". Declaring the tags
++// here makes the in-body ETS a redeclaration of an already-visible
++// class, which the validator accepts. Drop this prelude once icpx
++// either delays kernel-name validation past PCH-emit or stops eagerly
++// instantiating SYCL kernel templates under -fpch-instantiate-templates.
++namespace compat {
++namespace detail {
++class memcpy_3d_detail;
++class compat_memcpy_3d_detail_usmnone;
++} // namespace detail
++} // namespace compat
 +
 +#include "chunk_prefill.hpp"
 +#include "paged_decode.hpp"

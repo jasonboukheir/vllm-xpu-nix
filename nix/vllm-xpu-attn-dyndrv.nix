@@ -156,7 +156,7 @@ let
       # -include-pch ("options requiring arguments are unsupported").
       #
       # Re-enable once icpx ships SYCL+PCH support (toolchain >2025.3).
-      # ./patches/0008-fa2-pch.patch
+      ./patches/0008-fa2-pch.patch
     ];
 
     nativeBuildInputs = [

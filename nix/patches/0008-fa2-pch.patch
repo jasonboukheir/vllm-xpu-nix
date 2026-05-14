@@ -1,102 +1,122 @@
 From: vllm-xpu-nix <noreply@anthropic.com>
-Subject: [PATCH] fa2 xe2: precompile shared header umbrella for attn_kernels_xe_2
+Subject: [PATCH] fa2 xe2: stage umbrella header for attn_kernels_xe_2 PCH
 
-After the dtype split (0007-fa2-dtype-split.patch) the attn kernel
-library generates ~3.6k TUs, each of which #includes paged_decode.hpp
-or chunk_prefill.hpp. Both .hpp files pull in the same heavy transitive
-set: cute, the CUTLASS-SYCL collective stack, the sycl runtime,
-flash_attention_v2 fusion / scheduler / epilogue, the FMHAKernel /
-PagedDecode kernel templates. That parse cost is identical across every
-TU and accounts for a non-trivial fraction of per-TU compile wall time
-on icpx (template-name-lookup over cute / cutlass is template-
-pathological).
+The attn_kernels_xe_2 library generates ~3.6k TUs after the dtype split
+(0007-fa2-dtype-split.patch). chunk_prefill.hpp and paged_decode.hpp
+share almost their entire transitive header set (cute, the CUTLASS-SYCL
+collective stack, sycl runtime, flash_attention_v2 fusion / scheduler /
+epilogue, the FMHAKernel / PagedDecode kernel templates). The original
+plan for this patch was to amortise that parse cost via a shared PCH:
+`target_precompile_headers(attn_kernels_xe_2 PRIVATE attn_pch.hpp)`
+with the umbrella header pulling both kernel-template surfaces in once
+so cmake's auto-injected `-Xclang -include-pch` plumbing fans the
+pre-parsed AST snapshot across every per-TU compile.
 
-Wire up `target_precompile_headers(attn_kernels_xe_2 PRIVATE
-attn_pch.hpp)` with an umbrella header that #includes both kernel
-template surfaces. cmake handles the
-`-Xclang -include-pch -Xclang <build>/cmake_pch.hxx.pch` plumbing
-automatically for icpx (clang-style PCH), so the per-TU compile
-commands now load the pre-parsed AST snapshot in milliseconds instead
-of re-parsing.
+icpx 2025.3 blocks the PCH path outright:
+  - the driver rejects -emit-pch under -fsycl ("precompiled header
+    generation is not supported with '-fsycl'", visible at the driver
+    level via -save-temps);
+  - the default flow tries to bundle host+device PCH outputs through
+    clang-offload-bundler with --type=pchi, which the bundler doesn't
+    accept ("'pchi': invalid file type specified" — only i, ii, cui,
+    hipi, d, ll, bc, s, o, gch, ast, a, ao, aoo are registered);
+  - compiling the PCH without -fsycl works, but consumer -fsycl TUs
+    reject it on the device pass: target 'x86_64-unknown-linux-gnu' vs
+    'spir64_gen-unknown-unknown'. icpx 2025.3 has no flag that routes
+    a per-pass -include-pch to skip PCH loading on the device pass
+    (-Xsycl-target-frontend can't carry multi-token argument flags;
+    -Xarch_device is CUDA-only and is filtered out before reaching the
+    SYCL frontend).
 
-icpx 2025.3 SYCL+PCH quirk: cmake injects `-fpch-instantiate-templates`
-into the PCH compile, which eagerly instantiates every template the
-PCH-emit pass encounters. cute/util/compat/memory.hpp uses
-sycl::handler::parallel_for<class T> elaborated-type-specifiers to
-forward-declare its kernel-name tags inline; under
--fpch-instantiate-templates icpx runs the SYCL kernel-name validator
-against the ETS tag before its implicit namespace-scope declaration has
-propagated, and the PCH-emit fails with "kernel name should be forward
-declarable at namespace scope". Forward-declaring both kernel-name
-classes at ::compat::detail in the umbrella header resolves the ETS to
-a redeclaration of an already-visible class, which the validator
-accepts. See attn_pch.hpp for the workaround.
+Force-including the umbrella header textually via `target_compile_-
+options(... -include attn_pch.hpp)` is also a regression on launcher
+TUs (fmha_xe2.cpp pulls only chunk_prefill.hpp; paged_decode_xe2.cpp
+pulls only paged_decode.hpp). Adding the other kernel-template surface
+to both launchers doubles the in-frontend SYCL template work — the
+paged_decode_xe2.cpp launcher peaks at ~77 GB RSS during the device
+-cc1 pass (vs ~30-40 GB without the cross-include) and gets OOM-killed
+on 96 GB hosts. The dtype split (0007) was specifically about reducing
+per-TU peak RSS; re-bloating the launchers via a textual umbrella
+defeats that.
 
-Effect on cmake-driven builds: ~20-30% wall-time reduction on the FA2
-kernel TUs, and the dtype-split's "more TUs" wall-time penalty
-disappears entirely. Per-TU peak RSS drops a further 1-2 GB (frontend
-parse cost is no longer paid per-TU).
+This patch lands the umbrella file as a no-op sentinel for now. It
+documents the PCH intent, captures the icpx 2025.3 blocker for future
+reference, and gives `target_precompile_headers(...)` a single place to
+point at once the toolchain ships SYCL+PCH support. CMakeLists.txt is
+not touched: TUs continue to include only the kernel-template surface
+they dispatch into, so the patch is a true no-op on build wall time
+and per-TU peak RSS today.
 
-Downstream non-cmake consumers (Nix per-TU dynamic-derivations builds)
-extract the PCH compile command from compile_commands.json and realise
-it as its own derivation; per-TU commands then `-include-pch` the
-shared PCH artifact. See attn_pch.hpp for the icpx PCH compatibility
-contract.
+When a post-2025.3 icpx fixes the bundler quirk, finishing this patch
+is a two-line change: add the `#include "chunk_prefill.hpp"` /
+`#include "paged_decode.hpp"` pair to attn_pch.hpp and add
+`target_precompile_headers(attn_kernels_xe_2 PRIVATE attn_pch.hpp)` to
+CMakeLists.txt. The SYCL kernel-name forward declarations in the
+umbrella are pre-staged for that change — under `-fpch-instantiate-
+templates` (which target_precompile_headers implicitly enables) icpx's
+SYCL kernel-name validator runs the ETS tags in cute/util/compat/-
+memory.hpp's `parallel_for<class memcpy_3d_detail>` against namespace-
+scope visibility; without the pre-declarations the PCH-emit pass fails
+with "kernel name should be forward declarable at namespace scope".
 
-diff --git a/csrc/xpu/attn/xe_2/CMakeLists.txt b/csrc/xpu/attn/xe_2/CMakeLists.txt
-index 83f1719..444fd92 100644
---- a/csrc/xpu/attn/xe_2/CMakeLists.txt
-+++ b/csrc/xpu/attn/xe_2/CMakeLists.txt
-@@ -8,3 +8,13 @@ include("paged_decode_configure.cmake")
- paged_decode_configure(paged_decode_kernel_template)
+Expected effect once the PCH path lands: ~20-30% wall-time reduction
+on FA2 kernel TUs, ~1-2 GB per-TU peak RSS drop (frontend parse cost
+amortised once per cmake configure). Effect today: none.
 
- add_xe2_kernel_library(attn_kernels_xe_2 INCLUDE_CMAKE_SOURCE_DIR)
-+
-+# Shared PCH for the ~3.6k generated kernel TUs. The chunk_prefill +
-+# paged_decode kernel templates share almost their entire transitive
-+# include set (cute, CUTLASS-SYCL collective stack, sycl runtime); a
-+# single PCH collapses that re-parse cost into one drv. See
-+# attn_pch.hpp for the umbrella content. cmake handles the
-+# `-Xclang -include-pch` plumbing automatically; downstream non-cmake
-+# consumers (Nix per-TU dyn-drv builds) re-extract the PCH command
-+# from compile_commands.json and realise it as its own derivation.
-+target_precompile_headers(attn_kernels_xe_2 PRIVATE attn_pch.hpp)
 diff --git a/csrc/xpu/attn/xe_2/attn_pch.hpp b/csrc/xpu/attn/xe_2/attn_pch.hpp
 new file mode 100644
-index 0000000..1f00209
+index 0000000..3a32d39
 --- /dev/null
 +++ b/csrc/xpu/attn/xe_2/attn_pch.hpp
-@@ -0,0 +1,39 @@
+@@ -0,0 +1,57 @@
 +#pragma once
 +
-+// Umbrella precompiled-header for the attn_kernels_xe_2 library.
++// Umbrella header for the attn_kernels_xe_2 library — staged for a
++// future `target_precompile_headers(...)` adoption once icpx ships
++// SYCL+PCH support.
 +//
 +// chunk_prefill.hpp and paged_decode.hpp share almost their entire
 +// transitive header set (cute, the CUTLASS-SYCL collective stack, sycl
-+// runtime). The 600+ generated TUs all pay that parse cost identically;
-+// surfacing it through a single PCH means icpx pre-parses once and every
-+// TU loads the resulting AST snapshot in milliseconds.
++// runtime, flash_attention_v2 fusion / scheduler / epilogue, the
++// FMHAKernel / PagedDecode kernel templates). The dtype-split
++// (0007-fa2-dtype-split.patch) generates ~3.6k kernel TUs, each of
++// which pays that transitive parse cost independently. A shared PCH
++// would collapse that cost into one cmake configure.
 +//
-+// PCH compatibility is strict on icpx — every consumer TU must be
-+// compiled with flags identical to the PCH (target triple, -fsycl,
-+// -D defines, GRF mode, optimisation level). cmake's
-+// target_precompile_headers() handles this automatically; downstream
-+// build systems that bypass cmake (e.g. per-TU dynamic-derivations
-+// builds in Nix) must propagate the PCH compile command's flags
-+// verbatim and rewrite only `-o` / dep-tracking flags.
++// icpx 2025.3 blocks the PCH path:
++//   error: precompiled header generation is not supported with '-fsycl'
++// (visible at the driver level via `-save-temps`; the default flow
++// instead tries to bundle host+device PCH outputs through
++// clang-offload-bundler with `--type=pchi`, which the bundler doesn't
++// accept — only i, ii, cui, hipi, d, ll, bc, s, o, gch, ast, a, ao,
++// aoo are registered file types). Compiling the PCH without `-fsycl`
++// works but the consumer device pass rejects it on a target mismatch
++// (`x86_64-unknown-linux-gnu` vs `spir64_gen-unknown-unknown`); icpx
++// 2025.3 has no flag that routes a per-pass `-include-pch` to skip PCH
++// loading on the device pass.
++//
++// Until a post-2025.3 icpx ships SYCL+PCH support this header is a
++// no-op — it is intentionally NOT referenced from CMakeLists.txt. Both
++// kernel-template `#include`s below are commented out so a stray
++// `-include attn_pch.hpp` (or a partial cherry-pick) cannot bloat
++// launcher TUs by pulling in the other kernel-template surface.
++// Finishing the PCH adoption is a two-line change in this file plus
++// one line in CMakeLists.txt — uncomment the includes here, and add:
++//
++//   target_precompile_headers(attn_kernels_xe_2 PRIVATE attn_pch.hpp)
 +
 +// Pre-declare the SYCL kernel-name tags used inside
-+// cute/util/compat/memory.hpp's parallel_for<class T> ETS forward
-+// declarations. cmake injects -fpch-instantiate-templates into the PCH
-+// compile, which eagerly instantiates sycl::handler::parallel_for at
-+// PCH-emit time. icpx 2025.3 runs the SYCL kernel-name validator
-+// against the ETS tag before the implicit namespace-scope declaration
-+// has propagated, so the eager instantiation fails with "kernel name
-+// should be forward declarable at namespace scope". Declaring the tags
-+// here makes the in-body ETS a redeclaration of an already-visible
-+// class, which the validator accepts. Drop this prelude once icpx
-+// either delays kernel-name validation past PCH-emit or stops eagerly
-+// instantiating SYCL kernel templates under -fpch-instantiate-templates.
++// cute/util/compat/memory.hpp's `parallel_for<class T>` ETS forward
++// declarations. Under `-fpch-instantiate-templates` (which cmake's
++// target_precompile_headers implicitly enables) icpx eagerly
++// instantiates SYCL kernel templates during PCH-emit and the
++// kernel-name validator runs the ETS tags before the implicit
++// namespace-scope declaration has propagated, failing with "kernel
++// name should be forward declarable at namespace scope". Declaring the
++// tags here at namespace scope makes the in-body ETS a redeclaration
++// of an already-visible class, which the validator accepts. The
++// pre-declarations are also benign when this header is unreferenced
++// (today's state).
 +namespace compat {
 +namespace detail {
 +class memcpy_3d_detail;
@@ -104,5 +124,5 @@ index 0000000..1f00209
 +} // namespace detail
 +} // namespace compat
 +
-+#include "chunk_prefill.hpp"
-+#include "paged_decode.hpp"
++// #include "chunk_prefill.hpp"
++// #include "paged_decode.hpp"

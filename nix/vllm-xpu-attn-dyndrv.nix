@@ -84,11 +84,32 @@ let
   syclHome = "${intel-oneapi-base}/compiler/latest";
   aotDevicesStr = lib.concatStringsSep "," aotDevices;
 
-  envSetup = ''
-    mkdir -p $TMPDIR/bin
-    ln -sf ${intel-compute-runtime}/bin/ocloc-* $TMPDIR/bin/ocloc
-    export PATH=$TMPDIR/bin:${syclHome}/bin:$PATH
-    export LD_LIBRARY_PATH=${intel-graphics-compiler}/lib:${intel-compute-runtime}/lib:''${LD_LIBRARY_PATH:-}
+  # envSetup is split into compile- and link-variants so per-TU drvs
+  # don't carry Nix string-context references to ocloc / IGC /
+  # compute-runtime store paths they never use. Those paths bump
+  # independently of the SYCL frontend (oneapi point releases, IGC
+  # bumps, ocl-icd nixpkgs churn) and would otherwise rewrite every
+  # per-TU drv hash on each bump, forcing ~600 CA realisations to
+  # re-run even when their .o bytes would be byte-identical.
+  #
+  # forLink = true  : full env (ocloc on PATH, IGC/L0 on
+  #                   LD_LIBRARY_PATH). configureDrv (cmake probes
+  #                   for L0/OpenCL/ocloc) and linkDrv (icpx -fsycl
+  #                   link calls ocloc for AOT device-image gen)
+  #                   both need this.
+  # forLink = false : compile-only env (icpx for .cpp -> .o
+  #                   fat-object). The SYCL frontend doesn't shell
+  #                   out to ocloc or load IGC until link/AOT time.
+  mkEnvSetup = { forLink ? false }: ''
+    ${lib.optionalString forLink ''
+      mkdir -p $TMPDIR/bin
+      ln -sf ${intel-compute-runtime}/bin/ocloc-* $TMPDIR/bin/ocloc
+      export PATH=$TMPDIR/bin:${syclHome}/bin:$PATH
+      export LD_LIBRARY_PATH=${intel-graphics-compiler}/lib:${intel-compute-runtime}/lib:''${LD_LIBRARY_PATH:-}
+    ''}
+    ${lib.optionalString (!forLink) ''
+      export PATH=${syclHome}/bin:$PATH
+    ''}
     export SYCL_HOME=${syclHome}
     export CMPLR_ROOT=${syclHome}
     export MKLROOT=${intel-oneapi-base}/mkl/latest
@@ -108,9 +129,22 @@ let
     export VLLM_XPU_XE2_AOT_DEVICES="${aotDevicesStr}"
   '';
 
-  baseBuildInputs = [
+  # Minimal closure for a .cpp -> .o SYCL fat-object compile: just
+  # the icpx frontend (intel-oneapi-base) + stdenv glue + torch
+  # headers + python (cmake's compile_commands.json invokes
+  # python interpreter-detection probes during configure but the
+  # per-TU compile only needs python on PATH for nativeBuildInputs).
+  compileInputs = [
     stdenv.cc.cc.lib
     intel-oneapi-base
+    torch-xpu
+    python3Packages.python
+  ];
+
+  # Full closure for cmake configure + final link/AOT: adds the
+  # runtime + link-time deps (L0, IGC, compute-runtime/ocloc,
+  # OpenCL ICD, profiler, CCL, zlib).
+  linkInputs = compileInputs ++ [
     intel-pti
     oneccl-bmg
     level-zero
@@ -118,8 +152,6 @@ let
     intel-graphics-compiler
     ocl-icd
     zlib
-    torch-xpu
-    python3Packages.python
   ];
 
   configureDrv = stdenv.mkDerivation {
@@ -167,7 +199,7 @@ let
       python3Packages.python
     ];
 
-    buildInputs = baseBuildInputs;
+    buildInputs = linkInputs;
 
     dontUseCmakeConfigure = true;
     dontStrip = true;
@@ -185,7 +217,7 @@ let
 
     buildPhase = ''
       runHook preBuild
-      ${envSetup}
+      ${mkEnvSetup { forLink = true; }}
 
       echo "$NIX_BUILD_TOP/source" > .src-root-path
 
@@ -283,11 +315,11 @@ let
       python3Packages.python
     ];
 
-    buildInputs = baseBuildInputs;
+    buildInputs = compileInputs;
 
     buildPhase = ''
       runHook preBuild
-      ${envSetup}
+      ${mkEnvSetup { }}
 
       mkdir -p $out
 
@@ -333,7 +365,7 @@ let
       python3Packages.python
     ];
 
-    buildInputs = baseBuildInputs;
+    buildInputs = compileInputs;
 
     # Content-addressed: the .o is just a SYCL device-image bundle for one
     # source file. icpx with -O3 -DNDEBUG (no -g) doesn't embed sandbox
@@ -355,7 +387,7 @@ let
     # path (which never holds the .pch — only pchDrv produces it).
     buildPhase = ''
       runHook preBuild
-      ${envSetup}
+      ${mkEnvSetup { }}
 
       cat > "$TMPDIR/extract-cmd.py" <<'PYEOF'
 import json, os, shlex, sys
@@ -433,7 +465,7 @@ PYEOF
       which
     ];
 
-    buildInputs = baseBuildInputs;
+    buildInputs = linkInputs;
 
     # Content-addressed: the link output is libattn_kernels_xe_2.so. Its
     # bytes embed RUNPATH/NEEDED entries pointing at torch-xpu /
@@ -456,7 +488,7 @@ PYEOF
     #     can differ from configureDrv's --cores).
     buildPhase = ''
       runHook preBuild
-      ${envSetup}
+      ${mkEnvSetup { forLink = true; }}
 
       cd "$TMPDIR"
 

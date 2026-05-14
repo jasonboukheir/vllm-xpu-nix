@@ -82,13 +82,12 @@ stdenv.mkDerivation {
   # on a 24-core box stacks ~24 of these and OOM-kills the build long
   # before any head128/b16 TU finishes. Match the dev-shell default
   # (MAX_JOBS=2) so multiple lib drvs can still run concurrently under
-  # Nix's outer scheduler without overrunning a 96 GiB box. Raise via
-  # cores= override on builders with more RAM headroom.
-  preBuild = ''
-    export NIX_BUILD_CORES=2
-  '';
-
+  # Nix's outer scheduler without overrunning a 96 GiB box. Set in
+  # preConfigure so the same value reaches both ninja -j and
+  # -fsycl-max-parallel-link-jobs (substituted below).
   preConfigure = ''
+    export NIX_BUILD_CORES=2
+
     mkdir -p $TMPDIR/bin
     ln -sf ${intel-compute-runtime}/bin/ocloc-* $TMPDIR/bin/ocloc
     export PATH=$TMPDIR/bin:${syclHome}/bin:$PATH
@@ -107,6 +106,10 @@ stdenv.mkDerivation {
     export CMAKE_PREFIX_PATH=${intel-oneapi-base}:$CMAKE_PREFIX_PATH
     export VLLM_XPU_AOT_DEVICES="${aotDevicesStr}"
     export VLLM_XPU_XE2_AOT_DEVICES="${aotDevicesStr}"
+
+    # cmakeFlagsArray, not cmakeFlags: the latter is word-split without
+    # recursive expansion, so $NIX_BUILD_CORES would reach icpx literal.
+    cmakeFlagsArray+=("-DVLLM_XPU_SYCL_LINK_PARALLELISM=$NIX_BUILD_CORES")
   '';
 
   cmakeFlags = [
@@ -116,7 +119,6 @@ stdenv.mkDerivation {
     "-DVLLM_CUTLASS_SRC_DIR=${cutlass-src}"
     "-DCMAKE_BUILD_TYPE=Release"
     "-DBUILD_SYCL_TLA_KERNELS=ON"
-    "-DVLLM_XPU_SYCL_LINK_PARALLELISM=$NIX_BUILD_CORES"
     "-DVLLM_XPU_CUTLASS_TEMPLATE_BACKTRACE_LIMIT=10"
   ]
   ++ featureFlags;

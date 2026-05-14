@@ -133,7 +133,30 @@ let
       ./patches/0005-reduce-kernel-build-memory.patch
       ./patches/0006-decouple-256grf-from-aot.patch
       ./patches/0007-fa2-dtype-split.patch
-      ./patches/0008-fa2-pch.patch
+      # 0008-fa2-pch.patch is still disabled — but for a smaller reason
+      # than before. The patch itself now forward-declares
+      # compat::detail::memcpy_3d_detail / compat_memcpy_3d_detail_usmnone
+      # at namespace scope, so cmake's -fpch-instantiate-templates no
+      # longer trips the SYCL kernel-name validator
+      # ("kernel name should be forward declarable at namespace scope")
+      # on cute/util/compat/memory.hpp's ETS tags.
+      #
+      # The hard blocker is upstream icpx 2025.3: SYCL+PCH bundling
+      # invokes clang-offload-bundler with --type=pchi, which the bundler
+      # doesn't accept ("'pchi': invalid file type specified" — only
+      # i, ii, cui, hipi, d, ll, bc, s, o, gch, ast, a, ao, aoo are
+      # registered). Probed with -save-temps the icpx driver says
+      # outright "precompiled header generation is not supported with
+      # '-fsycl'", so this is deliberate, not an oversight. Manual
+      # replay of the two -cc1 -emit-pch passes + re-bundling with
+      # --type=ast|gch produces a file the per-TU PCH consumer rejects
+      # ("doesn't start with precompiled file magic") — the bundler's
+      # bundle header isn't the CPCH magic clang's -include-pch expects,
+      # and -Xsycl-target-frontend can't route a separate per-pass
+      # -include-pch ("options requiring arguments are unsupported").
+      #
+      # Re-enable once icpx ships SYCL+PCH support (toolchain >2025.3).
+      # ./patches/0008-fa2-pch.patch
     ];
 
     nativeBuildInputs = [

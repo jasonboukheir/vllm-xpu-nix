@@ -13,6 +13,7 @@
   intel-pti,
   oneccl-bmg,
   torch-xpu,
+  torch-xpu-headers,
   level-zero,
   intel-compute-runtime,
   intel-graphics-compiler,
@@ -143,17 +144,29 @@ let
   # headers + python (cmake's compile_commands.json invokes
   # python interpreter-detection probes during configure but the
   # per-TU compile only needs python on PATH for nativeBuildInputs).
+  #
+  # torch-xpu-headers (rather than full torch-xpu) is wired in here so
+  # unrelated torch-xpu store-path bumps — intel-oneapi point releases,
+  # intel-pti / oneccl-bmg revs, nixpkgs python churn — that don't
+  # actually edit torch headers leave the per-TU drv input hashes
+  # untouched. torch-xpu-headers is itself CA, so when its inputs bump
+  # but the header bytes don't, its output path stays stable and the
+  # ~600 per-TU drvs keep their realisations cached. See
+  # nix/torch-xpu-headers.nix.
   compileInputs = [
     stdenv.cc.cc.lib
     intel-oneapi-base
-    torch-xpu
+    torch-xpu-headers
     python3Packages.python
   ];
 
   # Full closure for cmake configure + final link/AOT: adds the
+  # full torch-xpu (cmake's find_package(Torch) needs the real libs +
+  # configs; the final link line needs libtorch.so etc.) plus the
   # runtime + link-time deps (L0, IGC, compute-runtime/ocloc,
   # OpenCL ICD, profiler, CCL, zlib).
   linkInputs = compileInputs ++ [
+    torch-xpu
     intel-pti
     oneccl-bmg
     level-zero

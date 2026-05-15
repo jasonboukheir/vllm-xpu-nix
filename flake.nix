@@ -68,6 +68,18 @@
           python3Packages = pkgs.python312Packages;
         };
 
+        # Header-only slice of torch-xpu for per-TU SYCL compile contexts
+        # (see nix/torch-xpu-headers.nix). The dyn-drv build wires this
+        # into per-TU `buildInputs` so unrelated torch-xpu store-path
+        # bumps (oneapi / pti / oneccl / nixpkgs python churn that
+        # doesn't touch headers) don't invalidate the ~600 per-TU drv
+        # input hashes. Full torch-xpu still goes on configureDrv +
+        # linkDrv (cmake find_package + real linker line).
+        torch-xpu-headers = pkgs.callPackage ./nix/torch-xpu-headers.nix {
+          inherit torch-xpu;
+          python3Packages = pkgs.python312Packages;
+        };
+
         triton-xpu = pkgs.callPackage ./nix/triton-xpu.nix {
           intel-oneapi-base = intel-oneapi;
           inherit intel-pti;
@@ -164,7 +176,7 @@
         mkAttnDynDrv = { src, kernelSet ? null, aotDevices ? [ ] }:
           pkgs.callPackage ./nix/vllm-xpu-attn-dyndrv.nix {
             intel-oneapi-base = intel-oneapi;
-            inherit intel-pti oneccl-bmg torch-xpu;
+            inherit intel-pti oneccl-bmg torch-xpu torch-xpu-headers;
             python3Packages = pkgs.python312Packages;
             inherit src kernelSet aotDevices;
             cutlass-src = sycl-tla-src;

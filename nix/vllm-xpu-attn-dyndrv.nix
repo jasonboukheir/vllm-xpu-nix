@@ -20,6 +20,7 @@
   ocl-icd,
   zlib,
   which,
+  sccache,
   # Stock clang-21 tools — extract.py invokes clang-scan-deps for the
   # configure-time per-TU header scan. clang-21 is the LLVM branch
   # icpx 2025.3 is built from (its -print-resource-dir lands in
@@ -458,7 +459,43 @@ __RELS__
       dontUnpack = true;
       dontStrip = true;
 
+      nativeBuildInputs = [ sccache ];
+
       buildInputs = compileInputs;
+
+      # sccache is wired in as a compile launcher (not via ccacheStdenv /
+      # programs.ccache.enable). Why not the wiki-recommended override:
+      #   - The per-TU compiler is icpx from intel-oneapi-base, NOT
+      #     stdenv.cc. ccacheStdenv only wraps stdenv.cc's gcc/clang via
+      #     a shim in $out/bin; it has no way to intercept the icpx path
+      #     cmake baked into compile_commands.json. We replay those
+      #     commands verbatim through `eval`, never going through any
+      #     cc-wrapper.
+      #   - This drv is stdenvNoCC (issue #57) precisely to drop the
+      #     cc-wrapper closure. ccacheStdenv would put it right back.
+      #   - programs.ccache.enable is a NixOS host-config option that
+      #     wraps nix-daemon's gcc; it can't see into a flake build's
+      #     icpx invocations either.
+      # impureEnvVars lets the sandbox inherit the host's
+      # SCCACHE_DIR / SCCACHE_BUCKET / SCCACHE_REDIS / AWS_* so the
+      # cache survives across builds. CA is preserved — sccache only
+      # short-circuits the compile step; the .o output is still hashed
+      # by Nix and CA-deduped downstream, so a cache hit and a cold
+      # compile produce the same store path.
+      impureEnvVars = [
+        "SCCACHE_DIR"
+        "SCCACHE_BUCKET"
+        "SCCACHE_REGION"
+        "SCCACHE_ENDPOINT"
+        "SCCACHE_S3_USE_SSL"
+        "SCCACHE_S3_KEY_PREFIX"
+        "SCCACHE_S3_NO_CREDENTIALS"
+        "SCCACHE_REDIS"
+        "SCCACHE_REDIS_KEY_PREFIX"
+        "AWS_ACCESS_KEY_ID"
+        "AWS_SECRET_ACCESS_KEY"
+        "AWS_SESSION_TOKEN"
+      ];
 
       # Content-addressed: the .o is just a SYCL device-image bundle for one
       # source file. icpx with -O3 -DNDEBUG (no -g) doesn't embed sandbox
@@ -503,8 +540,8 @@ __RELS__
 
         echo "TU compile (${tu.safe_name}):"
         echo "  src: ${srcSubset}/${tu.src_rel_path}"
-        echo "  cmd: $cmd"
-        eval "$cmd"
+        echo "  cmd: sccache $cmd"
+        eval "sccache $cmd"
 
         runHook postBuild
       '';

@@ -99,18 +99,6 @@
           python3Packages = pkgs.python312Packages;
         };
 
-        # Header-only slice of torch-xpu for per-TU SYCL compile contexts
-        # (see nix/torch-xpu-headers.nix). The dyn-drv build wires this
-        # into per-TU `buildInputs` so unrelated torch-xpu store-path
-        # bumps (oneapi / pti / oneccl / nixpkgs python churn that
-        # doesn't touch headers) don't invalidate the ~600 per-TU drv
-        # input hashes. Full torch-xpu still goes on configureDrv +
-        # linkDrv (cmake find_package + real linker line).
-        torch-xpu-headers = pkgs.callPackage ./nix/torch-xpu-headers.nix {
-          inherit torch-xpu;
-          python3Packages = pkgs.python312Packages;
-        };
-
         triton-xpu = pkgs.callPackage ./nix/triton-xpu.nix {
           intel-oneapi-base = intel-oneapi;
           inherit intel-pti;
@@ -192,28 +180,6 @@
           in { libName, featureFlags ? [ ] }:
             factory { inherit libName featureFlags aotDevices; };
 
-        # Dynamic-derivations build of attn_kernels_xe_2: per-TU compile
-        # drvs + a final link drv replaying cmake's captured link command.
-        # See nix/vllm-xpu-attn-dyndrv.nix for the staging.
-        #
-        # `kernelSet` (default null) prunes the FA2 Cartesian sweep down
-        # to the parameter set a deployed model actually dispatches to
-        # (e.g. `{ headDims = [ 128 ]; dtypes = [ "bf16" ]; }`). null =
-        # build the full ~600 TUs. Threaded through mkKernelLibs ->
-        # mkVllmXpuKernels -> mkVllm so consumers can re-derive the full
-        # closure with `pkgs.vllm-xpu-unstable.withKernelSet { ... }`.
-        # The NixOS module wires this automatically when
-        # `services.vllm-xpu.attnKernelSet` resolves non-null.
-        mkAttnDynDrv = { src, kernelSet ? null, aotDevices ? [ ] }:
-          pkgs.callPackage ./nix/vllm-xpu-attn-dyndrv.nix {
-            intel-oneapi-base = intel-oneapi;
-            inherit intel-pti oneccl-bmg torch-xpu torch-xpu-headers;
-            python3Packages = pkgs.python312Packages;
-            inherit src kernelSet aotDevices;
-            cutlass-src = sycl-tla-src;
-            clang-tools = pkgs.llvmPackages_21.clang-tools;
-          };
-
         # Per-lib feature flag matrices: enable only the chosen lib's source
         # subdir, disable all other libs and ext modules. VLLM_XPU_LIBS_ONLY
         # short-circuits the ext-module section.
@@ -269,38 +235,28 @@
           "-DXPUMEM_ALLOCATOR_ENABLED=OFF"
         ];
 
-        mkKernelLibs = { src, attnKernelSet ? null, aotDevices ? [ ] }:
+        mkKernelLibs = { src, aotDevices ? [ ] }:
           let mkLib = mkXpuLibFactory { inherit src aotDevices; }; in {
-            # attn_kernels_xe_2 is built via the dynamic-derivations path
-            # (per-TU compile drvs + replayed cmake link). All other libs
-            # still go through the cmake-builds-the-whole-target mkLib.
-            attn-kernels-xe-2 = mkAttnDynDrv { inherit src aotDevices; kernelSet = attnKernelSet; };
+            attn-kernels-xe-2 = mkLib { libName = "attn_kernels_xe_2"; featureFlags = attnFlags; };
             gdn-attn-kernels-xe-2 = mkLib { libName = "gdn_attn_kernels_xe_2"; featureFlags = gdnAttnFlags; };
             mqa-logits-kernels-xe-2 = mkLib { libName = "mqa_logits_kernels_xe_2"; featureFlags = mqaLogitsFlags; };
             grouped-gemm-xe-2 = mkLib { libName = "grouped_gemm_xe_2"; featureFlags = groupedGemmXe2Flags; };
             grouped-gemm-xe-default = mkLib { libName = "grouped_gemm_xe_default"; featureFlags = groupedGemmXeDefaultFlags; };
           };
 
-        # mkVllmXpuKernels carries a `withKernelSet` passthru so consumers
-        # (and the NixOS module) can re-derive a pruned variant in one
-        # call: `pkgs.vllm-xpu-kernels-unstable.withKernelSet { headDims = [ 128 ]; }`.
-        # The new variant rebuilds attn-kernels-xe-2 and the wrapping
-        # python package; other libs are byte-identical and reuse the CA
-        # cache.
-        #
-        # `withAotDevices` / `withJIT` / `withAOT` re-derive with a
-        # different SYCL AOT target list. The default is JIT: kernels
-        # ship as SPIR-V and IGC specializes them at first dispatch
-        # (the 256-GRF hint is preserved via
+        # `withAotDevices` / `withJIT` / `withAOT` re-derive the closure
+        # with a different SYCL AOT target list. The default is JIT:
+        # kernels ship as SPIR-V and IGC specializes them at first
+        # dispatch (the 256-GRF hint is preserved via
         # patches/0006-decouple-256grf-from-aot.patch so JIT codegen
         # matches AOT codegen quality, only the first-dispatch pause
         # differs). `withAOT` is a shortcut for `withAotDevices
         # [ "bmg" ]` — Battlemage being the target this project is
         # tuned for. `withAotDevices [ ... ]` for any other explicit
         # list.
-        mkVllmXpuKernels = { src, attnKernelSet ? null, aotDevices ? [ ] }:
+        mkVllmXpuKernels = { src, aotDevices ? [ ] }:
           let
-            libs = mkKernelLibs { inherit src attnKernelSet aotDevices; };
+            libs = mkKernelLibs { inherit src aotDevices; };
             base = pkgs.callPackage ./nix/vllm-xpu-kernels.nix ({
               intel-oneapi-base = intel-oneapi;
               inherit intel-pti oneccl-bmg torch-xpu;
@@ -311,17 +267,14 @@
           in
             base.overrideAttrs (old: {
               passthru = (old.passthru or {}) // {
-                withKernelSet = ks: mkVllmXpuKernels {
-                  inherit src aotDevices; attnKernelSet = ks;
-                };
                 withAotDevices = ds: mkVllmXpuKernels {
-                  inherit src attnKernelSet; aotDevices = ds;
+                  inherit src; aotDevices = ds;
                 };
                 withJIT = mkVllmXpuKernels {
-                  inherit src attnKernelSet; aotDevices = [];
+                  inherit src; aotDevices = [];
                 };
                 withAOT = mkVllmXpuKernels {
-                  inherit src attnKernelSet; aotDevices = [ "bmg" ];
+                  inherit src; aotDevices = [ "bmg" ];
                 };
               };
             });
@@ -339,14 +292,14 @@
         # in vllm-xpu.nix forwards to setuptools-scm's PRETEND_VERSION, so
         # setuptools-scm doesn't need a .git in the unpacked store path.
         #
-        # Like mkVllmXpuKernels, the result carries a `withKernelSet`
-        # passthru: `pkgs.vllm-xpu-unstable.withKernelSet { headDims = [128 256]; dtypes = ["bf16"]; }`
-        # cascades the prune through the kernels package too. Also exposes
-        # `withTorchvision`, `withTorchaudio`, and `withAudio` passthrus so
-        # consumers can opt into the +xpu wheels for VL / audio model families
-        # (or audio decoders for transcription endpoints) without spelling out
-        # a full `.override`. All passthrus compose:
-        # `pkgs.vllm-xpu-unstable.withKernelSet { ... } |> .withTorchvision true |> .withAudio true`.
+        # Like mkVllmXpuKernels, the result exposes `withAotDevices` /
+        # `withJIT` / `withAOT` passthrus that cascade through the kernels
+        # package. Also exposes `withTorchvision`, `withTorchaudio`, and
+        # `withAudio` passthrus so consumers can opt into the +xpu wheels
+        # for VL / audio model families (or audio decoders for
+        # transcription endpoints) without spelling out a full `.override`.
+        # All passthrus compose:
+        # `pkgs.vllm-xpu-unstable.withAOT |> .withTorchvision true |> .withAudio true`.
         mkVllm = {
           src, version, kernels,
           withTorchvision ? false,
@@ -365,13 +318,6 @@
           in
             base.overrideAttrs (old: {
               passthru = (old.passthru or {}) // {
-                withKernelSet = ks: mkVllm {
-                  inherit src version withTorchvision withTorchaudio withAudio;
-                  kernels =
-                    if kernels ? withKernelSet
-                    then kernels.withKernelSet ks
-                    else kernels;
-                };
                 withAotDevices = ds: mkVllm {
                   inherit src version withTorchvision withTorchaudio withAudio;
                   kernels =

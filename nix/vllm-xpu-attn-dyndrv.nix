@@ -8,6 +8,7 @@
   git,
   autoPatchelfHook,
   stdenv,
+  stdenvNoCC,
   intel-oneapi-base,
   intel-pti,
   oneccl-bmg,
@@ -18,6 +19,14 @@
   ocl-icd,
   zlib,
   which,
+  # Stock clang-21 tools — extract.py invokes clang-scan-deps for the
+  # configure-time per-TU header scan. clang-21 is the LLVM branch
+  # icpx 2025.3 is built from (its -print-resource-dir lands in
+  # `<oneapi>/compiler/2025.3/lib/clang/21`); matching versions avoids
+  # the dialect drift that breaks scan-deps on icpx-emitted commands.
+  # llvmPackages_20's scan-deps fails with "stddef.h file not found"
+  # against the same input.
+  clang-tools,
   # Optional pruning of the FA2 Cartesian TU set. null -> keep all (current
   # behaviour). Attrs with `headDims` / `dtypes` lists drop any TU whose
   # parsed parameters fall outside the filter. Hard-fails at configure time
@@ -197,6 +206,7 @@ let
       git
       which
       python3Packages.python
+      clang-tools
     ];
 
     buildInputs = linkInputs;
@@ -352,103 +362,122 @@ let
     meta.description = "Shared precompiled header for attn_kernels_xe_2 per-TU compiles";
   };
 
-  # Absolute path of the .pch as embedded in cmake's compile_commands.json
-  # (after extract.py's repo-path rewrite). mkTU rewrites this substring
-  # to ${pchDrv}/cmake_pch.hxx.pch inside the per-TU compile command.
-  # Both are empty strings when PCH is disabled — the per-TU
-  # extract-cmd.py sees no matching arg and skips the rewrite cleanly.
-  originalPchPath = if pchMeta == null then "" else "${configureDrv}/repo/${pchMeta.pch_out_rel_path}";
+  # PCH artifact path inside the dedicated pchDrv. mkTU substitutes the
+  # __PCH_PATH__ placeholder extract.py left in each per-TU cmd file with
+  # this path. Empty when PCH is disabled — extract.py also skips the
+  # placeholder write in that case, so the bash substitution becomes a
+  # no-op (no matching tokens in the cmd).
   newPchPath = if pchDrv == null then "" else "${pchDrv}/cmake_pch.hxx.pch";
 
-  mkTU = tu: stdenv.mkDerivation {
-    pname = "vllm-xpu-attn-dyndrv-tu-${tu.safe_name}";
+  # Per-TU srcSubset: a tiny CA derivation containing just this TU's
+  # .cpp, its transitive headers (from the icpx -M depfile), and the
+  # extract.py-emitted cmd file — laid out mirroring the configureDrv
+  # repo's directory structure so the cmd's -I paths (carrying the
+  # __SRC_SUBSET__ placeholder) resolve to existing dirs after
+  # substitution.
+  #
+  # Why a derivation and not `lib.fileset.toSource`: configureDrv is
+  # content-addressed, so `${configureDrv}` evaluates to a CA placeholder
+  # string (e.g. `/<52-char-hash>`), not the realised store path.
+  # `lib.fileset.toSource`'s `root` must be an on-disk path at eval time,
+  # so it tries to walk the placeholder directory and fails. A derivation
+  # buildPhase, by contrast, gets shell-time string interpolation of
+  # `${configureDrv}` which resolves to the real CA path on disk.
+  #
+  # `__contentAddressed = true` is what gives us the cache property
+  # issue #53 wants: srcSubset's drv input hash inevitably depends on
+  # configureDrv (so any configureDrv re-derivation forces srcSubset to
+  # re-derive), but srcSubset's *output* hash depends only on the bytes
+  # of the included files. So when a header that this TU does NOT
+  # include changes — configureDrv re-derives, srcSubset re-runs `cp`,
+  # but produces the same bytes → same CA hash → downstream per-TU
+  # compile drv stays cached.
+  mkSrcSubset = tu: stdenvNoCC.mkDerivation {
+    pname = "vllm-xpu-attn-dyndrv-tu-${tu.safe_name}-src";
     version = "0.1.7-dev";
 
     dontUnpack = true;
     dontStrip = true;
 
-    nativeBuildInputs = [
-      which
-      python3Packages.python
-    ];
-
-    buildInputs = compileInputs;
-
-    # Content-addressed: the .o is just a SYCL device-image bundle for one
-    # source file. icpx with -O3 -DNDEBUG (no -g) doesn't embed sandbox
-    # paths, so the bytes stay stable across nixpkgs / torch-xpu store-path
-    # bumps that don't actually change a header. This is the single
-    # highest-leverage CA target — 600+ TUs all share their cache entries
-    # whenever input churn doesn't touch what they actually compile.
     __contentAddressed = true;
 
-    # Output is a directory containing tu.o. The .o extension is load-bearing:
-    # without it, icpx at link time treats the file as something other than
-    # an object and skips the SYCL offload-bundler / device-image pipeline,
-    # silently producing a host-only .so with no kernels.
-    #
-    # ORIGINAL_PCH_PATH is the .pch path cmake embedded in the per-TU
-    # command (pointing into ${configureDrv}/repo/build/...). We rewrite
-    # it to ${pchDrv}/cmake_pch.hxx.pch so icpx loads the shared,
-    # CA-cached PCH from pchDrv instead of failing on the configureDrv
-    # path (which never holds the .pch — only pchDrv produces it).
-    buildPhase = ''
-      runHook preBuild
-      ${mkEnvSetup { }}
-
-      cat > "$TMPDIR/extract-cmd.py" <<'PYEOF'
-import json, os, shlex, sys
-cc_json = os.environ["CC_JSON"]
-src_path = os.environ["SRC_PATH"]
-out_obj = os.environ["OUT_OBJ"]
-old_pch = os.environ["ORIGINAL_PCH_PATH"]
-new_pch = os.environ["NEW_PCH_PATH"]
-with open(cc_json) as f:
-    cc = json.load(f)
-match = next((e for e in cc if e["file"] == src_path), None)
-if match is None:
-    sys.stderr.write(f"src {src_path} not in compile_commands.json\n")
-    sys.exit(1)
-if "arguments" in match:
-    args = list(match["arguments"])
-else:
-    args = shlex.split(match["command"])
-cleaned, i = [], 0
-while i < len(args):
-    a = args[i]
-    if a in ("-MD", "-MMD"):
-        i += 1
-    elif a in ("-MT", "-MF"):
-        i += 2
-    elif a == "-o":
-        cleaned += ["-o", out_obj]
-        i += 2
-    else:
-        cleaned.append(a.replace(old_pch, new_pch) if a == old_pch else a)
-        i += 1
-print(shlex.join(cleaned))
-PYEOF
-
-      mkdir -p $out
-      src_path="${configureDrv}/repo/${tu.src_rel_path}"
-      cmd=$(env \
-        CC_JSON="${configureDrv}/repo/build/compile_commands.json" \
-        SRC_PATH="$src_path" \
-        OUT_OBJ="$out/tu.o" \
-        ORIGINAL_PCH_PATH="${originalPchPath}" \
-        NEW_PCH_PATH="${newPchPath}" \
-        python3 "$TMPDIR/extract-cmd.py")
-
-      echo "TU compile (${tu.safe_name}):"
-      echo "  src: $src_path"
-      echo "  cmd: $cmd"
-      eval "$cmd"
-
-      runHook postBuild
-    '';
+    buildPhase =
+      let
+        rels = lib.unique ([ tu.src_rel_path tu.cmd_rel_path ] ++ tu.headers);
+        relsBlob = lib.concatStringsSep "\n" rels;
+      in
+      ''
+        runHook preBuild
+        mkdir -p $out
+        src_root=${configureDrv}/repo
+        while IFS= read -r rel; do
+          [ -z "$rel" ] && continue
+          install -D -m 0644 "$src_root/$rel" "$out/$rel"
+        done <<'__RELS__'
+${relsBlob}
+__RELS__
+        runHook postBuild
+      '';
 
     dontInstall = true;
   };
+
+  mkTU = tu:
+    let
+      srcSubset = mkSrcSubset tu;
+    in
+    stdenv.mkDerivation {
+      pname = "vllm-xpu-attn-dyndrv-tu-${tu.safe_name}";
+      version = "0.1.7-dev";
+
+      dontUnpack = true;
+      dontStrip = true;
+
+      buildInputs = compileInputs;
+
+      # Content-addressed: the .o is just a SYCL device-image bundle for one
+      # source file. icpx with -O3 -DNDEBUG (no -g) doesn't embed sandbox
+      # paths, so the bytes stay stable across nixpkgs / torch-xpu store-path
+      # bumps that don't actually change a header. This is the single
+      # highest-leverage CA target — 600+ TUs all share their cache entries
+      # whenever input churn doesn't touch what they actually compile.
+      __contentAddressed = true;
+
+      # Output is a directory containing tu.o. The .o extension is load-bearing:
+      # without it, icpx at link time treats the file as something other than
+      # an object and skips the SYCL offload-bundler / device-image pipeline,
+      # silently producing a host-only .so with no kernels.
+      #
+      # The cmd file lives inside srcSubset (extract.py wrote it under
+      # $repo/per-tu-cmds/<safe>.txt). We `cat` it via ${srcSubset}
+      # interpolation — that's the *only* store-path ref this drv carries
+      # from the configure side, and it's content-addressed by `tu.headers
+      # + tu.src_rel_path` so unrelated header churn doesn't perturb it.
+      # The three placeholders extract.py left in the cmd are substituted
+      # here: __SRC_SUBSET__ → srcSubset's store path, __OUT_OBJ__ →
+      # $out/tu.o, __PCH_PATH__ → pchDrv's .pch (or empty / no-op when PCH
+      # is disabled).
+      buildPhase = ''
+        runHook preBuild
+        ${mkEnvSetup { }}
+
+        mkdir -p $out
+
+        cmd=$(cat ${srcSubset}/${tu.cmd_rel_path})
+        cmd=''${cmd//__SRC_SUBSET__/${srcSubset}}
+        cmd=''${cmd//__OUT_OBJ__/$out/tu.o}
+        cmd=''${cmd//__PCH_PATH__/${newPchPath}}
+
+        echo "TU compile (${tu.safe_name}):"
+        echo "  src: ${srcSubset}/${tu.src_rel_path}"
+        echo "  cmd: $cmd"
+        eval "$cmd"
+
+        runHook postBuild
+      '';
+
+      dontInstall = true;
+    };
 
   # All TUs are independent — patches 0007/0008 collapsed the per-TU
   # peak RSS so the heavy-tail serial chain is no longer needed.

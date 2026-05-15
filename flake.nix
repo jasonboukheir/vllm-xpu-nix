@@ -168,6 +168,7 @@
             python3Packages = pkgs.python312Packages;
             inherit src kernelSet aotDevices;
             cutlass-src = sycl-tla-src;
+            clang-tools = pkgs.llvmPackages_21.clang-tools;
           };
 
         # Per-lib feature flag matrices: enable only the chosen lib's source

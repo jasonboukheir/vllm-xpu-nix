@@ -8,9 +8,10 @@ $out/repo/build/. Produces these artefacts in $out/repo/:
   - tu_manifest.json: every .cpp the link target consumes. Each entry
         carries the .cpp src path (relative to $out/repo), the
         ninja-relative .o path, a list of transitive header paths the
-        TU pulls from $out/repo (extracted from icpx -M depfiles), and
-        a path to a per-TU compile-command text file. Excludes the
-        cmake-synthesised cmake_pch.hxx.cxx source.
+        TU pulls from $out/repo (extracted from a clang-scan-deps run
+        over the kept subset of compile_commands.json), and a path to
+        a per-TU compile-command text file. Excludes the cmake-
+        synthesised cmake_pch.hxx.cxx source.
   - per-tu-cmds/<safe_name>.txt: the cmake-emitted compile command
         for each TU, with -MD/-MT/-MF stripped, -o replaced by
         __OUT_OBJ__, every $out/repo prefix replaced by __SRC_SUBSET__,
@@ -23,10 +24,15 @@ $out/repo/build/. Produces these artefacts in $out/repo/:
   - link_meta.json / link_command.txt: target link replay (unchanged).
   - pch_meta.json / pch_command.txt: PCH compile artifacts (unchanged).
 
-The depfile pass uses icpx -M (preprocess-only + emit make-style deps)
-on every kept TU in parallel. -M is much cheaper than full compile —
-no codegen, no SYCL device IR — typically a few hundred ms per TU even
-on the heavy chunk_prefill / paged_decode templates.
+The dep pass writes a filtered compile_commands.scan.json (SYCL flags,
+PCH includes, and dep-tracking flags stripped — clang-21 doesn't grok
+the icpx-specific `-fno-sycl-instrument-device-code` family, and the
+PCH path isn't on disk yet at configure time) and runs
+clang-scan-deps once over it with -mode=preprocess-dependency-directives.
+That mode lexes only directive-relevant tokens, sharing the parsed
+header graph across TUs in memory — ~30x faster than running icpx -M
+per TU, which doesn't short-circuit -fsycl's device-side parse and
+forks two `clang -cc1` invocations per call.
 
 build.ninja parsing is intentionally minimal: it handles cmake's emitted
 syntax (one top-level build.ninja that `include`s CMakeFiles/rules.ninja)
@@ -36,7 +42,6 @@ where to look first.
 from __future__ import annotations
 
 import argparse
-import concurrent.futures
 import json
 import os
 import re
@@ -221,6 +226,51 @@ def _strip_dep_flags(args: list[str]) -> list[str]:
     return cleaned
 
 
+_SCAN_DROP_EXACT = {"-fsycl"}
+_SCAN_DROP_PREFIX = ("-fsycl-", "-fno-sycl-", "-Xsycl-target-")
+
+
+def _strip_scan_unfriendly(args: list[str]) -> list[str]:
+    """Strip flags that prevent stock clang-scan-deps from parsing an icpx command.
+
+    - dep-tracking flags (-MD/-MMD/-MT/-MF): redundant for scan-deps.
+    - `-include-pch <path>` in all three forms: the PCH doesn't exist at
+      configure time (cmake-Ninja hasn't run the PCH compile yet) and
+      scan-deps would error trying to read it. The host-only header walk
+      we get without PCH is a strict superset of the PCH'd walk anyway.
+    - `-fsycl` / `-fsycl-*` / `-fno-sycl-*` / `-Xsycl-target-*`: stock
+      upstream clang-21 doesn't recognise the icpx-specific subset
+      (`-fno-sycl-instrument-device-code`, `-fno-sycl-id-queries-fit-in-int`,
+      ...) and errors out. We're already only collecting `$repo`-relative
+      headers, which are the same set across host and device passes for
+      this codebase — losing the device-side parse doesn't change the
+      srcSubset content.
+    """
+    cleaned, i = [], 0
+    while i < len(args):
+        a = args[i]
+        if a in ("-MD", "-MMD"):
+            i += 1
+        elif a in ("-MT", "-MF"):
+            i += 2
+        elif (a == "-Xclang" and i + 3 < len(args)
+                and args[i + 1] == "-include-pch"
+                and args[i + 2] == "-Xclang"):
+            i += 4
+        elif a == "-include-pch":
+            i += 2
+        elif a.startswith("-include-pch="):
+            i += 1
+        elif a in _SCAN_DROP_EXACT:
+            i += 1
+        elif any(a.startswith(p) for p in _SCAN_DROP_PREFIX):
+            i += 1
+        else:
+            cleaned.append(a)
+            i += 1
+    return cleaned
+
+
 def _find_pch_pch_path(args: list[str]) -> str | None:
     """Return the absolute path embedded after a `-Xclang -include-pch` pair, if any."""
     for i in range(len(args) - 3):
@@ -239,99 +289,116 @@ def safe_drv_name(rel_name: str) -> str:
     return re.sub(r"[^A-Za-z0-9_-]", "_", name)
 
 
-def _gen_depfile(args_tuple: tuple) -> tuple:
-    """Worker for ProcessPoolExecutor. Runs icpx -M for one TU.
+def _run_scan_deps(
+    scan_cdb_path: str, scan_out_path: str, repo: str, workers: int
+) -> dict[str, list[str]]:
+    """Invoke clang-scan-deps once over the filtered CDB.
 
-    Returns (src, depfile_path, error_or_None).
+    Returns a map from each entry's `-o` argument (the rule target in
+    scan-deps' make output) to the list of `$repo`-relative header
+    paths the TU pulls in. Non-$repo deps (stdlib, sycl, torch, ...)
+    are filtered out — they're already in compileInputs' runtime
+    closure and including them in per-TU srcSubsets would only inflate
+    closure size without any caching benefit.
+
+    scan-deps' stdout is streamed to `scan_out_path` rather than
+    captured into Python memory: on the full ~3.8k-TU unpruned build
+    the output exceeds 1.5 GB, which would peg `subprocess.run(...,
+    capture_output=True)` at multi-GB RSS plus extra copies during
+    the parse. Streaming + line-by-line read keeps RSS flat at ~100 MB.
     """
-    entry, depfile, repo = args_tuple
-    if "arguments" in entry:
-        cmd = list(entry["arguments"])
-    else:
-        cmd = shlex.split(entry["command"])
-    cleaned = _strip_dep_flags(cmd)
-    # Drop -o <obj> (we don't write an .o) and -c (icpx errors with
-    # `-c [-Werror,-Wunused-command-line-argument]` under -M because
-    # -M stops after the preprocessor — the -c becomes a no-op).
-    # The source file follows -c as the next positional arg; without
-    # the -c marker, icpx treats it as input the same way.
-    #
-    # Also drop -include-pch and its path argument. At depfile-pass
-    # time we run inside configureDrv.installPhase — ninja has not
-    # been invoked, so the cmake_pch.hxx.pch the TU command points at
-    # does not exist on disk, and icpx -M would fail trying to open
-    # it. -M without PCH walks the include graph fresh, which is
-    # exactly what we want for header enumeration anyway. Handle the
-    # three forms cmake / icpx can emit:
-    #   * `-Xclang -include-pch -Xclang <path>` (cmake-Ninja today)
-    #   * `-include-pch <path>` (plain clang)
-    #   * `-include-pch=<path>` (combined)
-    final, i = [], 0
-    while i < len(cleaned):
-        a = cleaned[i]
-        if a == "-o":
-            i += 2
-        elif a == "-c":
-            i += 1
-        elif (a == "-Xclang" and i + 3 < len(cleaned)
-                and cleaned[i + 1] == "-include-pch"
-                and cleaned[i + 2] == "-Xclang"):
-            i += 4
-        elif a == "-include-pch":
-            i += 2
-        elif a.startswith("-include-pch="):
-            i += 1
-        else:
-            final.append(a)
-            i += 1
-    final += ["-M", "-MF", depfile]
-    cwd = entry.get("directory") or repo
-    proc = subprocess.run(final, cwd=cwd, capture_output=True, text=True)
+    with open(scan_out_path, "w") as out_f:
+        proc = subprocess.run(
+            [
+                "clang-scan-deps",
+                "-compilation-database", scan_cdb_path,
+                "-format", "make",
+                # Lexes only preprocessor-directive-relevant tokens
+                # per header and shares the parsed include graph
+                # across TUs. This mode is the actual source of the
+                # speedup vs running `icpx -M` per TU — without it
+                # scan-deps still walks each TU's headers via a full
+                # lex and the cross-TU caching wins shrink to ~3-5x.
+                "-mode", "preprocess-dependency-directives",
+                "-j", str(workers),
+            ],
+            stdout=out_f,
+            stderr=subprocess.PIPE,
+            text=True,
+            cwd=repo,
+        )
     if proc.returncode != 0:
-        # Trim the stderr — icpx warnings on heavy SYCL templates can
-        # be thousands of lines and only the tail is usually useful.
-        tail = proc.stderr.strip().splitlines()[-20:]
-        return (entry["file"], depfile,
-                f"icpx -M exit {proc.returncode}: " + "\n".join(tail))
-    return (entry["file"], depfile, None)
+        # Truncate stderr — scan-deps can spew per-TU errors.
+        err_tail = "\n".join(proc.stderr.strip().splitlines()[-30:])
+        sys.exit(
+            f"FATAL: clang-scan-deps exit {proc.returncode}\n"
+            f"--- stderr tail ---\n{err_tail}"
+        )
 
-
-def _parse_depfile(path: str, repo: str, src_rel: str) -> list[str]:
-    r"""Parse a make-style .d file into the list of `$repo`-relative header paths.
-
-    icpx -M emits the canonical `target: prereq prereq \` form. We:
-      1. Drop the `target:` prefix.
-      2. Collapse `\<newline>` line continuations.
-      3. shlex-split to honour escaped spaces.
-      4. Filter to paths under `$repo` (everything else is a stable
-         third-party header from icpx/oneapi/torch/etc and is already
-         captured as a runtime dep of compileInputs — including those
-         in the per-TU srcSubset would just bloat closures with no
-         caching benefit).
-      5. Drop the TU's own `src_rel` (the caller already includes it
-         in srcSubset under src_rel_path). Anything else under `$repo`
-         is kept — a future `#include "foo.cc"` (uncommon but legal,
-         e.g. for template instantiation files) must end up in
-         srcSubset or the TU compile will fail with "file not found".
-    """
-    with open(path) as f:
-        text = f.read()
-    if ":" in text:
-        text = text.split(":", 1)[1]
-    text = text.replace("\\\n", " ").replace("\\\r\n", " ")
-    try:
-        toks = shlex.split(text)
-    except ValueError as e:
-        sys.exit(f"FATAL: failed to parse depfile {path}: {e}")
+    # Make output: one rule per TU, of the form
+    #   target: prereq prereq \
+    #     prereq prereq \
+    #     prereq
+    # Targets and prereqs are space-separated; spaces in paths would be
+    # escaped as `\ ` in make's grammar, but every path we emit lives
+    # under either $repo (a /nix/store/... path) or a SYCL / torch
+    # store path, and the Nix store rejects component names with
+    # spaces — so a fast `str.split()` is safe and saves the
+    # multi-minute `shlex.split` we'd otherwise do across 1.5 GB of
+    # output. Rules from concurrent worker threads can interleave but
+    # each individual rule is emitted atomically.
     prefix = repo.rstrip("/") + "/"
-    headers = set()
-    for t in toks:
-        if t.startswith(prefix):
-            rel = t[len(prefix):]
-            if rel == src_rel:
+    by_target: dict[str, list[str]] = {}
+    current_target: str | None = None
+    current_headers: set[str] | None = None
+
+    def _flush():
+        if current_target is not None:
+            # Path normalisation: icpx -M emitted `./` in some paths
+            # from relative `#include "./collective/foo.hpp"`
+            # directives; scan-deps collapses these. Normalising here
+            # also defends against future relative-include patterns
+            # producing duplicate entries in srcSubset's cp loop.
+            by_target[current_target] = sorted(
+                {os.path.normpath(p) for p in current_headers}
+            )
+
+    with open(scan_out_path) as f:
+        for line in f:
+            stripped = line.rstrip("\n")
+            continuation = stripped.endswith("\\")
+            if continuation:
+                stripped = stripped[:-1]
+            tokens = stripped.split()
+            if not tokens:
+                if not continuation:
+                    _flush()
+                    current_target = None
+                    current_headers = None
                 continue
-            headers.add(rel)
-    return sorted(headers)
+            # New rule starts when the first token ends with ':'.
+            if current_target is None:
+                head = tokens[0]
+                if not head.endswith(":"):
+                    sys.exit(
+                        f"FATAL: scan-deps emitted a continuation line "
+                        f"with no active target: {line!r}"
+                    )
+                _flush()
+                current_target = head[:-1]
+                current_headers = set()
+                deps = tokens[1:]
+            else:
+                deps = tokens
+            for t in deps:
+                if t.startswith(prefix):
+                    current_headers.add(t[len(prefix):])
+            if not continuation:
+                _flush()
+                current_target = None
+                current_headers = None
+    _flush()
+    return by_target
 
 
 def _build_tu_cmd(entry: dict, repo: str, pch_out_path: str | None) -> str:
@@ -604,27 +671,25 @@ def main() -> None:
     #
     # `cmake -GNinja` only configures, so no .d files exist yet in
     # $repo/build/CMakeFiles/<target>.dir/. We synthesize them here:
-    # for every kept TU, run icpx -M (preprocess-only + emit make-style
-    # deps) and parse the resulting depfile into the list of headers
+    # for every kept TU, scan its include graph and record the headers
     # under $repo. mkTU then materializes a lib.fileset.toSource
     # containing JUST that TU's src + headers + per-TU cmd file, and
     # drops the `${configureDrv}` ref entirely. Net effect: a header
     # edit invalidates only the TUs that transitively #include it
     # (the issue #53 ceiling).
     #
-    # The depfile pass is the dominant cost in extract.py — each icpx
-    # -M pass on a SYCL TU still runs the full host + spir64 device
-    # parser (icpx doesn't short-circuit -fsycl under -M), so per-TU
-    # RSS peaks at ~1.5-2 GB on the heavier chunk_prefill heads.
-    # Worker count comes from NIX_BUILD_CORES (canonical Nix sandbox
-    # env var, set from `--cores`) so this is portable across hosts —
-    # the consumer controls parallelism the same way they would for
-    # any other nix derivation. Per-TU drvs are single-threaded and
-    # ignore -cores, so the consumer can invoke with a high --cores
-    # (e.g. `--max-jobs 6 --cores 18`) to get a fast configureDrv
-    # without harming the per-TU phase. DYNDRV_DEPFILE_WORKERS is
-    # kept as an explicit override for memory-constrained hosts where
-    # even the icpx -M closure is too heavy.
+    # We use clang-scan-deps in `preprocess-dependency-directives`
+    # mode over a filtered copy of compile_commands.json. The earlier
+    # approach (`icpx -M` per TU, fanned out through a
+    # ProcessPoolExecutor) was the dominant cost in extract.py — icpx
+    # doesn't short-circuit `-fsycl` under `-M` and forks a host +
+    # spir64 device `clang -cc1` pass for every TU, taking ~24 s per
+    # TU at peak (~30 min wall on the kept ~1.4k TU subset, ~80 min on
+    # the unpruned 3.8k TU set). scan-deps shares its parsed-include
+    # graph across worker threads in a single process, so each
+    # repeated `#include` is lexed once and the per-TU work is
+    # bottlenecked on `read()` rather than the SYCL frontend.
+    # Measured: ~10 s wall on the same 1.4k TU set.
     src_by_obj = {obj: obj_to_src[obj] for obj in obj_inputs}
     cc_by_file = {e["file"]: e for e in rewritten}
     safe_by_obj: dict[str, str] = {}
@@ -636,39 +701,54 @@ def main() -> None:
         seen_safe_names[base_safe] = n + 1
         safe_by_obj[obj_rel] = base_safe if n == 0 else f"{base_safe}-{n}"
 
-    depfiles_dir = os.path.join(build, "depfiles")
-    os.makedirs(depfiles_dir, exist_ok=True)
     per_tu_cmd_dir = os.path.join(repo, "per-tu-cmds")
     os.makedirs(per_tu_cmd_dir, exist_ok=True)
 
-    depgen_tasks: list[tuple] = []
+    # Build the filtered scan-deps compilation database. We carry only
+    # the entries we'll actually scan (matches what `icpx -M` did) so
+    # scan-deps doesn't blow up on icpx-specific flags in unrelated
+    # entries (e.g. oneDNN's `-fiopenmp`). Each entry's `-o` is kept
+    # intact so the make-format rule target lines up with `obj_rel`.
+    scan_cdb = []
     for obj_rel in obj_inputs:
         src = src_by_obj[obj_rel]
         entry = cc_by_file.get(src)
         if entry is None:
             sys.exit(f"FATAL: no compile_commands entry for src {src}")
-        safe = safe_by_obj[obj_rel]
-        depfile = os.path.join(depfiles_dir, f"{safe}.d")
-        depgen_tasks.append((entry, depfile, repo))
+        if "arguments" in entry:
+            args_in = list(entry["arguments"])
+        else:
+            args_in = shlex.split(entry["command"])
+        scan_cdb.append({
+            "directory": entry.get("directory", repo),
+            "file": entry["file"],
+            "arguments": _strip_scan_unfriendly(args_in),
+        })
+    scan_cdb_path = os.path.join(build, "compile_commands.scan.json")
+    with open(scan_cdb_path, "w") as f:
+        json.dump(scan_cdb, f)
+    scan_out_path = os.path.join(build, "scan-deps.mk")
 
+    # Worker count: NIX_BUILD_CORES (canonical Nix sandbox env var,
+    # set from --cores). DYNDRV_DEPFILE_WORKERS overrides for memory-
+    # constrained hosts. scan-deps is far cheaper per TU than icpx -M
+    # ever was, so the override exists mainly for symmetry with the
+    # icpx-era knob and is unlikely to need use in practice.
     workers = (
         int(os.environ.get("DYNDRV_DEPFILE_WORKERS") or 0)
         or int(os.environ.get("NIX_BUILD_CORES") or 0)
         or 1
     )
-    workers = max(1, min(workers, len(depgen_tasks)))
-    print(f"[extract] generating {len(depgen_tasks)} depfiles via icpx -M "
-          f"(workers={workers})")
-    failures: list[tuple[str, str, str]] = []
-    with concurrent.futures.ProcessPoolExecutor(max_workers=workers) as ex:
-        for src, depfile, err in ex.map(_gen_depfile, depgen_tasks):
-            if err is not None:
-                failures.append((src, depfile, err))
-    if failures:
-        for src, depfile, err in failures[:5]:
-            print(f"[extract] depfile FAIL for {src}\n  {err}", file=sys.stderr)
-        sys.exit(f"FATAL: {len(failures)} depfile generations failed; "
-                 "see first few above")
+    workers = max(1, min(workers, len(scan_cdb)))
+    print(f"[extract] scanning {len(scan_cdb)} TUs via clang-scan-deps "
+          f"(j={workers})")
+    deps_by_target = _run_scan_deps(scan_cdb_path, scan_out_path, repo, workers)
+    if len(deps_by_target) != len(scan_cdb):
+        print(
+            f"[extract] WARN: scan-deps emitted {len(deps_by_target)} rules "
+            f"but cdb has {len(scan_cdb)} entries",
+            file=sys.stderr,
+        )
 
     # 5. Build the per-TU manifest. Paths are stored RELATIVE to $repo,
     # not as absolute /nix/store paths — Nix's builtins.fromJSON returns
@@ -685,8 +765,17 @@ def main() -> None:
         src_rel = src[len(repo) + 1:]
         safe = safe_by_obj[obj_rel]
         entry = cc_by_file[src]
-        depfile = os.path.join(depfiles_dir, f"{safe}.d")
-        headers = _parse_depfile(depfile, repo, src_rel)
+        # scan-deps emits one rule per CDB entry with the rule target
+        # equal to the `-o` argument (cmake puts the ninja-relative
+        # `obj_rel` there). Drop the TU's own src to avoid listing
+        # it twice in srcSubset.
+        deps = deps_by_target.get(obj_rel)
+        if deps is None:
+            sys.exit(
+                f"FATAL: clang-scan-deps emitted no rule for {obj_rel} "
+                f"(TU {src_rel})"
+            )
+        headers = sorted(d for d in deps if d != src_rel)
         cmd_text = _build_tu_cmd(entry, repo, pch_out_path)
         cmd_rel = f"per-tu-cmds/{safe}.txt"
         with open(os.path.join(repo, cmd_rel), "w") as f:

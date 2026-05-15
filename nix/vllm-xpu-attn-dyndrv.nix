@@ -19,6 +19,14 @@
   ocl-icd,
   zlib,
   which,
+  # Stock clang-21 tools — extract.py invokes clang-scan-deps for the
+  # configure-time per-TU header scan. clang-21 is the LLVM branch
+  # icpx 2025.3 is built from (its -print-resource-dir lands in
+  # `<oneapi>/compiler/2025.3/lib/clang/21`); matching versions avoids
+  # the dialect drift that breaks scan-deps on icpx-emitted commands.
+  # llvmPackages_20's scan-deps fails with "stddef.h file not found"
+  # against the same input.
+  clang-tools,
   # Optional pruning of the FA2 Cartesian TU set. null -> keep all (current
   # behaviour). Attrs with `headDims` / `dtypes` lists drop any TU whose
   # parsed parameters fall outside the filter. Hard-fails at configure time
@@ -198,6 +206,7 @@ let
       git
       which
       python3Packages.python
+      clang-tools
     ];
 
     buildInputs = linkInputs;

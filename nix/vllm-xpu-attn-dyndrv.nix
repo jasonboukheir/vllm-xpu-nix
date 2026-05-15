@@ -529,6 +529,16 @@ __RELS__
         runHook preBuild
         ${mkEnvSetup { }}
 
+        # sccache resolves its on-disk cache root from $SCCACHE_DIR, falling
+        # back to $HOME/.cache/sccache. The Nix sandbox sets HOME to the
+        # unwritable /homeless-shelter, so the fallback path errors at
+        # mkdir time even when the user has a remote backend (S3/Redis)
+        # configured — sccache still maintains a local preprocessor cache.
+        # Point HOME at $TMPDIR so the fallback lands somewhere writable.
+        # Persistent caching still works via SCCACHE_DIR / SCCACHE_BUCKET /
+        # SCCACHE_REDIS inherited through impureEnvVars below.
+        export HOME=$TMPDIR
+
         mkdir -p $out
 
         cmd=$(cat ${srcSubset}/${tu.cmd_rel_path})

@@ -107,17 +107,13 @@ stdenv.mkDerivation {
     "AWS_SESSION_TOKEN"
   ];
 
-  # Each SYCL-TLA template instantiation peaks ~5 GiB RSS in icpx, with
-  # the heavier head-dim/policy combos pushing ~40 GiB. ninja -j$(nproc)
-  # on a 24-core box stacks ~24 of these and OOM-kills the build long
-  # before any head128/b16 TU finishes. Match the dev-shell default
-  # (MAX_JOBS=2) so multiple lib drvs can still run concurrently under
-  # Nix's outer scheduler without overrunning a 96 GiB box. Set in
-  # preConfigure so the same value reaches both ninja -j and
-  # -fsycl-max-parallel-link-jobs (substituted below).
+  # NIX_BUILD_CORES is inherited from the daemon (defaults to `nproc`).
+  # After 0007-fa2-dtype-split.patch the worst-case attn TU peaks at
+  # ~7 GiB RSS, so a fat-RAM box can run the full nproc fan-out. Cap
+  # with `nix build --cores N` (or `cores = N` in nix.conf) on memory-
+  # constrained hosts; that value also reaches -fsycl-max-parallel-
+  # link-jobs via the cmakeFlagsArray append below.
   preConfigure = ''
-    export NIX_BUILD_CORES=2
-
     # sccache falls back to $HOME/.cache/sccache when SCCACHE_DIR isn't
     # set; the Nix sandbox HOME (/homeless-shelter) is unwritable, so
     # the fallback errors at mkdir time even when the user has S3/Redis

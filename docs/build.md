@@ -18,14 +18,12 @@ nix build .#gdn-attn-kernels-xe-2
 nix build .#grouped-gemm-xe-2
 ```
 
-The full kernels target rebuilds in roughly 90 minutes from cold on a
-24-core box; individual kernel `.so`s are 8-25 minutes each. After the
-`0007-fa2-dtype-split.patch` rework, per-TU peak RSS sits around ~7 GiB
-on the worst-case `q16_h256_p128` attn TU (down from ~40 GiB pre-patch).
-The intra-drv ninja cap is fixed at `-j2` (override with `cores=`
-per-builder if you have headroom) so multiple kernel `.so` drvs can run
-concurrently under the outer Nix scheduler without overrunning a 96 GiB
-box.
+After `0007-fa2-dtype-split.patch` per-TU peak RSS sits around ~7 GiB
+on the worst-case `q16_h256_p128` attn TU (down from ~40 GiB pre-patch),
+so each lib drv runs `ninja -j$NIX_BUILD_CORES` at the daemon default
+(`nproc`). On memory-constrained hosts cap parallelism with
+`nix build --cores N` (or `cores = N` in nix.conf); the same value
+feeds `-fsycl-max-parallel-link-jobs`.
 
 Each lib drv runs cmake + ninja through `sccache` as the compiler
 launcher. With `SCCACHE_BUCKET` (or `SCCACHE_REDIS`) configured on the

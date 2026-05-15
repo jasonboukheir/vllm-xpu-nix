@@ -18,6 +18,7 @@
   ocl-icd,
   zlib,
   which,
+  sccache,
 }:
 
 {
@@ -42,6 +43,13 @@ stdenv.mkDerivation {
     ./patches/0001-split-kernel-libs.patch
     ./patches/0005-reduce-kernel-build-memory.patch
     ./patches/0006-decouple-256grf-from-aot.patch
+    # 0007 widens the FA2 Cartesian sweep (Q/KV dtype as template params)
+    # so each TU instantiates one SYCL pipeline instead of six, dropping
+    # per-TU peak RSS from ~40 GB to ~7 GB on the worst-case attn TU.
+    # Inert for non-attn libs (FA2_KERNELS_ENABLED=OFF skips the
+    # affected sources entirely); applied here so the attn lib variant
+    # picks it up.
+    ./patches/0007-fa2-dtype-split.patch
   ];
 
   nativeBuildInputs = [
@@ -50,6 +58,7 @@ stdenv.mkDerivation {
     git
     autoPatchelfHook
     which
+    sccache
   ];
 
   buildInputs = [
@@ -77,6 +86,27 @@ stdenv.mkDerivation {
   # leaves the .so byte-identical and the CA hash hits.
   __contentAddressed = true;
 
+  # sccache is wired as the C/C++ compiler launcher. Local (SCCACHE_DIR)
+  # and remote (SCCACHE_BUCKET / SCCACHE_REDIS) backends both work; the
+  # sandbox inherits credentials via impureEnvVars below. With S3 as the
+  # backend the warm-cache rebuild for an unchanged TU is a single GET
+  # per .o — the cache property that matters for iteration speed without
+  # paying the overhead of per-TU Nix derivations.
+  impureEnvVars = [
+    "SCCACHE_DIR"
+    "SCCACHE_BUCKET"
+    "SCCACHE_REGION"
+    "SCCACHE_ENDPOINT"
+    "SCCACHE_S3_USE_SSL"
+    "SCCACHE_S3_KEY_PREFIX"
+    "SCCACHE_S3_NO_CREDENTIALS"
+    "SCCACHE_REDIS"
+    "SCCACHE_REDIS_KEY_PREFIX"
+    "AWS_ACCESS_KEY_ID"
+    "AWS_SECRET_ACCESS_KEY"
+    "AWS_SESSION_TOKEN"
+  ];
+
   # Each SYCL-TLA template instantiation peaks ~5 GiB RSS in icpx, with
   # the heavier head-dim/policy combos pushing ~40 GiB. ninja -j$(nproc)
   # on a 24-core box stacks ~24 of these and OOM-kills the build long
@@ -87,6 +117,14 @@ stdenv.mkDerivation {
   # -fsycl-max-parallel-link-jobs (substituted below).
   preConfigure = ''
     export NIX_BUILD_CORES=2
+
+    # sccache falls back to $HOME/.cache/sccache when SCCACHE_DIR isn't
+    # set; the Nix sandbox HOME (/homeless-shelter) is unwritable, so
+    # the fallback errors at mkdir time even when the user has S3/Redis
+    # configured. Point HOME at $TMPDIR so the fallback lands somewhere
+    # writable. Persistent caching still works via SCCACHE_* inherited
+    # through impureEnvVars.
+    export HOME=$TMPDIR
 
     mkdir -p $TMPDIR/bin
     ln -sf ${intel-compute-runtime}/bin/ocloc-* $TMPDIR/bin/ocloc
@@ -120,6 +158,8 @@ stdenv.mkDerivation {
     "-DCMAKE_BUILD_TYPE=Release"
     "-DBUILD_SYCL_TLA_KERNELS=ON"
     "-DVLLM_XPU_CUTLASS_TEMPLATE_BACKTRACE_LIMIT=10"
+    "-DCMAKE_C_COMPILER_LAUNCHER=sccache"
+    "-DCMAKE_CXX_COMPILER_LAUNCHER=sccache"
   ]
   ++ featureFlags;
 

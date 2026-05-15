@@ -424,10 +424,6 @@ __RELS__
       dontUnpack = true;
       dontStrip = true;
 
-      nativeBuildInputs = [
-        which
-      ];
-
       buildInputs = compileInputs;
 
       # Content-addressed: the .o is just a SYCL device-image bundle for one

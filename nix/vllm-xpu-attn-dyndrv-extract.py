@@ -2,26 +2,31 @@
 """Configure-time extractor for the dyn-drv attn_kernels_xe_2 build.
 
 Run from configureDrv.installPhase after `cmake -GNinja` has populated
-$out/repo/build/. Produces four artefacts in $out/repo/:
+$out/repo/build/. Produces these artefacts in $out/repo/:
 
   - compile_commands.json (rewritten in-place: cmake's $build paths -> $out/repo)
-  - tu_manifest.json: every .cpp the link target consumes, each with the
-        absolute src path under $out/repo and the ninja-relative .o path.
-        Excludes the cmake-synthesised cmake_pch.hxx.cxx source — its compile
-        command lives in pch_meta.json instead, and a dedicated pchDrv
-        realises it once per (configure) and feeds the .pch to every TU.
-  - link_meta.json: the resolved link command for the target SO with $in
-        replaced by the sentinel __INPUTS__. linkDrv substitutes that token
-        with the per-TU .o store paths in the order ninja listed them.
-  - pch_meta.json: just the src + .pch paths (relative to $out/repo).
-        Plain JSON with no /nix/store/... mentions so Nix's
-        readFile+fromJSON at eval time stays within store-path context.
-  - pch_command.txt: the cmake-emitted PCH compile command with -o
-        rewritten to the placeholder __PCH_OUT__. pchDrv substitutes
-        $out/cmake_pch.hxx.pch at build time (same shell-substitute
-        pattern linkDrv uses for link_command.txt + __INPUTS__).
-        mkTU's extract-cmd.py rewrites the embedded .pch path in each
-        per-TU command to point at ${pchDrv}/cmake_pch.hxx.pch.
+  - tu_manifest.json: every .cpp the link target consumes. Each entry
+        carries the .cpp src path (relative to $out/repo), the
+        ninja-relative .o path, a list of transitive header paths the
+        TU pulls from $out/repo (extracted from icpx -M depfiles), and
+        a path to a per-TU compile-command text file. Excludes the
+        cmake-synthesised cmake_pch.hxx.cxx source.
+  - per-tu-cmds/<safe_name>.txt: the cmake-emitted compile command
+        for each TU, with -MD/-MT/-MF stripped, -o replaced by
+        __OUT_OBJ__, every $out/repo prefix replaced by __SRC_SUBSET__,
+        and (if PCH is active) the -include-pch path replaced by
+        __PCH_PATH__. mkTU builds a per-TU lib.fileset.toSource over
+        the source + headers + this cmd file, then substitutes the
+        placeholders in shell. Living inside $repo (and therefore
+        inside each TU's srcSubset) is what lets mkTU drop its
+        ${configureDrv} reference entirely.
+  - link_meta.json / link_command.txt: target link replay (unchanged).
+  - pch_meta.json / pch_command.txt: PCH compile artifacts (unchanged).
+
+The depfile pass uses icpx -M (preprocess-only + emit make-style deps)
+on every kept TU in parallel. -M is much cheaper than full compile —
+no codegen, no SYCL device IR — typically a few hundred ms per TU even
+on the heavy chunk_prefill / paged_decode templates.
 
 build.ninja parsing is intentionally minimal: it handles cmake's emitted
 syntax (one top-level build.ninja that `include`s CMakeFiles/rules.ninja)
@@ -31,10 +36,12 @@ where to look first.
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import json
 import os
 import re
 import shlex
+import subprocess
 import sys
 
 
@@ -232,6 +239,122 @@ def safe_drv_name(rel_name: str) -> str:
     return re.sub(r"[^A-Za-z0-9_-]", "_", name)
 
 
+def _gen_depfile(args_tuple: tuple) -> tuple:
+    """Worker for ProcessPoolExecutor. Runs icpx -M for one TU.
+
+    Returns (src, depfile_path, error_or_None).
+    """
+    entry, depfile, repo = args_tuple
+    if "arguments" in entry:
+        cmd = list(entry["arguments"])
+    else:
+        cmd = shlex.split(entry["command"])
+    cleaned = _strip_dep_flags(cmd)
+    # Drop -o <obj> (we don't write an .o) and -c (icpx errors with
+    # `-c [-Werror,-Wunused-command-line-argument]` under -M because
+    # -M stops after the preprocessor — the -c becomes a no-op).
+    # The source file follows -c as the next positional arg; without
+    # the -c marker, icpx treats it as input the same way.
+    final, i = [], 0
+    while i < len(cleaned):
+        a = cleaned[i]
+        if a == "-o":
+            i += 2
+        elif a == "-c":
+            i += 1
+        else:
+            final.append(a)
+            i += 1
+    final += ["-M", "-MF", depfile]
+    cwd = entry.get("directory") or repo
+    proc = subprocess.run(final, cwd=cwd, capture_output=True, text=True)
+    if proc.returncode != 0:
+        # Trim the stderr — icpx warnings on heavy SYCL templates can
+        # be thousands of lines and only the tail is usually useful.
+        tail = proc.stderr.strip().splitlines()[-20:]
+        return (entry["file"], depfile,
+                f"icpx -M exit {proc.returncode}: " + "\n".join(tail))
+    return (entry["file"], depfile, None)
+
+
+def _parse_depfile(path: str, repo: str) -> list[str]:
+    r"""Parse a make-style .d file into the list of `$repo`-relative header paths.
+
+    icpx -M emits the canonical `target: prereq prereq \` form. We:
+      1. Drop the `target:` prefix.
+      2. Collapse `\<newline>` line continuations.
+      3. shlex-split to honour escaped spaces.
+      4. Filter to paths under `$repo` (everything else is a stable
+         third-party header from icpx/oneapi/torch/etc and is already
+         captured as a runtime dep of compileInputs — including those
+         in the per-TU srcSubset would just bloat closures with no
+         caching benefit).
+      5. Drop the .cpp src itself (the caller already includes it in
+         srcSubset under src_rel_path).
+    """
+    with open(path) as f:
+        text = f.read()
+    if ":" in text:
+        text = text.split(":", 1)[1]
+    text = text.replace("\\\n", " ").replace("\\\r\n", " ")
+    try:
+        toks = shlex.split(text)
+    except ValueError as e:
+        sys.exit(f"FATAL: failed to parse depfile {path}: {e}")
+    prefix = repo.rstrip("/") + "/"
+    headers = set()
+    for t in toks:
+        if t.endswith(".cpp") or t.endswith(".cc") or t.endswith(".cxx"):
+            continue
+        if t.startswith(prefix):
+            headers.add(t[len(prefix):])
+    return sorted(headers)
+
+
+def _build_tu_cmd(entry: dict, repo: str, pch_out_path: str | None) -> str:
+    """Build the per-TU compile-command text with placeholders.
+
+    Substitutions performed at extract time:
+      - strip -MD/-MMD/-MT/-MF (dep-tracking is a no-op for re-run)
+      - replace `-o <obj>` with `-o __OUT_OBJ__`
+      - if -include-pch points at `pch_out_path`, replace that arg with
+        `__PCH_PATH__`
+      - replace every $repo prefix with `__SRC_SUBSET__`
+
+    mkTU does the inverse at build time: __SRC_SUBSET__ → ${srcSubset},
+    __OUT_OBJ__ → $out/tu.o, __PCH_PATH__ → ${pchDrv}/cmake_pch.hxx.pch.
+    Anything *outside* $repo (icpx / oneapi / torch / glibc store paths)
+    stays as a literal /nix/store/... ref, which Nix's content-scan picks
+    up as an srcSubset closure dep — same SYCL frontend the linkDrv
+    closure already pulls in.
+    """
+    if "arguments" in entry:
+        args_in = list(entry["arguments"])
+    else:
+        args_in = shlex.split(entry["command"])
+    out_args: list[str] = []
+    i = 0
+    while i < len(args_in):
+        a = args_in[i]
+        if a in ("-MD", "-MMD"):
+            i += 1
+        elif a in ("-MT", "-MF"):
+            i += 2
+        elif a == "-o" and i + 1 < len(args_in):
+            out_args.extend(["-o", "__OUT_OBJ__"])
+            i += 2
+        elif pch_out_path is not None and a == pch_out_path:
+            out_args.append("__PCH_PATH__")
+            i += 1
+        else:
+            out_args.append(a)
+            i += 1
+    # Now swap $repo → __SRC_SUBSET__ across every remaining arg.
+    repo_clean = repo.rstrip("/")
+    out_args = [a.replace(repo_clean, "__SRC_SUBSET__") for a in out_args]
+    return shlex.join(out_args)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--repo", required=True, help="$out/repo path")
@@ -285,6 +408,7 @@ def main() -> None:
     )
     pch_meta = None
     pch_command = None
+    pch_out_path: str | None = None
     if pch_entry is not None:
         if "arguments" in pch_entry:
             pch_args = list(pch_entry["arguments"])
@@ -438,7 +562,77 @@ def main() -> None:
             print(f"[extract]   dropped {n} ({k or 'unclassified'})")
         obj_inputs = kept_obj_inputs
 
-    # 4. Build the per-TU manifest. Paths are stored RELATIVE to $repo,
+    # 4. Per-TU dep extraction + per-TU command emission.
+    #
+    # `cmake -GNinja` only configures, so no .d files exist yet in
+    # $repo/build/CMakeFiles/<target>.dir/. We synthesize them here:
+    # for every kept TU, run icpx -M (preprocess-only + emit make-style
+    # deps) and parse the resulting depfile into the list of headers
+    # under $repo. mkTU then materializes a lib.fileset.toSource
+    # containing JUST that TU's src + headers + per-TU cmd file, and
+    # drops the `${configureDrv}` ref entirely. Net effect: a header
+    # edit invalidates only the TUs that transitively #include it
+    # (the issue #53 ceiling).
+    #
+    # The depfile pass is the dominant cost in extract.py — each icpx
+    # -M pass on a SYCL TU still runs the full host + spir64 device
+    # parser (icpx doesn't short-circuit -fsycl under -M), so per-TU
+    # RSS peaks at ~1.5-2 GB on the heavier chunk_prefill heads.
+    # Worker count comes from NIX_BUILD_CORES (canonical Nix sandbox
+    # env var, set from `--cores`) so this is portable across hosts —
+    # the consumer controls parallelism the same way they would for
+    # any other nix derivation. Per-TU drvs are single-threaded and
+    # ignore -cores, so the consumer can invoke with a high --cores
+    # (e.g. `--max-jobs 6 --cores 18`) to get a fast configureDrv
+    # without harming the per-TU phase. DYNDRV_DEPFILE_WORKERS is
+    # kept as an explicit override for memory-constrained hosts where
+    # even the icpx -M closure is too heavy.
+    src_by_obj = {obj: obj_to_src[obj] for obj in obj_inputs}
+    cc_by_file = {e["file"]: e for e in rewritten}
+    safe_by_obj: dict[str, str] = {}
+    seen_safe_names: dict[str, int] = {}
+    for obj_rel in obj_inputs:
+        rel_basename = os.path.basename(src_by_obj[obj_rel])
+        base_safe = safe_drv_name(rel_basename)
+        n = seen_safe_names.get(base_safe, 0)
+        seen_safe_names[base_safe] = n + 1
+        safe_by_obj[obj_rel] = base_safe if n == 0 else f"{base_safe}-{n}"
+
+    depfiles_dir = os.path.join(build, "depfiles")
+    os.makedirs(depfiles_dir, exist_ok=True)
+    per_tu_cmd_dir = os.path.join(repo, "per-tu-cmds")
+    os.makedirs(per_tu_cmd_dir, exist_ok=True)
+
+    depgen_tasks: list[tuple] = []
+    for obj_rel in obj_inputs:
+        src = src_by_obj[obj_rel]
+        entry = cc_by_file.get(src)
+        if entry is None:
+            sys.exit(f"FATAL: no compile_commands entry for src {src}")
+        safe = safe_by_obj[obj_rel]
+        depfile = os.path.join(depfiles_dir, f"{safe}.d")
+        depgen_tasks.append((entry, depfile, repo))
+
+    workers = (
+        int(os.environ.get("DYNDRV_DEPFILE_WORKERS") or 0)
+        or int(os.environ.get("NIX_BUILD_CORES") or 0)
+        or 1
+    )
+    workers = max(1, min(workers, len(depgen_tasks)))
+    print(f"[extract] generating {len(depgen_tasks)} depfiles via icpx -M "
+          f"(workers={workers})")
+    failures: list[tuple[str, str, str]] = []
+    with concurrent.futures.ProcessPoolExecutor(max_workers=workers) as ex:
+        for src, depfile, err in ex.map(_gen_depfile, depgen_tasks):
+            if err is not None:
+                failures.append((src, depfile, err))
+    if failures:
+        for src, depfile, err in failures[:5]:
+            print(f"[extract] depfile FAIL for {src}\n  {err}", file=sys.stderr)
+        sys.exit(f"FATAL: {len(failures)} depfile generations failed; "
+                 "see first few above")
+
+    # 5. Build the per-TU manifest. Paths are stored RELATIVE to $repo,
     # not as absolute /nix/store paths — Nix's builtins.fromJSON returns
     # context-less strings, and downstream code that puts those strings
     # into derivation attributes would trip "is not allowed to refer to
@@ -446,28 +640,34 @@ def main() -> None:
     # The Nix code prepends ${configureDrv}/repo/ via interpolation, which
     # carries proper context.
     manifest = []
-    seen_safe_names: dict[str, int] = {}
     for obj_rel in obj_inputs:
-        src = obj_to_src[obj_rel]
+        src = src_by_obj[obj_rel]
         if not src.startswith(repo + "/"):
             sys.exit(f"FATAL: source {src} is outside $repo {repo}")
         src_rel = src[len(repo) + 1:]
-        rel_basename = os.path.basename(src)
-        base_safe = safe_drv_name(rel_basename)
-        # Disambiguate if two TUs share a basename.
-        n = seen_safe_names.get(base_safe, 0)
-        seen_safe_names[base_safe] = n + 1
-        safe = base_safe if n == 0 else f"{base_safe}-{n}"
+        safe = safe_by_obj[obj_rel]
+        entry = cc_by_file[src]
+        depfile = os.path.join(depfiles_dir, f"{safe}.d")
+        headers = _parse_depfile(depfile, repo)
+        cmd_text = _build_tu_cmd(entry, repo, pch_out_path)
+        cmd_rel = f"per-tu-cmds/{safe}.txt"
+        with open(os.path.join(repo, cmd_rel), "w") as f:
+            f.write(cmd_text + "\n")
         manifest.append({
             "safe_name": safe,
             "src_rel_path": src_rel,
             "obj_rel_path": obj_rel,
+            "cmd_rel_path": cmd_rel,
+            "headers": headers,
         })
     launcher_count = sum(
         1 for m in manifest
         if m["src_rel_path"].endswith(("fmha_xe2.cpp", "paged_decode_xe2.cpp"))
     )
-    print(f"[extract] tu_manifest: {len(manifest)} TUs ({launcher_count} launchers)")
+    headers_lens = [len(m["headers"]) for m in manifest]
+    print(f"[extract] tu_manifest: {len(manifest)} TUs ({launcher_count} launchers); "
+          f"headers per TU min={min(headers_lens)} median={sorted(headers_lens)[len(headers_lens)//2]} "
+          f"max={max(headers_lens)}")
 
     with open(os.path.join(repo, "tu_manifest.json"), "w") as f:
         json.dump(manifest, f, indent=2)

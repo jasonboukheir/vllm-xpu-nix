@@ -286,6 +286,8 @@ let
         --src-root "$src_root" \
         --target attn_kernels_xe_2 \
         --soname libattn_kernels_xe_2.so \
+        --torch-prefix ${torch-xpu} \
+        --oneapi-prefix ${intel-oneapi-base} \
         ${lib.optionalString (kernelSet != null)
           "--kernel-set ${lib.escapeShellArg (builtins.toJSON {
             head_dims = kernelSet.headDims or null;
@@ -331,7 +333,15 @@ let
   # header content + compile flags. CUTLASS-SYCL / cute bumps invalidate
   # the PCH (correctly); torch / nixpkgs bumps that don't change the
   # umbrella header's textual closure get to keep their PCH cache entry.
-  pchDrv = if pchMeta == null then null else stdenv.mkDerivation {
+  # stdenvNoCC: this drv only invokes icpx (from intel-oneapi-base), so
+  # the cc-wrapper closure (gcc + binutils + glibc-locales) regular
+  # stdenv would drop into nativeBuildInputs is dead weight that churns
+  # the input hash on every unrelated nixpkgs gcc/glibc bump (issue #57).
+  # envSetup still references stdenv.cc.* literals for icpx's host
+  # toolchain flags (--gcc-toolchain, -B, -L, -idirafter); fully
+  # decoupling from those needs a wrapCCWith icpx wrapper as a separate
+  # CA drv — left for a follow-up.
+  pchDrv = if pchMeta == null then null else stdenvNoCC.mkDerivation {
     pname = "vllm-xpu-attn-dyndrv-pch";
     version = "0.1.7-dev";
 
@@ -439,7 +449,9 @@ __RELS__
     let
       srcSubset = mkSrcSubset tu;
     in
-    stdenv.mkDerivation {
+    # stdenvNoCC: per-TU drvs only run icpx. See the pchDrv comment for
+    # the rationale (issue #57).
+    stdenvNoCC.mkDerivation {
       pname = "vllm-xpu-attn-dyndrv-tu-${tu.safe_name}";
       version = "0.1.7-dev";
 
@@ -466,10 +478,16 @@ __RELS__
       # interpolation — that's the *only* store-path ref this drv carries
       # from the configure side, and it's content-addressed by `tu.headers
       # + tu.src_rel_path` so unrelated header churn doesn't perturb it.
-      # The three placeholders extract.py left in the cmd are substituted
-      # here: __SRC_SUBSET__ → srcSubset's store path, __OUT_OBJ__ →
-      # $out/tu.o, __PCH_PATH__ → pchDrv's .pch (or empty / no-op when PCH
-      # is disabled).
+      # The placeholders extract.py left in the cmd are substituted here:
+      #   __SRC_SUBSET__   → srcSubset's store path
+      #   __OUT_OBJ__      → $out/tu.o
+      #   __PCH_PATH__     → pchDrv's .pch (no-op when PCH is disabled)
+      #   __TORCH_PREFIX__ → torch-xpu's store path
+      #   __ONEAPI_PREFIX__→ intel-oneapi-base's store path
+      # The torch / oneapi placeholders untangle the cmd file's BYTES
+      # from torch-xpu / oneapi store-path bumps (issue #55), so an
+      # innocuous nixpkgs rebuild doesn't churn srcSubset's CA hash and
+      # invalidate every per-TU drv's realisation cache.
       buildPhase = ''
         runHook preBuild
         ${mkEnvSetup { }}
@@ -480,6 +498,8 @@ __RELS__
         cmd=''${cmd//__SRC_SUBSET__/${srcSubset}}
         cmd=''${cmd//__OUT_OBJ__/$out/tu.o}
         cmd=''${cmd//__PCH_PATH__/${newPchPath}}
+        cmd=''${cmd//__TORCH_PREFIX__/${torch-xpu}}
+        cmd=''${cmd//__ONEAPI_PREFIX__/${intel-oneapi-base}}
 
         echo "TU compile (${tu.safe_name}):"
         echo "  src: ${srcSubset}/${tu.src_rel_path}"

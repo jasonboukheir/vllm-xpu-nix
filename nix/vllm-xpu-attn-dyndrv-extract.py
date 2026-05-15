@@ -401,7 +401,13 @@ def _run_scan_deps(
     return by_target
 
 
-def _build_tu_cmd(entry: dict, repo: str, pch_out_path: str | None) -> str:
+def _build_tu_cmd(
+    entry: dict,
+    repo: str,
+    pch_out_path: str | None,
+    torch_prefix: str,
+    oneapi_prefix: str,
+) -> str:
     """Build the per-TU compile-command text with placeholders.
 
     Substitutions performed at extract time:
@@ -410,13 +416,22 @@ def _build_tu_cmd(entry: dict, repo: str, pch_out_path: str | None) -> str:
       - if -include-pch points at `pch_out_path`, replace that arg with
         `__PCH_PATH__`
       - replace every $repo prefix with `__SRC_SUBSET__`
+      - rewrite the absolute compiler-binary arg under
+        `<oneapi>/compiler/latest/bin/<tool>` to its bare basename
+        (envSetup puts the SYCL bin on PATH, so `icpx` resolves)
+      - sweep every remaining `<torch>` prefix to `__TORCH_PREFIX__` and
+        every `<oneapi>` prefix to `__ONEAPI_PREFIX__`
 
     mkTU does the inverse at build time: __SRC_SUBSET__ → ${srcSubset},
-    __OUT_OBJ__ → $out/tu.o, __PCH_PATH__ → ${pchDrv}/cmake_pch.hxx.pch.
-    Anything *outside* $repo (icpx / oneapi / torch / glibc store paths)
-    stays as a literal /nix/store/... ref, which Nix's content-scan picks
-    up as an srcSubset closure dep — same SYCL frontend the linkDrv
-    closure already pulls in.
+    __OUT_OBJ__ → $out/tu.o, __PCH_PATH__ → ${pchDrv}/cmake_pch.hxx.pch,
+    __TORCH_PREFIX__ → ${torch-xpu}, __ONEAPI_PREFIX__ →
+    ${intel-oneapi-base}. Per-TU cmd file bytes become invariant to
+    icpx-toolchain and torch-xpu store-path bumps; the Nix-side
+    interpolation re-attaches store-path context via buildInputs, so
+    the drv closure tracks the right runtime deps. Anything outside
+    those prefixes (gcc / glibc) stays as a literal /nix/store ref and
+    flows into the input hash via envSetup's stdenv.cc.* interpolations
+    — left for a follow-up wrapCCWith refactor.
     """
     if "arguments" in entry:
         args_in = list(entry["arguments"])
@@ -457,6 +472,25 @@ def _build_tu_cmd(entry: dict, repo: str, pch_out_path: str | None) -> str:
     # Now swap $repo → __SRC_SUBSET__ across every remaining arg.
     repo_clean = repo.rstrip("/")
     out_args = [a.replace(repo_clean, "__SRC_SUBSET__") for a in out_args]
+    # cmake bakes /nix/store/<oneapi>/compiler/latest/bin/icpx into args[0]
+    # of every entry. envSetup already puts that bin dir on PATH, so a
+    # bare basename (`icpx`, `icx`, ...) resolves at build time and
+    # untangles the per-TU cmd file from oneapi store-path bumps.
+    oneapi_clean = oneapi_prefix.rstrip("/")
+    sycl_bin_prefix = f"{oneapi_clean}/compiler/latest/bin/"
+    out_args = [
+        os.path.basename(a) if a.startswith(sycl_bin_prefix) else a
+        for a in out_args
+    ]
+    # Prefix sweep over the remaining args. Any -I/-isystem/-L/-include
+    # arg (combined `-Iflag/path` or separate `-I path`) that points
+    # under torch-xpu or intel-oneapi-base picks up the placeholder.
+    torch_clean = torch_prefix.rstrip("/")
+    out_args = [
+        a.replace(torch_clean, "__TORCH_PREFIX__")
+         .replace(oneapi_clean, "__ONEAPI_PREFIX__")
+        for a in out_args
+    ]
     return shlex.join(out_args)
 
 
@@ -469,6 +503,14 @@ def main() -> None:
     ap.add_argument("--kernel-set", default=None,
                     help='JSON: {"head_dims": [128], "dtypes": ["bf16"]}. '
                          'Omit or pass "{}" to keep all TUs.')
+    ap.add_argument("--torch-prefix", required=True,
+                    help="torch-xpu store path; rewritten to __TORCH_PREFIX__ "
+                         "in every per-TU cmd file")
+    ap.add_argument("--oneapi-prefix", required=True,
+                    help="intel-oneapi-base store path; rewritten to "
+                         "__ONEAPI_PREFIX__ in every per-TU cmd file. The "
+                         "compiler binary under <prefix>/compiler/latest/bin "
+                         "is collapsed to a bare basename instead.")
     args = ap.parse_args()
 
     kernel_set: dict = {}
@@ -776,7 +818,9 @@ def main() -> None:
                 f"(TU {src_rel})"
             )
         headers = sorted(d for d in deps if d != src_rel)
-        cmd_text = _build_tu_cmd(entry, repo, pch_out_path)
+        cmd_text = _build_tu_cmd(
+            entry, repo, pch_out_path, args.torch_prefix, args.oneapi_prefix,
+        )
         cmd_rel = f"per-tu-cmds/{safe}.txt"
         with open(os.path.join(repo, cmd_rel), "w") as f:
             f.write(cmd_text + "\n")

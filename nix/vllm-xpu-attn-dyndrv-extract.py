@@ -2,26 +2,37 @@
 """Configure-time extractor for the dyn-drv attn_kernels_xe_2 build.
 
 Run from configureDrv.installPhase after `cmake -GNinja` has populated
-$out/repo/build/. Produces four artefacts in $out/repo/:
+$out/repo/build/. Produces these artefacts in $out/repo/:
 
   - compile_commands.json (rewritten in-place: cmake's $build paths -> $out/repo)
-  - tu_manifest.json: every .cpp the link target consumes, each with the
-        absolute src path under $out/repo and the ninja-relative .o path.
-        Excludes the cmake-synthesised cmake_pch.hxx.cxx source — its compile
-        command lives in pch_meta.json instead, and a dedicated pchDrv
-        realises it once per (configure) and feeds the .pch to every TU.
-  - link_meta.json: the resolved link command for the target SO with $in
-        replaced by the sentinel __INPUTS__. linkDrv substitutes that token
-        with the per-TU .o store paths in the order ninja listed them.
-  - pch_meta.json: just the src + .pch paths (relative to $out/repo).
-        Plain JSON with no /nix/store/... mentions so Nix's
-        readFile+fromJSON at eval time stays within store-path context.
-  - pch_command.txt: the cmake-emitted PCH compile command with -o
-        rewritten to the placeholder __PCH_OUT__. pchDrv substitutes
-        $out/cmake_pch.hxx.pch at build time (same shell-substitute
-        pattern linkDrv uses for link_command.txt + __INPUTS__).
-        mkTU's extract-cmd.py rewrites the embedded .pch path in each
-        per-TU command to point at ${pchDrv}/cmake_pch.hxx.pch.
+  - tu_manifest.json: every .cpp the link target consumes. Each entry
+        carries the .cpp src path (relative to $out/repo), the
+        ninja-relative .o path, a list of transitive header paths the
+        TU pulls from $out/repo (extracted from a clang-scan-deps run
+        over the kept subset of compile_commands.json), and a path to
+        a per-TU compile-command text file. Excludes the cmake-
+        synthesised cmake_pch.hxx.cxx source.
+  - per-tu-cmds/<safe_name>.txt: the cmake-emitted compile command
+        for each TU, with -MD/-MT/-MF stripped, -o replaced by
+        __OUT_OBJ__, every $out/repo prefix replaced by __SRC_SUBSET__,
+        and (if PCH is active) the -include-pch path replaced by
+        __PCH_PATH__. mkTU builds a per-TU lib.fileset.toSource over
+        the source + headers + this cmd file, then substitutes the
+        placeholders in shell. Living inside $repo (and therefore
+        inside each TU's srcSubset) is what lets mkTU drop its
+        ${configureDrv} reference entirely.
+  - link_meta.json / link_command.txt: target link replay (unchanged).
+  - pch_meta.json / pch_command.txt: PCH compile artifacts (unchanged).
+
+The dep pass writes a filtered compile_commands.scan.json (SYCL flags,
+PCH includes, and dep-tracking flags stripped — clang-21 doesn't grok
+the icpx-specific `-fno-sycl-instrument-device-code` family, and the
+PCH path isn't on disk yet at configure time) and runs
+clang-scan-deps once over it with -mode=preprocess-dependency-directives.
+That mode lexes only directive-relevant tokens, sharing the parsed
+header graph across TUs in memory — ~30x faster than running icpx -M
+per TU, which doesn't short-circuit -fsycl's device-side parse and
+forks two `clang -cc1` invocations per call.
 
 build.ninja parsing is intentionally minimal: it handles cmake's emitted
 syntax (one top-level build.ninja that `include`s CMakeFiles/rules.ninja)
@@ -35,6 +46,7 @@ import json
 import os
 import re
 import shlex
+import subprocess
 import sys
 
 
@@ -214,6 +226,51 @@ def _strip_dep_flags(args: list[str]) -> list[str]:
     return cleaned
 
 
+_SCAN_DROP_EXACT = {"-fsycl"}
+_SCAN_DROP_PREFIX = ("-fsycl-", "-fno-sycl-", "-Xsycl-target-")
+
+
+def _strip_scan_unfriendly(args: list[str]) -> list[str]:
+    """Strip flags that prevent stock clang-scan-deps from parsing an icpx command.
+
+    - dep-tracking flags (-MD/-MMD/-MT/-MF): redundant for scan-deps.
+    - `-include-pch <path>` in all three forms: the PCH doesn't exist at
+      configure time (cmake-Ninja hasn't run the PCH compile yet) and
+      scan-deps would error trying to read it. The host-only header walk
+      we get without PCH is a strict superset of the PCH'd walk anyway.
+    - `-fsycl` / `-fsycl-*` / `-fno-sycl-*` / `-Xsycl-target-*`: stock
+      upstream clang-21 doesn't recognise the icpx-specific subset
+      (`-fno-sycl-instrument-device-code`, `-fno-sycl-id-queries-fit-in-int`,
+      ...) and errors out. We're already only collecting `$repo`-relative
+      headers, which are the same set across host and device passes for
+      this codebase — losing the device-side parse doesn't change the
+      srcSubset content.
+    """
+    cleaned, i = [], 0
+    while i < len(args):
+        a = args[i]
+        if a in ("-MD", "-MMD"):
+            i += 1
+        elif a in ("-MT", "-MF"):
+            i += 2
+        elif (a == "-Xclang" and i + 3 < len(args)
+                and args[i + 1] == "-include-pch"
+                and args[i + 2] == "-Xclang"):
+            i += 4
+        elif a == "-include-pch":
+            i += 2
+        elif a.startswith("-include-pch="):
+            i += 1
+        elif a in _SCAN_DROP_EXACT:
+            i += 1
+        elif any(a.startswith(p) for p in _SCAN_DROP_PREFIX):
+            i += 1
+        else:
+            cleaned.append(a)
+            i += 1
+    return cleaned
+
+
 def _find_pch_pch_path(args: list[str]) -> str | None:
     """Return the absolute path embedded after a `-Xclang -include-pch` pair, if any."""
     for i in range(len(args) - 3):
@@ -230,6 +287,177 @@ def safe_drv_name(rel_name: str) -> str:
             name = name[: -len(suffix)]
             break
     return re.sub(r"[^A-Za-z0-9_-]", "_", name)
+
+
+def _run_scan_deps(
+    scan_cdb_path: str, scan_out_path: str, repo: str, workers: int
+) -> dict[str, list[str]]:
+    """Invoke clang-scan-deps once over the filtered CDB.
+
+    Returns a map from each entry's `-o` argument (the rule target in
+    scan-deps' make output) to the list of `$repo`-relative header
+    paths the TU pulls in. Non-$repo deps (stdlib, sycl, torch, ...)
+    are filtered out — they're already in compileInputs' runtime
+    closure and including them in per-TU srcSubsets would only inflate
+    closure size without any caching benefit.
+
+    scan-deps' stdout is streamed to `scan_out_path` rather than
+    captured into Python memory: on the full ~3.8k-TU unpruned build
+    the output exceeds 1.5 GB, which would peg `subprocess.run(...,
+    capture_output=True)` at multi-GB RSS plus extra copies during
+    the parse. Streaming + line-by-line read keeps RSS flat at ~100 MB.
+    """
+    with open(scan_out_path, "w") as out_f:
+        proc = subprocess.run(
+            [
+                "clang-scan-deps",
+                "-compilation-database", scan_cdb_path,
+                "-format", "make",
+                # Lexes only preprocessor-directive-relevant tokens
+                # per header and shares the parsed include graph
+                # across TUs. This mode is the actual source of the
+                # speedup vs running `icpx -M` per TU — without it
+                # scan-deps still walks each TU's headers via a full
+                # lex and the cross-TU caching wins shrink to ~3-5x.
+                "-mode", "preprocess-dependency-directives",
+                "-j", str(workers),
+            ],
+            stdout=out_f,
+            stderr=subprocess.PIPE,
+            text=True,
+            cwd=repo,
+        )
+    if proc.returncode != 0:
+        # Truncate stderr — scan-deps can spew per-TU errors.
+        err_tail = "\n".join(proc.stderr.strip().splitlines()[-30:])
+        sys.exit(
+            f"FATAL: clang-scan-deps exit {proc.returncode}\n"
+            f"--- stderr tail ---\n{err_tail}"
+        )
+
+    # Make output: one rule per TU, of the form
+    #   target: prereq prereq \
+    #     prereq prereq \
+    #     prereq
+    # Targets and prereqs are space-separated; spaces in paths would be
+    # escaped as `\ ` in make's grammar, but every path we emit lives
+    # under either $repo (a /nix/store/... path) or a SYCL / torch
+    # store path, and the Nix store rejects component names with
+    # spaces — so a fast `str.split()` is safe and saves the
+    # multi-minute `shlex.split` we'd otherwise do across 1.5 GB of
+    # output. Rules from concurrent worker threads can interleave but
+    # each individual rule is emitted atomically.
+    prefix = repo.rstrip("/") + "/"
+    by_target: dict[str, list[str]] = {}
+    current_target: str | None = None
+    current_headers: set[str] | None = None
+
+    def _flush():
+        if current_target is not None:
+            # Path normalisation: icpx -M emitted `./` in some paths
+            # from relative `#include "./collective/foo.hpp"`
+            # directives; scan-deps collapses these. Normalising here
+            # also defends against future relative-include patterns
+            # producing duplicate entries in srcSubset's cp loop.
+            by_target[current_target] = sorted(
+                {os.path.normpath(p) for p in current_headers}
+            )
+
+    with open(scan_out_path) as f:
+        for line in f:
+            stripped = line.rstrip("\n")
+            continuation = stripped.endswith("\\")
+            if continuation:
+                stripped = stripped[:-1]
+            tokens = stripped.split()
+            if not tokens:
+                if not continuation:
+                    _flush()
+                    current_target = None
+                    current_headers = None
+                continue
+            # New rule starts when the first token ends with ':'.
+            if current_target is None:
+                head = tokens[0]
+                if not head.endswith(":"):
+                    sys.exit(
+                        f"FATAL: scan-deps emitted a continuation line "
+                        f"with no active target: {line!r}"
+                    )
+                _flush()
+                current_target = head[:-1]
+                current_headers = set()
+                deps = tokens[1:]
+            else:
+                deps = tokens
+            for t in deps:
+                if t.startswith(prefix):
+                    current_headers.add(t[len(prefix):])
+            if not continuation:
+                _flush()
+                current_target = None
+                current_headers = None
+    _flush()
+    return by_target
+
+
+def _build_tu_cmd(entry: dict, repo: str, pch_out_path: str | None) -> str:
+    """Build the per-TU compile-command text with placeholders.
+
+    Substitutions performed at extract time:
+      - strip -MD/-MMD/-MT/-MF (dep-tracking is a no-op for re-run)
+      - replace `-o <obj>` with `-o __OUT_OBJ__`
+      - if -include-pch points at `pch_out_path`, replace that arg with
+        `__PCH_PATH__`
+      - replace every $repo prefix with `__SRC_SUBSET__`
+
+    mkTU does the inverse at build time: __SRC_SUBSET__ → ${srcSubset},
+    __OUT_OBJ__ → $out/tu.o, __PCH_PATH__ → ${pchDrv}/cmake_pch.hxx.pch.
+    Anything *outside* $repo (icpx / oneapi / torch / glibc store paths)
+    stays as a literal /nix/store/... ref, which Nix's content-scan picks
+    up as an srcSubset closure dep — same SYCL frontend the linkDrv
+    closure already pulls in.
+    """
+    if "arguments" in entry:
+        args_in = list(entry["arguments"])
+    else:
+        args_in = shlex.split(entry["command"])
+    out_args: list[str] = []
+    i = 0
+    while i < len(args_in):
+        a = args_in[i]
+        if a in ("-MD", "-MMD"):
+            i += 1
+        elif a in ("-MT", "-MF"):
+            i += 2
+        elif a == "-o" and i + 1 < len(args_in):
+            out_args.extend(["-o", "__OUT_OBJ__"])
+            i += 2
+        elif pch_out_path is not None and a == pch_out_path:
+            out_args.append("__PCH_PATH__")
+            i += 1
+        else:
+            out_args.append(a)
+            i += 1
+    # If PCH is active, the .pch path must have been replaced with
+    # __PCH_PATH__ above. cmake-Ninja emits the path as its own
+    # token (`-Xclang -include-pch -Xclang <abs>`), which the
+    # exact-arg match catches. A future combined form
+    # (`-include-pch=<abs>`) would slip past the loop; the next
+    # `repo → __SRC_SUBSET__` pass would then rewrite the embedded
+    # path to point inside the (PCH-less) srcSubset, producing a
+    # silent runtime "no such file". Fail loud at configure time so
+    # the regression is obvious.
+    if pch_out_path is not None and any(pch_out_path in a for a in out_args):
+        sys.exit(
+            f"FATAL: pch_out_path {pch_out_path} still embedded in per-TU "
+            "cmd after placeholder rewrite — likely a combined -include-pch="
+            "<path> arg the exact-match loop missed"
+        )
+    # Now swap $repo → __SRC_SUBSET__ across every remaining arg.
+    repo_clean = repo.rstrip("/")
+    out_args = [a.replace(repo_clean, "__SRC_SUBSET__") for a in out_args]
+    return shlex.join(out_args)
 
 
 def main() -> None:
@@ -285,6 +513,7 @@ def main() -> None:
     )
     pch_meta = None
     pch_command = None
+    pch_out_path: str | None = None
     if pch_entry is not None:
         if "arguments" in pch_entry:
             pch_args = list(pch_entry["arguments"])
@@ -438,7 +667,90 @@ def main() -> None:
             print(f"[extract]   dropped {n} ({k or 'unclassified'})")
         obj_inputs = kept_obj_inputs
 
-    # 4. Build the per-TU manifest. Paths are stored RELATIVE to $repo,
+    # 4. Per-TU dep extraction + per-TU command emission.
+    #
+    # `cmake -GNinja` only configures, so no .d files exist yet in
+    # $repo/build/CMakeFiles/<target>.dir/. We synthesize them here:
+    # for every kept TU, scan its include graph and record the headers
+    # under $repo. mkTU then materializes a lib.fileset.toSource
+    # containing JUST that TU's src + headers + per-TU cmd file, and
+    # drops the `${configureDrv}` ref entirely. Net effect: a header
+    # edit invalidates only the TUs that transitively #include it
+    # (the issue #53 ceiling).
+    #
+    # We use clang-scan-deps in `preprocess-dependency-directives`
+    # mode over a filtered copy of compile_commands.json. The earlier
+    # approach (`icpx -M` per TU, fanned out through a
+    # ProcessPoolExecutor) was the dominant cost in extract.py — icpx
+    # doesn't short-circuit `-fsycl` under `-M` and forks a host +
+    # spir64 device `clang -cc1` pass for every TU, taking ~24 s per
+    # TU at peak (~30 min wall on the kept ~1.4k TU subset, ~80 min on
+    # the unpruned 3.8k TU set). scan-deps shares its parsed-include
+    # graph across worker threads in a single process, so each
+    # repeated `#include` is lexed once and the per-TU work is
+    # bottlenecked on `read()` rather than the SYCL frontend.
+    # Measured: ~10 s wall on the same 1.4k TU set.
+    src_by_obj = {obj: obj_to_src[obj] for obj in obj_inputs}
+    cc_by_file = {e["file"]: e for e in rewritten}
+    safe_by_obj: dict[str, str] = {}
+    seen_safe_names: dict[str, int] = {}
+    for obj_rel in obj_inputs:
+        rel_basename = os.path.basename(src_by_obj[obj_rel])
+        base_safe = safe_drv_name(rel_basename)
+        n = seen_safe_names.get(base_safe, 0)
+        seen_safe_names[base_safe] = n + 1
+        safe_by_obj[obj_rel] = base_safe if n == 0 else f"{base_safe}-{n}"
+
+    per_tu_cmd_dir = os.path.join(repo, "per-tu-cmds")
+    os.makedirs(per_tu_cmd_dir, exist_ok=True)
+
+    # Build the filtered scan-deps compilation database. We carry only
+    # the entries we'll actually scan (matches what `icpx -M` did) so
+    # scan-deps doesn't blow up on icpx-specific flags in unrelated
+    # entries (e.g. oneDNN's `-fiopenmp`). Each entry's `-o` is kept
+    # intact so the make-format rule target lines up with `obj_rel`.
+    scan_cdb = []
+    for obj_rel in obj_inputs:
+        src = src_by_obj[obj_rel]
+        entry = cc_by_file.get(src)
+        if entry is None:
+            sys.exit(f"FATAL: no compile_commands entry for src {src}")
+        if "arguments" in entry:
+            args_in = list(entry["arguments"])
+        else:
+            args_in = shlex.split(entry["command"])
+        scan_cdb.append({
+            "directory": entry.get("directory", repo),
+            "file": entry["file"],
+            "arguments": _strip_scan_unfriendly(args_in),
+        })
+    scan_cdb_path = os.path.join(build, "compile_commands.scan.json")
+    with open(scan_cdb_path, "w") as f:
+        json.dump(scan_cdb, f)
+    scan_out_path = os.path.join(build, "scan-deps.mk")
+
+    # Worker count: NIX_BUILD_CORES (canonical Nix sandbox env var,
+    # set from --cores). DYNDRV_DEPFILE_WORKERS overrides for memory-
+    # constrained hosts. scan-deps is far cheaper per TU than icpx -M
+    # ever was, so the override exists mainly for symmetry with the
+    # icpx-era knob and is unlikely to need use in practice.
+    workers = (
+        int(os.environ.get("DYNDRV_DEPFILE_WORKERS") or 0)
+        or int(os.environ.get("NIX_BUILD_CORES") or 0)
+        or 1
+    )
+    workers = max(1, min(workers, len(scan_cdb)))
+    print(f"[extract] scanning {len(scan_cdb)} TUs via clang-scan-deps "
+          f"(j={workers})")
+    deps_by_target = _run_scan_deps(scan_cdb_path, scan_out_path, repo, workers)
+    if len(deps_by_target) != len(scan_cdb):
+        print(
+            f"[extract] WARN: scan-deps emitted {len(deps_by_target)} rules "
+            f"but cdb has {len(scan_cdb)} entries",
+            file=sys.stderr,
+        )
+
+    # 5. Build the per-TU manifest. Paths are stored RELATIVE to $repo,
     # not as absolute /nix/store paths — Nix's builtins.fromJSON returns
     # context-less strings, and downstream code that puts those strings
     # into derivation attributes would trip "is not allowed to refer to
@@ -446,28 +758,43 @@ def main() -> None:
     # The Nix code prepends ${configureDrv}/repo/ via interpolation, which
     # carries proper context.
     manifest = []
-    seen_safe_names: dict[str, int] = {}
     for obj_rel in obj_inputs:
-        src = obj_to_src[obj_rel]
+        src = src_by_obj[obj_rel]
         if not src.startswith(repo + "/"):
             sys.exit(f"FATAL: source {src} is outside $repo {repo}")
         src_rel = src[len(repo) + 1:]
-        rel_basename = os.path.basename(src)
-        base_safe = safe_drv_name(rel_basename)
-        # Disambiguate if two TUs share a basename.
-        n = seen_safe_names.get(base_safe, 0)
-        seen_safe_names[base_safe] = n + 1
-        safe = base_safe if n == 0 else f"{base_safe}-{n}"
+        safe = safe_by_obj[obj_rel]
+        entry = cc_by_file[src]
+        # scan-deps emits one rule per CDB entry with the rule target
+        # equal to the `-o` argument (cmake puts the ninja-relative
+        # `obj_rel` there). Drop the TU's own src to avoid listing
+        # it twice in srcSubset.
+        deps = deps_by_target.get(obj_rel)
+        if deps is None:
+            sys.exit(
+                f"FATAL: clang-scan-deps emitted no rule for {obj_rel} "
+                f"(TU {src_rel})"
+            )
+        headers = sorted(d for d in deps if d != src_rel)
+        cmd_text = _build_tu_cmd(entry, repo, pch_out_path)
+        cmd_rel = f"per-tu-cmds/{safe}.txt"
+        with open(os.path.join(repo, cmd_rel), "w") as f:
+            f.write(cmd_text + "\n")
         manifest.append({
             "safe_name": safe,
             "src_rel_path": src_rel,
             "obj_rel_path": obj_rel,
+            "cmd_rel_path": cmd_rel,
+            "headers": headers,
         })
     launcher_count = sum(
         1 for m in manifest
         if m["src_rel_path"].endswith(("fmha_xe2.cpp", "paged_decode_xe2.cpp"))
     )
-    print(f"[extract] tu_manifest: {len(manifest)} TUs ({launcher_count} launchers)")
+    headers_lens = [len(m["headers"]) for m in manifest]
+    print(f"[extract] tu_manifest: {len(manifest)} TUs ({launcher_count} launchers); "
+          f"headers per TU min={min(headers_lens)} median={sorted(headers_lens)[len(headers_lens)//2]} "
+          f"max={max(headers_lens)}")
 
     with open(os.path.join(repo, "tu_manifest.json"), "w") as f:
         json.dump(manifest, f, indent=2)

@@ -46,6 +46,37 @@
           config.allowUnfree = true;
         };
 
+        # Narrow the vllm-xpu-kernels checkout to just the files the build
+        # actually consumes. Without this, the whole repo (docs/, tests/,
+        # benchmark/, README.md, Dockerfile.xpu, tools/) feeds configureDrv's
+        # input hash, so upstream README/test/CI edits bump configureDrv's
+        # store path and cascade through every per-TU drv.
+        #
+        # `lib.fileset.toSource` would be the idiomatic API for this kind
+        # of narrowing, but its `root` must be an eval-time path (it
+        # rejects store-path strings under pure-eval), and flake inputs
+        # arrive as store paths. `lib.sources.sourceByRegex` filters via
+        # `builtins.filterSource`, which accepts store paths and produces
+        # an equivalent narrowed source.
+        #
+        # Patterns cover every file referenced by the cmake graph or read
+        # by `pip install`, including everything touched by
+        # `nix/patches/000*-*.patch` (CMakeLists.txt, cmake/utils.cmake,
+        # setup.py, vllm_xpu_kernels/__init__.py, csrc/xpu/attn/xe_2/*).
+        # third_party/ stays because cmake/Modules/FindoneDNN.cmake reads
+        # third_party/oneDNN (the project's own Find module, not oneAPI).
+        mkKernelsSrc = rawSrc: pkgs.lib.sources.sourceByRegex rawSrc [
+          "^CMakeLists\\.txt$"
+          "^cmake(/.*)?$"
+          "^csrc(/.*)?$"
+          "^setup\\.py$"
+          "^pyproject\\.toml$"
+          "^vllm_xpu_kernels(/.*)?$"
+          "^third_party(/.*)?$"
+        ];
+        vllm-xpu-kernels-src' = mkKernelsSrc vllm-xpu-kernels-src;
+        vllm-xpu-kernels-unstable-src' = mkKernelsSrc vllm-xpu-kernels-unstable-src;
+
         intel-oneapi = pkgs.intel-oneapi.base.override {
           components = [
             "intel.oneapi.lin.dpcpp-cpp-compiler"
@@ -295,11 +326,11 @@
               };
             });
 
-        stableLibs = mkKernelLibs { src = vllm-xpu-kernels-src; };
-        unstableLibs = mkKernelLibs { src = vllm-xpu-kernels-unstable-src; };
+        stableLibs = mkKernelLibs { src = vllm-xpu-kernels-src'; };
+        unstableLibs = mkKernelLibs { src = vllm-xpu-kernels-unstable-src'; };
 
-        vllm-xpu-kernels = mkVllmXpuKernels { src = vllm-xpu-kernels-src; };
-        vllm-xpu-kernels-unstable = mkVllmXpuKernels { src = vllm-xpu-kernels-unstable-src; };
+        vllm-xpu-kernels = mkVllmXpuKernels { src = vllm-xpu-kernels-src'; };
+        vllm-xpu-kernels-unstable = mkVllmXpuKernels { src = vllm-xpu-kernels-unstable-src'; };
 
         # mkVllm pairs a vllm source pin with the matching kernels build:
         # the upstream stable variant gets vllm-xpu-kernels (vllm-project),

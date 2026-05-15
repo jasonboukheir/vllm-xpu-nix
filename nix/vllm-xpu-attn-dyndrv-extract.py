@@ -255,12 +255,31 @@ def _gen_depfile(args_tuple: tuple) -> tuple:
     # -M stops after the preprocessor — the -c becomes a no-op).
     # The source file follows -c as the next positional arg; without
     # the -c marker, icpx treats it as input the same way.
+    #
+    # Also drop -include-pch and its path argument. At depfile-pass
+    # time we run inside configureDrv.installPhase — ninja has not
+    # been invoked, so the cmake_pch.hxx.pch the TU command points at
+    # does not exist on disk, and icpx -M would fail trying to open
+    # it. -M without PCH walks the include graph fresh, which is
+    # exactly what we want for header enumeration anyway. Handle the
+    # three forms cmake / icpx can emit:
+    #   * `-Xclang -include-pch -Xclang <path>` (cmake-Ninja today)
+    #   * `-include-pch <path>` (plain clang)
+    #   * `-include-pch=<path>` (combined)
     final, i = [], 0
     while i < len(cleaned):
         a = cleaned[i]
         if a == "-o":
             i += 2
         elif a == "-c":
+            i += 1
+        elif (a == "-Xclang" and i + 3 < len(cleaned)
+                and cleaned[i + 1] == "-include-pch"
+                and cleaned[i + 2] == "-Xclang"):
+            i += 4
+        elif a == "-include-pch":
+            i += 2
+        elif a.startswith("-include-pch="):
             i += 1
         else:
             final.append(a)
@@ -277,7 +296,7 @@ def _gen_depfile(args_tuple: tuple) -> tuple:
     return (entry["file"], depfile, None)
 
 
-def _parse_depfile(path: str, repo: str) -> list[str]:
+def _parse_depfile(path: str, repo: str, src_rel: str) -> list[str]:
     r"""Parse a make-style .d file into the list of `$repo`-relative header paths.
 
     icpx -M emits the canonical `target: prereq prereq \` form. We:
@@ -289,8 +308,11 @@ def _parse_depfile(path: str, repo: str) -> list[str]:
          captured as a runtime dep of compileInputs — including those
          in the per-TU srcSubset would just bloat closures with no
          caching benefit).
-      5. Drop the .cpp src itself (the caller already includes it in
-         srcSubset under src_rel_path).
+      5. Drop the TU's own `src_rel` (the caller already includes it
+         in srcSubset under src_rel_path). Anything else under `$repo`
+         is kept — a future `#include "foo.cc"` (uncommon but legal,
+         e.g. for template instantiation files) must end up in
+         srcSubset or the TU compile will fail with "file not found".
     """
     with open(path) as f:
         text = f.read()
@@ -304,10 +326,11 @@ def _parse_depfile(path: str, repo: str) -> list[str]:
     prefix = repo.rstrip("/") + "/"
     headers = set()
     for t in toks:
-        if t.endswith(".cpp") or t.endswith(".cc") or t.endswith(".cxx"):
-            continue
         if t.startswith(prefix):
-            headers.add(t[len(prefix):])
+            rel = t[len(prefix):]
+            if rel == src_rel:
+                continue
+            headers.add(rel)
     return sorted(headers)
 
 
@@ -349,6 +372,21 @@ def _build_tu_cmd(entry: dict, repo: str, pch_out_path: str | None) -> str:
         else:
             out_args.append(a)
             i += 1
+    # If PCH is active, the .pch path must have been replaced with
+    # __PCH_PATH__ above. cmake-Ninja emits the path as its own
+    # token (`-Xclang -include-pch -Xclang <abs>`), which the
+    # exact-arg match catches. A future combined form
+    # (`-include-pch=<abs>`) would slip past the loop; the next
+    # `repo → __SRC_SUBSET__` pass would then rewrite the embedded
+    # path to point inside the (PCH-less) srcSubset, producing a
+    # silent runtime "no such file". Fail loud at configure time so
+    # the regression is obvious.
+    if pch_out_path is not None and any(pch_out_path in a for a in out_args):
+        sys.exit(
+            f"FATAL: pch_out_path {pch_out_path} still embedded in per-TU "
+            "cmd after placeholder rewrite — likely a combined -include-pch="
+            "<path> arg the exact-match loop missed"
+        )
     # Now swap $repo → __SRC_SUBSET__ across every remaining arg.
     repo_clean = repo.rstrip("/")
     out_args = [a.replace(repo_clean, "__SRC_SUBSET__") for a in out_args]
@@ -648,7 +686,7 @@ def main() -> None:
         safe = safe_by_obj[obj_rel]
         entry = cc_by_file[src]
         depfile = os.path.join(depfiles_dir, f"{safe}.d")
-        headers = _parse_depfile(depfile, repo)
+        headers = _parse_depfile(depfile, repo, src_rel)
         cmd_text = _build_tu_cmd(entry, repo, pch_out_path)
         cmd_rel = f"per-tu-cmds/{safe}.txt"
         with open(os.path.join(repo, cmd_rel), "w") as f:

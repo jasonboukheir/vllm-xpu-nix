@@ -18,7 +18,7 @@
   ocl-icd,
   zlib,
   which,
-  sccache,
+  ccache,
 }:
 
 {
@@ -27,13 +27,56 @@
   # SYCL AOT target list. See vllm-xpu-kernels.nix: [] (default)
   # is JIT, non-empty list is AOT for those devices.
   aotDevices ? [ ],
+  # Wire ccache as the C/C++ compiler launcher. Set false to bypass
+  # it for one-off / CI builds on hosts that don't have
+  # /var/cache/ccache mounted via extra-sandbox-paths.
+  useCcache ? true,
 }:
 
 let
   syclHome = "${intel-oneapi-base}/compiler/latest";
   aotDevicesStr = lib.concatStringsSep "," aotDevices;
+
+  # Derivation-level env attrs. `impureEnvVars` / nix.conf
+  # `impure-env` gate on `!isSandboxed()` and skip CA / input-addressed
+  # builds, so top-level mkDerivation attrs are the only mechanism
+  # that crosses the sandbox boundary unconditionally for this build.
+  ccacheEnvAttrs = lib.optionalAttrs useCcache {
+    CCACHE_DIR = "/var/cache/ccache";
+    CCACHE_COMPRESS = "1";
+    # random_seed: icpx derives -frandom-seed from the output path,
+    #   so without this every drv hash bumps the .o hash and the
+    #   cache is useless across builds.
+    # time_macros / include_file_{mtime,ctime}: store-path inputs
+    #   have varying mtimes between rebuilds; cache on content, not
+    #   mtime.
+    # pch_defines: PCH-built TUs embed extra defines we don't want
+    #   participating in the cache key.
+    CCACHE_SLOPPINESS = "random_seed,time_macros,include_file_mtime,include_file_ctime,pch_defines";
+    # Skip hashing the CWD (icpx can embed it via __FILE__ / debug
+    # records); the per-build /build/<hash>/ root would otherwise
+    # poison the cache key. CCACHE_BASEDIR (set in preConfigure)
+    # handles the complementary case of absolute /build paths in
+    # compiler flags.
+    CCACHE_NOHASHDIR = "1";
+    # 0770 dir owned root:nixbld -> 007 umask so cached objects stay
+    # group-readable for the next builder.
+    CCACHE_UMASK = "007";
+  };
+
+  ccacheCmakeFlags = lib.optionals useCcache [
+    "-DCMAKE_C_COMPILER_LAUNCHER=ccache"
+    "-DCMAKE_CXX_COMPILER_LAUNCHER=ccache"
+  ];
+
+  # CCACHE_BASEDIR=$NIX_BUILD_TOP is set at builder time (not
+  # eval-time), so it lives in preConfigure rather than as a
+  # derivation attr.
+  ccachePreConfigure = lib.optionalString useCcache ''
+    export CCACHE_BASEDIR=$NIX_BUILD_TOP
+  '';
 in
-stdenv.mkDerivation {
+stdenv.mkDerivation ({
   pname = "vllm-xpu-${lib.replaceStrings [ "_" ] [ "-" ] libName}";
   version = "0.1.7-dev";
 
@@ -65,8 +108,7 @@ stdenv.mkDerivation {
     git
     autoPatchelfHook
     which
-    sccache
-  ];
+  ] ++ lib.optional useCcache ccache;
 
   buildInputs = [
     stdenv.cc.cc.lib
@@ -93,27 +135,6 @@ stdenv.mkDerivation {
   # leaves the .so byte-identical and the CA hash hits.
   __contentAddressed = true;
 
-  # sccache is wired as the C/C++ compiler launcher. Local (SCCACHE_DIR)
-  # and remote (SCCACHE_BUCKET / SCCACHE_REDIS) backends both work; the
-  # sandbox inherits credentials via impureEnvVars below. With S3 as the
-  # backend the warm-cache rebuild for an unchanged TU is a single GET
-  # per .o — the cache property that matters for iteration speed without
-  # paying the overhead of per-TU Nix derivations.
-  impureEnvVars = [
-    "SCCACHE_DIR"
-    "SCCACHE_BUCKET"
-    "SCCACHE_REGION"
-    "SCCACHE_ENDPOINT"
-    "SCCACHE_S3_USE_SSL"
-    "SCCACHE_S3_KEY_PREFIX"
-    "SCCACHE_S3_NO_CREDENTIALS"
-    "SCCACHE_REDIS"
-    "SCCACHE_REDIS_KEY_PREFIX"
-    "AWS_ACCESS_KEY_ID"
-    "AWS_SECRET_ACCESS_KEY"
-    "AWS_SESSION_TOKEN"
-  ];
-
   # NIX_BUILD_CORES is inherited from the daemon (defaults to `nproc`).
   # After 0007-fa2-dtype-split.patch the kernel_template TUs peak at
   # ~7 GiB RSS; after 0008-fa2-dispatcher-split.patch the dispatcher TUs
@@ -123,14 +144,7 @@ stdenv.mkDerivation {
   # nix.conf) on memory-constrained hosts; that value also reaches
   # -fsycl-max-parallel-link-jobs via the cmakeFlagsArray append below.
   preConfigure = ''
-    # sccache falls back to $HOME/.cache/sccache when SCCACHE_DIR isn't
-    # set; the Nix sandbox HOME (/homeless-shelter) is unwritable, so
-    # the fallback errors at mkdir time even when the user has S3/Redis
-    # configured. Point HOME at $TMPDIR so the fallback lands somewhere
-    # writable. Persistent caching still works via SCCACHE_* inherited
-    # through impureEnvVars.
-    export HOME=$TMPDIR
-
+    ${ccachePreConfigure}
     mkdir -p $TMPDIR/bin
     ln -sf ${intel-compute-runtime}/bin/ocloc-* $TMPDIR/bin/ocloc
     export PATH=$TMPDIR/bin:${syclHome}/bin:$PATH
@@ -163,9 +177,8 @@ stdenv.mkDerivation {
     "-DCMAKE_BUILD_TYPE=Release"
     "-DBUILD_SYCL_TLA_KERNELS=ON"
     "-DVLLM_XPU_CUTLASS_TEMPLATE_BACKTRACE_LIMIT=10"
-    "-DCMAKE_C_COMPILER_LAUNCHER=sccache"
-    "-DCMAKE_CXX_COMPILER_LAUNCHER=sccache"
   ]
+  ++ ccacheCmakeFlags
   ++ featureFlags;
 
   ninjaFlags = [ libName ];
@@ -187,4 +200,4 @@ stdenv.mkDerivation {
     license = lib.licenses.asl20;
     platforms = [ "x86_64-linux" ];
   };
-}
+} // ccacheEnvAttrs)

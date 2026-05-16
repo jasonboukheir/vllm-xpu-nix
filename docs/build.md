@@ -18,12 +18,15 @@ nix build .#gdn-attn-kernels-xe-2
 nix build .#grouped-gemm-xe-2
 ```
 
-After `0007-fa2-dtype-split.patch` per-TU peak RSS sits around ~7 GiB
-on the worst-case `q16_h256_p128` attn TU (down from ~40 GiB pre-patch),
-so each lib drv runs `ninja -j$NIX_BUILD_CORES` at the daemon default
-(`nproc`). On memory-constrained hosts cap parallelism with
-`nix build --cores N` (or `cores = N` in nix.conf); the same value
-feeds `-fsycl-max-parallel-link-jobs`.
+After `0007-fa2-dtype-split.patch` the worst-case kernel_template TU
+peaks at ~7 GiB RSS (down from ~40 GiB pre-patch); after
+`0008-fa2-dispatcher-split.patch` the chunk_prefill / paged_decode
+dispatcher TUs — the residual OOM hotspot at `-j$(nproc)` — split into
+per-policy shards that also sit below that ceiling. Each lib drv runs
+`ninja -j$NIX_BUILD_CORES` at the daemon default (`nproc`). On
+memory-constrained hosts cap parallelism with `nix build --cores N`
+(or `cores = N` in nix.conf); the same value feeds
+`-fsycl-max-parallel-link-jobs`.
 
 Each lib drv runs cmake + ninja through `sccache` as the compiler
 launcher. With `SCCACHE_BUCKET` (or `SCCACHE_REDIS`) configured on the

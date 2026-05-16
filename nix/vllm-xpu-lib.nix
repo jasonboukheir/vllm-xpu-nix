@@ -50,6 +50,13 @@ stdenv.mkDerivation {
     # affected sources entirely); applied here so the attn lib variant
     # picks it up.
     ./patches/0007-fa2-dtype-split.patch
+    # 0008 splits the chunk_prefill / paged_decode dispatcher TUs
+    # (fmha_xe2.cpp, paged_decode_xe2.cpp) into per-policy shards so the
+    # entry TUs no longer parse the full CUTLASS / SYCL kernel pipeline
+    # headers and the recursive trampoline forest distributes across 6 +
+    # 12 generated .cpps. Closes the per-dispatcher-TU OOM that survived
+    # 0007 at -j$(nproc) on a 24-core / 96-GiB box.
+    ./patches/0008-fa2-dispatcher-split.patch
   ];
 
   nativeBuildInputs = [
@@ -108,11 +115,13 @@ stdenv.mkDerivation {
   ];
 
   # NIX_BUILD_CORES is inherited from the daemon (defaults to `nproc`).
-  # After 0007-fa2-dtype-split.patch the worst-case attn TU peaks at
-  # ~7 GiB RSS, so a fat-RAM box can run the full nproc fan-out. Cap
-  # with `nix build --cores N` (or `cores = N` in nix.conf) on memory-
-  # constrained hosts; that value also reaches -fsycl-max-parallel-
-  # link-jobs via the cmakeFlagsArray append below.
+  # After 0007-fa2-dtype-split.patch the kernel_template TUs peak at
+  # ~7 GiB RSS; after 0008-fa2-dispatcher-split.patch the dispatcher TUs
+  # (previously the OOM hotspot at -j$(nproc)) split into per-policy
+  # shards that sit below that ceiling. A fat-RAM box can run the full
+  # nproc fan-out. Cap with `nix build --cores N` (or `cores = N` in
+  # nix.conf) on memory-constrained hosts; that value also reaches
+  # -fsycl-max-parallel-link-jobs via the cmakeFlagsArray append below.
   preConfigure = ''
     # sccache falls back to $HOME/.cache/sccache when SCCACHE_DIR isn't
     # set; the Nix sandbox HOME (/homeless-shelter) is unwritable, so

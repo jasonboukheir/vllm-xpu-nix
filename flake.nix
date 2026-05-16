@@ -63,14 +63,17 @@
         # by `pip install`, including everything touched by
         # `nix/patches/000*-*.patch` (CMakeLists.txt, cmake/utils.cmake,
         # setup.py, vllm_xpu_kernels/__init__.py, csrc/xpu/attn/xe_2/*).
-        # third_party/ stays because cmake/Modules/FindoneDNN.cmake reads
-        # third_party/oneDNN (the project's own Find module, not oneAPI).
+        # tools/ is required because setup.py loads tools/envs.py to read
+        # VLLM_TARGET_DEVICE. third_party/ stays because
+        # cmake/Modules/FindoneDNN.cmake reads third_party/oneDNN (the
+        # project's own Find module, not oneAPI).
         mkKernelsSrc = rawSrc: pkgs.lib.sources.sourceByRegex rawSrc [
           "^CMakeLists\\.txt$"
           "^cmake(/.*)?$"
           "^csrc(/.*)?$"
           "^setup\\.py$"
           "^pyproject\\.toml$"
+          "^tools(/.*)?$"
           "^vllm_xpu_kernels(/.*)?$"
           "^third_party(/.*)?$"
         ];

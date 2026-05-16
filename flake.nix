@@ -169,7 +169,7 @@
           python3Packages = python312PackagesXpu;
         };
 
-        mkXpuLibFactory = { src, aotDevices ? [ ] }:
+        mkXpuLibFactory = { src, aotDevices ? [ ], useCcache ? true }:
           let factory = pkgs.callPackage ./nix/vllm-xpu-lib.nix {
             intel-oneapi-base = intel-oneapi;
             inherit intel-pti oneccl-bmg torch-xpu;
@@ -178,7 +178,7 @@
             cutlass-src = sycl-tla-src;
           };
           in { libName, featureFlags ? [ ] }:
-            factory { inherit libName featureFlags aotDevices; };
+            factory { inherit libName featureFlags aotDevices useCcache; };
 
         # Per-lib feature flag matrices: enable only the chosen lib's source
         # subdir, disable all other libs and ext modules. VLLM_XPU_LIBS_ONLY
@@ -235,8 +235,8 @@
           "-DXPUMEM_ALLOCATOR_ENABLED=OFF"
         ];
 
-        mkKernelLibs = { src, aotDevices ? [ ] }:
-          let mkLib = mkXpuLibFactory { inherit src aotDevices; }; in {
+        mkKernelLibs = { src, aotDevices ? [ ], useCcache ? true }:
+          let mkLib = mkXpuLibFactory { inherit src aotDevices useCcache; }; in {
             attn-kernels-xe-2 = mkLib { libName = "attn_kernels_xe_2"; featureFlags = attnFlags; };
             gdn-attn-kernels-xe-2 = mkLib { libName = "gdn_attn_kernels_xe_2"; featureFlags = gdnAttnFlags; };
             mqa-logits-kernels-xe-2 = mkLib { libName = "mqa_logits_kernels_xe_2"; featureFlags = mqaLogitsFlags; };
@@ -254,12 +254,12 @@
         # [ "bmg" ]` — Battlemage being the target this project is
         # tuned for. `withAotDevices [ ... ]` for any other explicit
         # list.
-        mkVllmXpuKernels = { src, aotDevices ? [ ] }:
+        mkVllmXpuKernels = { src, aotDevices ? [ ], useCcache ? true }:
           let
-            libs = mkKernelLibs { inherit src aotDevices; };
+            libs = mkKernelLibs { inherit src aotDevices useCcache; };
             base = pkgs.callPackage ./nix/vllm-xpu-kernels.nix ({
               intel-oneapi-base = intel-oneapi;
-              inherit intel-pti oneccl-bmg torch-xpu;
+              inherit intel-pti oneccl-bmg torch-xpu useCcache;
               python3Packages = pkgs.python312Packages;
               inherit src aotDevices;
               cutlass-src = sycl-tla-src;
@@ -268,13 +268,16 @@
             base.overrideAttrs (old: {
               passthru = (old.passthru or {}) // {
                 withAotDevices = ds: mkVllmXpuKernels {
-                  inherit src; aotDevices = ds;
+                  inherit src useCcache; aotDevices = ds;
                 };
                 withJIT = mkVllmXpuKernels {
-                  inherit src; aotDevices = [];
+                  inherit src useCcache; aotDevices = [];
                 };
                 withAOT = mkVllmXpuKernels {
-                  inherit src; aotDevices = [ "bmg" ];
+                  inherit src useCcache; aotDevices = [ "bmg" ];
+                };
+                withCcache = b: mkVllmXpuKernels {
+                  inherit src aotDevices; useCcache = b;
                 };
               };
             });

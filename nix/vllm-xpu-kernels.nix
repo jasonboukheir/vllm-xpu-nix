@@ -18,6 +18,7 @@
   ocl-icd,
   zlib,
   which,
+  ccache,
   attn-kernels-xe-2,
   gdn-attn-kernels-xe-2,
   mqa-logits-kernels-xe-2,
@@ -35,13 +36,31 @@
   #     one ocloc invocation at link time, so multi-device builds
   #     get expensive fast.
   aotDevices ? [ ],
+  # Same toggle as vllm-xpu-lib.nix. Upstream setup.py auto-detects
+  # ccache via `which("ccache")`, so having ccache in nativeBuildInputs
+  # is enough to flip on -DCMAKE_{C,CXX}_COMPILER_LAUNCHER=ccache.
+  useCcache ? true,
 }:
 
 let
   syclHome = "${intel-oneapi-base}/compiler/latest";
   aotDevicesStr = lib.concatStringsSep "," aotDevices;
+
+  # See vllm-xpu-lib.nix for the full rationale on these values and
+  # why they live on the derivation (rather than impureEnvVars).
+  ccacheEnvAttrs = lib.optionalAttrs useCcache {
+    CCACHE_DIR = "/var/cache/ccache";
+    CCACHE_COMPRESS = "1";
+    CCACHE_SLOPPINESS = "random_seed,time_macros,include_file_mtime,include_file_ctime,pch_defines";
+    CCACHE_NOHASHDIR = "1";
+    CCACHE_UMASK = "007";
+  };
+
+  ccachePreBuild = lib.optionalString useCcache ''
+    export CCACHE_BASEDIR=$NIX_BUILD_TOP
+  '';
 in
-python3Packages.buildPythonPackage {
+python3Packages.buildPythonPackage ({
   pname = "vllm-xpu-kernels";
   version = "0.1.7-dev";
   format = "pyproject";
@@ -63,7 +82,7 @@ python3Packages.buildPythonPackage {
     python3Packages.psutil
     python3Packages.cmake
     python3Packages.ninja
-  ];
+  ] ++ lib.optional useCcache ccache;
 
   buildInputs = [
     stdenv.cc.cc.lib
@@ -104,6 +123,7 @@ python3Packages.buildPythonPackage {
   '';
 
   preBuild = ''
+    ${ccachePreBuild}
     mkdir -p $TMPDIR/bin
     ln -sf ${intel-compute-runtime}/bin/ocloc-* $TMPDIR/bin/ocloc
     export PATH=$TMPDIR/bin:${syclHome}/bin:$PATH
@@ -149,4 +169,4 @@ python3Packages.buildPythonPackage {
     license = lib.licenses.asl20;
     platforms = [ "x86_64-linux" ];
   };
-}
+} // ccacheEnvAttrs)

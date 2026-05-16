@@ -1,0 +1,887 @@
+From: vllm-xpu-nix <noreply@anthropic.com>
+Subject: [PATCH] fa2 xe2: split dispatcher TU into per-policy shards
+
+Both fmha_xe2.cpp and paged_decode_xe2.cpp are entry TUs that ATen-to-args
+plumb into the FA2 chunk_prefill / paged_decode runtime dispatcher. Before
+this patch they each included chunk_prefill.hpp / paged_decode.hpp (full
+CUTLASS + SYCL kernel pipeline parse, ~3 GiB icpx RSS just to elaborate the
+PagedDecodeConfig / FMHAConfig machinery) AND instantiated the entire
+runtime trampoline forest: dispatch_by_page_size -> dispatch_by_head_size
+-> decode_policy_dispatch_func recursive bool peel -> leaf with a 6-way Q/KV
+dtype switch. For paged_decode that is 2 QGroup x 3 PageSize x 7 head_case
+x 8 bool x 6 dtype = ~2k trampolines; for chunk_prefill it is 12 policy x
+~18 bool combos x 6 dtype = ~1.3k trampolines.
+
+0007-fa2-dtype-split.patch fixed the kernel_template TUs but the dispatcher
+TUs were left whole. On a 24-core / 96-GiB box at `-j$(nproc)` the
+dispatcher TU peak combined with concurrent kernel_template TUs (each ~7
+GiB peak) exhausted RAM and the kernel OOM-killed icpx mid-compile of
+paged_decode_xe2.cpp.
+
+This patch splits each dispatcher into per-policy shards:
+
+  * paged_decode: 6 shards by (QGroup, PageSize). Each shard contains exactly
+    one `dispatch_by_head_size<QGroup, PageSize>` instantiation (7 head x
+    8 bool x 6 dtype = ~336 trampolines per TU). page_size=128 still routes
+    through PageSize=_64 at runtime (the existing ReduceK=8 SLM-reduction
+    bug in the _128 policy is preserved as a comment).
+
+  * chunk_prefill: 12 shards by chunk_policy. Each shard contains exactly
+    one `policy_dispatch_func<chunk_policy_head*>` instantiation (~18 bool
+    combos x 6 dtype = ~108 trampolines per TU).
+
+The args structs (paged_decode_args_t, chunk_prefill_args_t) are factored
+into thin args.hpp headers so the entry TUs (paged_decode_xe2.cpp,
+fmha_xe2.cpp) can construct them without transitively including
+paged_decode.hpp / chunk_prefill.hpp. The entry TUs now only include
+fmha_utils.hpp + the new args.hpp + the new dispatcher.hpp surface; the
+CUTLASS / SYCL kernel pipeline headers stay out of the entry TUs entirely.
+
+The dispatch_by_head_size case 6 (head_size=576) is gated behind
+`if constexpr (PageSize::value >= 64)` so the (p16, p32) shards never
+implicitly instantiate decode_policy_dispatch_impl<*, h576_p{16,32}, ...>
+— PAGED_DECODE_POLICY_LIST omits h576_p{16,32} but the underlying
+decode_policy_qpacked_head<*, _576, _{16,32}> partial-specialisation is
+valid, so without the gate the missing extern templates force implicit
+instantiation of the full SYCL kernel pipeline per shard (~18 GiB RSS,
+OOM at -j$(nproc)).
+
+Effect: dispatcher per-TU peak RSS drops below the kernel_template TU
+ceiling, so a `-j$(nproc)` build on a 24-core / 96-GiB box no longer
+needs the historical `--cores N` cap.
+
+For non-Nix consumers the change is byte-equivalent at the .so level; only
+the TU graph for the attn lib widens (six paged_decode_dispatcher_shard +
+twelve chunk_prefill_dispatcher_shard generated .cpps).
+
+
+diff --git a/csrc/xpu/attn/xe_2/CMakeLists.txt b/csrc/xpu/attn/xe_2/CMakeLists.txt
+index 83f1719..317746b 100644
+--- a/csrc/xpu/attn/xe_2/CMakeLists.txt
++++ b/csrc/xpu/attn/xe_2/CMakeLists.txt
+@@ -7,4 +7,16 @@ fmha_forward_configure(chunk_prefill_kernel_template)
+ include("paged_decode_configure.cmake")
+ paged_decode_configure(paged_decode_kernel_template)
+ 
++# Dispatcher shards: split the recursive trampoline forests previously
++# instantiated entirely inside fmha_xe2.cpp / paged_decode_xe2.cpp across
++# generated per-policy / per-(QGroup,PageSize) TUs. The entry TUs no longer
++# include the heavy CUTLASS-bearing headers (chunk_prefill.hpp /
++# paged_decode.hpp), so their peak RSS drops below the kernel_template TU
++# ceiling and the build is safe at -j$(nproc) on a 24-core / 96-GiB box.
++include("chunk_prefill_dispatcher_configure.cmake")
++chunk_prefill_dispatcher_configure(chunk_prefill_dispatcher_shard)
++
++include("paged_decode_dispatcher_configure.cmake")
++paged_decode_dispatcher_configure(paged_decode_dispatcher_shard)
++
+ add_xe2_kernel_library(attn_kernels_xe_2 INCLUDE_CMAKE_SOURCE_DIR)
+diff --git a/csrc/xpu/attn/xe_2/chunk_prefill.hpp b/csrc/xpu/attn/xe_2/chunk_prefill.hpp
+index 27919f8..f1ce9e5 100644
+--- a/csrc/xpu/attn/xe_2/chunk_prefill.hpp
++++ b/csrc/xpu/attn/xe_2/chunk_prefill.hpp
+@@ -23,56 +23,7 @@
+ 
+ using namespace cute;
+ 
+-struct chunk_prefill_args_t {
+-  void* query;
+-  void* key;
+-  void* value;
+-  void* out;
+-  void* block_table;
+-  void* cu_seqlens_q;
+-  void* cu_seqlens_k;
+-  int max_queries;
+-  int max_keys;
+-  int total_seqlen_q;
+-  int total_seqlen_k;
+-  void* k_scale;
+-  void* v_scale;
+-  float sm_scale;
+-  void* sm_sink;
+-  int batch_size;
+-  int num_heads_q;
+-  int num_heads_k;
+-  int head_size;
+-  int max_blocks_per_seq;
+-  int block_size;
+-  int window_size_left = -1;
+-  int window_size_right = -1;
+-  bool is_varlen = false;
+-  bool is_paged = false;
+-  bool is_causal = false;
+-  bool is_local = false;
+-  bool is_sink = false;
+-  bool is_interleaved_kv_cache = false;
+-  // softmax_lse output (nullptr when not requested)
+-  float* softmax_lse = nullptr;
+-  int lse_stride = 0;  // stride along seq dim (= num_heads_q)
+-  // Q/O strides in CUTLASS order: (seq, head_size=1, heads, batch)
+-  int q_stride_seq = 0;
+-  int q_stride_heads = 0;
+-  int q_stride_batch = 0;
+-  // K strides in CUTLASS order: (seq, head_size=1, heads, batch)
+-  int k_stride_seq = 0;
+-  int k_stride_heads = 0;
+-  int k_stride_batch = 0;
+-  // V strides in CUTLASS order: (head_size=1, seq, heads, batch)
+-  int v_stride_seq = 0;
+-  int v_stride_heads = 0;
+-  int v_stride_batch = 0;
+-  // O strides in CUTLASS order: (seq, head_size=1, heads, batch)
+-  int o_stride_seq = 0;
+-  int o_stride_heads = 0;
+-  int o_stride_batch = 0;
+-};
++#include "chunk_prefill_args.hpp"
+ 
+ template <class FMHAKernel, bool isVarLen>
+ struct KernelLauncher {
+diff --git a/csrc/xpu/attn/xe_2/chunk_prefill_args.hpp b/csrc/xpu/attn/xe_2/chunk_prefill_args.hpp
+new file mode 100644
+index 0000000..6794824
+--- /dev/null
++++ b/csrc/xpu/attn/xe_2/chunk_prefill_args.hpp
+@@ -0,0 +1,59 @@
++#pragma once
++
++// POD args struct for the chunk-prefill kernel API. Carved out of
++// chunk_prefill.hpp so the dispatcher entry TU (fmha_xe2.cpp) and the thin
++// dispatcher header (chunk_prefill_dispatcher.hpp) can use it without
++// transitively pulling in CUTLASS / SYCL kernel pipeline headers.
++//
++// Keep this header free of template/CUTLASS includes — that is the entire
++// point of the split.
++struct chunk_prefill_args_t {
++  void* query;
++  void* key;
++  void* value;
++  void* out;
++  void* block_table;
++  void* cu_seqlens_q;
++  void* cu_seqlens_k;
++  int max_queries;
++  int max_keys;
++  int total_seqlen_q;
++  int total_seqlen_k;
++  void* k_scale;
++  void* v_scale;
++  float sm_scale;
++  void* sm_sink;
++  int batch_size;
++  int num_heads_q;
++  int num_heads_k;
++  int head_size;
++  int max_blocks_per_seq;
++  int block_size;
++  int window_size_left = -1;
++  int window_size_right = -1;
++  bool is_varlen = false;
++  bool is_paged = false;
++  bool is_causal = false;
++  bool is_local = false;
++  bool is_sink = false;
++  bool is_interleaved_kv_cache = false;
++  // softmax_lse output (nullptr when not requested)
++  float* softmax_lse = nullptr;
++  int lse_stride = 0;  // stride along seq dim (= num_heads_q)
++  // Q/O strides in CUTLASS order: (seq, head_size=1, heads, batch)
++  int q_stride_seq = 0;
++  int q_stride_heads = 0;
++  int q_stride_batch = 0;
++  // K strides in CUTLASS order: (seq, head_size=1, heads, batch)
++  int k_stride_seq = 0;
++  int k_stride_heads = 0;
++  int k_stride_batch = 0;
++  // V strides in CUTLASS order: (head_size=1, seq, heads, batch)
++  int v_stride_seq = 0;
++  int v_stride_heads = 0;
++  int v_stride_batch = 0;
++  // O strides in CUTLASS order: (seq, head_size=1, heads, batch)
++  int o_stride_seq = 0;
++  int o_stride_heads = 0;
++  int o_stride_batch = 0;
++};
+diff --git a/csrc/xpu/attn/xe_2/chunk_prefill_dispatcher.hpp b/csrc/xpu/attn/xe_2/chunk_prefill_dispatcher.hpp
+new file mode 100644
+index 0000000..b519ce7
+--- /dev/null
++++ b/csrc/xpu/attn/xe_2/chunk_prefill_dispatcher.hpp
+@@ -0,0 +1,47 @@
++#pragma once
++
++#include <sycl/sycl.hpp>
++
++#include "chunk_prefill_args.hpp"
++#include "fmha_utils.hpp"
++
++// Thin dispatcher header. fmha_xe2.cpp picks the right chunk_policy shard
++// from runtime head_size + use_b16 and calls one of the entry points below.
++// Each entry point is defined in its own .cpp generated by
++// chunk_prefill_dispatcher_configure.cmake and contains exactly one
++// instantiation of policy_dispatch_func<chunk_policy_*> — its trampoline
++// forest is the recursive 5-bool peel × 6 dtype = ~108 leaves per shard
++// (down from ~1300 in the previous single-TU dispatcher).
++//
++// Each shard expands to a small free function that delegates into
++// policy_dispatch_func<chunk_policy_*>(queue, cuQKType, args, is_paged,
++// is_causal, is_local, is_sink, is_lse); the head-size + use_b16 routing
++// lives in fmha_xe2.cpp.
++//
++// Keep this header free of CUTLASS / SYCL kernel includes.
++
++#define CHUNK_PREFILL_DECLARE_SHARD(POLICY_TOKEN)                    \
++  void chunk_prefill_dispatch_##POLICY_TOKEN(                        \
++      sycl::queue& queue,                                            \
++      CutlassQKType& cuQKType,                                       \
++      const chunk_prefill_args_t& args,                              \
++      bool is_paged,                                                 \
++      bool is_causal,                                                \
++      bool is_local,                                                 \
++      bool is_sink,                                                  \
++      bool is_lse);
++
++CHUNK_PREFILL_DECLARE_SHARD(head64)
++CHUNK_PREFILL_DECLARE_SHARD(head96)
++CHUNK_PREFILL_DECLARE_SHARD(head128)
++CHUNK_PREFILL_DECLARE_SHARD(head192)
++CHUNK_PREFILL_DECLARE_SHARD(head256)
++CHUNK_PREFILL_DECLARE_SHARD(head512)
++CHUNK_PREFILL_DECLARE_SHARD(head64_b16)
++CHUNK_PREFILL_DECLARE_SHARD(head96_b16)
++CHUNK_PREFILL_DECLARE_SHARD(head128_b16)
++CHUNK_PREFILL_DECLARE_SHARD(head192_b16)
++CHUNK_PREFILL_DECLARE_SHARD(head256_b16)
++CHUNK_PREFILL_DECLARE_SHARD(head512_b16)
++
++#undef CHUNK_PREFILL_DECLARE_SHARD
+diff --git a/csrc/xpu/attn/xe_2/chunk_prefill_dispatcher_configure.cmake b/csrc/xpu/attn/xe_2/chunk_prefill_dispatcher_configure.cmake
+new file mode 100644
+index 0000000..e9fda86
+--- /dev/null
++++ b/csrc/xpu/attn/xe_2/chunk_prefill_dispatcher_configure.cmake
+@@ -0,0 +1,64 @@
++# =============================================================================
++# Chunk-prefill Dispatcher Shard Configuration
++# =============================================================================
++# Emits one .cpp per chunk_policy that wraps policy_dispatch_func<policy> in
++# a free function declared in chunk_prefill_dispatcher.hpp. Splitting the
++# dispatcher across 12 policy shards drops the per-TU trampoline forest from
++# ~1300 (12 policies × ~18 bool combos × 6 dtype) to ~108 (~18 bool × 6
++# dtype) and keeps the CUTLASS header parse out of the entry TU fmha_xe2.cpp.
++#
++# Output: appended to ATTN_KERNEL_SRCS_GEN so the shards get linked into
++# attn_kernels_xe_2 by add_xe2_kernel_library.
++# =============================================================================
++
++function(chunk_prefill_dispatcher_configure FILENAME_SUFFIX)
++  set(GEN_KERNEL_SRCS)
++
++  # (filename token, fully-qualified policy type). Keep in sync with
++  # CHUNK_POLICY_LIST in chunk_prefill_extern.hpp and the policy structs in
++  # fmha_utils.hpp.
++  set(policy_pairs
++      "head64|chunk_policy_head64"
++      "head96|chunk_policy_head96"
++      "head128|chunk_policy_head128"
++      "head192|chunk_policy_head192"
++      "head256|chunk_policy_head256"
++      "head512|chunk_policy_head512"
++      "head64_b16|chunk_policy_head64_b16"
++      "head96_b16|chunk_policy_head96_b16"
++      "head128_b16|chunk_policy_head128_b16"
++      "head192_b16|chunk_policy_head192_b16"
++      "head256_b16|chunk_policy_head256_b16"
++      "head512_b16|chunk_policy_head512_b16")
++
++  foreach(_pair ${policy_pairs})
++    string(REPLACE "|" ";" _pair_list "${_pair}")
++    list(GET _pair_list 0 IMPL_POLICY_TOKEN)
++    list(GET _pair_list 1 IMPL_POLICY)
++    set(FILE_SUFFIX "_${IMPL_POLICY_TOKEN}")
++    configure_file(${FILENAME_SUFFIX}.cpp.in
++                   "${FILENAME_SUFFIX}${FILE_SUFFIX}.cpp")
++    list(
++      APPEND
++      GEN_KERNEL_SRCS
++      "${CMAKE_CURRENT_BINARY_DIR}/${FILENAME_SUFFIX}${FILE_SUFFIX}.cpp")
++  endforeach()
++
++  list(REMOVE_DUPLICATES GEN_KERNEL_SRCS)
++  list(LENGTH GEN_KERNEL_SRCS GEN_KERNEL_SRCS_LENGTH)
++  message(
++    STATUS
++      "Generated ${FILENAME_SUFFIX} sources: ${GEN_KERNEL_SRCS_LENGTH} shards")
++
++  set(GEN_KERNEL_SRCS
++      ${GEN_KERNEL_SRCS}
++      PARENT_SCOPE)
++  set(GEN_KERNEL_SRCS_LENGTH
++      ${GEN_KERNEL_SRCS_LENGTH}
++      PARENT_SCOPE)
++
++  list(APPEND ATTN_KERNEL_SRCS_GEN ${GEN_KERNEL_SRCS})
++  set(ATTN_KERNEL_SRCS_GEN
++      ${ATTN_KERNEL_SRCS_GEN}
++      PARENT_SCOPE)
++endfunction()
+diff --git a/csrc/xpu/attn/xe_2/chunk_prefill_dispatcher_shard.cpp.in b/csrc/xpu/attn/xe_2/chunk_prefill_dispatcher_shard.cpp.in
+new file mode 100644
+index 0000000..1aef2e9
+--- /dev/null
++++ b/csrc/xpu/attn/xe_2/chunk_prefill_dispatcher_shard.cpp.in
+@@ -0,0 +1,35 @@
++#include "chunk_prefill.hpp"
++#include "chunk_prefill_dispatcher.hpp"
++#include "chunk_prefill_extern.hpp"
++#include "chunk_prefill_utils.hpp"
++
++using namespace cute;
++
++// clang-format off
++#define IMPL_POLICY_TOKEN ${IMPL_POLICY_TOKEN}
++#define IMPL_POLICY ${IMPL_POLICY}
++// clang-format on
++
++#define CONCAT_INNER(a, b) a##b
++#define CONCAT(a, b) CONCAT_INNER(a, b)
++
++#define SHARD_FUNCTION_NAME \
++  CONCAT(chunk_prefill_dispatch_, IMPL_POLICY_TOKEN)
++
++// One chunk_policy dispatcher shard. The recursive 5-bool peel × 6 dtype
++// trampoline forest (~108 leaves) lives entirely inside this TU. fmha_xe2.cpp
++// performs the head_size + use_b16 routing and calls into the right shard,
++// so the entry TU does not need to include chunk_prefill.hpp (and avoids
++// parsing the CUTLASS / SYCL kernel pipeline templates).
++void SHARD_FUNCTION_NAME(
++    sycl::queue& queue,
++    CutlassQKType& cuQKType,
++    const chunk_prefill_args_t& args,
++    bool is_paged,
++    bool is_causal,
++    bool is_local,
++    bool is_sink,
++    bool is_lse) {
++  policy_dispatch_func<IMPL_POLICY>(
++      queue, cuQKType, args, is_paged, is_causal, is_local, is_sink, is_lse);
++}
+diff --git a/csrc/xpu/attn/xe_2/fmha_xe2.cpp b/csrc/xpu/attn/xe_2/fmha_xe2.cpp
+index 7008540..7a9550f 100644
+--- a/csrc/xpu/attn/xe_2/fmha_xe2.cpp
++++ b/csrc/xpu/attn/xe_2/fmha_xe2.cpp
+@@ -1,8 +1,16 @@
++#include "chunk_prefill_args.hpp"
++#include "chunk_prefill_dispatcher.hpp"
++#include "fmha_utils.hpp"
+ #include "fmha_xe2.h"
+-#include "chunk_prefill_utils.hpp"
+-#include "chunk_prefill_extern.hpp"
+ 
+-using namespace cute;
++// Thin entry TU for cutlass_chunk_prefill. Only the ATen ↔
++// chunk_prefill_args_t plumbing and the head_size + use_b16 routing live
++// here. The recursive 5-bool × 6-dtype trampoline forest used to live in
++// this TU (via policy_dispatch_func in chunk_prefill_utils.hpp), which
++// pulled in chunk_prefill.hpp and parsed the full CUTLASS / SYCL kernel
++// pipeline machinery. After 0008-fa2-dispatcher-split.patch the trampoline
++// forest is generated across 12 chunk_policy shard TUs and this entry TU
++// stays cheap to compile.
+ 
+ void cutlass_chunk_prefill_xe2(
+     sycl::queue& queue,
+@@ -246,87 +254,48 @@ void cutlass_chunk_prefill_impl(
+   // TileShapeQK[1] = 32 used in the standard chunk_policy_head* set.
+   const bool use_b16_policy = is_paged && (block_size == 16);
+ 
++  // head_size + use_b16 → dispatcher shard. The shard entry definitions live
++  // in generated chunk_prefill_dispatcher_shard_<policy>.cpp; each contains
++  // the recursive 5-bool × 6-dtype trampoline forest for one chunk_policy.
+   if (use_b16_policy) {
+     if (args.head_size <= HEAD_SIZE_LIMIT_0) {
+-      policy_dispatch_func<chunk_policy_head64_b16>(
+-          queue,
+-          cuQKType,
+-          args,
+-          is_paged,
+-          is_causal,
+-          is_local,
+-          is_sink,
+-          is_lse);
++      chunk_prefill_dispatch_head64_b16(
++          queue, cuQKType, args, is_paged, is_causal, is_local, is_sink, is_lse);
+     } else if (args.head_size <= HEAD_SIZE_LIMIT_1) {
+-      policy_dispatch_func<chunk_policy_head96_b16>(
+-          queue,
+-          cuQKType,
+-          args,
+-          is_paged,
+-          is_causal,
+-          is_local,
+-          is_sink,
+-          is_lse);
++      chunk_prefill_dispatch_head96_b16(
++          queue, cuQKType, args, is_paged, is_causal, is_local, is_sink, is_lse);
+     } else if (args.head_size <= HEAD_SIZE_LIMIT_2) {
+-      policy_dispatch_func<chunk_policy_head128_b16>(
+-          queue,
+-          cuQKType,
+-          args,
+-          is_paged,
+-          is_causal,
+-          is_local,
+-          is_sink,
+-          is_lse);
++      chunk_prefill_dispatch_head128_b16(
++          queue, cuQKType, args, is_paged, is_causal, is_local, is_sink, is_lse);
+     } else if (args.head_size <= HEAD_SIZE_LIMIT_3) {
+-      policy_dispatch_func<chunk_policy_head192_b16>(
+-          queue,
+-          cuQKType,
+-          args,
+-          is_paged,
+-          is_causal,
+-          is_local,
+-          is_sink,
+-          is_lse);
++      chunk_prefill_dispatch_head192_b16(
++          queue, cuQKType, args, is_paged, is_causal, is_local, is_sink, is_lse);
+     } else if (args.head_size <= HEAD_SIZE_LIMIT_4) {
+-      policy_dispatch_func<chunk_policy_head256_b16>(
+-          queue,
+-          cuQKType,
+-          args,
+-          is_paged,
+-          is_causal,
+-          is_local,
+-          is_sink,
+-          is_lse);
++      chunk_prefill_dispatch_head256_b16(
++          queue, cuQKType, args, is_paged, is_causal, is_local, is_sink, is_lse);
+     } else if (args.head_size <= HEAD_SIZE_LIMIT_5) {
+-      policy_dispatch_func<chunk_policy_head512_b16>(
+-          queue,
+-          cuQKType,
+-          args,
+-          is_paged,
+-          is_causal,
+-          is_local,
+-          is_sink,
+-          is_lse);
++      chunk_prefill_dispatch_head512_b16(
++          queue, cuQKType, args, is_paged, is_causal, is_local, is_sink, is_lse);
+     } else {
+       TORCH_CHECK(false, "Unsupported head size for fmha");
+     }
+   } else if (args.head_size <= HEAD_SIZE_LIMIT_0) {
+-    policy_dispatch_func<chunk_policy_head64>(
++    chunk_prefill_dispatch_head64(
+         queue, cuQKType, args, is_paged, is_causal, is_local, is_sink, is_lse);
+   } else if (args.head_size <= HEAD_SIZE_LIMIT_1) {
+-    policy_dispatch_func<chunk_policy_head96>(
++    chunk_prefill_dispatch_head96(
+         queue, cuQKType, args, is_paged, is_causal, is_local, is_sink, is_lse);
+   } else if (args.head_size <= HEAD_SIZE_LIMIT_2) {
+-    policy_dispatch_func<chunk_policy_head128>(
++    chunk_prefill_dispatch_head128(
+         queue, cuQKType, args, is_paged, is_causal, is_local, is_sink, is_lse);
+   } else if (args.head_size <= HEAD_SIZE_LIMIT_3) {
+-    policy_dispatch_func<chunk_policy_head192>(
++    chunk_prefill_dispatch_head192(
+         queue, cuQKType, args, is_paged, is_causal, is_local, is_sink, is_lse);
+   } else if (args.head_size <= HEAD_SIZE_LIMIT_4) {
+-    policy_dispatch_func<chunk_policy_head256>(
++    chunk_prefill_dispatch_head256(
+         queue, cuQKType, args, is_paged, is_causal, is_local, is_sink, is_lse);
+   } else if (args.head_size <= HEAD_SIZE_LIMIT_5) {
+-    policy_dispatch_func<chunk_policy_head512>(
++    chunk_prefill_dispatch_head512(
+         queue, cuQKType, args, is_paged, is_causal, is_local, is_sink, is_lse);
+   } else {
+     TORCH_CHECK(false, "Unsupported head size for fmha");
+diff --git a/csrc/xpu/attn/xe_2/paged_decode.hpp b/csrc/xpu/attn/xe_2/paged_decode.hpp
+index c7c3289..96e06bb 100644
+--- a/csrc/xpu/attn/xe_2/paged_decode.hpp
++++ b/csrc/xpu/attn/xe_2/paged_decode.hpp
+@@ -83,58 +83,7 @@ using decode_policy_q16_h192_p32 = decode_policy_qpacked_head<_16, _192, _32>;
+ using decode_policy_q16_h256_p32 = decode_policy_qpacked_head<_16, _256, _32>;
+ using decode_policy_q16_h512_p32 = decode_policy_qpacked_head<_16, _512, _32>;
+ 
+-struct paged_decode_args_t {
+-  void* query;
+-  void* key;
+-  void* value;
+-  void* out;
+-  void* tem_out;
+-  void* exp_sums;
+-  void* max_logits;
+-  void* block_table;
+-  void* cu_seqlens_q;
+-  void* cu_seqlens_k;
+-  int max_queries;
+-  int max_keys;
+-  int total_seqlen_q;
+-  int total_seqlen_k;
+-  void* k_scale = nullptr;
+-  void* v_scale = nullptr;
+-  float sm_scale;
+-  void* sm_sink;
+-  int batch_size;
+-  int num_heads_q;
+-  int num_heads_k;
+-  int head_size;
+-  int v_head_size;
+-  int max_blocks_per_seq;
+-  int block_size;
+-  int window_size_left = -1;
+-  int window_size_right = -1;
+-  bool is_varlen = false;
+-  bool is_paged = false;
+-  bool is_causal = false;
+-  bool is_local = false;
+-  bool is_sink = false;
+-  bool is_interleaved_kv_cache = false;
+-  int num_kv_splits = 1;
+-  // KV cache strides [num_blocks, block_size, num_heads_kv, head_size]
+-  int64_t k_stride_page = 0;
+-  int64_t k_stride_seq = 0;
+-  int64_t k_stride_heads = 0;
+-  int64_t v_stride_page = 0;
+-  int64_t v_stride_seq = 0;
+-  int64_t v_stride_heads = 0;
+-  // Q strides. Varlen Q is [total_seq, num_heads_q, head_size]; non-varlen Q
+-  // is [batch, num_heads_q, seq, head_size]. The kernel always assumes the
+-  // head_size dim has stride 1 (checked at the API boundary). The other
+-  // strides are passed explicitly so non-contiguous Q (slice/permute/sliced
+-  // buffer) is supported. q_stride_batch is unused for varlen (batch=1) and
+-  // populated as 0 in that case.
+-  int64_t q_stride_seq = 0;
+-  int64_t q_stride_heads = 0;
+-  int64_t q_stride_batch = 0;
+-};
++#include "paged_decode_args.hpp"
+ 
+ template <class FMHAKernel, class ReductionSplitKernel, bool isVarLen>
+ struct DecodeKernelLauncher {
+diff --git a/csrc/xpu/attn/xe_2/paged_decode_args.hpp b/csrc/xpu/attn/xe_2/paged_decode_args.hpp
+new file mode 100644
+index 0000000..fca279b
+--- /dev/null
++++ b/csrc/xpu/attn/xe_2/paged_decode_args.hpp
+@@ -0,0 +1,63 @@
++#pragma once
++
++#include <cstdint>
++
++// POD args struct for the paged-decode kernel API. Carved out of
++// paged_decode.hpp so the dispatcher entry TU (paged_decode_xe2.cpp) and the
++// thin dispatcher header (paged_decode_dispatcher.hpp) can use it without
++// transitively pulling in CUTLASS / SYCL kernel pipeline headers.
++//
++// Keep this header free of template/CUTLASS includes — that is the entire
++// point of the split.
++struct paged_decode_args_t {
++  void* query;
++  void* key;
++  void* value;
++  void* out;
++  void* tem_out;
++  void* exp_sums;
++  void* max_logits;
++  void* block_table;
++  void* cu_seqlens_q;
++  void* cu_seqlens_k;
++  int max_queries;
++  int max_keys;
++  int total_seqlen_q;
++  int total_seqlen_k;
++  void* k_scale = nullptr;
++  void* v_scale = nullptr;
++  float sm_scale;
++  void* sm_sink;
++  int batch_size;
++  int num_heads_q;
++  int num_heads_k;
++  int head_size;
++  int v_head_size;
++  int max_blocks_per_seq;
++  int block_size;
++  int window_size_left = -1;
++  int window_size_right = -1;
++  bool is_varlen = false;
++  bool is_paged = false;
++  bool is_causal = false;
++  bool is_local = false;
++  bool is_sink = false;
++  bool is_interleaved_kv_cache = false;
++  int num_kv_splits = 1;
++  // KV cache strides [num_blocks, block_size, num_heads_kv, head_size]
++  int64_t k_stride_page = 0;
++  int64_t k_stride_seq = 0;
++  int64_t k_stride_heads = 0;
++  int64_t v_stride_page = 0;
++  int64_t v_stride_seq = 0;
++  int64_t v_stride_heads = 0;
++  // Q strides. Varlen Q is [total_seq, num_heads_q, head_size]; non-varlen Q
++  // is [batch, num_heads_q, seq, head_size]. The kernel always assumes the
++  // head_size dim has stride 1 (checked at the API boundary). The other
++  // strides are passed explicitly so non-contiguous Q (slice/permute/sliced
++  // buffer) is supported. q_stride_batch is unused for varlen (batch=1) and
++  // populated as 0 in that case.
++  int64_t q_stride_seq = 0;
++  int64_t q_stride_heads = 0;
++  int64_t q_stride_batch = 0;
++};
+diff --git a/csrc/xpu/attn/xe_2/paged_decode_dispatcher.hpp b/csrc/xpu/attn/xe_2/paged_decode_dispatcher.hpp
+new file mode 100644
+index 0000000..03a1573
+--- /dev/null
++++ b/csrc/xpu/attn/xe_2/paged_decode_dispatcher.hpp
+@@ -0,0 +1,51 @@
++#pragma once
++
++#include <sycl/sycl.hpp>
++
++#include "fmha_utils.hpp"
++#include "paged_decode_args.hpp"
++
++// Thin dispatcher header. paged_decode_xe2.cpp picks the right (QGroup,
++// PageSize) shard from runtime args and calls one of the entry points below.
++// Each entry point is defined in its own .cpp generated by
++// paged_decode_dispatcher_configure.cmake and contains exactly one
++// instantiation of the dispatch_by_head_size<QGroup, PageSize> trampoline
++// forest (6 head × 8 bool × 6 dtype = 288 trampolines per shard, down from
++// 1728 in the previous single-TU dispatcher).
++//
++// The page_size == 16 / 32 / multiple-of-64 routing in dispatch_by_page_size
++// lives in paged_decode_xe2.cpp now, so the entry TU does not include
++// paged_decode.hpp (and hence does not parse CUTLASS / SYCL kernel pipeline
++// templates).
++//
++// Keep this header free of CUTLASS / SYCL kernel includes.
++void paged_decode_dispatch_q8_p16(
++    int head_case,
++    sycl::queue& queue,
++    CutlassQKType& cuQKType,
++    const paged_decode_args_t& args);
++void paged_decode_dispatch_q8_p32(
++    int head_case,
++    sycl::queue& queue,
++    CutlassQKType& cuQKType,
++    const paged_decode_args_t& args);
++void paged_decode_dispatch_q8_p64(
++    int head_case,
++    sycl::queue& queue,
++    CutlassQKType& cuQKType,
++    const paged_decode_args_t& args);
++void paged_decode_dispatch_q16_p16(
++    int head_case,
++    sycl::queue& queue,
++    CutlassQKType& cuQKType,
++    const paged_decode_args_t& args);
++void paged_decode_dispatch_q16_p32(
++    int head_case,
++    sycl::queue& queue,
++    CutlassQKType& cuQKType,
++    const paged_decode_args_t& args);
++void paged_decode_dispatch_q16_p64(
++    int head_case,
++    sycl::queue& queue,
++    CutlassQKType& cuQKType,
++    const paged_decode_args_t& args);
+diff --git a/csrc/xpu/attn/xe_2/paged_decode_dispatcher_configure.cmake b/csrc/xpu/attn/xe_2/paged_decode_dispatcher_configure.cmake
+new file mode 100644
+index 0000000..50b719c
+--- /dev/null
++++ b/csrc/xpu/attn/xe_2/paged_decode_dispatcher_configure.cmake
+@@ -0,0 +1,53 @@
++# =============================================================================
++# Paged Decode Dispatcher Shard Configuration
++# =============================================================================
++# Emits one .cpp per (QGroup, PageSize) pair that wraps
++# dispatch_by_head_size<QGroup, PageSize> in a free function declared in
++# paged_decode_dispatcher.hpp. Splitting the dispatcher across 6 shards drops
++# the per-TU trampoline forest from 1728 (2 QGroup × 3 PageSize × 6 head × 8
++# bool × 6 dtype) to 288 (6 head × 8 bool × 6 dtype) and keeps the CUTLASS
++# header parse out of the entry TU paged_decode_xe2.cpp.
++#
++# Output: appended to ATTN_KERNEL_SRCS_GEN so the shards get linked into
++# attn_kernels_xe_2 by add_xe2_kernel_library.
++# =============================================================================
++
++function(paged_decode_dispatcher_configure FILENAME_SUFFIX)
++  set(GEN_KERNEL_SRCS)
++
++  set(qgroup_list "8" "16")
++  # PageSize 64 services any block_size that is a positive multiple of 64
++  # (see comment in paged_decode_utils.hpp::dispatch_by_page_size). The _128
++  # policy is intentionally not routed (ReduceK=8 SLM reduction bug).
++  set(pagesize_list "16" "32" "64")
++
++  foreach(IMPL_QGROUP ${qgroup_list})
++    foreach(IMPL_PAGESIZE ${pagesize_list})
++      set(FILE_SUFFIX "_q${IMPL_QGROUP}_p${IMPL_PAGESIZE}")
++      configure_file(${FILENAME_SUFFIX}.cpp.in
++                     "${FILENAME_SUFFIX}${FILE_SUFFIX}.cpp")
++      list(
++        APPEND
++        GEN_KERNEL_SRCS
++        "${CMAKE_CURRENT_BINARY_DIR}/${FILENAME_SUFFIX}${FILE_SUFFIX}.cpp")
++    endforeach()
++  endforeach()
++
++  list(REMOVE_DUPLICATES GEN_KERNEL_SRCS)
++  list(LENGTH GEN_KERNEL_SRCS GEN_KERNEL_SRCS_LENGTH)
++  message(
++    STATUS
++      "Generated ${FILENAME_SUFFIX} sources: ${GEN_KERNEL_SRCS_LENGTH} shards")
++
++  set(GEN_KERNEL_SRCS
++      ${GEN_KERNEL_SRCS}
++      PARENT_SCOPE)
++  set(GEN_KERNEL_SRCS_LENGTH
++      ${GEN_KERNEL_SRCS_LENGTH}
++      PARENT_SCOPE)
++
++  list(APPEND ATTN_KERNEL_SRCS_GEN ${GEN_KERNEL_SRCS})
++  set(ATTN_KERNEL_SRCS_GEN
++      ${ATTN_KERNEL_SRCS_GEN}
++      PARENT_SCOPE)
++endfunction()
+diff --git a/csrc/xpu/attn/xe_2/paged_decode_dispatcher_shard.cpp.in b/csrc/xpu/attn/xe_2/paged_decode_dispatcher_shard.cpp.in
+new file mode 100644
+index 0000000..b52af46
+--- /dev/null
++++ b/csrc/xpu/attn/xe_2/paged_decode_dispatcher_shard.cpp.in
+@@ -0,0 +1,35 @@
++#include "paged_decode.hpp"
++#include "paged_decode_dispatcher.hpp"
++#include "paged_decode_extern.hpp"
++#include "paged_decode_utils.hpp"
++
++using namespace cute;
++
++// clang-format off
++#define IMPL_QGROUP ${IMPL_QGROUP}
++#define IMPL_PAGESIZE ${IMPL_PAGESIZE}
++// clang-format on
++
++#define CONCAT_INNER(a, b) a##b
++#define CONCAT(a, b) CONCAT_INNER(a, b)
++
++#define SHARD_FUNCTION_NAME \
++  CONCAT(paged_decode_dispatch_q, CONCAT(IMPL_QGROUP, CONCAT(_p, IMPL_PAGESIZE)))
++
++#define QGROUP_TYPE CONCAT(_, IMPL_QGROUP)
++#define PAGESIZE_TYPE CONCAT(_, IMPL_PAGESIZE)
++
++// One (QGroup, PageSize) dispatcher shard. The recursive trampoline forest
++// (6 head_case × 8 bool × 6 dtype = 288 leaves) lives entirely inside this
++// TU. paged_decode_xe2.cpp performs the page_size → PageSize and
++// num_q_group_size → QGroup routing and calls into the right shard, so the
++// entry TU does not need to include paged_decode.hpp (and avoids parsing the
++// CUTLASS / SYCL kernel pipeline templates).
++void SHARD_FUNCTION_NAME(
++    int head_case,
++    sycl::queue& queue,
++    CutlassQKType& cuQKType,
++    const paged_decode_args_t& args) {
++  dispatch_by_head_size<QGROUP_TYPE, PAGESIZE_TYPE>(
++      head_case, queue, cuQKType, args);
++}
+diff --git a/csrc/xpu/attn/xe_2/paged_decode_utils.hpp b/csrc/xpu/attn/xe_2/paged_decode_utils.hpp
+index faa0dc7..3c49101 100644
+--- a/csrc/xpu/attn/xe_2/paged_decode_utils.hpp
++++ b/csrc/xpu/attn/xe_2/paged_decode_utils.hpp
+@@ -113,9 +113,24 @@ inline void dispatch_by_head_size(
+           queue, cuQKType, args, args.is_causal, args.is_local, args.is_sink);
+       break;
+     case 6:
+-      decode_policy_dispatch_func<
+-          decode_policy_qpacked_head<QGroup, _576, PageSize>>(
+-          queue, cuQKType, args, args.is_causal, args.is_local, args.is_sink);
++      // head_size=576 (head_case=6) is only present in PAGED_DECODE_POLICY_LIST
++      // for PageSize ∈ {_64, _128} (see paged_decode_extern.hpp). Compiling
++      // the dispatch for PageSize ∈ {_16, _32} would implicitly instantiate
++      // decode_policy_dispatch_impl<decode_policy_q*_h576_p{16,32}, ...> —
++      // the full SYCL kernel pipeline per shard TU, peaking at ~18 GiB RSS
++      // and OOM-killing icpx. Gate the implicit instantiation behind
++      // if constexpr so the (p16, p32) shards never reach the pipeline.
++      if constexpr (PageSize::value >= 64) {
++        decode_policy_dispatch_func<
++            decode_policy_qpacked_head<QGroup, _576, PageSize>>(
++            queue, cuQKType, args, args.is_causal, args.is_local, args.is_sink);
++      } else {
++        TORCH_CHECK(
++            false,
++            "head_size=576 (head_case=6) requires page_size >= 64; got "
++            "PageSize=",
++            PageSize::value);
++      }
+       break;
+     default:
+       TORCH_CHECK(false, "Unsupported head size for fmha");
+diff --git a/csrc/xpu/attn/xe_2/paged_decode_xe2.cpp b/csrc/xpu/attn/xe_2/paged_decode_xe2.cpp
+index 1f05cf8..7334504 100644
+--- a/csrc/xpu/attn/xe_2/paged_decode_xe2.cpp
++++ b/csrc/xpu/attn/xe_2/paged_decode_xe2.cpp
+@@ -1,8 +1,16 @@
++#include "fmha_utils.hpp"
++#include "paged_decode_args.hpp"
++#include "paged_decode_dispatcher.hpp"
+ #include "paged_decode_xe2.h"
+-#include "paged_decode_utils.hpp"
+-#include "paged_decode_extern.hpp"
+ 
+-using namespace cute;
++// Thin entry TU for cutlass_paged_decode. Only the ATen ↔ paged_decode_args_t
++// plumbing and the (QGroup, PageSize) routing live here. The recursive
++// trampoline forest used to live in this TU (via dispatch_by_page_size in
++// paged_decode_utils.hpp), which pulled in paged_decode.hpp and parsed the
++// full CUTLASS / SYCL kernel pipeline machinery, peaking well above the
++// per-TU memory budget of the kernel_template fan-out. After
++// 0008-fa2-dispatcher-split.patch, the trampoline forest is generated across
++// 6 (QGroup, PageSize) shard TUs and this entry TU stays cheap to compile.
+ 
+ void cutlass_paged_decode_xe2(
+     sycl::queue& queue,
+@@ -246,10 +254,36 @@ void cutlass_paged_decode_impl(
+   int head_case = get_head_size_case(args.head_size);
+   int num_q_group_size = num_heads_q / num_heads_kv;
+ 
++  // (QGroup, PageSize) → dispatcher shard. The shard entry definitions live
++  // in generated paged_decode_dispatcher_shard_q{8,16}_p{16,32,64}.cpp and
++  // each contains the trampoline forest for one slice (7 head × 8 bool × 6
++  // dtype). Routing mirrors the previous dispatch_by_page_size /
++  // dispatch_by_head_size template tree: page_size that is a positive
++  // multiple of 64 goes through PageSize=_64 (the _128 policy has a known
++  // ReduceK=8 SLM reduction bug — see paged_decode_utils.hpp).
++  TORCH_CHECK(
++      block_size == 16 || block_size == 32 ||
++          (block_size > 0 && (block_size % 64) == 0),
++      "Unsupported page size for paged_decode: ",
++      block_size,
++      " (supported: 16, 32, or any positive multiple of 64)");
++
+   if (num_q_group_size <= 8) {
+-    dispatch_by_page_size<_8>(block_size, head_case, queue, cuQKType, args);
++    if (block_size == 16) {
++      paged_decode_dispatch_q8_p16(head_case, queue, cuQKType, args);
++    } else if (block_size == 32) {
++      paged_decode_dispatch_q8_p32(head_case, queue, cuQKType, args);
++    } else {
++      paged_decode_dispatch_q8_p64(head_case, queue, cuQKType, args);
++    }
+   } else if (num_q_group_size <= 16) {
+-    dispatch_by_page_size<_16>(block_size, head_case, queue, cuQKType, args);
++    if (block_size == 16) {
++      paged_decode_dispatch_q16_p16(head_case, queue, cuQKType, args);
++    } else if (block_size == 32) {
++      paged_decode_dispatch_q16_p32(head_case, queue, cuQKType, args);
++    } else {
++      paged_decode_dispatch_q16_p64(head_case, queue, cuQKType, args);
++    }
+   } else {
+     TORCH_CHECK(false, "Unsupported num_heads_q / num_heads_kv for fmha");
+   }

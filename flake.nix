@@ -169,12 +169,12 @@
           python3Packages = python312PackagesXpu;
         };
 
-        mkXpuLibFactory = { src, aotDevices ? [ ] }:
+        mkXpuLibFactory = { src, aotDevices ? [ ], sccacheDir ? null }:
           let factory = pkgs.callPackage ./nix/vllm-xpu-lib.nix {
             intel-oneapi-base = intel-oneapi;
             inherit intel-pti oneccl-bmg torch-xpu;
             python3Packages = pkgs.python312Packages;
-            inherit src;
+            inherit src sccacheDir;
             cutlass-src = sycl-tla-src;
           };
           in { libName, featureFlags ? [ ] }:
@@ -235,8 +235,8 @@
           "-DXPUMEM_ALLOCATOR_ENABLED=OFF"
         ];
 
-        mkKernelLibs = { src, aotDevices ? [ ] }:
-          let mkLib = mkXpuLibFactory { inherit src aotDevices; }; in {
+        mkKernelLibs = { src, aotDevices ? [ ], sccacheDir ? null }:
+          let mkLib = mkXpuLibFactory { inherit src aotDevices sccacheDir; }; in {
             attn-kernels-xe-2 = mkLib { libName = "attn_kernels_xe_2"; featureFlags = attnFlags; };
             gdn-attn-kernels-xe-2 = mkLib { libName = "gdn_attn_kernels_xe_2"; featureFlags = gdnAttnFlags; };
             mqa-logits-kernels-xe-2 = mkLib { libName = "mqa_logits_kernels_xe_2"; featureFlags = mqaLogitsFlags; };
@@ -254,9 +254,9 @@
         # [ "bmg" ]` — Battlemage being the target this project is
         # tuned for. `withAotDevices [ ... ]` for any other explicit
         # list.
-        mkVllmXpuKernels = { src, aotDevices ? [ ] }:
+        mkVllmXpuKernels = { src, aotDevices ? [ ], sccacheDir ? null }:
           let
-            libs = mkKernelLibs { inherit src aotDevices; };
+            libs = mkKernelLibs { inherit src aotDevices sccacheDir; };
             base = pkgs.callPackage ./nix/vllm-xpu-kernels.nix ({
               intel-oneapi-base = intel-oneapi;
               inherit intel-pti oneccl-bmg torch-xpu;
@@ -268,13 +268,16 @@
             base.overrideAttrs (old: {
               passthru = (old.passthru or {}) // {
                 withAotDevices = ds: mkVllmXpuKernels {
-                  inherit src; aotDevices = ds;
+                  inherit src sccacheDir; aotDevices = ds;
                 };
                 withJIT = mkVllmXpuKernels {
-                  inherit src; aotDevices = [];
+                  inherit src sccacheDir; aotDevices = [];
                 };
                 withAOT = mkVllmXpuKernels {
-                  inherit src; aotDevices = [ "bmg" ];
+                  inherit src sccacheDir; aotDevices = [ "bmg" ];
+                };
+                withSccacheDir = d: mkVllmXpuKernels {
+                  inherit src aotDevices; sccacheDir = d;
                 };
               };
             });
@@ -350,6 +353,13 @@
                 withAudio = b: mkVllm {
                   inherit src version kernels withTorchvision withTorchaudio;
                   withAudio = b;
+                };
+                withSccacheDir = d: mkVllm {
+                  inherit src version withTorchvision withTorchaudio withAudio;
+                  kernels =
+                    if kernels ? withSccacheDir
+                    then kernels.withSccacheDir d
+                    else kernels;
                 };
               };
             });

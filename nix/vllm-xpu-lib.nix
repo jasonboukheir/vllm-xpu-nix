@@ -19,6 +19,17 @@
   zlib,
   which,
   sccache,
+  # Opt-in persistent sccache cache directory. Default null (no
+  # SCCACHE_DIR baked into the derivation) so the package builds
+  # anywhere without host-side setup; sccache then falls through to
+  # $TMPDIR/.cache/sccache (via the HOME=$TMPDIR redirect in
+  # preConfigure) and the cache is thrown away with the build.
+  # Hosts that want a persistent cache point this at a directory
+  # that's also added to nix.settings.extra-sandbox-paths.
+  # impure-env / impureEnvVars cannot do this — they're gated on
+  # !isSandboxed() and never reach a regular content-addressed or
+  # input-addressed build (see NixOS/nix#8258).
+  sccacheDir ? null,
 }:
 
 {
@@ -33,7 +44,7 @@ let
   syclHome = "${intel-oneapi-base}/compiler/latest";
   aotDevicesStr = lib.concatStringsSep "," aotDevices;
 in
-stdenv.mkDerivation {
+stdenv.mkDerivation ({
   pname = "vllm-xpu-${lib.replaceStrings [ "_" ] [ "-" ] libName}";
   version = "0.1.7-dev";
 
@@ -86,34 +97,6 @@ stdenv.mkDerivation {
   cmakeBuildType = "Release";
   enableParallelBuilding = true;
 
-  # Content-addressed: the kernel .so is mostly SYCL device-image binary
-  # produced by the SYCL-TLA compile pipeline. RUNPATH does encode some
-  # store-path inputs (torch-xpu, intel-oneapi), so torch-xpu bumps will
-  # invalidate; smaller upstream churn (nativeBuildInputs, helper tools)
-  # leaves the .so byte-identical and the CA hash hits.
-  __contentAddressed = true;
-
-  # sccache is wired as the C/C++ compiler launcher. Local (SCCACHE_DIR)
-  # and remote (SCCACHE_BUCKET / SCCACHE_REDIS) backends both work; the
-  # sandbox inherits credentials via impureEnvVars below. With S3 as the
-  # backend the warm-cache rebuild for an unchanged TU is a single GET
-  # per .o — the cache property that matters for iteration speed without
-  # paying the overhead of per-TU Nix derivations.
-  impureEnvVars = [
-    "SCCACHE_DIR"
-    "SCCACHE_BUCKET"
-    "SCCACHE_REGION"
-    "SCCACHE_ENDPOINT"
-    "SCCACHE_S3_USE_SSL"
-    "SCCACHE_S3_KEY_PREFIX"
-    "SCCACHE_S3_NO_CREDENTIALS"
-    "SCCACHE_REDIS"
-    "SCCACHE_REDIS_KEY_PREFIX"
-    "AWS_ACCESS_KEY_ID"
-    "AWS_SECRET_ACCESS_KEY"
-    "AWS_SESSION_TOKEN"
-  ];
-
   # NIX_BUILD_CORES is inherited from the daemon (defaults to `nproc`).
   # After 0007-fa2-dtype-split.patch the kernel_template TUs peak at
   # ~7 GiB RSS; after 0008-fa2-dispatcher-split.patch the dispatcher TUs
@@ -123,12 +106,6 @@ stdenv.mkDerivation {
   # nix.conf) on memory-constrained hosts; that value also reaches
   # -fsycl-max-parallel-link-jobs via the cmakeFlagsArray append below.
   preConfigure = ''
-    # sccache falls back to $HOME/.cache/sccache when SCCACHE_DIR isn't
-    # set; the Nix sandbox HOME (/homeless-shelter) is unwritable, so
-    # the fallback errors at mkdir time even when the user has S3/Redis
-    # configured. Point HOME at $TMPDIR so the fallback lands somewhere
-    # writable. Persistent caching still works via SCCACHE_* inherited
-    # through impureEnvVars.
     export HOME=$TMPDIR
 
     mkdir -p $TMPDIR/bin
@@ -187,4 +164,10 @@ stdenv.mkDerivation {
     license = lib.licenses.asl20;
     platforms = [ "x86_64-linux" ];
   };
-}
+} // lib.optionalAttrs (sccacheDir != null) {
+  # sccache is wired as the C/C++ compiler launcher (see cmakeFlags
+  # below). When the caller opts in, point sccache at a host-side
+  # cache dir made visible to the sandbox via
+  # nix.settings.extra-sandbox-paths on the builder.
+  SCCACHE_DIR = sccacheDir;
+})

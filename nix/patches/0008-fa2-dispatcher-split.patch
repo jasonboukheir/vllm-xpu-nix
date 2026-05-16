@@ -371,7 +371,7 @@ diff --git a/csrc/xpu/attn/xe_2/fmha_xe2.cpp b/csrc/xpu/attn/xe_2/fmha_xe2.cpp
 index 7008540..7a9550f 100644
 --- a/csrc/xpu/attn/xe_2/fmha_xe2.cpp
 +++ b/csrc/xpu/attn/xe_2/fmha_xe2.cpp
-@@ -1,8 +1,16 @@
+@@ -1,8 +1,44 @@
 +#include "chunk_prefill_args.hpp"
 +#include "chunk_prefill_dispatcher.hpp"
 +#include "fmha_utils.hpp"
@@ -388,6 +388,34 @@ index 7008540..7a9550f 100644
 +// pipeline machinery. After 0008-fa2-dispatcher-split.patch the trampoline
 +// forest is generated across 12 chunk_policy shard TUs and this entry TU
 +// stays cheap to compile.
++
++// Forward declaration for cutlass_chunk_prefill_impl defined below in this TU.
++// Previously supplied by chunk_prefill_utils.hpp, but that header transitively
++// includes chunk_prefill.hpp — exactly the CUTLASS / SYCL kernel pipeline
++// parse this split is keeping out of the entry TU.
++void cutlass_chunk_prefill_impl(
++    sycl::queue& queue,
++    const at::Tensor& query,
++    const at::Tensor& key_cache,
++    const at::Tensor& value_cache,
++    at::Tensor& out,
++    const at::Tensor& block_table,
++    const at::Tensor& cu_seqlens_q,
++    const at::Tensor& cu_seqlens_k,
++    int max_seqlen_q,
++    int max_seqlen_k,
++    std::optional<const at::Tensor>& k_scale,
++    std::optional<const at::Tensor>& v_scale,
++    double sm_scale,
++    std::optional<const at::Tensor>& sm_sink_,
++    int window_size_left,
++    int window_size_right,
++    bool is_varlen,
++    bool is_paged,
++    bool is_causal,
++    bool is_local,
++    bool is_sink,
++    std::optional<at::Tensor>& softmax_lse);
  
  void cutlass_chunk_prefill_xe2(
      sycl::queue& queue,
@@ -826,7 +854,7 @@ diff --git a/csrc/xpu/attn/xe_2/paged_decode_xe2.cpp b/csrc/xpu/attn/xe_2/paged_
 index 1f05cf8..7334504 100644
 --- a/csrc/xpu/attn/xe_2/paged_decode_xe2.cpp
 +++ b/csrc/xpu/attn/xe_2/paged_decode_xe2.cpp
-@@ -1,8 +1,16 @@
+@@ -1,8 +1,47 @@
 +#include "fmha_utils.hpp"
 +#include "paged_decode_args.hpp"
 +#include "paged_decode_dispatcher.hpp"
@@ -843,6 +871,37 @@ index 1f05cf8..7334504 100644
 +// per-TU memory budget of the kernel_template fan-out. After
 +// 0008-fa2-dispatcher-split.patch, the trampoline forest is generated across
 +// 6 (QGroup, PageSize) shard TUs and this entry TU stays cheap to compile.
++
++// Forward declaration for cutlass_paged_decode_impl defined below in this TU.
++// Previously supplied by paged_decode_utils.hpp, but that header transitively
++// includes paged_decode.hpp — exactly the CUTLASS / SYCL kernel pipeline
++// parse this split is keeping out of the entry TU.
++void cutlass_paged_decode_impl(
++    sycl::queue& queue,
++    const at::Tensor& query,
++    const at::Tensor& key_cache,
++    const at::Tensor& value_cache,
++    at::Tensor& out,
++    at::Tensor& temp_out,
++    at::Tensor& exp_sums,
++    at::Tensor& max_logits,
++    const at::Tensor& block_table,
++    const at::Tensor& cu_seqlens_q,
++    const at::Tensor& cu_seqlens_k,
++    int max_seqlen_q,
++    int max_seqlen_k,
++    std::optional<const at::Tensor>& k_scale,
++    std::optional<const at::Tensor>& v_scale,
++    double sm_scale,
++    std::optional<const at::Tensor>& sm_sink_,
++    int window_size_left,
++    int window_size_right,
++    bool is_varlen,
++    bool is_paged,
++    bool is_causal,
++    bool is_local,
++    bool is_sink,
++    int num_kv_splits);
  
  void cutlass_paged_decode_xe2(
      sycl::queue& queue,

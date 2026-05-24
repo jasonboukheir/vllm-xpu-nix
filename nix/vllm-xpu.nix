@@ -233,10 +233,12 @@ python3Packages.buildPythonPackage {
 
   postPatch = ''
     # Drop the strict torch and setuptools pins from build-system.requires;
-    # nix provides them via build-system.
+    # nix provides them via build-system. Also drop setuptools-rust from
+    # build-system since the Rust frontend (PR #40848) is stripped below.
     substituteInPlace pyproject.toml \
       --replace-fail 'torch == 2.11.0' 'torch' \
-      --replace-fail 'setuptools>=77.0.3,<81.0.0' 'setuptools'
+      --replace-fail 'setuptools>=77.0.3,<81.0.0' 'setuptools' \
+      --replace-fail '"setuptools-rust>=1.9.0",' ""
 
     # Strip the wheel-URL pin and the torch+xpu local-version pin from
     # xpu.txt. vllm_xpu_kernels and torch are nix-provided. torchvision and
@@ -247,6 +249,17 @@ python3Packages.buildPythonPackage {
       --replace-fail 'torchaudio' '# torchaudio (opt-in via withTorchaudio)' \
       --replace-fail 'torchvision' '# torchvision (opt-in via withTorchvision)'
     sed -i '/^vllm_xpu_kernels @ /d' requirements/xpu.txt
+
+    # Strip the new Rust frontend (PR #40848: vllm-rs). setuptools-rust would
+    # demand rustPlatform.cargoSetupHook with a vendored Cargo.lock; the Rust
+    # CLI is unused by the Python inference API, so neutralize the imports +
+    # extension wiring instead of vendoring the dep tree.
+    substituteInPlace setup.py \
+      --replace-fail 'from setuptools_rust import Binding, RustExtension' \
+        'Binding = type("Binding", (), {"Exec": None}); RustExtension = lambda *a, **kw: None' \
+      --replace-fail 'from setuptools_rust.build import build_rust' \
+        'build_rust = type("build_rust", (object,), {"run": lambda self: None})' \
+      --replace-fail 'rust_extensions=rust_extensions,' ""
   '';
 
   preBuild = ''

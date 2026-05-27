@@ -6,7 +6,6 @@
   stdenv,
   intel-oneapi-base,
   intel-pti,
-  oneccl-bmg,
   level-zero,
   intel-compute-runtime,
   ocl-icd,
@@ -31,7 +30,6 @@ python3Packages.buildPythonPackage rec {
     stdenv.cc.cc.lib
     intel-oneapi-base
     intel-pti
-    oneccl-bmg
     level-zero
     intel-compute-runtime
     ocl-icd

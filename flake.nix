@@ -80,7 +80,7 @@
         vllm-xpu-kernels-src' = mkKernelsSrc vllm-xpu-kernels-src;
         vllm-xpu-kernels-unstable-src' = mkKernelsSrc vllm-xpu-kernels-unstable-src;
 
-        intel-oneapi = pkgs.intel-oneapi.base.override {
+        intel-oneapi = pkgs.intel-oneapi-toolkit.override {
           components = [
             "intel.oneapi.lin.dpcpp-cpp-compiler"
             "intel.oneapi.lin.mkl.devel"
@@ -88,12 +88,17 @@
           ];
         };
 
+        # Restored factory for standalone (non-unified-toolkit) oneAPI
+        # installers; see comment in nix/mk-intel-oneapi.nix.
+        mkIntelOneApi = pkgs.callPackage ./nix/mk-intel-oneapi.nix { };
+
         intel-pti = pkgs.callPackage ./nix/intel-pti.nix {
           intel-oneapi-base = intel-oneapi;
         };
 
         oneccl-bmg = pkgs.callPackage ./nix/oneccl-bmg.nix {
           intel-oneapi-base = intel-oneapi;
+          inherit mkIntelOneApi;
         };
 
         torch-xpu = pkgs.callPackage ./nix/torch-xpu.nix {

@@ -14,12 +14,18 @@
 
 python3Packages.buildPythonPackage rec {
   pname = "torch";
-  version = "2.11.0+xpu";
+  # 2026-05-21 nightly: first torch+xpu line linked against the new oneAPI
+  # 2026.0 ABI (libsycl.so.9, libmkl_*.so.3 / libmkl_sycl_*.so.6). Stable
+  # 2.11 / 2.12 GA wheels still link libsycl.so.8 + libmkl_*.so.2 / .so.5
+  # and cannot be patchelfed against the unified 2026.0 toolkit. Hold here
+  # until a 2.13+ GA wheel against oneAPI 2026.0 lands; revisit on each
+  # toolkit bump.
+  version = "2.13.0.dev20260521+xpu";
   format = "wheel";
 
   src = fetchurl {
-    url = "https://download.pytorch.org/whl/xpu/torch-2.11.0%2Bxpu-cp312-cp312-linux_x86_64.whl";
-    hash = "sha256-WQyeVKmeRdgOrv/nC1OCa0m3GmV44S6bqiJ+ibYceuI=";
+    url = "https://download.pytorch.org/whl/nightly/xpu/torch-2.13.0.dev20260521%2Bxpu-cp312-cp312-manylinux_2_28_x86_64.whl";
+    hash = "sha256-DvCjjlkoqo2hmC1biLINIA/VDEWG7Fu49Wq2bZNgrf0=";
   };
 
   nativeBuildInputs = [
@@ -76,7 +82,7 @@ python3Packages.buildPythonPackage rec {
   };
 
   meta = {
-    description = "PyTorch 2.11.0 with Intel XPU (SYCL/Level-Zero) backend";
+    description = "PyTorch ${version} with Intel XPU (SYCL/Level-Zero) backend";
     homepage = "https://pytorch.org";
     license = lib.licenses.bsd3;
     platforms = [ "x86_64-linux" ];

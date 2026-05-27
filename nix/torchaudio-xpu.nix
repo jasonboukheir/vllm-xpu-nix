@@ -9,12 +9,14 @@
 
 python3Packages.buildPythonPackage rec {
   pname = "torchaudio";
-  version = "2.11.0+xpu";
+  # Match torch-xpu's 2026-05-21 nightly (first wheel built against oneAPI
+  # 2026.0 ABI). See note in nix/torch-xpu.nix.
+  version = "2.11.0.dev20260521+xpu";
   format = "wheel";
 
   src = fetchurl {
-    url = "https://download.pytorch.org/whl/xpu/torchaudio-2.11.0%2Bxpu-cp312-cp312-manylinux_2_28_x86_64.whl";
-    hash = "sha256-VE99BDqIzK6mzzTUP5FFoPYLFOkWPAIYQduiaQaciHk=";
+    url = "https://download.pytorch.org/whl/nightly/xpu/torchaudio-2.11.0.dev20260521%2Bxpu-cp312-cp312-manylinux_2_28_x86_64.whl";
+    hash = "sha256-XONx0UqabHZbh24Dhve2FiyVJiI3DAusXXXHjzK+JUY=";
   };
 
   nativeBuildInputs = [
@@ -48,7 +50,7 @@ python3Packages.buildPythonPackage rec {
   pythonImportsCheck = [ "torchaudio" ];
 
   meta = {
-    description = "PyTorch audio (Intel XPU build, torchaudio-2.11.0+xpu wheel)";
+    description = "PyTorch audio (Intel XPU build, torchaudio-${version} wheel)";
     homepage = "https://pytorch.org";
     license = lib.licenses.bsd2;
     platforms = [ "x86_64-linux" ];

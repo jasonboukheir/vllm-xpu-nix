@@ -10,7 +10,6 @@
   stdenv,
   intel-oneapi-base,
   intel-pti,
-  oneccl-bmg,
   torch-xpu,
   level-zero,
   intel-compute-runtime,
@@ -88,7 +87,6 @@ python3Packages.buildPythonPackage ({
     stdenv.cc.cc.lib
     intel-oneapi-base
     intel-pti
-    oneccl-bmg
     level-zero
     intel-compute-runtime
     intel-graphics-compiler

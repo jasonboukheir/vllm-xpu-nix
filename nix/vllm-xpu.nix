@@ -10,7 +10,6 @@
   stdenv,
   intel-oneapi-base,
   intel-pti,
-  oneccl-bmg,
   torch-xpu,
   triton-xpu,
   flash-linear-attention,
@@ -155,7 +154,6 @@ python3Packages.buildPythonPackage {
     stdenv.cc.cc.lib
     intel-oneapi-base
     intel-pti
-    oneccl-bmg
   ];
 
   # SYCL runtime dlopen()s libze_loader, libze_intel_gpu, and libigc at load

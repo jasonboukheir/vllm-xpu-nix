@@ -1,7 +1,7 @@
 {
   lib,
   fetchurl,
-  intel-oneapi,
+  mkIntelOneApi,
   intel-oneapi-base,
   level-zero,
   zlib,
@@ -14,7 +14,7 @@
   libfabric,
 }:
 
-intel-oneapi.mkIntelOneApi (finalAttrs: {
+mkIntelOneApi (finalAttrs: {
   pname = "intel-oneccl-bmg";
 
   src = fetchurl {

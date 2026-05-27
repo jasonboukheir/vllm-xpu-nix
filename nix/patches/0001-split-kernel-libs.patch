@@ -1,8 +1,7 @@
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 7110bf4..72045d9 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -323,6 +323,9 @@ set(GROUPED_GEMM_LIB_NAME "")
+@@ -323,6 +323,9 @@
  set(GDN_ATTN_LIB_NAME "")
  set(MQA_LOGITS_LIB_NAME "")
  
@@ -12,7 +11,7 @@ index 7110bf4..72045d9 100644
  if(BUILD_SYCL_TLA_KERNELS)
  
    set(SYCL_TLA_INCLUDE_DIRS
-@@ -338,26 +341,69 @@ if(BUILD_SYCL_TLA_KERNELS)
+@@ -338,7 +341,16 @@
    set(SYCL_TLA_COMPILE_OPTIONS "")
    if(VLLM_XPU_ENABLE_XE_DEFAULT)
      if(MOE_KERNELS_ENABLED)
@@ -30,8 +29,9 @@ index 7110bf4..72045d9 100644
        list(APPEND GROUPED_GEMM_LIB_NAME "grouped_gemm_xe_default")
      endif()
      list(APPEND SYCL_TLA_COMPILE_OPTIONS -DVLLM_XPU_ENABLE_XE_DEFAULT)
-   endif()
+@@ -346,19 +358,53 @@
    if(VLLM_XPU_ENABLE_XE2)
+     include_directories(${CMAKE_SOURCE_DIR}/csrc)
      if(MOE_KERNELS_ENABLED)
 -      add_subdirectory(csrc/xpu/grouped_gemm/xe_2)
 +      if(VLLM_XPU_PREBUILT_GROUPED_GEMM_XE_2_LIB)
@@ -87,7 +87,7 @@ index 7110bf4..72045d9 100644
        list(APPEND MQA_LOGITS_LIB_NAME "mqa_logits_kernels_xe_2")
      endif()
      list(APPEND SYCL_TLA_COMPILE_OPTIONS -DVLLM_XPU_ENABLE_XE2)
-@@ -366,6 +412,11 @@ if(BUILD_SYCL_TLA_KERNELS)
+@@ -367,6 +413,11 @@
  
  endif()
  
@@ -99,11 +99,11 @@ index 7110bf4..72045d9 100644
  # Feature compile defines — these guard op registrations and interface code so
  # that disabled features don't pull in unbuilt TLA library symbols.
  if(MOE_KERNELS_ENABLED)
+
 diff --git a/setup.py b/setup.py
-index 42ce5b9..6cdf670 100755
 --- a/setup.py
 +++ b/setup.py
-@@ -200,6 +200,19 @@ class cmake_build_ext(build_ext):
+@@ -200,6 +200,19 @@
              cmake_args.append('-D{}={}'.format(
                  opt, "ON" if _is_enabled(opt) else "OFF"))
  

@@ -80,11 +80,11 @@
     "vllm-xpu-kernels-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1778678690,
-        "narHash": "sha256-9Tm45Rd2aWpArI8phJQM4d6CnRSRESliCYrfFPEZVhI=",
+        "lastModified": 1779860797,
+        "narHash": "sha256-ChA2Z90SqciMZD37eZNqX+tuN/DQolF32Glg3ttHUZA=",
         "ref": "refs/heads/main",
-        "rev": "59398adeda0767e3ba3f83856cc3a15309aa2bfb",
-        "revCount": 229,
+        "rev": "f79d5984ed38e576792ba88ce3f87b4f03ab42b2",
+        "revCount": 253,
         "submodules": true,
         "type": "git",
         "url": "https://github.com/vllm-project/vllm-xpu-kernels.git"

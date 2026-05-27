@@ -10,12 +10,14 @@
 
 python3Packages.buildPythonPackage rec {
   pname = "torchvision";
-  version = "0.26.0+xpu";
+  # Match torch-xpu's 2026-05-21 nightly (first wheel built against oneAPI
+  # 2026.0 ABI). See note in nix/torch-xpu.nix.
+  version = "0.28.0.dev20260521+xpu";
   format = "wheel";
 
   src = fetchurl {
-    url = "https://download.pytorch.org/whl/xpu/torchvision-0.26.0%2Bxpu-cp312-cp312-manylinux_2_28_x86_64.whl";
-    hash = "sha256-4gTRS+bw+E1fDm6SE1VugDJsOraCysEIvL7zQL9FKXs=";
+    url = "https://download.pytorch.org/whl/nightly/xpu/torchvision-0.28.0.dev20260521%2Bxpu-cp312-cp312-manylinux_2_28_x86_64.whl";
+    hash = "sha256-gSIegH9h3s5096cLwzw1i3Pao2zdFdsdfjzLhHrg6GA=";
   };
 
   nativeBuildInputs = [
@@ -55,7 +57,7 @@ python3Packages.buildPythonPackage rec {
   pythonImportsCheck = [ "torchvision" ];
 
   meta = {
-    description = "PyTorch vision (Intel XPU build, torchvision-0.26.0+xpu wheel)";
+    description = "PyTorch vision (Intel XPU build, torchvision-${version} wheel)";
     homepage = "https://pytorch.org";
     license = lib.licenses.bsd3;
     platforms = [ "x86_64-linux" ];

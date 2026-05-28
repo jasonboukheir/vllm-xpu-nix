@@ -115,8 +115,12 @@ python3Packages.buildPythonPackage ({
   ];
 
   postPatch = ''
+    # Drop the upstream torch release pin (any version) — we build against the
+    # torch-xpu nightly this flake provides, not the kernels' pinned wheel.
+    # Version-agnostic so an upstream pin bump (e.g. #288: 2.11 -> 2.12) does
+    # not silently no-op and leave a stale pin that fails the dep check.
+    sed -i -E 's/torch == [0-9.]+\+xpu/torch/' pyproject.toml
     substituteInPlace pyproject.toml \
-      --replace 'torch == 2.11.0+xpu' 'torch' \
       --replace 'setuptools>=77.0.3,<80.0.0' 'setuptools'
   '';
 

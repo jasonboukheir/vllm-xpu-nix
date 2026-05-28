@@ -364,7 +364,7 @@ diff --git a/csrc/xpu/attn/xe_2/CMakeLists.txt b/csrc/xpu/attn/xe_2/CMakeLists.t
 diff --git a/csrc/xpu/attn/xe_2/fmha_xe2.cpp b/csrc/xpu/attn/xe_2/fmha_xe2.cpp
 --- a/csrc/xpu/attn/xe_2/fmha_xe2.cpp
 +++ b/csrc/xpu/attn/xe_2/fmha_xe2.cpp
-@@ -1,8 +1,44 @@
+@@ -1,8 +1,45 @@
 +#include "chunk_prefill_args.hpp"
 +#include "chunk_prefill_dispatcher.hpp"
 +#include "fmha_utils.hpp"
@@ -408,7 +408,8 @@ diff --git a/csrc/xpu/attn/xe_2/fmha_xe2.cpp b/csrc/xpu/attn/xe_2/fmha_xe2.cpp
 +    bool is_causal,
 +    bool is_local,
 +    bool is_sink,
-+    std::optional<at::Tensor>& softmax_lse);
++    std::optional<at::Tensor>& softmax_lse,
++    std::optional<const at::Tensor>& is_prefill);
  
  void cutlass_chunk_prefill_xe2(
      sycl::queue& queue,
@@ -850,7 +851,7 @@ diff --git a/csrc/xpu/attn/xe_2/paged_decode_utils.hpp b/csrc/xpu/attn/xe_2/page
 diff --git a/csrc/xpu/attn/xe_2/paged_decode_xe2.cpp b/csrc/xpu/attn/xe_2/paged_decode_xe2.cpp
 --- a/csrc/xpu/attn/xe_2/paged_decode_xe2.cpp
 +++ b/csrc/xpu/attn/xe_2/paged_decode_xe2.cpp
-@@ -1,8 +1,47 @@
+@@ -1,8 +1,50 @@
 +#include "fmha_utils.hpp"
 +#include "paged_decode_args.hpp"
 +#include "paged_decode_dispatcher.hpp"
@@ -897,7 +898,10 @@ diff --git a/csrc/xpu/attn/xe_2/paged_decode_xe2.cpp b/csrc/xpu/attn/xe_2/paged_
 +    bool is_causal,
 +    bool is_local,
 +    bool is_sink,
-+    int num_kv_splits);
++    int num_kv_splits,
++    std::optional<const at::Tensor>& is_prefill,
++    std::optional<at::Tensor>& splits_per_seq,
++    std::optional<at::Tensor>& work_list);
  
  void cutlass_paged_decode_xe2(
      sycl::queue& queue,

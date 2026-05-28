@@ -528,6 +528,8 @@ let
       SupplementaryGroups = [ "render" "video" ]
         ++ lib.optional (cfg.sharedHfCache != null) cfg.sharedHfCacheGroup;
 
+      ExecStartPre = "-${pkgs.findutils}/bin/find ${inst.cacheDir}/build -mindepth 1 -maxdepth 1 ! -name ${buildKeyFor inst} -exec ${pkgs.coreutils}/bin/rm -rf {} +";
+
       ExecStart = "${inst.package}/bin/vllm serve ${mkServeArgs inst}";
 
       Restart = "on-failure";

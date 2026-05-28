@@ -380,14 +380,22 @@ let
         default = "/var/lib/vllm-xpu/${name}";
         defaultText = lib.literalExpression "\"/var/lib/vllm-xpu/\${name}\"";
         description = ''
-          Per-instance state directory used as `HOME`, `HF_HOME`, and
-          `VLLM_CACHE_ROOT`. Each instance gets its own subdirectory so
-          concurrent downloads of different models can't race over the
-          same `~/.cache/huggingface/locks`. Pointing `HOME` here also
-          keeps `~/.X` writes (Triton's `~/.triton`, anything else that
-          defaults to a home-relative cache) inside the unit's
-          `ReadWritePaths` sandbox — `users.users.vllm.home` is the
-          parent `/var/lib/vllm-xpu`, which is read-only to the unit.
+          Per-instance state directory and the root of `HF_HOME` (unless
+          `sharedHfCache` overrides it). Each instance gets its own
+          subdirectory so concurrent downloads of different models can't
+          race over the same `~/.cache/huggingface/locks`.
+
+          The compile caches (`HOME` for Triton's `~/.triton` and
+          `VLLM_CACHE_ROOT` for torch.compile/inductor artefacts) live
+          one level deeper, under `''${cacheDir}/build/<store-hash>`,
+          keyed to the instance package's Nix store hash. A package bump
+          (torch, kernels, oneAPI toolkit) changes the hash and so gets a
+          fresh cache, which avoids replaying a stale Triton
+          `spirv_utils.so` linked against the previous libsycl ABI.
+          Keeping everything under `cacheDir` also keeps those writes
+          inside the unit's `ReadWritePaths` sandbox —
+          `users.users.vllm.home` is the parent `/var/lib/vllm-xpu`,
+          which is read-only to the unit.
         '';
       };
 
@@ -493,6 +501,9 @@ let
   hfHomeFor = inst:
     if cfg.sharedHfCache != null then cfg.sharedHfCache else inst.cacheDir;
 
+  buildKeyFor = inst: builtins.substring 0 32 (builtins.baseNameOf (toString inst.package));
+  buildCacheDirFor = inst: "${inst.cacheDir}/build/${buildKeyFor inst}";
+
   mkUnit = name: inst: lib.nameValuePair "vllm-xpu-${name}" {
     description = "vLLM XPU serve (${inst.servedName})";
     wantedBy = [ "multi-user.target" ];
@@ -501,9 +512,9 @@ let
 
     environment = {
       VLLM_TARGET_DEVICE = "xpu";
-      HOME = inst.cacheDir;
+      HOME = buildCacheDirFor inst;
       HF_HOME = hfHomeFor inst;
-      VLLM_CACHE_ROOT = inst.cacheDir;
+      VLLM_CACHE_ROOT = buildCacheDirFor inst;
     } // inst.cclEnv
       // lib.optionalAttrs inst.enableXpuGraph {
         VLLM_XPU_ENABLE_XPU_GRAPH = "1";
@@ -598,8 +609,10 @@ in
         Per-instance compiled artefacts stay in the per-instance
         `cacheDir` — only `HF_HOME` (Hub weights, datasets,
         transformers cache) is consolidated. `VLLM_CACHE_ROOT` and
-        Triton's `~/.triton` (via `HOME`) remain per-instance because
-        they're tied to the running build, not the model weights.
+        Triton's `~/.triton` (via `HOME`) live under
+        `''${cacheDir}/build/<store-hash>`, keyed to the instance
+        package so a build bump gets a fresh compile cache rather than
+        replaying one built against the old toolchain.
 
         Dev side: `export HF_HOME=/var/cache/huggingface` (or symlink
         `~/.cache/huggingface` to it) and add yourself to the group
@@ -697,9 +710,13 @@ in
 
     systemd.tmpfiles.rules =
       [ "d /var/lib/vllm-xpu 0750 ${cfg.user} ${cfg.group} - -" ]
-      ++ lib.mapAttrsToList
-        (_: inst: "d ${inst.cacheDir} 0750 ${cfg.user} ${cfg.group} - -")
-        enabledInstances
+      ++ lib.concatLists (lib.mapAttrsToList
+        (_: inst: [
+          "d ${inst.cacheDir} 0750 ${cfg.user} ${cfg.group} - -"
+          "d ${inst.cacheDir}/build 0750 ${cfg.user} ${cfg.group} - -"
+          "d ${buildCacheDirFor inst} 0750 ${cfg.user} ${cfg.group} - -"
+        ])
+        enabledInstances)
       ++ lib.optional (cfg.sharedHfCache != null)
         "d ${cfg.sharedHfCache} 2775 ${cfg.user} ${cfg.sharedHfCacheGroup} - -";
 

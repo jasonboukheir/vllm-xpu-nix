@@ -445,8 +445,9 @@
       in {
         # Per-system helpers consumers reach via
         # `inputs.vllm-xpu-nix.lib.${pkgs.system}.fromHfConfig`.
-        # `lib.${system}` (rather than just `lib`) is intentional —
-        # the helpers wrap `pkgs.fetchurl`, which is system-scoped.
+        # `lib.${system}` (rather than just `lib`) is intentional — the
+        # helpers wrap `pkgs.fetchurl` (system-scoped) and the mk* builders
+        # close over this system's pkgs / torch-xpu / oneAPI substrate.
         lib = {
           inherit (hfMetadata)
             fetchHfConfig
@@ -454,6 +455,13 @@
             attnParamsFromConfig
             fromHfConfig
             unionKernelSet;
+          # Parameterized builders, so a consumer can build a vllm (or the
+          # kernels) from an arbitrary source — e.g. a local submodule
+          # checkout — without overriding flake inputs. The packages.*
+          # `vllm-xpu`/`vllm-xpu-unstable` outputs are just two fixed
+          # instantiations of mkVllm; mkVllm { src; version; kernels; ... }
+          # builds against the same pinned substrate from any src.
+          inherit mkVllm mkVllmXpuKernels;
         };
 
         packages = {

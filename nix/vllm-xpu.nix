@@ -10,6 +10,7 @@
   stdenv,
   intel-oneapi-base,
   intel-pti,
+  oneccl-bmg,
   torch-xpu,
   triton-xpu,
   flash-linear-attention,
@@ -23,10 +24,6 @@
   # `vllm-xpu.override { withTorchvision = true; }` or `vllm-xpu.withTorchvision`
   # passthru when serving VL models.
   withTorchvision ? false,
-  # torchaudio is only loaded by a few niche audio architectures (FunASR,
-  # MiDashengLM, MiMoV2Omni, Cohere ASR processor); Whisper, Qwen2-Audio, and
-  # Voxtral don't import it. Same opt-in pattern as withTorchvision.
-  withTorchaudio ? false,
   # Audio decoders for /v1/audio/transcriptions and any model that calls
   # vllm/multimodal/media/audio.py:load_audio (Whisper, Qwen2-Audio, Voxtral).
   # soundfile (libsndfile) handles wav/flac/ogg; pyav (FFmpeg) handles the rest
@@ -66,8 +63,10 @@ let
     vllm-xpu-kernels
     flash-linear-attention
 
-    # Runtime deps — common.txt + xpu.txt. torchvision and torchaudio are
-    # gated on the corresponding `with*` toggles (see argument comments).
+    # Runtime deps — common.txt + xpu.txt. torchvision is gated on
+    # `withTorchvision` (see argument comment). torchaudio is omitted: no
+    # torch-2.12-compatible +xpu audio wheel is published yet (stable caps
+    # at torchaudio 2.9.1+xpu, ABI-bound to torch 2.9).
     aiohttp
     anthropic
     blake3
@@ -128,7 +127,6 @@ let
     xgrammar
   ]
   ++ lib.optional withTorchvision python3Packages.torchvision
-  ++ lib.optional withTorchaudio python3Packages.torchaudio
   ++ lib.optionals withAudio [ python3Packages.soundfile python3Packages.av ]
   ++ python3Packages.fastapi.optional-dependencies.standard;
 in
@@ -154,6 +152,7 @@ python3Packages.buildPythonPackage {
     stdenv.cc.cc.lib
     intel-oneapi-base
     intel-pti
+    oneccl-bmg
   ];
 
   # SYCL runtime dlopen()s libze_loader, libze_intel_gpu, and libigc at load
@@ -233,18 +232,21 @@ python3Packages.buildPythonPackage {
     # Drop the strict torch and setuptools pins from build-system.requires;
     # nix provides them via build-system. Also drop setuptools-rust from
     # build-system since the Rust frontend (PR #40848) is stripped below.
+    # Version-agnostic torch substitution so an upstream pin bump (e.g.
+    # 2.12 -> 2.13) does not silently no-op and leave the strict pin in
+    # place.
+    sed -i -E 's/torch == [0-9.]+/torch/' pyproject.toml
     substituteInPlace pyproject.toml \
-      --replace-fail 'torch == 2.11.0' 'torch' \
       --replace-fail 'setuptools>=77.0.3,<81.0.0' 'setuptools' \
       --replace-fail '"setuptools-rust>=1.9.0",' ""
 
     # Strip the wheel-URL pin and the torch+xpu local-version pin from
-    # xpu.txt. vllm_xpu_kernels and torch are nix-provided. torchvision and
-    # torchaudio are gated on the `with*` toggles, so don't claim them as
-    # always-required in the wheel metadata; consumers opt in via override.
+    # xpu.txt. vllm_xpu_kernels and torch are nix-provided. torchvision is
+    # gated on the `withTorchvision` toggle; torchaudio was dropped (no
+    # torch-2.12-compatible +xpu wheel published) so strip it unconditionally.
+    sed -i -E 's/^torch==[0-9.]+\+xpu/torch/' requirements/xpu.txt
     substituteInPlace requirements/xpu.txt \
-      --replace-fail 'torch==2.11.0+xpu' 'torch' \
-      --replace-fail 'torchaudio' '# torchaudio (opt-in via withTorchaudio)' \
+      --replace-fail 'torchaudio' '# torchaudio (no torch-2.12 +xpu wheel published)' \
       --replace-fail 'torchvision' '# torchvision (opt-in via withTorchvision)'
     sed -i '/^vllm_xpu_kernels @ /d' requirements/xpu.txt
 

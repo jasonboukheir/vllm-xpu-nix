@@ -151,10 +151,10 @@
       "flake": false,
       "locked": {
         "lastModified": 1780083864,
-        "narHash": "sha256-1Xiw4SuqocWQr87HAc5KO39aLuYitx7sX9FsxEuryhs=",
+        "narHash": "sha256-RR8SPqJHsrHDXd/iOeu5oaUjsryHkxUXuOYtrDO0cQg=",
         "ref": "refs/heads/main",
-        "rev": "ceee999553e12340fc47c2fbc387e8d206bb32f8",
-        "revCount": 17103,
+        "rev": "7745e0425ddbebf9b07bd0af4b71891d1b3f0ad2",
+        "revCount": 17102,
         "type": "git",
         "url": "https://github.com/jasonboukheir/vllm.git"
       },

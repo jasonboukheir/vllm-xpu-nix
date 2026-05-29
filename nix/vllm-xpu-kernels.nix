@@ -1,6 +1,7 @@
 {
   lib,
   src,
+  version,
   cutlass-src,
   python3Packages,
   cmake,
@@ -62,7 +63,7 @@ let
 in
 python3Packages.buildPythonPackage ({
   pname = "vllm-xpu-kernels";
-  version = "0.1.7-dev";
+  inherit version;
   format = "pyproject";
 
   inherit src;

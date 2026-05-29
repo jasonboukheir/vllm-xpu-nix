@@ -134,15 +134,16 @@
     "vllm-xpu-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1780086486,
-        "narHash": "sha256-a7vHt3rOuCimxNsbFqlWaiuSKdrDXqBl1AKiAwn2+cY=",
-        "ref": "refs/heads/main",
-        "rev": "46409fd2a101ccef1988a250179eefea6f1845d7",
-        "revCount": 17102,
+        "lastModified": 1780046923,
+        "narHash": "sha256-BiaC6inRc5GJVSZMplhQYT8/RLyvFydpDAD6YZPMXTo=",
+        "ref": "refs/heads/releases/v0.22.0",
+        "rev": "0b3ba88f165976e77ca5e6a7a3f5bba4562b80af",
+        "revCount": 16958,
         "type": "git",
         "url": "https://github.com/vllm-project/vllm.git"
       },
       "original": {
+        "ref": "refs/heads/releases/v0.22.0",
         "type": "git",
         "url": "https://github.com/vllm-project/vllm.git"
       }

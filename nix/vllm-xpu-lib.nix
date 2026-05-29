@@ -1,6 +1,7 @@
 {
   lib,
   src,
+  version,
   cutlass-src,
   python3Packages,
   cmake,
@@ -78,7 +79,7 @@ let
 in
 stdenv.mkDerivation ({
   pname = "vllm-xpu-${lib.replaceStrings [ "_" ] [ "-" ] libName}";
-  version = "0.1.7-dev";
+  inherit version;
 
   inherit src;
 

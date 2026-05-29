@@ -34,10 +34,27 @@
         "type": "github"
       }
     },
+    "nixpkgs-oneapi": {
+      "locked": {
+        "lastModified": 1778443072,
+        "narHash": "sha256-zi7/fsqM/kFdNuED//4WOCUtezGtKKqRNORjMvfwjnA=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "da5ad661ba4e5ef59ba743f0d112cbc30e474f32",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "da5ad661ba4e5ef59ba743f0d112cbc30e474f32",
+        "type": "github"
+      }
+    },
     "root": {
       "inputs": {
         "flake-utils": "flake-utils",
         "nixpkgs": "nixpkgs",
+        "nixpkgs-oneapi": "nixpkgs-oneapi",
         "sycl-tla-src": "sycl-tla-src",
         "vllm-xpu-kernels-src": "vllm-xpu-kernels-src",
         "vllm-xpu-kernels-unstable-src": "vllm-xpu-kernels-unstable-src",
@@ -80,16 +97,17 @@
     "vllm-xpu-kernels-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1779946137,
-        "narHash": "sha256-9u3qla0kbHOBBdqIPuyNgEZ1J8GiaUsnhh/lggxgNsU=",
-        "ref": "refs/heads/main",
-        "rev": "06e909e35cb06ed90ffc5655312cb87ea9939c27",
-        "revCount": 257,
+        "lastModified": 1779945648,
+        "narHash": "sha256-tIXZqPtXDOKvOr6UkiV6A5TVISz1z/LQ7yPnQBkdFk8=",
+        "ref": "release/v0.1.9.1",
+        "rev": "98fc9b0f864f6554ca939425d95089532f501a01",
+        "revCount": 256,
         "submodules": true,
         "type": "git",
         "url": "https://github.com/vllm-project/vllm-xpu-kernels.git"
       },
       "original": {
+        "ref": "release/v0.1.9.1",
         "submodules": true,
         "type": "git",
         "url": "https://github.com/vllm-project/vllm-xpu-kernels.git"

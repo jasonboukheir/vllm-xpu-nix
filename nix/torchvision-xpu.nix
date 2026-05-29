@@ -10,14 +10,13 @@
 
 python3Packages.buildPythonPackage rec {
   pname = "torchvision";
-  # Match torch-xpu's 2026-05-21 nightly (first wheel built against oneAPI
-  # 2026.0 ABI). See note in nix/torch-xpu.nix.
-  version = "0.28.0.dev20260521+xpu";
+  # Pairs with torch 2.12.0+xpu stable. See note in nix/torch-xpu.nix.
+  version = "0.27.0+xpu";
   format = "wheel";
 
   src = fetchurl {
-    url = "https://download.pytorch.org/whl/nightly/xpu/torchvision-0.28.0.dev20260521%2Bxpu-cp312-cp312-manylinux_2_28_x86_64.whl";
-    hash = "sha256-gSIegH9h3s5096cLwzw1i3Pao2zdFdsdfjzLhHrg6GA=";
+    url = "https://download.pytorch.org/whl/xpu/torchvision-0.27.0%2Bxpu-cp312-cp312-manylinux_2_28_x86_64.whl";
+    hash = "sha256-4jGBm+D4eCnCNEyQnB8NudaufW+u/mRKUmoaAdDBjZg=";
   };
 
   nativeBuildInputs = [

@@ -276,6 +276,31 @@ let
         example = lib.literalExpression "[ 1 4 ]";
       };
 
+      cudagraphMode = lib.mkOption {
+        type = lib.types.nullOr (lib.types.enum [
+          "NONE"
+          "PIECEWISE"
+          "FULL"
+          "FULL_AND_PIECEWISE"
+          "FULL_DECODE_ONLY"
+        ]);
+        default = null;
+        example = "PIECEWISE";
+        description = ''
+          Select which graph-capture strategy vLLM uses
+          (`compilation_config.cudagraph_mode`). Null leaves vLLM at
+          its default (currently `FULL_AND_PIECEWISE`). Override when
+          the default trips an XPU-specific capture bug, e.g.
+          `PIECEWISE` skips the FULL decode capture that crashes the
+          FA2 varlen kernel on oneAPI 2025.3 with
+          `sycl_ext_oneapi_work_group_scratch_memory feature is not
+          yet available for use with the SYCL Graph extension`.
+          Combined with `cudagraphCaptureSizes` into a single
+          `--compilation-config` JSON payload. Ineffective unless
+          `enableXpuGraph = true` and `enforceEager = false`.
+        '';
+      };
+
       reasoningParser = lib.mkOption {
         type = lib.types.nullOr lib.types.str;
         default = null;
@@ -472,12 +497,19 @@ let
       "--speculative-config" (lib.escapeShellArg (builtins.toJSON inst.speculativeConfig))
     ]
     ++ lib.optionals inst.enforceEager [ "--enforce-eager" ]
-    ++ lib.optionals (inst.cudagraphCaptureSizes != null) [
-      "--compilation-config"
-      (lib.escapeShellArg (builtins.toJSON {
-        cudagraph_capture_sizes = inst.cudagraphCaptureSizes;
-      }))
-    ]
+    ++ lib.optionals
+      (inst.cudagraphCaptureSizes != null || inst.cudagraphMode != null)
+      [
+        "--compilation-config"
+        (lib.escapeShellArg (builtins.toJSON (
+          lib.optionalAttrs (inst.cudagraphMode != null) {
+            cudagraph_mode = inst.cudagraphMode;
+          }
+          // lib.optionalAttrs (inst.cudagraphCaptureSizes != null) {
+            cudagraph_capture_sizes = inst.cudagraphCaptureSizes;
+          }
+        )))
+      ]
     ++ lib.optionals (inst.reasoningParser != null) [
       "--reasoning-parser" (lib.escapeShellArg inst.reasoningParser)
     ]

@@ -471,6 +471,37 @@ let
           `VLLM_LOGGING_LEVEL`, `TORCHDYNAMO_VERBOSE`).
         '';
       };
+
+      startAfter = lib.mkOption {
+        type = lib.types.listOf lib.types.str;
+        default = [];
+        example = lib.literalExpression ''[ "chat" ]'';
+        description = ''
+          Names of other `services.vllm-xpu.instances.*` entries this
+          instance must wait for before its own `vllm serve` starts.
+          Each entry generates a systemd `After=` + `Wants=` on
+          `vllm-xpu-<prior>.service` and an `ExecStartPre=` that polls
+          the prior's `/health` endpoint via curl until it returns 2xx.
+
+          Required for multi-instance co-tenancy on a single GPU. vLLM's
+          `--gpu-memory-utilization` is *not* a per-instance VRAM cap;
+          it's a target total footprint computed against the full GPU,
+          and the engine's startup memory-profile attributes *any*
+          VRAM that disappeared during its measurement window to its
+          own `non_torch_memory` overhead. Two instances profiling in
+          parallel each see the other's allocations as their own
+          unaccounted overhead — the formula
+          `available_kv_cache = target − torch_peak − non_torch_memory`
+          underflows and the engine raises
+          `ValueError: ... is larger than the available KV cache memory`.
+
+          vLLM upstream considers this WONTFIX (issue #13633); the
+          official guidance is to serialize startup. Waiting on the
+          prior's port-bind (which only happens *after* engine init
+          finishes) is what makes the fractions you set actually mean
+          what you think they mean.
+        '';
+      };
     };
   };
 
@@ -536,11 +567,27 @@ let
   buildKeyFor = inst: builtins.substring 0 32 (builtins.baseNameOf (toString inst.package));
   buildCacheDirFor = inst: "${inst.cacheDir}/build/${buildKeyFor inst}";
 
+  priorEnabledFor = inst:
+    lib.filter (n: (cfg.instances.${n} or null) != null && cfg.instances.${n}.enable)
+      inst.startAfter;
+
+  priorUnitsFor = inst: map (n: "vllm-xpu-${n}.service") (priorEnabledFor inst);
+
+  probeAddrFor = prior:
+    if prior.host == "0.0.0.0" then "127.0.0.1" else prior.host;
+
+  healthGateFor = priorName: let
+    prior = cfg.instances.${priorName};
+  in
+    "${pkgs.curl}/bin/curl --silent --fail --output /dev/null "
+    + "--max-time 5 --retry-connrefused --retry 120 --retry-delay 5 "
+    + "http://${probeAddrFor prior}:${toString prior.port}/health";
+
   mkUnit = name: inst: lib.nameValuePair "vllm-xpu-${name}" {
     description = "vLLM XPU serve (${inst.servedName})";
     wantedBy = [ "multi-user.target" ];
-    after = [ "network-online.target" ];
-    wants = [ "network-online.target" ];
+    after = [ "network-online.target" ] ++ priorUnitsFor inst;
+    wants = [ "network-online.target" ] ++ priorUnitsFor inst;
 
     environment = {
       VLLM_TARGET_DEVICE = "xpu";
@@ -560,7 +607,9 @@ let
       SupplementaryGroups = [ "render" "video" ]
         ++ lib.optional (cfg.sharedHfCache != null) cfg.sharedHfCacheGroup;
 
-      ExecStartPre = "-${pkgs.findutils}/bin/find ${inst.cacheDir}/build -mindepth 1 -maxdepth 1 ! -name ${buildKeyFor inst} -exec ${pkgs.coreutils}/bin/rm -rf {} +";
+      ExecStartPre = [
+        "-${pkgs.findutils}/bin/find ${inst.cacheDir}/build -mindepth 1 -maxdepth 1 ! -name ${buildKeyFor inst} -exec ${pkgs.coreutils}/bin/rm -rf {} +"
+      ] ++ map healthGateFor (priorEnabledFor inst);
 
       ExecStart = "${inst.package}/bin/vllm serve ${mkServeArgs inst}";
 

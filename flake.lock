@@ -151,11 +151,11 @@
     "vllm-xpu-unstable-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1780089479,
-        "narHash": "sha256-MMDroWwLVvQzwltpn4zBzziqaN5ZyRf3YzPF7cA8I4E=",
+        "lastModified": 1780288847,
+        "narHash": "sha256-yCm/ZR/VgcI8evwaHAugM6HkZ2tQPxrk4+/UOGH2S1s=",
         "ref": "refs/heads/main",
-        "rev": "61763a9fa9518bac3e3b7fa786a1c9a2bcd5d486",
-        "revCount": 17103,
+        "rev": "e63cd2ed9359a3d1057fde961083304192b8e028",
+        "revCount": 17104,
         "type": "git",
         "url": "https://github.com/jasonboukheir/vllm.git"
       },

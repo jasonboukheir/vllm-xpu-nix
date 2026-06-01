@@ -2,10 +2,9 @@
 
 | Output | What it builds | Source |
 | --- | --- | --- |
-| `intel-oneapi` | DPC++ compiler + MKL + DPL (oneAPI base toolkit, narrowed) | nixpkgs `intel-oneapi.base` |
+| `intel-oneapi` | DPC++ compiler + MKL + DPL + oneCCL 2022.0.0 (unified oneAPI 2026.0 toolkit, narrowed, with ccl deps + libfabric shim) | nixpkgs `intel-oneapi-toolkit` |
 | `intel-pti` | Intel Profiling Tools Interface | `nix/intel-pti.nix` |
-| `oneccl-bmg` | oneCCL with the single-card BMG runtime workarounds | `nix/oneccl-bmg.nix` |
-| `torch-xpu` | `torch==2.11.0+xpu` wheel, auto-patchelf'd against the nix-store oneAPI closure | `nix/torch-xpu.nix` |
+| `torch-xpu` | `torch==2.13.0.devYYYYMMDD+xpu` nightly wheel, auto-patchelf'd against the nix-store oneAPI closure | `nix/torch-xpu.nix` |
 | `triton-xpu` | `triton-xpu==3.7.0` (Intel's Triton port) | `nix/triton-xpu.nix` |
 | `vllm-xpu-kernels` | upstream `vllm-project/vllm-xpu-kernels` with split-kernel-libs patch | `nix/vllm-xpu-kernels.nix` |
 | `vllm-xpu-kernels-unstable` | same, but pinning the `jasonboukheir/vllm-xpu-kernels` fork's `main` | same factory |

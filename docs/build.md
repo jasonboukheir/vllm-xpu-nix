@@ -40,9 +40,9 @@ rebuilds pull each `.o` from `/var/cache/ccache` when the
 preprocessed-source hash matches.
 
 The other build phases (`vllm-xpu`, `torch-xpu`, `triton-xpu`,
-`intel-pti`, `oneccl-bmg`, `flash-linear-attention`,
-`auto-round-xpu`) ship as wheels or as pure-Python and produce no
-native code, so ccache has nothing to do there.
+`intel-pti`, `flash-linear-attention`, `auto-round-xpu`) ship as
+wheels or as pure-Python and produce no native code, so ccache has
+nothing to do there.
 
 Why the `CCACHE_*` env vars are set as **derivation attrs** rather
 than `impureEnvVars` / nix.conf `impure-env`: both of those

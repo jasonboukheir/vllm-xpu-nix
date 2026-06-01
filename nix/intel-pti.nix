@@ -10,11 +10,11 @@
 
 stdenv.mkDerivation rec {
   pname = "intel-pti";
-  version = "0.16.0";
+  version = "0.17.0";
 
   src = fetchurl {
-    url = "https://files.pythonhosted.org/packages/af/85/dee48118c530d9574f683f8cf3a7ad576a23f060a520335c9284ff6ba65b/intel_pti-${version}-py2.py3-none-manylinux_2_28_x86_64.whl";
-    hash = "sha256-RS5ER5pXILP+GfAPoBveopWGoaJaVXJ4hXqwo9EceFI=";
+    url = "https://files.pythonhosted.org/packages/0b/02/798ea3cb0189b66cef0fc95d9b36f43df740714997f5e0976e074274a270/intel_pti-${version}-py2.py3-none-manylinux_2_28_x86_64.whl";
+    hash = "sha256-GjMnuGg69y5g4eqPdUFg+xL/uKFeV5QffjZyvMVA4vw=";
   };
 
   nativeBuildInputs = [

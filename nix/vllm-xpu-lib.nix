@@ -11,7 +11,6 @@
   stdenv,
   intel-oneapi-base,
   intel-pti,
-  oneccl-bmg,
   torch-xpu,
   level-zero,
   intel-compute-runtime,
@@ -115,7 +114,6 @@ stdenv.mkDerivation ({
     stdenv.cc.cc.lib
     intel-oneapi-base
     intel-pti
-    oneccl-bmg
     level-zero
     intel-compute-runtime
     intel-graphics-compiler

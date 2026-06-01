@@ -547,6 +547,18 @@ let
       HOME = buildCacheDirFor inst;
       HF_HOME = hfHomeFor inst;
       VLLM_CACHE_ROOT = buildCacheDirFor inst;
+
+      # Force the UR Level-Zero v1 adapter. UR 0.12 (shipped by both
+      # oneAPI 2025.3 and 2026.0) made the v2 adapter default, but on
+      # the Arc/BMG XPU + torch-xpu nightly stack the v2 adapter
+      # SIGSEGVs the UR loader inside a virtual dispatch at vtable
+      # slot 0x210 during ProcessGroupXCCL init (parallel_state.py
+      # rank setup, before any weights load) even at world_size=1.
+      # Reverting to v1 restores boot.
+      #
+      # Upstream: https://github.com/vllm-project/vllm/issues/41663
+      # TODO: drop once UR L0-v2 stabilises on Battlemage + Arc.
+      SYCL_UR_USE_LEVEL_ZERO_V2 = "0";
     } // inst.cclEnv
       // lib.optionalAttrs inst.enableXpuGraph {
         VLLM_XPU_ENABLE_XPU_GRAPH = "1";

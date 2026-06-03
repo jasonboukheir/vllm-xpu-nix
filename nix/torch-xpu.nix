@@ -14,7 +14,7 @@
 
 python3Packages.buildPythonPackage rec {
   pname = "torch";
-  # 2026-05-31 XPU nightly: linked against the oneAPI 2026.0 ABI
+  # 2026-05-28 XPU nightly: linked against the oneAPI 2026.0 ABI
   # (libsycl.so.9, libmkl_*.so.3 / libmkl_sycl_*.so.6, oneccl 2022.0.0).
   # Stable 2.11 / 2.12 GA wheels still link the 2025.x ABI (libsycl.so.8 +
   # libmkl_*.so.2 / .so.5) so cannot be patchelfed against the unified
@@ -28,12 +28,23 @@ python3Packages.buildPythonPackage rec {
   # kernel trips `sycl_ext_oneapi_work_group_scratch_memory feature is
   # not yet available for use with the SYCL Graph extension` and forces
   # cudagraphMode = "PIECEWISE" as a workaround.
-  version = "2.13.0.dev20260531+xpu";
+  #
+  # Pin held at 2026-05-28 (last build before pytorch#182630 / commit
+  # 2a81e91563 "Add device-wide synchronization", merged 2026-05-29).
+  # That PR makes c10::xpu::syncStreamsOnDevice prefer
+  # device.ext_oneapi_wait_and_throw() on SYCL >= 2026 when the device
+  # exposes the ext_oneapi_device_wait aspect. Arc/BMG on libsycl.so.9
+  # (oneAPI 2026.0.0.198) advertises the aspect but its device::wait()
+  # UAFs urQueueRelease after any oneCCL all_reduce, segfaulting every
+  # call to torch.xpu.synchronize() once xccl is initialised. Revisit
+  # when oneAPI 2026.1 (or a fixed 2026.0.x) ships a non-UAF
+  # ext_oneapi_device_wait, then re-bump to the latest nightly.
+  version = "2.13.0.dev20260528+xpu";
   format = "wheel";
 
   src = fetchurl {
-    url = "https://download.pytorch.org/whl/nightly/xpu/torch-2.13.0.dev20260531%2Bxpu-cp312-cp312-manylinux_2_28_x86_64.whl";
-    hash = "sha256-k/Fp8yiAXILZwpH9zohNzAHs6gYu//nG3uNrvlUhIVM=";
+    url = "https://download.pytorch.org/whl/nightly/xpu/torch-2.13.0.dev20260528%2Bxpu-cp312-cp312-manylinux_2_28_x86_64.whl";
+    hash = "sha256-UVncpU4W+c9IR0+g8oBgjK3TTgSIGZ1pZ/gZogEuO5I=";
   };
 
   nativeBuildInputs = [

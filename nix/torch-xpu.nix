@@ -29,22 +29,34 @@ python3Packages.buildPythonPackage rec {
   # not yet available for use with the SYCL Graph extension` and forces
   # cudagraphMode = "PIECEWISE" as a workaround.
   #
-  # Pin held at 2026-05-28 (last build before pytorch#182630 / commit
-  # 2a81e91563 "Add device-wide synchronization", merged 2026-05-29).
-  # That PR makes c10::xpu::syncStreamsOnDevice prefer
-  # device.ext_oneapi_wait_and_throw() on SYCL >= 2026 when the device
-  # exposes the ext_oneapi_device_wait aspect. Arc/BMG on libsycl.so.9
-  # (oneAPI 2026.0.0.198) advertises the aspect but its device::wait()
-  # UAFs urQueueRelease after any oneCCL all_reduce, segfaulting every
-  # call to torch.xpu.synchronize() once xccl is initialised. Revisit
-  # when oneAPI 2026.1 (or a fixed 2026.0.x) ships a non-UAF
-  # ext_oneapi_device_wait, then re-bump to the latest nightly.
-  version = "2.13.0.dev20260528+xpu";
+  # Pinned at 2026-05-24, the latest nightly that avoids BOTH known
+  # XPU-breaking regressions in this window:
+  #
+  #  1. pytorch#182630 / 2a81e91563 "Add device-wide synchronization"
+  #     (merged 2026-05-29, first in dev20260529). Makes
+  #     c10::xpu::syncStreamsOnDevice prefer
+  #     device.ext_oneapi_wait_and_throw() on SYCL >= 2026 when the device
+  #     exposes the ext_oneapi_device_wait aspect. Arc/BMG on libsycl.so.9
+  #     (oneAPI 2026.0.0.198) advertises the aspect but its device::wait()
+  #     UAFs urQueueRelease after any oneCCL all_reduce, segfaulting every
+  #     torch.xpu.synchronize() once xccl is initialised.  -> need <= 0528.
+  #
+  #  2. pytorch#184589/#184592 "Use PyTorch Min/Max in Inductor index
+  #     propagation" (entered dev20260526/0527). Changes inductor gather
+  #     index-bound propagation and drops a clamp, so a torch.compile
+  #     `expand_kernel` gathers out of bounds and the Level-Zero driver
+  #     aborts with `index out of bounds < 248320` (NEO AssertHandler) on
+  #     Xe2/BMG. No upstream fix on main as of 2026-06-03.  -> need <= 0525.
+  #
+  # 0524 satisfies both. Revisit when oneAPI 2026.1 (or a fixed 2026.0.x)
+  # ships a non-UAF ext_oneapi_device_wait AND the inductor Min/Max
+  # regression is fixed, then re-bump to the latest nightly.
+  version = "2.13.0.dev20260524+xpu";
   format = "wheel";
 
   src = fetchurl {
-    url = "https://download.pytorch.org/whl/nightly/xpu/torch-2.13.0.dev20260528%2Bxpu-cp312-cp312-manylinux_2_28_x86_64.whl";
-    hash = "sha256-UVncpU4W+c9IR0+g8oBgjK3TTgSIGZ1pZ/gZogEuO5I=";
+    url = "https://download.pytorch.org/whl/nightly/xpu/torch-2.13.0.dev20260524%2Bxpu-cp312-cp312-manylinux_2_28_x86_64.whl";
+    hash = "sha256-V+Qsm8sHhFboaZrVGlKfXWOE0akGKU4oALH3uz0Viqk=";
   };
 
   nativeBuildInputs = [

@@ -497,7 +497,12 @@
           mkdir -p .dev-bin
           ln -sf ${pkgs.intel-compute-runtime}/bin/ocloc-* .dev-bin/ocloc 2>/dev/null || true
           export PATH="$PWD/.dev-bin:$syclHome/bin:$PATH"
-          export LD_LIBRARY_PATH="${pkgs.intel-graphics-compiler}/lib:${pkgs.intel-compute-runtime}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          # Build needs igc + compute-runtime; *running* on the GPU from inside
+          # the shell (e.g. pytest tests/) additionally needs the Level-Zero
+          # loader and the libze_intel_gpu.so.1 driver, which lives in
+          # intel-compute-runtime's separate `drivers` output. Without these the
+          # SYCL runtime finds 0 platforms and torch.xpu.is_available() is False.
+          export LD_LIBRARY_PATH="${pkgs.level-zero}/lib:${pkgs.intel-graphics-compiler}/lib:${pkgs.intel-compute-runtime}/lib:${pkgs.intel-compute-runtime.drivers}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
           export SYCL_HOME="$syclHome"
           export CMPLR_ROOT="$syclHome"
           export MKLROOT="${intel-oneapi}/mkl/latest"

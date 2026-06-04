@@ -99,11 +99,11 @@
     "vllm-xpu-kernels-unstable-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1780089528,
-        "narHash": "sha256-e8ZdAuCDyMg86OB5mrw606hBKHyf3qoPs3SscLrzhyY=",
+        "lastModified": 1780531722,
+        "narHash": "sha256-WZ7h9uHXUI/uKMQ2dLI8Kibu0NQI1gDWRXUY9lSj0xs=",
         "ref": "refs/heads/main",
-        "rev": "d3f6a35df2f3a61597ea6913bed0d8ec4a3e9403",
-        "revCount": 259,
+        "rev": "54d39759cdbd3ea16f9d4736af173cdfa5ba4c90",
+        "revCount": 260,
         "submodules": true,
         "type": "git",
         "url": "https://github.com/jasonboukheir/vllm-xpu-kernels.git"

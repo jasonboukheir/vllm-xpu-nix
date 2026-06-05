@@ -280,7 +280,7 @@
           python3Packages = python312PackagesXpu;
         };
 
-        mkXpuLibFactory = { src, version, aotDevices ? [ ], useCcache ? true }:
+        mkXpuLibFactory = { src, version, aotDevices ? [ ], useCcache ? true, kernelChunkPrefillConfig ? null, kernelPagedDecodeConfig ? null }:
           let factory = pkgs.callPackage ./nix/vllm-xpu-lib.nix {
             intel-oneapi-base = intel-oneapi;
             inherit intel-pti torch-xpu;
@@ -289,7 +289,7 @@
             cutlass-src = sycl-tla-src;
           };
           in { libName, featureFlags ? [ ] }:
-            factory { inherit libName featureFlags aotDevices useCcache; };
+            factory { inherit libName featureFlags aotDevices useCcache kernelChunkPrefillConfig kernelPagedDecodeConfig; };
 
         # Per-lib feature flag matrices: enable only the chosen lib's source
         # subdir, disable all other libs and ext modules. VLLM_XPU_LIBS_ONLY
@@ -346,8 +346,8 @@
           "-DXPUMEM_ALLOCATOR_ENABLED=OFF"
         ];
 
-        mkKernelLibs = { src, version, aotDevices ? [ ], useCcache ? true }:
-          let mkLib = mkXpuLibFactory { inherit src version aotDevices useCcache; }; in {
+        mkKernelLibs = { src, version, aotDevices ? [ ], useCcache ? true, kernelChunkPrefillConfig ? null, kernelPagedDecodeConfig ? null }:
+          let mkLib = mkXpuLibFactory { inherit src version aotDevices useCcache kernelChunkPrefillConfig kernelPagedDecodeConfig; }; in {
             attn-kernels-xe-2 = mkLib { libName = "attn_kernels_xe_2"; featureFlags = attnFlags; };
             gdn-attn-kernels-xe-2 = mkLib { libName = "gdn_attn_kernels_xe_2"; featureFlags = gdnAttnFlags; };
             mqa-logits-kernels-xe-2 = mkLib { libName = "mqa_logits_kernels_xe_2"; featureFlags = mqaLogitsFlags; };
@@ -365,9 +365,9 @@
         # [ "bmg" ]` — Battlemage being the target this project is
         # tuned for. `withAotDevices [ ... ]` for any other explicit
         # list.
-        mkVllmXpuKernels = { src, version, aotDevices ? [ ], useCcache ? true }:
+        mkVllmXpuKernels = { src, version, aotDevices ? [ ], useCcache ? true, kernelChunkPrefillConfig ? null, kernelPagedDecodeConfig ? null }:
           let
-            libs = mkKernelLibs { inherit src version aotDevices useCcache; };
+            libs = mkKernelLibs { inherit src version aotDevices useCcache kernelChunkPrefillConfig kernelPagedDecodeConfig; };
             base = pkgs.callPackage ./nix/vllm-xpu-kernels.nix ({
               intel-oneapi-base = intel-oneapi;
               inherit intel-pti torch-xpu useCcache;
@@ -379,16 +379,27 @@
             base.overrideAttrs (old: {
               passthru = (old.passthru or {}) // {
                 withAotDevices = ds: mkVllmXpuKernels {
-                  inherit src version useCcache; aotDevices = ds;
+                  inherit src version useCcache kernelChunkPrefillConfig kernelPagedDecodeConfig; aotDevices = ds;
                 };
                 withJIT = mkVllmXpuKernels {
-                  inherit src version useCcache; aotDevices = [];
+                  inherit src version useCcache kernelChunkPrefillConfig kernelPagedDecodeConfig; aotDevices = [];
                 };
                 withAOT = mkVllmXpuKernels {
-                  inherit src version useCcache; aotDevices = [ "bmg" ];
+                  inherit src version useCcache kernelChunkPrefillConfig kernelPagedDecodeConfig; aotDevices = [ "bmg" ];
                 };
                 withCcache = b: mkVllmXpuKernels {
-                  inherit src version aotDevices; useCcache = b;
+                  inherit src version aotDevices kernelChunkPrefillConfig kernelPagedDecodeConfig; useCcache = b;
+                };
+                # Partial-buildout selector (upstream #324): compile only the
+                # attn-kernel variants a deployment dispatches to. Pass preset
+                # names, e.g.
+                #   .withKernelConfig { chunkPrefill = "chunk_prefill_default";
+                #                       pagedDecode = "paged_decode_default"; }
+                # Omit a field to keep the full sweep for that stage.
+                withKernelConfig = { chunkPrefill ? null, pagedDecode ? null }: mkVllmXpuKernels {
+                  inherit src version aotDevices useCcache;
+                  kernelChunkPrefillConfig = chunkPrefill;
+                  kernelPagedDecodeConfig = pagedDecode;
                 };
               };
             });
@@ -476,6 +487,15 @@
                 withAudio = b: mkVllm {
                   inherit src version kernels withTorchvision;
                   withAudio = b;
+                };
+                # Rebuild the paired kernels package against a narrowed
+                # attn-kernel set. See mkVllmXpuKernels.withKernelConfig.
+                withKernelConfig = cfg: mkVllm {
+                  inherit src version withTorchvision withAudio;
+                  kernels =
+                    if kernels ? withKernelConfig
+                    then kernels.withKernelConfig cfg
+                    else kernels;
                 };
               };
             });

@@ -280,7 +280,7 @@
           python3Packages = python312PackagesXpu;
         };
 
-        mkXpuLibFactory = { src, version, aotDevices ? [ ], useCcache ? true, kernelChunkPrefillConfig ? null, kernelPagedDecodeConfig ? null }:
+        mkXpuLibFactory = { src, version, aotDevices ? [ ], useCcache ? true, kernelChunkPrefillConfig ? null, kernelPagedDecodeConfig ? null, kernelChunkPrefillExtra ? [ ], kernelPagedDecodeExtra ? [ ] }:
           let factory = pkgs.callPackage ./nix/vllm-xpu-lib.nix {
             intel-oneapi-base = intel-oneapi;
             inherit intel-pti torch-xpu;
@@ -289,7 +289,7 @@
             cutlass-src = sycl-tla-src;
           };
           in { libName, featureFlags ? [ ] }:
-            factory { inherit libName featureFlags aotDevices useCcache kernelChunkPrefillConfig kernelPagedDecodeConfig; };
+            factory { inherit libName featureFlags aotDevices useCcache kernelChunkPrefillConfig kernelPagedDecodeConfig kernelChunkPrefillExtra kernelPagedDecodeExtra; };
 
         # Per-lib feature flag matrices: enable only the chosen lib's source
         # subdir, disable all other libs and ext modules. VLLM_XPU_LIBS_ONLY
@@ -346,8 +346,8 @@
           "-DXPUMEM_ALLOCATOR_ENABLED=OFF"
         ];
 
-        mkKernelLibs = { src, version, aotDevices ? [ ], useCcache ? true, kernelChunkPrefillConfig ? null, kernelPagedDecodeConfig ? null }:
-          let mkLib = mkXpuLibFactory { inherit src version aotDevices useCcache kernelChunkPrefillConfig kernelPagedDecodeConfig; }; in {
+        mkKernelLibs = { src, version, aotDevices ? [ ], useCcache ? true, kernelChunkPrefillConfig ? null, kernelPagedDecodeConfig ? null, kernelChunkPrefillExtra ? [ ], kernelPagedDecodeExtra ? [ ] }:
+          let mkLib = mkXpuLibFactory { inherit src version aotDevices useCcache kernelChunkPrefillConfig kernelPagedDecodeConfig kernelChunkPrefillExtra kernelPagedDecodeExtra; }; in {
             attn-kernels-xe-2 = mkLib { libName = "attn_kernels_xe_2"; featureFlags = attnFlags; };
             gdn-attn-kernels-xe-2 = mkLib { libName = "gdn_attn_kernels_xe_2"; featureFlags = gdnAttnFlags; };
             mqa-logits-kernels-xe-2 = mkLib { libName = "mqa_logits_kernels_xe_2"; featureFlags = mqaLogitsFlags; };
@@ -365,9 +365,10 @@
         # [ "bmg" ]` — Battlemage being the target this project is
         # tuned for. `withAotDevices [ ... ]` for any other explicit
         # list.
-        mkVllmXpuKernels = { src, version, aotDevices ? [ ], useCcache ? true, kernelChunkPrefillConfig ? null, kernelPagedDecodeConfig ? null }:
+        mkVllmXpuKernels = { src, version, aotDevices ? [ ], useCcache ? true, kernelChunkPrefillConfig ? null, kernelPagedDecodeConfig ? null, kernelChunkPrefillExtra ? [ ], kernelPagedDecodeExtra ? [ ] }:
           let
-            libs = mkKernelLibs { inherit src version aotDevices useCcache kernelChunkPrefillConfig kernelPagedDecodeConfig; };
+            kernelCfg = { inherit kernelChunkPrefillConfig kernelPagedDecodeConfig kernelChunkPrefillExtra kernelPagedDecodeExtra; };
+            libs = mkKernelLibs ({ inherit src version aotDevices useCcache; } // kernelCfg);
             base = pkgs.callPackage ./nix/vllm-xpu-kernels.nix ({
               intel-oneapi-base = intel-oneapi;
               inherit intel-pti torch-xpu useCcache;
@@ -378,28 +379,35 @@
           in
             base.overrideAttrs (old: {
               passthru = (old.passthru or {}) // {
-                withAotDevices = ds: mkVllmXpuKernels {
-                  inherit src version useCcache kernelChunkPrefillConfig kernelPagedDecodeConfig; aotDevices = ds;
-                };
-                withJIT = mkVllmXpuKernels {
-                  inherit src version useCcache kernelChunkPrefillConfig kernelPagedDecodeConfig; aotDevices = [];
-                };
-                withAOT = mkVllmXpuKernels {
-                  inherit src version useCcache kernelChunkPrefillConfig kernelPagedDecodeConfig; aotDevices = [ "bmg" ];
-                };
-                withCcache = b: mkVllmXpuKernels {
-                  inherit src version aotDevices kernelChunkPrefillConfig kernelPagedDecodeConfig; useCcache = b;
-                };
+                withAotDevices = ds: mkVllmXpuKernels ({
+                  inherit src version useCcache; aotDevices = ds;
+                } // kernelCfg);
+                withJIT = mkVllmXpuKernels ({
+                  inherit src version useCcache; aotDevices = [];
+                } // kernelCfg);
+                withAOT = mkVllmXpuKernels ({
+                  inherit src version useCcache; aotDevices = [ "bmg" ];
+                } // kernelCfg);
+                withCcache = b: mkVllmXpuKernels ({
+                  inherit src version aotDevices; useCcache = b;
+                } // kernelCfg);
                 # Partial-buildout selector (upstream #324): compile only the
                 # attn-kernel variants a deployment dispatches to. Pass preset
-                # names, e.g.
-                #   .withKernelConfig { chunkPrefill = "chunk_prefill_default";
-                #                       pagedDecode = "paged_decode_default"; }
+                # names, plus optional extra config lines appended to that
+                # preset at build time (no fork needed), e.g.
+                #   .withKernelConfig {
+                #     chunkPrefill = "chunk_prefill_default";
+                #     chunkPrefillExtra = [ "256,true,true,false,false,false" ];
+                #     pagedDecode = "paged_decode_default";
+                #     pagedDecodeExtra = [ "8,256,64,true,false,false" ];
+                #   }
                 # Omit a field to keep the full sweep for that stage.
-                withKernelConfig = { chunkPrefill ? null, pagedDecode ? null }: mkVllmXpuKernels {
+                withKernelConfig = { chunkPrefill ? null, pagedDecode ? null, chunkPrefillExtra ? [ ], pagedDecodeExtra ? [ ] }: mkVllmXpuKernels {
                   inherit src version aotDevices useCcache;
                   kernelChunkPrefillConfig = chunkPrefill;
                   kernelPagedDecodeConfig = pagedDecode;
+                  kernelChunkPrefillExtra = chunkPrefillExtra;
+                  kernelPagedDecodeExtra = pagedDecodeExtra;
                 };
               };
             });

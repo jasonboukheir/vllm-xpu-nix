@@ -38,11 +38,28 @@
   # (FA2_KERNELS_ENABLED=ON) reads these; other libs ignore them.
   kernelChunkPrefillConfig ? null,
   kernelPagedDecodeConfig ? null,
+  # Extra kernel-config lines appended to the selected preset's .conf at build
+  # time, e.g. add a model's head_size=256 variants on top of
+  # "chunk_prefill_default" without forking the preset. Each string is one
+  # config line; requires the matching kernel*Config to name a preset.
+  kernelChunkPrefillExtra ? [ ],
+  kernelPagedDecodeExtra ? [ ],
 }:
 
 let
   syclHome = "${intel-oneapi-base}/compiler/latest";
   aotDevicesStr = lib.concatStringsSep "," aotDevices;
+
+  # Append extra config lines to a named preset's .conf in the unpacked source
+  # (build-time, so no import-from-derivation). Strips an optional .conf suffix.
+  appendConfLines = cfgName: extra:
+    lib.optionalString (extra != [ ] && cfgName != null) (
+      let confFile =
+        "csrc/xpu/attn/kernel_configs/${lib.removeSuffix ".conf" cfgName}.conf";
+      in ''
+        printf '\n# --- appended by vllm-xpu-nix kernel*Extra ---\n' >> ${confFile}
+        printf '%s\n' ${lib.escapeShellArgs extra} >> ${confFile}
+      '');
 
   # Derivation-level env attrs. `impureEnvVars` / nix.conf
   # `impure-env` gate on `!isSandboxed()` and skip CA / input-addressed
@@ -102,6 +119,10 @@ stdenv.mkDerivation ({
     # to cut both build time and total memory by compiling only the variants
     # a deployment dispatches to (see VLLM_{CHUNK_PREFILL,PAGED_DECODE}_CONFIG).
   ];
+
+  postPatch =
+    appendConfLines kernelChunkPrefillConfig kernelChunkPrefillExtra
+    + appendConfLines kernelPagedDecodeConfig kernelPagedDecodeExtra;
 
   nativeBuildInputs = [
     cmake

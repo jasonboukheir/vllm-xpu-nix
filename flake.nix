@@ -713,39 +713,17 @@
               lint                       # defaults to ../vllm and ../vllm-xpu-kernels
               lint /path/to/vllm /path/to/vllm-xpu-kernels
 
-            Fast in-tree kernel iteration (impure, ~10s incrementals):
-              nix develop .#attn-dev
-              make dev-attn KERNELS_SRC=/path/to/vllm-xpu-kernels
-
-            Editable install of all kernels:
+            Develop the kernels (editable install, edit/build/test in tree):
               cd /path/to/vllm-xpu-kernels
               nix develop /path/to/vllm-xpu-nix#kernels-dev
               pip install -e . --no-build-isolation
-            EOF
-          '';
-        };
+              pytest tests/                 # e.g. tests/gdn_attn for the GDN work
 
-        devShells.attn-dev = pkgs.mkShell {
-          name = "vllm-xpu-attn-dev";
-          inputsFrom = [ stableLibs.attn-kernels-xe-2 ];
-          packages = with pkgs; [
-            cmake
-            ninja
-            git
-          ];
-          shellHook = syclToolchainShellHook + ''
-            cat <<'EOF'
-            vllm-xpu-nix attn-dev shell.
-
-            Toolchain: icpx, cmake, ninja, oneAPI MKL/SYCL, cutlass src all set up.
-
-            Quick start:
-              make dev-attn KERNELS_SRC=/path/to/vllm-xpu-kernels
-              export VLLM_XPU_DEV_LIB_DIR=$PWD/build-dev/csrc/xpu/attn/xe_2
-              python -c 'import vllm_xpu_kernels'
-
-            Edit any kernel .cpp/.hpp and rerun 'make dev-attn' for incremental rebuild.
-            Tear down with 'make dev-attn-clean'.
+            Develop vllm (editable install, edit/run/test in tree):
+              cd /path/to/vllm
+              nix develop /path/to/vllm-xpu-nix#vllm-dev
+              pip install -e . --no-build-isolation --no-deps
+              vllm serve <model> --enforce-eager
             EOF
           '';
         };

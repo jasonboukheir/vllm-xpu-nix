@@ -730,7 +730,14 @@
 
         devShells.kernels-dev = pkgs.mkShell {
           name = "vllm-xpu-kernels-dev";
-          inputsFrom = [ vllm-xpu-kernels ];
+          # inputsFrom a kernel-*lib* derivation, not the python package: the
+          # package's buildInputs list the five prebuilt kernel .so closures
+          # (attn-kernels-xe-2 etc.), so inputsFrom = [ vllm-xpu-kernels ] would
+          # realize them — a ~600-TU FA2 compile on a cache miss. A lib deriv is
+          # built *with* the same toolchain but has no prebuilt-lib deps, so this
+          # gives the identical compiler/cutlass/oneDNN/torch-xpu env with the
+          # whole closure already cached (a kernel dev rebuilds the libs in-tree).
+          inputsFrom = [ stableLibs.gdn-attn-kernels-xe-2 ];
           packages = with pkgs; [
             cmake
             ninja
@@ -742,6 +749,7 @@
             packaging
             jinja2
             psutil
+            pytest
             torch-xpu
             triton-xpu
           ]);

@@ -742,6 +742,44 @@
             cmake
             ninja
             git
+            # Lint/format tooling mirroring .pre-commit-config.yaml so style
+            # issues (e.g. ruff F841, clang-format drift) are caught locally
+            # before push instead of in CI. NB: the repo's C++ gate is
+            # clang-format (--style=file, .clang-format), not the vestigial
+            # [tool.cpplint] in pyproject.toml. The `lint` wrapper runs both.
+            ruff
+            llvmPackages_20.clang-tools  # clang-format; matches CI's v20.1.3
+            codespell
+            pre-commit
+            # `lint` mirrors the .pre-commit-config gate on changed files: ruff
+            # over the tree + clang-format (--style=file) over changed C/C++.
+            # A real command (not a shellHook function) so it works under
+            # `nix develop --command`, child shells and scripts too.
+            (writeShellScriptBin "lint" ''
+              set -u
+              rc=0
+              # Files changed vs HEAD plus new untracked ones (what you're about
+              # to commit) -- avoids scanning vendored third_party/ that the
+              # pre-commit config excludes.
+              changed() {
+                { git diff --name-only --diff-filter=ACMR HEAD -- "$@"
+                  git ls-files --others --exclude-standard -- "$@"
+                } 2>/dev/null | sort -u
+              }
+              py=$(changed '*.py')
+              cxx=$(changed '*.h' '*.hpp' '*.cc' '*.cpp' '*.cu' '*.cuh')
+              if [ -n "$py" ]; then
+                echo "== ruff =="; ${ruff}/bin/ruff check $py || rc=1
+              fi
+              if [ -n "$cxx" ]; then
+                echo "== clang-format =="
+                ${llvmPackages_20.clang-tools}/bin/clang-format \
+                  --style=file --dry-run --Werror $cxx || rc=1
+              fi
+              [ -z "$py$cxx" ] && echo "lint: no changed py/c++ files vs HEAD"
+              [ "$rc" -eq 0 ] && echo "lint: clean" || echo "lint: issues found"
+              exit $rc
+            '')
           ] ++ (with pkgs.python312Packages; [
             pip
             setuptools
@@ -775,6 +813,10 @@
 
             Tests:
               pytest tests/
+
+            Lint (matches CI .pre-commit-config):
+              lint                        # ruff + clang-format on changed files
+              pre-commit run --all-files  # full gate (fetches hook envs, needs net)
 
             Tune feature flags via cmake -D… or env (BASIC_KERNELS_ENABLED,
             FA2_KERNELS_ENABLED, MOE_KERNELS_ENABLED, GDN_KERNELS_ENABLED, etc.).

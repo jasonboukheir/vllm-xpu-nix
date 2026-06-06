@@ -1,9 +1,9 @@
 # Iterating against a local checkout
 
-The `*-unstable` flake inputs pin a fork's `main` branch, but during
-active kernel development you want to build against your working tree
-without committing+pushing first. Nix's `--override-input` does this;
-the recipe is just non-obvious.
+The `*-unstable` flake inputs pin a fork's `main` branch, but during active
+kernel development you want to build against your working tree without
+committing+pushing first. Nix's `--override-input` does this; the recipe is just
+non-obvious.
 
 ## Build against a local kernels checkout
 
@@ -21,8 +21,8 @@ cd /home/me/Projects/vllm-xpu-kernels
 git submodule update --init --recursive
 ```
 
-If `third_party/oneDNN/` (or any other submodule) isn't on disk, the
-build trips at CMake's `git submodule update` invocation.
+If `third_party/oneDNN/` (or any other submodule) isn't on disk, the build trips
+at CMake's `git submodule update` invocation.
 
 ## Build vLLM itself against a local checkout
 
@@ -45,8 +45,8 @@ nix build .#vllm-xpu-unstable \
 
 ## NixOS rebuild against a local source
 
-The `flake-input/sub-input` syntax is what overrides a transitive input
-from a consuming flake:
+The `flake-input/sub-input` syntax is what overrides a transitive input from a
+consuming flake:
 
 ```bash
 sudo nixos-rebuild switch \
@@ -55,10 +55,10 @@ sudo nixos-rebuild switch \
 
 ## Develop the kernels (editable install, `kernels-dev`)
 
-To edit, build, and test `vllm-xpu-kernels` in tree, use the
-`kernels-dev` shell — it carries the SYCL toolchain plus the full
-kernels closure (`torch-xpu` / `triton-xpu`) as build *inputs*, so you
-build the kernels yourself rather than pulling a prebuilt copy:
+To edit, build, and test `vllm-xpu-kernels` in tree, use the `kernels-dev` shell
+— it carries the SYCL toolchain plus the full kernels closure (`torch-xpu` /
+`triton-xpu`) as build _inputs_, so you build the kernels yourself rather than
+pulling a prebuilt copy:
 
 ```bash
 cd /path/to/vllm-xpu-kernels
@@ -69,12 +69,9 @@ ninja -C build/temp.*/release install     # incremental rebuild after a .cpp edi
 pytest tests/                             # e.g. tests/gdn_attn for the GDN/conv1d work
 ```
 
-`MAX_JOBS=2` by default — each SYCL-TLA template instantiation holds
-~40 GiB during icpx; raise only if your box has >100 GiB of free RAM.
-
 For a cache-shared cold build of a single kernel lib (reuses
-`/var/cache/ccache`, no editable install), build the narrowed package
-target against your checkout instead:
+`/var/cache/ccache`, no editable install), build the narrowed package target
+against your checkout instead:
 
 ```bash
 nix build .#gdn-attn-kernels-xe-2 \
@@ -83,10 +80,10 @@ nix build .#gdn-attn-kernels-xe-2 \
 
 ## Editable install of vllm (`vllm-dev`)
 
-For iterating on a local `vllm` checkout, use the `vllm-dev` shell —
-it pulls the full `vllm-xpu` closure (`torch-xpu`, `triton-xpu`,
-`vllm-xpu-kernels`, runtime python deps), pre-sets `VLLM_TARGET_DEVICE=xpu`,
-and bakes in the BMG single-card oneCCL env:
+For iterating on a local `vllm` checkout, use the `vllm-dev` shell — it pulls
+the full `vllm-xpu` closure (`torch-xpu`, `triton-xpu`, `vllm-xpu-kernels`,
+runtime python deps), pre-sets `VLLM_TARGET_DEVICE=xpu`, and bakes in the BMG
+single-card oneCCL env:
 
 ```bash
 cd /path/to/vllm
@@ -96,7 +93,7 @@ python -c 'import vllm; print(vllm.__version__)'
 vllm serve <model> --enforce-eager
 ```
 
-The `--no-deps` is load-bearing — without it pip would try to resolve
-torch from PyPI, which would either pull in stock CPU torch (and fight
-the XPU build) or fail outright. The shell already supplies torch-xpu
-via `inputsFrom = [ vllm-xpu ]`.
+The `--no-deps` is load-bearing — without it pip would try to resolve torch from
+PyPI, which would either pull in stock CPU torch (and fight the XPU build) or
+fail outright. The shell already supplies torch-xpu via
+`inputsFrom = [ vllm-xpu ]`.

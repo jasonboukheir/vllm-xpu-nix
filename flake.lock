@@ -20,11 +20,11 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1780243769,
-        "narHash": "sha256-x5UQuRsH3MqI0U9afaXSNqzTPSeZlRLvFAav2Ux1pNw=",
+        "lastModified": 1780749050,
+        "narHash": "sha256-3av0pIjlOWQ6rDbNOmpUSvbNnJkGORQKKjb4LtCZsIY=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "331800de5053fcebacf6813adb5db9c9dca22a0c",
+        "rev": "a799d3e3886da994fa307f817a6bc705ae538eeb",
         "type": "github"
       },
       "original": {
@@ -134,11 +134,11 @@
     "vllm-xpu-unstable-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1780668944,
-        "narHash": "sha256-teBNAMLt+XmRXtcM4Hqvy22RSEo8RkDAe4HoIMhrkZ4=",
+        "lastModified": 1780957542,
+        "narHash": "sha256-U+0sPaTw6dTjiOobsxaycuzruNf63J2dm+rVD7JWPPI=",
         "ref": "refs/heads/main",
-        "rev": "6fb17fe18d481298f8cac3e584283c6cbaabea4b",
-        "revCount": 17315,
+        "rev": "574621019318161ff8139ea5464f07987a3b9d2f",
+        "revCount": 17381,
         "type": "git",
         "url": "https://github.com/jasonboukheir/vllm.git"
       },

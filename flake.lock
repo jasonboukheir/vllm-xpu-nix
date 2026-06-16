@@ -20,11 +20,11 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1780749050,
-        "narHash": "sha256-3av0pIjlOWQ6rDbNOmpUSvbNnJkGORQKKjb4LtCZsIY=",
+        "lastModified": 1781074563,
+        "narHash": "sha256-md8WlXOlfnIeHeOScMTTHFyf2d6iaTwPl2apR5EQ3P4=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "a799d3e3886da994fa307f817a6bc705ae538eeb",
+        "rev": "9ae611a455b90cf061d8f332b977e387bda8e1ca",
         "type": "github"
       },
       "original": {
@@ -99,11 +99,11 @@
     "vllm-xpu-kernels-unstable-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1780701952,
-        "narHash": "sha256-tfHdELy9uv5a99fOSmsVgkuTDdK3HlC5mkx4zeMyplc=",
+        "lastModified": 1781568920,
+        "narHash": "sha256-mODD/FTWBm5FRwIqmmQEYpvNTOD8GWtnx5QuKbmZvPY=",
         "ref": "refs/heads/main",
-        "rev": "b4d1a427f48eb47acd6cee248122637e35192390",
-        "revCount": 263,
+        "rev": "63c50713578d55a349610797788c7f3da133b2ff",
+        "revCount": 276,
         "submodules": true,
         "type": "git",
         "url": "https://github.com/jasonboukheir/vllm-xpu-kernels.git"
@@ -134,11 +134,11 @@
     "vllm-xpu-unstable-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1780957542,
-        "narHash": "sha256-U+0sPaTw6dTjiOobsxaycuzruNf63J2dm+rVD7JWPPI=",
+        "lastModified": 1781569012,
+        "narHash": "sha256-ZmwePXuRH4LlfCjUg1+qNjyHXTgmB2zFFtfr2UK5U7k=",
         "ref": "refs/heads/main",
-        "rev": "574621019318161ff8139ea5464f07987a3b9d2f",
-        "revCount": 17381,
+        "rev": "2d4e255f6baac38b2c7572f965e64139264c84c5",
+        "revCount": 17651,
         "type": "git",
         "url": "https://github.com/jasonboukheir/vllm.git"
       },

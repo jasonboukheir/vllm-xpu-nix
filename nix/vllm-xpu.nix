@@ -248,16 +248,21 @@ python3Packages.buildPythonPackage {
       --replace-fail 'torchvision' '# torchvision (opt-in via withTorchvision)'
     sed -i '/^vllm_xpu_kernels @ /d' requirements/xpu.txt
 
-    # Strip the new Rust frontend (PR #40848: vllm-rs). setuptools-rust would
+    # Strip the Rust frontend (PR #40848: vllm-rs). setuptools-rust would
     # demand rustPlatform.cargoSetupHook with a vendored Cargo.lock; the Rust
     # CLI is unused by the Python inference API, so neutralize the imports +
-    # extension wiring instead of vendoring the dep tree.
+    # extension wiring instead of vendoring the dep tree. Upstream moved the
+    # `setuptools_rust import Binding, RustExtension` into tools/build_rust.py
+    # (which setup.py loads as a module), so both files need patching. The
+    # build_rust.py stub keeps rust_extensions()/rust_py_extension_module_names()
+    # callable but returning no PyO3 modules, so the build skips the Rust step.
     substituteInPlace setup.py \
-      --replace-fail 'from setuptools_rust import Binding, RustExtension' \
-        'Binding = type("Binding", (), {"Exec": None}); RustExtension = lambda *a, **kw: None' \
       --replace-fail 'from setuptools_rust.build import build_rust' \
         'build_rust = type("build_rust", (object,), {"run": lambda self: None})' \
       --replace-fail 'rust_extensions=rust_extensions,' ""
+    substituteInPlace tools/build_rust.py \
+      --replace-fail 'from setuptools_rust import Binding, RustExtension' \
+        'Binding = type("Binding", (), {"Exec": object(), "PyO3": object()}); RustExtension = lambda *a, **kw: type("RustExtension", (), {"binding": kw.get("binding"), "target": {}})()'
   '';
 
   preBuild = ''

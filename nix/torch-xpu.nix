@@ -82,10 +82,6 @@ python3Packages.buildPythonPackage rec {
     fsspec
     setuptools
     numpy
-    # nixpkgs' stock torch propagates psutil; match it so packages that
-    # free-ride on torch's transitive psutil (e.g. compressed-tensors) keep
-    # importing under torch-xpu.
-    psutil
   ];
 
   autoPatchelfIgnoreMissingDeps = [

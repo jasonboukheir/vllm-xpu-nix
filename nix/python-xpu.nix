@@ -36,29 +36,18 @@ in
     };
     mistral-common = mistral-common-1_11;
     torchvision = torchvision-xpu;
-    # vllm's compressed-tensors dep otherwise propagates stock `torch` (same
-    # functorch/*.pyc buildEnv collision as accelerate, and a second torch in
-    # the closure). Point it at torch-xpu so the whole stack shares one torch.
+    # compressed-tensors propagates stock `torch`, leaving a second (unused)
+    # torch in the closure. Harmless here: vllm-xpu wires its runtime env via a
+    # PYTHONPATH wrapper (makePythonPath, see vllm-xpu.nix), not a
+    # python.withPackages buildEnv, and torch-xpu sorts first on PYTHONPATH so
+    # it wins at `import torch`. So keep stock torch and only skip the one
+    # flaky test: test_quantization_enabled_disabled calibrates W8A8 activation
+    # quant from a single random sample whose min/max can collapse the scale to
+    # ~0, yielding NaNs that trip `torch.all(a == b)` (fails on stock torch too).
     compressed-tensors =
-      (pkgs.python312Packages.compressed-tensors.override {
-        torch = torch-xpu;
-      }).overrideAttrs (oldAttrs: {
+      pkgs.python312Packages.compressed-tensors.overrideAttrs (oldAttrs: {
         disabledTests =
           (oldAttrs.disabledTests or [])
-          # Quantization round-trip produces NaNs, so `torch.all(a == b)`
-          # fails (NaN != NaN) regardless of torch build.
-          ++ ["test_quantization_enabled_disabled"]
-          # torch-xpu's inductor (torch.compile) shells out to the `openssl`
-          # binary to hash compiled artifacts; the check sandbox PATH lacks
-          # it, so every torch.compile test dies with FileNotFoundError. These
-          # are the only compile-path tests; stock torch's suite doesn't reach
-          # it. Deselect rather than ship openssl since the compile coverage
-          # isn't load-bearing for vllm's use of the package.
-          ++ [
-            "test_multiple_quant_compressors"
-            "test_compress_decompress_module"
-            "test_static_weight_quantization"
-            "test_static_activation_quantization"
-          ];
+          ++ ["test_quantization_enabled_disabled"];
       });
   }

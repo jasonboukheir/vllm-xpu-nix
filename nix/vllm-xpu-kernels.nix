@@ -139,8 +139,8 @@ python3Packages.buildPythonPackage ({
     export CFLAGS="$icpxToolchainFlags $CFLAGS"
     export CXXFLAGS="$icpxToolchainFlags $CXXFLAGS"
     export LDFLAGS="-L${stdenv.cc.libc}/lib -L${stdenv.cc.cc.lib}/lib $LDFLAGS"
-    export LIBRARY_PATH=${stdenv.cc.libc}/lib:${stdenv.cc.cc.lib}/lib:$LIBRARY_PATH
-    export CPATH=${stdenv.cc.libc.dev}/include:$CPATH
+    export LIBRARY_PATH=${stdenv.cc.libc}/lib:${stdenv.cc.cc.lib}/lib:${level-zero}/lib:$LIBRARY_PATH
+    export CPATH=${stdenv.cc.libc.dev}/include:${level-zero}/include:$CPATH
     export CMAKE_PREFIX_PATH=${intel-oneapi-base}:$CMAKE_PREFIX_PATH
     export VLLM_CUTLASS_SRC_DIR=${cutlass-src}
     export VLLM_XPU_AOT_DEVICES="${aotDevicesStr}"

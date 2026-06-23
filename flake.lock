@@ -80,17 +80,17 @@
     "vllm-xpu-kernels-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1779945648,
-        "narHash": "sha256-tIXZqPtXDOKvOr6UkiV6A5TVISz1z/LQ7yPnQBkdFk8=",
-        "ref": "release/v0.1.9.1",
-        "rev": "98fc9b0f864f6554ca939425d95089532f501a01",
-        "revCount": 256,
+        "lastModified": 1781668707,
+        "narHash": "sha256-VDZUYebaMjVuxuz+gwhEN0s3F99Hmk+6d8o7ruEcszI=",
+        "ref": "release/v0.1.10",
+        "rev": "11f42aa47ff51924b3d9527cfc2bfef5fd2d98e5",
+        "revCount": 280,
         "submodules": true,
         "type": "git",
         "url": "https://github.com/vllm-project/vllm-xpu-kernels.git"
       },
       "original": {
-        "ref": "release/v0.1.9.1",
+        "ref": "release/v0.1.10",
         "submodules": true,
         "type": "git",
         "url": "https://github.com/vllm-project/vllm-xpu-kernels.git"
@@ -99,19 +99,19 @@
     "vllm-xpu-kernels-unstable-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1781568920,
-        "narHash": "sha256-mODD/FTWBm5FRwIqmmQEYpvNTOD8GWtnx5QuKbmZvPY=",
+        "lastModified": 1781668707,
+        "narHash": "sha256-VDZUYebaMjVuxuz+gwhEN0s3F99Hmk+6d8o7ruEcszI=",
         "ref": "refs/heads/main",
-        "rev": "63c50713578d55a349610797788c7f3da133b2ff",
-        "revCount": 276,
+        "rev": "11f42aa47ff51924b3d9527cfc2bfef5fd2d98e5",
+        "revCount": 280,
         "submodules": true,
         "type": "git",
-        "url": "https://github.com/jasonboukheir/vllm-xpu-kernels.git"
+        "url": "https://git.sunnycareboo.com/jasonbk/vllm-xpu-kernels.git"
       },
       "original": {
         "submodules": true,
         "type": "git",
-        "url": "https://github.com/jasonboukheir/vllm-xpu-kernels.git"
+        "url": "https://git.sunnycareboo.com/jasonbk/vllm-xpu-kernels.git"
       }
     },
     "vllm-xpu-src": {
@@ -134,17 +134,17 @@
     "vllm-xpu-unstable-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1781571099,
-        "narHash": "sha256-ExGek0aaqJh3HuQe9CWx/uAYOi6vmcB9qKUeix17tYc=",
+        "lastModified": 1782176512,
+        "narHash": "sha256-3xxuJK2hz5CvsD4BNw76TBZXBelOwLLHrIVSklX2IZI=",
         "ref": "refs/heads/main",
-        "rev": "bfe013c75873a59becd8e4b2579d594495bc44ab",
-        "revCount": 17652,
+        "rev": "df758be57a53736e5a7ebdd24a042fd99d04e45c",
+        "revCount": 17909,
         "type": "git",
-        "url": "https://github.com/jasonboukheir/vllm.git"
+        "url": "https://git.sunnycareboo.com/jasonbk/vllm.git"
       },
       "original": {
         "type": "git",
-        "url": "https://github.com/jasonboukheir/vllm.git"
+        "url": "https://git.sunnycareboo.com/jasonbk/vllm.git"
       }
     }
   },

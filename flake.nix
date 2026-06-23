@@ -8,14 +8,14 @@
     vllm-xpu-kernels-src = {
       type = "git";
       url = "https://github.com/vllm-project/vllm-xpu-kernels.git";
-      ref = "release/v0.1.9.1";
+      ref = "release/v0.1.10";
       submodules = true;
       flake = false;
     };
 
     vllm-xpu-kernels-unstable-src = {
       type = "git";
-      url = "https://github.com/jasonboukheir/vllm-xpu-kernels.git";
+      url = "https://git.sunnycareboo.com/jasonbk/vllm-xpu-kernels.git";
       submodules = true;
       flake = false;
     };
@@ -29,7 +29,7 @@
 
     vllm-xpu-unstable-src = {
       type = "git";
-      url = "https://github.com/jasonboukheir/vllm.git";
+      url = "https://git.sunnycareboo.com/jasonbk/vllm.git";
       flake = false;
     };
 

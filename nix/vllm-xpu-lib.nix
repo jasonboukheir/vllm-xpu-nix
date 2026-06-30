@@ -3,6 +3,7 @@
   src,
   version,
   cutlass-src,
+  onednn-src,
   python3Packages,
   cmake,
   ninja,
@@ -194,6 +195,10 @@ stdenv.mkDerivation ({
     "-DVLLM_XPU_LIBS_ONLY=ON"
     "-DVLLM_PYTHON_EXECUTABLE=${python3Packages.python}/bin/python"
     "-DVLLM_CUTLASS_SRC_DIR=${cutlass-src}"
+    # FindoneDNN.cmake FetchContent-clones oneDNN at configure time; redirect
+    # it to the prefetched local checkout so the sandbox needs no network.
+    "-DFETCHCONTENT_SOURCE_DIR_ONEDNN=${onednn-src}"
+    "-DFETCHCONTENT_FULLY_DISCONNECTED=ON"
     "-DCMAKE_BUILD_TYPE=Release"
     "-DBUILD_SYCL_TLA_KERNELS=ON"
     "-DVLLM_XPU_CUTLASS_TEMPLATE_BACKTRACE_LIMIT=10"

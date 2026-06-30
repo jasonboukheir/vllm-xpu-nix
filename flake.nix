@@ -68,7 +68,11 @@
       kernelsUnstableVersion = mkInputVersion {
         name = "vllm-xpu-kernels-unstable-src";
         input = vllm-xpu-kernels-unstable-src;
-        base = "0.1.9.1";
+        # main descends from the v0.1.10 tag (git describe -> v0.1.10-N);
+        # the +unstable.<date>.g<rev> suffix marks the snapshot ahead of it.
+        # (v0.1.10.1 is a release-branch-only patch, not in main's ancestry,
+        # though main already carries its #432 support_new_layout_cache change.)
+        base = "0.1.10";
         unstable = true;
       };
       vllmStableVersion = mkInputVersion {

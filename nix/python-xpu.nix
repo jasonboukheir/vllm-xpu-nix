@@ -50,4 +50,13 @@ in
           (oldAttrs.disabledTests or [])
           ++ ["test_quantization_enabled_disabled"];
       });
+    # prometheus-fastapi-instrumentator 7.1.0 pins starlette<1.0.0, but nixpkgs
+    # now ships starlette 1.1.0, tripping pythonRuntimeDepsCheckHook. starlette
+    # 1.x keeps the middleware/request APIs this package uses, so relax the pin.
+    # TODO: drop once upstream loosens the bound
+    # (https://github.com/trallnag/prometheus-fastapi-instrumentator/issues).
+    prometheus-fastapi-instrumentator =
+      pkgs.python312Packages.prometheus-fastapi-instrumentator.overridePythonAttrs (oldAttrs: {
+        pythonRelaxDeps = (oldAttrs.pythonRelaxDeps or []) ++ ["starlette"];
+      });
   }

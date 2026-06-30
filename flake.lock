@@ -99,11 +99,11 @@
     "vllm-xpu-kernels-unstable-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1781668707,
-        "narHash": "sha256-VDZUYebaMjVuxuz+gwhEN0s3F99Hmk+6d8o7ruEcszI=",
+        "lastModified": 1782290691,
+        "narHash": "sha256-fbA8kzyoqqL3DjtUlJFD+ji8s1LGw3Ihk0FwZwP6G5g=",
         "ref": "refs/heads/main",
-        "rev": "11f42aa47ff51924b3d9527cfc2bfef5fd2d98e5",
-        "revCount": 280,
+        "rev": "70387bfdcc15f85628ed31b8faf62af537096435",
+        "revCount": 283,
         "submodules": true,
         "type": "git",
         "url": "https://git.sunnycareboo.com/jasonbk/vllm-xpu-kernels.git"
@@ -134,11 +134,11 @@
     "vllm-xpu-unstable-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1782176512,
-        "narHash": "sha256-3xxuJK2hz5CvsD4BNw76TBZXBelOwLLHrIVSklX2IZI=",
+        "lastModified": 1782831790,
+        "narHash": "sha256-qgOpMEjPL0RjGOEfFoESj+UVQg6Z2wQZn7fw/sBvZOY=",
         "ref": "refs/heads/main",
-        "rev": "df758be57a53736e5a7ebdd24a042fd99d04e45c",
-        "revCount": 17909,
+        "rev": "439c8b341aa82293098d00012839fa4f11b5182d",
+        "revCount": 18252,
         "type": "git",
         "url": "https://git.sunnycareboo.com/jasonbk/vllm.git"
       },

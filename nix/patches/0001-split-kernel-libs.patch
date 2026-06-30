@@ -104,20 +104,24 @@ diff --git a/setup.py b/setup.py
 index bec4dd3..8f96b40 100755
 --- a/setup.py
 +++ b/setup.py
-@@ -214,6 +214,19 @@ class cmake_build_ext(build_ext):
+@@ -214,6 +214,23 @@ class cmake_build_ext(build_ext):
              cmake_args.append(
                  '-DVLLM_CHUNK_PREFILL_CONFIG={}'.format(_chunk_prefill_config))
  
 +        # Forward prebuilt-library overrides so packagers can supply
-+        # pre-built kernel SHARED libs and skip recompilation.
-+        _prebuilt_lib_options = [
++        # pre-built kernel SHARED libs and skip recompilation, plus offline
++        # FetchContent overrides (e.g. a prefetched oneDNN source dir) so the
++        # build needs no network access.
++        _forwarded_options = [
 +            "VLLM_XPU_PREBUILT_ATTN_KERNELS_XE_2_LIB",
 +            "VLLM_XPU_PREBUILT_GDN_ATTN_KERNELS_XE_2_LIB",
 +            "VLLM_XPU_PREBUILT_MQA_LOGITS_KERNELS_XE_2_LIB",
 +            "VLLM_XPU_PREBUILT_GROUPED_GEMM_XE_2_LIB",
 +            "VLLM_XPU_PREBUILT_GROUPED_GEMM_XE_DEFAULT_LIB",
++            "FETCHCONTENT_SOURCE_DIR_ONEDNN",
++            "FETCHCONTENT_FULLY_DISCONNECTED",
 +        ]
-+        for opt in _prebuilt_lib_options:
++        for opt in _forwarded_options:
 +            if opt in os.environ:
 +                cmake_args.append('-D{}={}'.format(opt, os.environ[opt]))
 +

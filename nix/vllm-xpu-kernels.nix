@@ -3,6 +3,7 @@
   src,
   version,
   cutlass-src,
+  onednn-src,
   python3Packages,
   cmake,
   ninja,
@@ -143,6 +144,8 @@ python3Packages.buildPythonPackage ({
     export CPATH=${stdenv.cc.libc.dev}/include:${level-zero}/include:$CPATH
     export CMAKE_PREFIX_PATH=${intel-oneapi-base}:$CMAKE_PREFIX_PATH
     export VLLM_CUTLASS_SRC_DIR=${cutlass-src}
+    export FETCHCONTENT_SOURCE_DIR_ONEDNN=${onednn-src}
+    export FETCHCONTENT_FULLY_DISCONNECTED=ON
     export VLLM_XPU_AOT_DEVICES="${aotDevicesStr}"
     export VLLM_XPU_XE2_AOT_DEVICES="${aotDevicesStr}"
     export CMAKE_BUILD_TYPE=Release

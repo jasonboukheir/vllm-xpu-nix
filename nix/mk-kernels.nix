@@ -11,6 +11,20 @@
   torch-xpu,
   cutlass-src,
 }: let
+  # oneDNN is no longer vendored as the `third_party/oneDNN` submodule; the
+  # kernels' cmake/Modules/FindoneDNN.cmake clones it via FetchContent at
+  # configure time, which the offline Nix sandbox cannot do. Prefetch it as a
+  # fixed-output derivation and point FetchContent at the local checkout (see
+  # vllm-xpu-lib.nix / vllm-xpu-kernels.nix cmake wiring).
+  # TODO: keep `rev` in sync with ONEDNN_GIT_TAG in the kernels' CMakeLists.txt
+  #   (https://github.com/vllm-project/vllm-xpu-kernels/blob/main/CMakeLists.txt).
+  onednn-src = pkgs.fetchFromGitHub {
+    owner = "uxlfoundation";
+    repo = "oneDNN";
+    rev = "80afa71049cd69a3df32adcccb623b12cd7baa22";
+    hash = "sha256-t5+DF4/qgEYQpTY8Qox0BTfpykfs5kFqYy6HrEJaVu0=";
+  };
+
   mkXpuLibFactory = {
     src,
     version,
@@ -26,7 +40,7 @@
       inherit intel-pti torch-xpu;
       python3Packages = pkgs.python312Packages;
       inherit src version;
-      inherit cutlass-src;
+      inherit cutlass-src onednn-src;
     };
   in
     {
@@ -149,7 +163,7 @@
         inherit intel-pti torch-xpu useCcache;
         python3Packages = pkgs.python312Packages;
         inherit src version aotDevices;
-        inherit cutlass-src;
+        inherit cutlass-src onednn-src;
       }
       // libs);
   in

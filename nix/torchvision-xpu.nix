@@ -10,7 +10,11 @@
 
 python3Packages.buildPythonPackage rec {
   pname = "torchvision";
-  # Pairs with torch-xpu's 2026-05-31 nightly. See note in nix/torch-xpu.nix.
+  # 2026-05-31 XPU nightly, intentionally paired with torch-xpu's
+  # 2026-05-24 nightly pin (nearest available torchvision XPU nightly to
+  # that date; the dates need not match exactly — torchvision only needs
+  # the same torch 2.13-dev ABI). See the pin rationale in
+  # nix/torch-xpu.nix.
   version = "0.28.0.dev20260531+xpu";
   format = "wheel";
 

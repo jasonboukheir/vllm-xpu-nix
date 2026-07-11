@@ -1,10 +1,10 @@
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 3b23769..963f845 100644
+index 15ff1f8..cbf3d5e 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -378,6 +378,9 @@ set(GROUPED_GEMM_LIB_NAME "")
- set(GDN_ATTN_LIB_NAME "")
+@@ -399,6 +399,9 @@ set(GDN_ATTN_LIB_NAME "")
  set(MQA_LOGITS_LIB_NAME "")
+ set(MHC_LIB_NAME "")
  
 +option(VLLM_XPU_LIBS_ONLY
 +       "Build only kernel SHARED libs, skip extension modules" OFF)
@@ -12,7 +12,7 @@ index 3b23769..963f845 100644
  if(BUILD_SYCL_TLA_KERNELS)
  
    set(SYCL_TLA_INCLUDE_DIRS
-@@ -393,7 +396,16 @@ if(BUILD_SYCL_TLA_KERNELS)
+@@ -414,7 +417,16 @@ if(BUILD_SYCL_TLA_KERNELS)
    set(SYCL_TLA_COMPILE_OPTIONS "")
    if(VLLM_XPU_ENABLE_XE_DEFAULT)
      if(MOE_KERNELS_ENABLED)
@@ -30,7 +30,7 @@ index 3b23769..963f845 100644
        list(APPEND GROUPED_GEMM_LIB_NAME "grouped_gemm_xe_default")
      endif()
      list(APPEND SYCL_TLA_COMPILE_OPTIONS -DVLLM_XPU_ENABLE_XE_DEFAULT)
-@@ -401,19 +413,53 @@ if(BUILD_SYCL_TLA_KERNELS)
+@@ -422,23 +434,65 @@ if(BUILD_SYCL_TLA_KERNELS)
    if(VLLM_XPU_ENABLE_XE2)
      include_directories(${CMAKE_SOURCE_DIR}/csrc)
      if(MOE_KERNELS_ENABLED)
@@ -87,8 +87,21 @@ index 3b23769..963f845 100644
 +      endif()
        list(APPEND MQA_LOGITS_LIB_NAME "mqa_logits_kernels_xe_2")
      endif()
+     if(MHC_KERNELS_ENABLED)
+-      add_subdirectory(csrc/xpu/mhc/xe_2)
++      if(VLLM_XPU_PREBUILT_MHC_KERNELS_XE_2_LIB)
++        add_library(mhc_kernels_xe_2 SHARED IMPORTED GLOBAL)
++        set_target_properties(mhc_kernels_xe_2 PROPERTIES
++          IMPORTED_LOCATION "${VLLM_XPU_PREBUILT_MHC_KERNELS_XE_2_LIB}"
++          INTERFACE_INCLUDE_DIRECTORIES
++            "${CMAKE_SOURCE_DIR}/csrc/xpu/mhc/xe_2;${CMAKE_SOURCE_DIR}/csrc/xpu/mhc")
++      else()
++        add_subdirectory(csrc/xpu/mhc/xe_2)
++      endif()
+       list(APPEND MHC_LIB_NAME "mhc_kernels_xe_2")
+     endif()
      list(APPEND SYCL_TLA_COMPILE_OPTIONS -DVLLM_XPU_ENABLE_XE2)
-@@ -422,6 +468,11 @@ if(BUILD_SYCL_TLA_KERNELS)
+@@ -447,6 +501,11 @@ if(BUILD_SYCL_TLA_KERNELS)
  
  endif()
  
@@ -101,10 +114,10 @@ index 3b23769..963f845 100644
  # that disabled features don't pull in unbuilt TLA library symbols.
  if(MOE_KERNELS_ENABLED)
 diff --git a/setup.py b/setup.py
-index bec4dd3..8f96b40 100755
+index 5774620..6b41bce 100755
 --- a/setup.py
 +++ b/setup.py
-@@ -214,6 +214,23 @@ class cmake_build_ext(build_ext):
+@@ -214,6 +214,24 @@ class cmake_build_ext(build_ext):
              cmake_args.append(
                  '-DVLLM_CHUNK_PREFILL_CONFIG={}'.format(_chunk_prefill_config))
  
@@ -116,6 +129,7 @@ index bec4dd3..8f96b40 100755
 +            "VLLM_XPU_PREBUILT_ATTN_KERNELS_XE_2_LIB",
 +            "VLLM_XPU_PREBUILT_GDN_ATTN_KERNELS_XE_2_LIB",
 +            "VLLM_XPU_PREBUILT_MQA_LOGITS_KERNELS_XE_2_LIB",
++            "VLLM_XPU_PREBUILT_MHC_KERNELS_XE_2_LIB",
 +            "VLLM_XPU_PREBUILT_GROUPED_GEMM_XE_2_LIB",
 +            "VLLM_XPU_PREBUILT_GROUPED_GEMM_XE_DEFAULT_LIB",
 +            "FETCHCONTENT_SOURCE_DIR_ONEDNN",

@@ -589,14 +589,19 @@ in
   options.services.vllm-xpu = {
     package = lib.mkOption {
       type = lib.types.package;
-      default = pkgs.vllm-xpu;
-      defaultText = lib.literalExpression "pkgs.vllm-xpu";
+      # The unstable (jasonboukheir/vllm fork) variant is the deployed /
+      # primary build; defaulting to it avoids the footgun of silently
+      # serving the upstream stable build when consumers forget to set
+      # `package`.
+      default = pkgs.vllm-xpu-unstable;
+      defaultText = lib.literalExpression "pkgs.vllm-xpu-unstable";
       description = ''
         Default vLLM-XPU package used by every instance unless the
-        instance overrides it. Set to `pkgs.vllm-xpu-unstable` to
-        track the jasonboukheir/vllm fork (carries patches required
-        for `speculativeConfig` on Qwen3-family MTP and the GDN
-        graph-capture fix).
+        instance overrides it. Defaults to `pkgs.vllm-xpu-unstable`
+        (the jasonboukheir/vllm fork — the deployed/primary variant;
+        carries patches required for `speculativeConfig` on
+        Qwen3-family MTP and the GDN graph-capture fix). Set to
+        `pkgs.vllm-xpu` for the upstream stable release.
       '';
     };
 

@@ -8,7 +8,7 @@
     vllm-xpu-kernels-src = {
       type = "git";
       url = "https://github.com/vllm-project/vllm-xpu-kernels.git";
-      ref = "release/v0.1.10";
+      ref = "release/v0.1.11";
       submodules = true;
       flake = false;
     };
@@ -23,7 +23,7 @@
     vllm-xpu-src = {
       type = "git";
       url = "https://github.com/vllm-project/vllm.git";
-      ref = "refs/heads/releases/v0.22.0";
+      ref = "refs/heads/releases/v0.25.0";
       flake = false;
     };
 
@@ -68,11 +68,9 @@
       kernelsUnstableVersion = mkInputVersion {
         name = "vllm-xpu-kernels-unstable-src";
         input = vllm-xpu-kernels-unstable-src;
-        # main descends from the v0.1.10 tag (git describe -> v0.1.10-N);
+        # main descends from the v0.1.11 tag (git describe -> v0.1.11-N);
         # the +unstable.<date>.g<rev> suffix marks the snapshot ahead of it.
-        # (v0.1.10.1 is a release-branch-only patch, not in main's ancestry,
-        # though main already carries its #432 support_new_layout_cache change.)
-        base = "0.1.10";
+        base = "0.1.11";
         unstable = true;
       };
       vllmStableVersion = mkInputVersion {
@@ -82,7 +80,7 @@
       vllmUnstableVersion = mkInputVersion {
         name = "vllm-xpu-unstable-src";
         input = vllm-xpu-unstable-src;
-        base = "0.22.0";
+        base = "0.25.0";
         unstable = true;
       };
 
@@ -230,6 +228,7 @@
           (stableLibs)
           attn-kernels-xe-2
           gdn-attn-kernels-xe-2
+          mhc-kernels-xe-2
           mqa-logits-kernels-xe-2
           grouped-gemm-xe-2
           grouped-gemm-xe-default
@@ -258,7 +257,12 @@
       };
 
       devShells = import ./nix/devshells.nix {
-        inherit pkgs syclToolchainShellHook stableLibs vllm-xpu lint torch-xpu triton-xpu vllm-xpu-kernels;
+        inherit pkgs syclToolchainShellHook lint torch-xpu triton-xpu;
+        # Dev shells track the unstable (fork) variant — the one actually
+        # deployed — so `nix develop` never realizes the stable closure.
+        kernelLibs = unstableLibs;
+        vllmPkg = vllm-xpu-unstable;
+        vllmKernels = vllm-xpu-kernels-unstable;
       };
     });
   in

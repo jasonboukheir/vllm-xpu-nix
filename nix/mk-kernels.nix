@@ -1,9 +1,9 @@
 # Kernel-build factories for vllm-xpu-kernels. Returns:
-#   - mkKernelLibs: the five per-feature kernel *lib* derivations
-#     (attn / gdn-attn / mqa-logits / grouped-gemm xe-2 / xe-default)
-#   - mkVllmXpuKernels: the python package wiring those libs together,
-#     with withAotDevices / withJIT / withAOT / withCcache /
-#     withKernelConfig passthrus
+#   - mkKernelLibs: the six per-feature kernel *lib* derivations
+#     (attn / gdn-attn / mqa-logits / mhc / grouped-gemm xe-2 / xe-default)
+#   - mkVllmXpuKernels: the python package wiring those libs together;
+#     makeOverridable, so consumers tune it via
+#     `.override { aotDevices = [...]; kernelConfig = {...}; useCcache = ...; }`
 {
   pkgs,
   intel-oneapi,
@@ -59,6 +59,7 @@
     "-DMOE_KERNELS_ENABLED=OFF"
     "-DGDN_KERNELS_ENABLED=OFF"
     "-DMQA_LOGITS_KERNELS_ENABLED=OFF"
+    "-DMHC_KERNELS_ENABLED=OFF"
     "-DXPU_SPECIFIC_KERNELS_ENABLED=OFF"
     "-DXPUMEM_ALLOCATOR_ENABLED=OFF"
   ];
@@ -69,6 +70,7 @@
     "-DMOE_KERNELS_ENABLED=OFF"
     "-DGDN_KERNELS_ENABLED=ON"
     "-DMQA_LOGITS_KERNELS_ENABLED=OFF"
+    "-DMHC_KERNELS_ENABLED=OFF"
     "-DXPU_SPECIFIC_KERNELS_ENABLED=OFF"
     "-DXPUMEM_ALLOCATOR_ENABLED=OFF"
   ];
@@ -79,6 +81,18 @@
     "-DMOE_KERNELS_ENABLED=OFF"
     "-DGDN_KERNELS_ENABLED=OFF"
     "-DMQA_LOGITS_KERNELS_ENABLED=ON"
+    "-DMHC_KERNELS_ENABLED=OFF"
+    "-DXPU_SPECIFIC_KERNELS_ENABLED=OFF"
+    "-DXPUMEM_ALLOCATOR_ENABLED=OFF"
+  ];
+  mhcFlags = [
+    "-DVLLM_XPU_ENABLE_XE_DEFAULT=OFF"
+    "-DBASIC_KERNELS_ENABLED=OFF"
+    "-DFA2_KERNELS_ENABLED=OFF"
+    "-DMOE_KERNELS_ENABLED=OFF"
+    "-DGDN_KERNELS_ENABLED=OFF"
+    "-DMQA_LOGITS_KERNELS_ENABLED=OFF"
+    "-DMHC_KERNELS_ENABLED=ON"
     "-DXPU_SPECIFIC_KERNELS_ENABLED=OFF"
     "-DXPUMEM_ALLOCATOR_ENABLED=OFF"
   ];
@@ -89,6 +103,7 @@
     "-DMOE_KERNELS_ENABLED=ON"
     "-DGDN_KERNELS_ENABLED=OFF"
     "-DMQA_LOGITS_KERNELS_ENABLED=OFF"
+    "-DMHC_KERNELS_ENABLED=OFF"
     "-DXPU_SPECIFIC_KERNELS_ENABLED=OFF"
     "-DXPUMEM_ALLOCATOR_ENABLED=OFF"
   ];
@@ -100,6 +115,7 @@
     "-DMOE_KERNELS_ENABLED=ON"
     "-DGDN_KERNELS_ENABLED=OFF"
     "-DMQA_LOGITS_KERNELS_ENABLED=OFF"
+    "-DMHC_KERNELS_ENABLED=OFF"
     "-DXPU_SPECIFIC_KERNELS_ENABLED=OFF"
     "-DXPUMEM_ALLOCATOR_ENABLED=OFF"
   ];
@@ -128,6 +144,10 @@
       libName = "mqa_logits_kernels_xe_2";
       featureFlags = mqaLogitsFlags;
     };
+    mhc-kernels-xe-2 = mkLib {
+      libName = "mhc_kernels_xe_2";
+      featureFlags = mhcFlags;
+    };
     grouped-gemm-xe-2 = mkLib {
       libName = "grouped_gemm_xe_2";
       featureFlags = groupedGemmXe2Flags;
@@ -138,87 +158,59 @@
     };
   };
 
-  # `withAotDevices` / `withJIT` / `withAOT` re-derive the closure with a
-  # different SYCL AOT target list. The default is JIT: kernels ship as
-  # SPIR-V and IGC specializes them at first dispatch (the 256-GRF hint is
-  # preserved via patches/0006-decouple-256grf-from-aot.patch so JIT codegen
-  # matches AOT codegen quality, only the first-dispatch pause differs).
-  # `withAOT` is a shortcut for `withAotDevices [ "bmg" ]` — Battlemage
-  # being the target this project is tuned for. `withAotDevices [ ... ]` for
-  # any other explicit list.
-  mkVllmXpuKernels = {
+  # Overridable via the standard nixpkgs `.override` mechanism:
+  #
+  #   vllm-xpu-kernels.override {
+  #     aotDevices = [ "bmg" ];
+  #     kernelConfig = {
+  #       chunkPrefill = "chunk_prefill_default";
+  #       chunkPrefillExtra = [ "256,true,true,false,false,false" ];
+  #       pagedDecode = "paged_decode_default";
+  #       pagedDecodeExtra = [ "8,256,64,true,false,false" ];
+  #     };
+  #   }
+  #
+  # `aotDevices` sets the SYCL AOT target list; the default [] is JIT:
+  # kernels ship as SPIR-V and IGC specializes them at first dispatch (the
+  # 256-GRF hint is preserved via patches/0006-decouple-256grf-from-aot.patch
+  # so JIT codegen matches AOT codegen quality, only the first-dispatch
+  # pause differs). `[ "bmg" ]` is the Battlemage target this project is
+  # tuned for.
+  #
+  # `kernelConfig` is the partial-buildout selector (upstream #324): compile
+  # only the attn-kernel variants a deployment dispatches to. Pass preset
+  # names, plus optional extra config lines appended to that preset at build
+  # time (no fork needed). Omit a field to keep the full sweep for that
+  # stage.
+  mkVllmXpuKernels = pkgs.lib.makeOverridable ({
     src,
     version,
     aotDevices ? [],
     useCcache ? true,
-    kernelChunkPrefillConfig ? null,
-    kernelPagedDecodeConfig ? null,
-    kernelChunkPrefillExtra ? [],
-    kernelPagedDecodeExtra ? [],
+    kernelConfig ? {},
   }: let
-    kernelCfg = {inherit kernelChunkPrefillConfig kernelPagedDecodeConfig kernelChunkPrefillExtra kernelPagedDecodeExtra;};
+    cfg = {
+      chunkPrefill = null;
+      pagedDecode = null;
+      chunkPrefillExtra = [];
+      pagedDecodeExtra = [];
+    } // kernelConfig;
+    kernelCfg = {
+      kernelChunkPrefillConfig = cfg.chunkPrefill;
+      kernelPagedDecodeConfig = cfg.pagedDecode;
+      kernelChunkPrefillExtra = cfg.chunkPrefillExtra;
+      kernelPagedDecodeExtra = cfg.pagedDecodeExtra;
+    };
     libs = mkKernelLibs ({inherit src version aotDevices useCcache;} // kernelCfg);
-    base = pkgs.callPackage ./vllm-xpu-kernels.nix ({
+  in
+    pkgs.callPackage ./vllm-xpu-kernels.nix ({
         intel-oneapi-base = intel-oneapi;
         inherit intel-pti torch-xpu useCcache;
         python3Packages = pkgs.python312Packages;
         inherit src version aotDevices;
         inherit cutlass-src onednn-src;
       }
-      // libs);
-  in
-    base.overrideAttrs (old: {
-      passthru =
-        (old.passthru or {})
-        // {
-          withAotDevices = ds:
-            mkVllmXpuKernels ({
-                inherit src version useCcache;
-                aotDevices = ds;
-              }
-              // kernelCfg);
-          withJIT = mkVllmXpuKernels ({
-              inherit src version useCcache;
-              aotDevices = [];
-            }
-            // kernelCfg);
-          withAOT = mkVllmXpuKernels ({
-              inherit src version useCcache;
-              aotDevices = ["bmg"];
-            }
-            // kernelCfg);
-          withCcache = b:
-            mkVllmXpuKernels ({
-                inherit src version aotDevices;
-                useCcache = b;
-              }
-              // kernelCfg);
-          # Partial-buildout selector (upstream #324): compile only the
-          # attn-kernel variants a deployment dispatches to. Pass preset
-          # names, plus optional extra config lines appended to that
-          # preset at build time (no fork needed), e.g.
-          #   .withKernelConfig {
-          #     chunkPrefill = "chunk_prefill_default";
-          #     chunkPrefillExtra = [ "256,true,true,false,false,false" ];
-          #     pagedDecode = "paged_decode_default";
-          #     pagedDecodeExtra = [ "8,256,64,true,false,false" ];
-          #   }
-          # Omit a field to keep the full sweep for that stage.
-          withKernelConfig = {
-            chunkPrefill ? null,
-            pagedDecode ? null,
-            chunkPrefillExtra ? [],
-            pagedDecodeExtra ? [],
-          }:
-            mkVllmXpuKernels {
-              inherit src version aotDevices useCcache;
-              kernelChunkPrefillConfig = chunkPrefill;
-              kernelPagedDecodeConfig = pagedDecode;
-              kernelChunkPrefillExtra = chunkPrefillExtra;
-              kernelPagedDecodeExtra = pagedDecodeExtra;
-            };
-        };
-    });
+      // libs));
 in {
   inherit mkKernelLibs mkVllmXpuKernels;
 }

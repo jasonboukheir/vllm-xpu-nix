@@ -23,6 +23,7 @@
   attn-kernels-xe-2,
   gdn-attn-kernels-xe-2,
   mqa-logits-kernels-xe-2,
+  mhc-kernels-xe-2,
   grouped-gemm-xe-2,
   grouped-gemm-xe-default,
   # SYCL AOT target list. Exported as VLLM_XPU_AOT_DEVICES /
@@ -97,6 +98,7 @@ python3Packages.buildPythonPackage ({
     attn-kernels-xe-2
     gdn-attn-kernels-xe-2
     mqa-logits-kernels-xe-2
+    mhc-kernels-xe-2
     grouped-gemm-xe-2
     grouped-gemm-xe-default
   ];
@@ -153,6 +155,7 @@ python3Packages.buildPythonPackage ({
     export VLLM_XPU_PREBUILT_ATTN_KERNELS_XE_2_LIB=${attn-kernels-xe-2}/lib/libattn_kernels_xe_2.so
     export VLLM_XPU_PREBUILT_GDN_ATTN_KERNELS_XE_2_LIB=${gdn-attn-kernels-xe-2}/lib/libgdn_attn_kernels_xe_2.so
     export VLLM_XPU_PREBUILT_MQA_LOGITS_KERNELS_XE_2_LIB=${mqa-logits-kernels-xe-2}/lib/libmqa_logits_kernels_xe_2.so
+    export VLLM_XPU_PREBUILT_MHC_KERNELS_XE_2_LIB=${mhc-kernels-xe-2}/lib/libmhc_kernels_xe_2.so
     export VLLM_XPU_PREBUILT_GROUPED_GEMM_XE_2_LIB=${grouped-gemm-xe-2}/lib/libgrouped_gemm_xe_2.so
     export VLLM_XPU_PREBUILT_GROUPED_GEMM_XE_DEFAULT_LIB=${grouped-gemm-xe-default}/lib/libgrouped_gemm_xe_default.so
 

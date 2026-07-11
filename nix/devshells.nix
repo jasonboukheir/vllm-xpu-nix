@@ -1,18 +1,24 @@
 # Dev shells: the default tooling shell plus the kernels-dev / vllm-dev
 # in-tree development environments.
 #
+# Variant-neutral args: the flake wires in whichever vllm/kernels variant
+# development targets (currently the unstable fork — the deployed one), via
+#   vllmPkg     - the vllm-xpu python package (closure for vllm-dev)
+#   vllmKernels - the matching vllm-xpu-kernels python package
+#   kernelLibs  - the mkKernelLibs set for the same kernels src
+#
 # Note: `git` is deliberately not in any shell's `packages`. Consumers'
 # ambient git (e.g. a wrapper that sets user config) stays on PATH instead
 # of being shadowed by a nixpkgs git.
 {
   pkgs,
   syclToolchainShellHook,
-  stableLibs,
-  vllm-xpu,
+  kernelLibs,
+  vllmPkg,
   lint,
   torch-xpu,
   triton-xpu,
-  vllm-xpu-kernels,
+  vllmKernels,
 }: {
   default = pkgs.mkShell {
     name = "vllm-xpu-nix-dev";
@@ -50,6 +56,10 @@
         lint                       # defaults to ../vllm and ../vllm-xpu-kernels
         lint /path/to/vllm /path/to/vllm-xpu-kernels
 
+      The kernels-dev / vllm-dev shells below are wired to the *unstable*
+      (fork) variant — the one actually deployed — so entering them never
+      builds the stable closure.
+
       Develop the kernels (editable install, edit/build/test in tree):
         cd /path/to/vllm-xpu-kernels
         nix develop /path/to/vllm-xpu-nix#kernels-dev
@@ -69,12 +79,12 @@
     name = "vllm-xpu-kernels-dev";
     # inputsFrom a kernel-*lib* derivation, not the python package: the
     # package's buildInputs list the five prebuilt kernel .so closures
-    # (attn-kernels-xe-2 etc.), so inputsFrom = [ vllm-xpu-kernels ] would
+    # (attn-kernels-xe-2 etc.), so inputsFrom = [ vllmKernels ] would
     # realize them — a ~600-TU FA2 compile on a cache miss. A lib deriv is
     # built *with* the same toolchain but has no prebuilt-lib deps, so this
     # gives the identical compiler/cutlass/oneDNN/torch-xpu env with the
     # whole closure already cached (a kernel dev rebuilds the libs in-tree).
-    inputsFrom = [stableLibs.gdn-attn-kernels-xe-2];
+    inputsFrom = [kernelLibs.gdn-attn-kernels-xe-2];
     packages = with pkgs;
       [
         cmake
@@ -138,8 +148,9 @@
         cat <<'EOF'
         vllm-xpu-nix kernels-dev shell.
 
-        Toolchain + the full vllm-xpu-kernels closure (torch-xpu, triton-xpu,
-        oneAPI MKL/SYCL, cutlass src) wired up. MAX_JOBS=2 by default — each
+        Toolchain + the full vllm-xpu-kernels (unstable fork) closure
+        (torch-xpu, triton-xpu, oneAPI MKL/SYCL, cutlass src) wired up.
+        MAX_JOBS=2 by default — each
         SYCL-TLA template instantiation holds ~40 GiB during icpx, raise with
         care.
 
@@ -166,17 +177,18 @@
 
   vllm-dev = pkgs.mkShell {
     name = "vllm-xpu-vllm-dev";
-    inputsFrom = [vllm-xpu];
-    packages = with pkgs.python312Packages; [
-      pip
-      setuptools
-      wheel
-      packaging
-      jinja2
-      torch-xpu
-      triton-xpu
-      vllm-xpu-kernels
-    ];
+    inputsFrom = [vllmPkg];
+    packages = with pkgs.python312Packages;
+      [
+        pip
+        setuptools
+        wheel
+        packaging
+        jinja2
+        torch-xpu
+        triton-xpu
+      ]
+      ++ [vllmKernels];
     shellHook =
       syclToolchainShellHook
       + ''
@@ -193,8 +205,9 @@
         cat <<'EOF'
         vllm-xpu-nix vllm-dev shell.
 
-        Toolchain + full vllm-xpu closure (torch-xpu, triton-xpu, vllm-xpu-
-        kernels, runtime python deps) wired up. VLLM_TARGET_DEVICE=xpu and
+        Toolchain + full vllm-xpu (unstable fork) closure (torch-xpu,
+        triton-xpu, vllm-xpu-kernels, runtime python deps) wired up.
+        VLLM_TARGET_DEVICE=xpu and
         BMG single-card oneCCL env are pre-set.
 
         Editable install:

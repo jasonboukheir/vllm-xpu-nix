@@ -14,7 +14,7 @@
 
 python3Packages.buildPythonPackage rec {
   pname = "torch";
-  # 2026-05-28 XPU nightly: linked against the oneAPI 2026.0 ABI
+  # 2026-05-24 XPU nightly: linked against the oneAPI 2026.0 ABI
   # (libsycl.so.9, libmkl_*.so.3 / libmkl_sycl_*.so.6, oneccl 2022.0.0).
   # Stable 2.11 / 2.12 GA wheels still link the 2025.x ABI (libsycl.so.8 +
   # libmkl_*.so.2 / .so.5) so cannot be patchelfed against the unified

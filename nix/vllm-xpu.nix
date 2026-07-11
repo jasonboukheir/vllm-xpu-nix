@@ -20,8 +20,7 @@
   # torchvision is only loaded by VL architectures (e.g. Qwen3.5/3.6's qwen3_vl
   # sibling, transformers' Qwen2VLImageProcessor); plain text models don't need
   # it. Default off to keep the closure lean — opt in with
-  # `vllm-xpu.override { withTorchvision = true; }` or `vllm-xpu.withTorchvision`
-  # passthru when serving VL models.
+  # `vllm-xpu.override { withTorchvision = true; }` when serving VL models.
   withTorchvision ? false,
   # Audio decoders for /v1/audio/transcriptions and any model that calls
   # vllm/multimodal/media/audio.py:load_audio (Whisper, Qwen2-Audio, Voxtral).
@@ -79,15 +78,14 @@ let
     einops
     fastapi
     filelock
-    gguf
     ijson
     jinja2
+    jsonschema
     lark
     llguidance
     lm-format-enforcer
     mcp
     mistral-common
-    pycountry
     model-hosting-container-standards
     msgspec
     numba
@@ -98,6 +96,7 @@ let
     opentelemetry-api
     opentelemetry-exporter-otlp
     opentelemetry-sdk
+    opentelemetry-semantic-conventions-ai
     outlines-core
     partial-json-parser
     pillow
@@ -114,6 +113,7 @@ let
     ray
     regex
     requests
+    safetensors
     sentencepiece
     setproctitle
     six
@@ -238,14 +238,24 @@ python3Packages.buildPythonPackage {
       --replace-fail 'setuptools>=77.0.3,<81.0.0' 'setuptools' \
       --replace-fail '"setuptools-rust>=1.9.0",' ""
 
-    # Strip the wheel-URL pin and the torch+xpu local-version pin from
-    # xpu.txt. vllm_xpu_kernels and torch are nix-provided. torchvision is
-    # gated on the `withTorchvision` toggle; torchaudio was dropped (no
+    # Strip the wheel-URL pin and the torch version pin from xpu.txt.
+    # vllm_xpu_kernels and torch are nix-provided. torchvision is gated on
+    # the `withTorchvision` toggle; torchaudio was dropped (no
     # torch-2.12-compatible +xpu wheel published) so strip it unconditionally.
-    sed -i -E 's/^torch==[0-9.]+\+xpu/torch/' requirements/xpu.txt
+    # The `+xpu` local-version suffix is optional: upstream now pins plain
+    # `torch==2.12.0`, but keep matching the older `torch==X.Y.Z+xpu` form
+    # so a future re-suffix does not silently no-op.
+    sed -i -E 's/^torch==[0-9.]+(\+xpu)?/torch/' requirements/xpu.txt
     substituteInPlace requirements/xpu.txt \
       --replace-fail 'torchaudio' '# torchaudio (no torch-2.12 +xpu wheel published)' \
       --replace-fail 'torchvision' '# torchvision (opt-in via withTorchvision)'
+    # torchcodec: not packaged for XPU in nixpkgs; only needed for the
+    # torchcodec video-decoding backend, so strip the requirement.
+    # auto_round_lib: not packaged in nixpkgs; auto-round quantized models
+    # are unsupported here, so strip the requirement.
+    substituteInPlace requirements/xpu.txt \
+      --replace-fail 'torchcodec >= 0.14' '# torchcodec (not packaged for XPU in nixpkgs)' \
+      --replace-fail 'auto_round_lib>=0.14.0' '# auto_round_lib (not packaged in nixpkgs)'
     sed -i '/^vllm_xpu_kernels @ /d' requirements/xpu.txt
 
     # Strip the Rust frontend (PR #40848: vllm-rs). setuptools-rust would

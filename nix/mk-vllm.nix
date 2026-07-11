@@ -5,13 +5,18 @@
 # setuptools-scm's PRETEND_VERSION, so setuptools-scm doesn't need a .git in
 # the unpacked store path.
 #
-# Like mkVllmXpuKernels, the result exposes `withAotDevices` / `withJIT` /
-# `withAOT` passthrus that cascade through the kernels package. Also exposes
-# `withTorchvision` and `withAudio` passthrus so consumers can opt into the
-# +xpu torchvision wheel (for VL model families) or soundfile+pyav audio
-# decoders (for /v1/audio transcription endpoints) without spelling out a
-# full `.override`. All passthrus compose:
-# `pkgs.vllm-xpu-unstable.withAOT |> .withTorchvision true |> .withAudio true`.
+# The result is makeOverridable, so consumers tune it with the standard
+# nixpkgs `.override` mechanism — all flags compose in one call:
+#
+#   pkgs.vllm-xpu-unstable.override {
+#     withTorchvision = true;      # +xpu torchvision wheel (VL model families)
+#     withAudio = true;            # soundfile+pyav (/v1/audio transcription)
+#     aotDevices = [ "bmg" ];      # SYCL AOT targets for the paired kernels
+#     kernelConfig = { ... };      # narrowed attn-kernel set, see mk-kernels.nix
+#   }
+#
+# `aotDevices` / `kernelConfig` cascade into the paired kernels package via
+# its own `.override`; null (the default) leaves the kernels' setting as-is.
 #
 # `withTorchaudio` is intentionally not exposed: no consumer in this
 # project's stack needs torchaudio, so we don't carry the extra +xpu wheel
@@ -25,69 +30,31 @@
   flash-linear-attention,
   python3Packages,
 }: let
-  mkVllm = {
+  inherit (pkgs) lib;
+  mkVllm = lib.makeOverridable ({
     src,
     version,
     kernels,
     withTorchvision ? false,
     withAudio ? false,
+    aotDevices ? null,
+    kernelConfig ? null,
   }: let
-    base = pkgs.callPackage ./vllm-xpu.nix {
+    kernelOverrides =
+      lib.optionalAttrs (aotDevices != null) {inherit aotDevices;}
+      // lib.optionalAttrs (kernelConfig != null) {inherit kernelConfig;};
+    kernels' =
+      if kernelOverrides != {} && kernels ? override
+      then kernels.override kernelOverrides
+      else kernels;
+  in
+    pkgs.callPackage ./vllm-xpu.nix {
       intel-oneapi-base = intel-oneapi;
       inherit intel-pti torch-xpu triton-xpu flash-linear-attention;
       inherit python3Packages;
-      vllm-xpu-kernels = kernels;
+      vllm-xpu-kernels = kernels';
       inherit src version withTorchvision withAudio;
       inherit (pkgs) level-zero intel-graphics-compiler intel-compute-runtime;
-    };
-  in
-    base.overrideAttrs (old: {
-      passthru =
-        (old.passthru or {})
-        // {
-          withAotDevices = ds:
-            mkVllm {
-              inherit src version withTorchvision withAudio;
-              kernels =
-                if kernels ? withAotDevices
-                then kernels.withAotDevices ds
-                else kernels;
-            };
-          withJIT = mkVllm {
-            inherit src version withTorchvision withAudio;
-            kernels =
-              if kernels ? withJIT
-              then kernels.withJIT
-              else kernels;
-          };
-          withAOT = mkVllm {
-            inherit src version withTorchvision withAudio;
-            kernels =
-              if kernels ? withAOT
-              then kernels.withAOT
-              else kernels;
-          };
-          withTorchvision = b:
-            mkVllm {
-              inherit src version kernels withAudio;
-              withTorchvision = b;
-            };
-          withAudio = b:
-            mkVllm {
-              inherit src version kernels withTorchvision;
-              withAudio = b;
-            };
-          # Rebuild the paired kernels package against a narrowed attn-kernel
-          # set. See mkVllmXpuKernels.withKernelConfig.
-          withKernelConfig = cfg:
-            mkVllm {
-              inherit src version withTorchvision withAudio;
-              kernels =
-                if kernels ? withKernelConfig
-                then kernels.withKernelConfig cfg
-                else kernels;
-            };
-        };
     });
 in
   mkVllm

@@ -258,6 +258,29 @@ python3Packages.buildPythonPackage {
       --replace-fail 'auto_round_lib>=0.14.0' '# auto_round_lib (not packaged in nixpkgs)'
     sed -i '/^vllm_xpu_kernels @ /d' requirements/xpu.txt
 
+    # vllm-xpu-kernels PR #446 (in both release/v0.1.11 and main) moved
+    # weight-dtype classification into XpuFusedMoe.__init__ itself
+    # (_get_weights_dtype infers fp8/int4/mxfp4/mxfp8/block-fp8 from the
+    # w13/w13_scales dtypes) and removed the boolean kwargs from its
+    # signature. Upstream vLLM still passes them because its
+    # requirements/xpu.txt pins the pre-break v0.1.10.1 wheel, so against
+    # the kernels built here every MoE model dies at engine startup with
+    # `TypeError: XpuFusedMoe.__init__() got an unexpected keyword argument
+    # 'is_fp8'`. Dropping the kwargs is behavior-preserving: the XPU WNA16
+    # path stores int4 weights as uint8 and the fp8 paths use float8
+    # dtypes, exactly what _get_weights_dtype keys on. --replace-fail makes
+    # this substitution error out once upstream vLLM adapts the call site,
+    # so the workaround can't linger silently.
+    # TODO: drop when vLLM bumps its vllm_xpu_kernels pin past v0.1.10.1
+    # and updates the XpuFusedMoe construction to match
+    # https://github.com/vllm-project/vllm-xpu-kernels/pull/446.
+    substituteInPlace vllm/model_executor/layers/fused_moe/experts/xpu_moe.py \
+      --replace-fail 'is_fp8=self.is_fp8,' "" \
+      --replace-fail 'is_int4=self.is_int4,' "" \
+      --replace-fail 'is_mxfp4=self.is_mxfp4,' "" \
+      --replace-fail 'is_mxfp8=self.is_mxfp8,' "" \
+      --replace-fail 'is_block_fp8=self.is_block_fp8,' ""
+
     # Strip the Rust frontend (PR #40848: vllm-rs). setuptools-rust would
     # demand rustPlatform.cargoSetupHook with a vendored Cargo.lock; the Rust
     # CLI is unused by the Python inference API, so neutralize the imports +

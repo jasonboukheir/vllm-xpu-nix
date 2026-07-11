@@ -96,6 +96,18 @@ python3Packages.buildPythonPackage rec {
     metadata="$out/${python3Packages.python.sitePackages}/torch-${version}.dist-info/METADATA"
     if [ -f "$metadata" ]; then
       sed -i -E '/^Requires-Dist: (intel-cmplr-lib-rt|intel-cmplr-lib-ur|intel-cmplr-lic-rt|intel-sycl-rt|oneccl|oneccl-devel|impi-rt|onemkl-license|onemkl-sycl-blas|onemkl-sycl-dft|onemkl-sycl-lapack|onemkl-sycl-rng|onemkl-sycl-sparse|intel-opencl-rt|intel-openmp|intel-pti|mkl|dpcpp-cpp-rt|tcmlib|umf|tbb|triton-xpu)([^A-Za-z]|$)/d' "$metadata"
+      # The wheel bounds `setuptools<82` (added preemptively for the
+      # pkg_resources removal in setuptools 82) but the pinned nixpkgs ships
+      # 82.x; pypa build's --no-isolation dependency check in downstream
+      # builds (vllm-xpu-kernels, vllm-xpu) validates transitive
+      # requirements and refuses the env over it. Upstream already removed
+      # the bound — torch.utils.cpp_extension never used pkg_resources
+      # (https://github.com/pytorch/pytorch/pull/187262) — the pinned
+      # nightly just predates that. Done via sed because
+      # pythonRelaxDepsHook mishandles the wheel's +xpu local version when
+      # locating the dist-info directory.
+      # TODO: drop when the pinned nightly moves past pytorch#187262
+      sed -i 's/^Requires-Dist: setuptools<82$/Requires-Dist: setuptools/' "$metadata"
     fi
   '';
 

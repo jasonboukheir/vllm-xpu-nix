@@ -53,6 +53,7 @@
       pkgs = import nixpkgs {
         inherit system;
         config.allowUnfree = true;
+        overlays = [(import ./nix/inline-snapshot-black26-overlay.nix)];
       };
 
       # ---- source narrowing + version stamping ----

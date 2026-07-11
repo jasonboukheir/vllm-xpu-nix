@@ -1,6 +1,8 @@
-# Workarounds for python-package tests that fail against this flake's pinned
-# nixpkgs. These packages are only in vllm's graph as (transitive) check
-# dependencies; each entry documents why it fails and when to drop it.
+# Workarounds for python packages that fail to build against this flake's
+# pinned nixpkgs — flaky/stale tests or stale dependency bounds that the
+# newer nixpkgs package set trips. Each entry documents why it fails and
+# when to drop it. This mirrors what nixpkgs' own vllm package does
+# wholesale with `pythonRelaxDeps = true`.
 _final: prev: {
   pythonPackagesExtensions =
     (prev.pythonPackagesExtensions or [])
@@ -37,6 +39,17 @@ _final: prev: {
                 --replace-fail "def test_crafted_xml_performance" \
                                "def skipped_flaky_test_crafted_xml_performance"
             '';
+        });
+
+        # mistral-common (runtime dep of vllm) bounds numpy<2.4 on
+        # python<=3.12 — the bound is python-version-scoped legacy caution,
+        # already unbounded on 3.13+ — while the pinned nixpkgs ships numpy
+        # 2.5, so pythonRuntimeDepsCheckHook refuses the wheel. vllm
+        # upstream requires mistral_common with unbounded numpy.
+        # TODO: drop when mistral-common lifts the <=3.12 numpy bound
+        # (https://github.com/mistralai/mistral-common/blob/main/pyproject.toml)
+        mistral-common = pyPrev.mistral-common.overridePythonAttrs (old: {
+          pythonRelaxDeps = (old.pythonRelaxDeps or []) ++ ["numpy"];
         });
       })
     ];

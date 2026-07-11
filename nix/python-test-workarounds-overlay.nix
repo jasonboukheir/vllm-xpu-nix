@@ -41,15 +41,24 @@ _final: prev: {
             '';
         });
 
-        # mistral-common (runtime dep of vllm) bounds numpy<2.4 on
-        # python<=3.12 — the bound is python-version-scoped legacy caution,
-        # already unbounded on 3.13+ — while the pinned nixpkgs ships numpy
-        # 2.5, so pythonRuntimeDepsCheckHook refuses the wheel. vllm
-        # upstream requires mistral_common with unbounded numpy.
-        # TODO: drop when mistral-common lifts the <=3.12 numpy bound
+        # mistral-common (runtime dep of vllm) needs two repairs:
+        # 1. It bounds numpy<2.4 on python<=3.12 — python-version-scoped
+        #    legacy caution, already unbounded on 3.13+ — while the pinned
+        #    nixpkgs ships numpy 2.5, so pythonRuntimeDepsCheckHook refuses
+        #    the wheel. vllm upstream requires mistral_common with
+        #    unbounded numpy.
+        # 2. Upstream hard-depends on pydantic-extra-types[pycountry], but
+        #    nixpkgs packages it with plain pydantic-extra-types, dropping
+        #    the extra; importing mistral_common.protocol.instruct.validator
+        #    (which transformers' MistralCommonBackend does at vllm startup)
+        #    then dies in pydantic_extra_types.language_code with
+        #    "requires pycountry". The hook can't catch missing extras.
+        # TODO: drop 1. when mistral-common lifts the <=3.12 numpy bound and
+        # 2. when nixpkgs adds the pycountry extra
         # (https://github.com/mistralai/mistral-common/blob/main/pyproject.toml)
         mistral-common = pyPrev.mistral-common.overridePythonAttrs (old: {
           pythonRelaxDeps = (old.pythonRelaxDeps or []) ++ ["numpy"];
+          dependencies = (old.dependencies or []) ++ [pyPrev.pycountry];
         });
       })
     ];

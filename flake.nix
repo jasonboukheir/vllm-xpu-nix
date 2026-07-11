@@ -53,7 +53,7 @@
       pkgs = import nixpkgs {
         inherit system;
         config.allowUnfree = true;
-        overlays = [(import ./nix/inline-snapshot-black26-overlay.nix)];
+        overlays = [(import ./nix/python-test-workarounds-overlay.nix)];
       };
 
       # ---- source narrowing + version stamping ----

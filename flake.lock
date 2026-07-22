@@ -20,17 +20,17 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1783522502,
-        "narHash": "sha256-iffAls3iaNTyJC2faYcUXSI+Gp02cDjYl+MygxKl2GI=",
+        "lastModified": 1784497964,
+        "narHash": "sha256-vlHUuqAcbcH2RKmHbPiuQzbv1pnzzavXnI62RD0bqCU=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "0bb7ec54c8483066ec9d7720e780a5caa71f8612",
+        "rev": "241313f4e8e508cb9b13278c2b0fa25b9ca27163",
         "type": "github"
       },
       "original": {
         "owner": "NixOS",
-        "ref": "nixos-unstable",
         "repo": "nixpkgs",
+        "rev": "241313f4e8e508cb9b13278c2b0fa25b9ca27163",
         "type": "github"
       }
     },
@@ -117,11 +117,11 @@
     "vllm-xpu-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1783626201,
-        "narHash": "sha256-uP68coSWPXlxOswNYcMS1LGdCdwB8h3W2kUPuNi/gfw=",
+        "lastModified": 1783765504,
+        "narHash": "sha256-ynETIrqTCkB/oGVLLD9UeKuaV7oYl+neP26b/YJMcxg=",
         "ref": "refs/heads/releases/v0.25.0",
-        "rev": "dd10e03f95f94edbea1975c67ace3a35ec9a8a40",
-        "revCount": 18493,
+        "rev": "702f4814fe54fabff350d43cb753ae3e47c0c276",
+        "revCount": 18494,
         "type": "git",
         "url": "https://github.com/vllm-project/vllm.git"
       },

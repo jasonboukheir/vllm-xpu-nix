@@ -2,7 +2,13 @@
   description = "Nix-native Intel XPU substrate for vLLM (torch+xpu, triton-xpu, vllm-xpu-kernels, vllm)";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    # Keep the entire XPU build substrate reproducible for downstream users.
+    # A revision in flake.lock alone can be refreshed by a consumer's broad
+    # `nix flake update`, even when the vllm-xpu-nix source input itself does
+    # not move. Pinning the revision in the input URL makes nixpkgs updates an
+    # explicit change in this repository, preventing surprise torch rebuilds.
+    nixpkgs.url =
+      "github:NixOS/nixpkgs/241313f4e8e508cb9b13278c2b0fa25b9ca27163";
     flake-utils.url = "github:numtide/flake-utils";
 
     vllm-xpu-kernels-src = {

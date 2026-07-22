@@ -45,6 +45,9 @@
   # config line; requires the matching kernel*Config to name a preset.
   kernelChunkPrefillExtra ? [ ],
   kernelPagedDecodeExtra ? [ ],
+  # Derivations that must finish before this memory-heavy SYCL build starts.
+  # They order the daemon's fan-out and need not be runtime dependencies.
+  buildDependencies ? [ ],
 }:
 
 let
@@ -131,7 +134,7 @@ stdenv.mkDerivation ({
     git
     autoPatchelfHook
     which
-  ] ++ lib.optional useCcache ccache;
+  ] ++ lib.optional useCcache ccache ++ buildDependencies;
 
   buildInputs = [
     stdenv.cc.cc.lib

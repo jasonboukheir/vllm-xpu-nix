@@ -46,8 +46,9 @@
     {
       libName,
       featureFlags ? [],
+      buildDependencies ? [],
     }:
-      factory {inherit libName featureFlags aotDevices useCcache kernelChunkPrefillConfig kernelPagedDecodeConfig kernelChunkPrefillExtra kernelPagedDecodeExtra;};
+      factory {inherit libName featureFlags aotDevices useCcache kernelChunkPrefillConfig kernelPagedDecodeConfig kernelChunkPrefillExtra kernelPagedDecodeExtra buildDependencies;};
 
   # Per-lib feature flag matrices: enable only the chosen lib's source
   # subdir, disable all other libs and ext modules. VLLM_XPU_LIBS_ONLY
@@ -131,31 +132,45 @@
     kernelPagedDecodeExtra ? [],
   }: let
     mkLib = mkXpuLibFactory {inherit src version aotDevices useCcache kernelChunkPrefillConfig kernelPagedDecodeConfig kernelChunkPrefillExtra kernelPagedDecodeExtra;};
-  in {
-    attn-kernels-xe-2 = mkLib {
-      libName = "attn_kernels_xe_2";
-      featureFlags = attnFlags;
-    };
-    gdn-attn-kernels-xe-2 = mkLib {
+    # Each library still builds with NIX_BUILD_CORES internally. Chaining the
+    # derivations prevents the daemon from running several SYCL compiler farms
+    # at once; GDN alone peaks at tens of GiB under icpx -O3.
+    gdnAttn = mkLib {
       libName = "gdn_attn_kernels_xe_2";
       featureFlags = gdnAttnFlags;
     };
-    mqa-logits-kernels-xe-2 = mkLib {
-      libName = "mqa_logits_kernels_xe_2";
-      featureFlags = mqaLogitsFlags;
-    };
-    mhc-kernels-xe-2 = mkLib {
-      libName = "mhc_kernels_xe_2";
-      featureFlags = mhcFlags;
-    };
-    grouped-gemm-xe-2 = mkLib {
-      libName = "grouped_gemm_xe_2";
-      featureFlags = groupedGemmXe2Flags;
-    };
-    grouped-gemm-xe-default = mkLib {
+    groupedGemmXeDefault = mkLib {
       libName = "grouped_gemm_xe_default";
       featureFlags = groupedGemmXeDefaultFlags;
+      buildDependencies = [gdnAttn];
     };
+    groupedGemmXe2 = mkLib {
+      libName = "grouped_gemm_xe_2";
+      featureFlags = groupedGemmXe2Flags;
+      buildDependencies = [groupedGemmXeDefault];
+    };
+    mhc = mkLib {
+      libName = "mhc_kernels_xe_2";
+      featureFlags = mhcFlags;
+      buildDependencies = [groupedGemmXe2];
+    };
+    mqaLogits = mkLib {
+      libName = "mqa_logits_kernels_xe_2";
+      featureFlags = mqaLogitsFlags;
+      buildDependencies = [mhc];
+    };
+    attn = mkLib {
+      libName = "attn_kernels_xe_2";
+      featureFlags = attnFlags;
+      buildDependencies = [mqaLogits];
+    };
+  in {
+    gdn-attn-kernels-xe-2 = gdnAttn;
+    grouped-gemm-xe-default = groupedGemmXeDefault;
+    grouped-gemm-xe-2 = groupedGemmXe2;
+    mhc-kernels-xe-2 = mhc;
+    mqa-logits-kernels-xe-2 = mqaLogits;
+    attn-kernels-xe-2 = attn;
   };
 
   # Overridable via the standard nixpkgs `.override` mechanism:

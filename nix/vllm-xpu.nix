@@ -249,37 +249,15 @@ python3Packages.buildPythonPackage {
     substituteInPlace requirements/xpu.txt \
       --replace-fail 'torchaudio' '# torchaudio (no torch-2.12 +xpu wheel published)' \
       --replace-fail 'torchvision' '# torchvision (opt-in via withTorchvision)'
-    # torchcodec: not packaged for XPU in nixpkgs; only needed for the
-    # torchcodec video-decoding backend, so strip the requirement.
-    # auto_round_lib: not packaged in nixpkgs; auto-round quantized models
-    # are unsupported here, so strip the requirement.
-    substituteInPlace requirements/xpu.txt \
-      --replace-fail 'torchcodec >= 0.14' '# torchcodec (not packaged for XPU in nixpkgs)' \
-      --replace-fail 'auto_round_lib>=0.14.0' '# auto_round_lib (not packaged in nixpkgs)'
+    # These optional integrations are not part of the vLLM runtime closure:
+    # torchcodec is only needed by its video-decoding backend, while AutoRound
+    # is provided separately by this flake. Match the package name rather than
+    # an exact version pin so routine upstream pin bumps do not break patchPhase.
+    sed -i -E \
+      -e '/^torchcodec([[:space:]<>=!~].*)?$/d' \
+      -e '/^auto_round_lib([[:space:]<>=!~].*)?$/d' \
+      requirements/xpu.txt
     sed -i '/^vllm_xpu_kernels @ /d' requirements/xpu.txt
-
-    # vllm-xpu-kernels PR #446 (in both release/v0.1.11 and main) moved
-    # weight-dtype classification into XpuFusedMoe.__init__ itself
-    # (_get_weights_dtype infers fp8/int4/mxfp4/mxfp8/block-fp8 from the
-    # w13/w13_scales dtypes) and removed the boolean kwargs from its
-    # signature. Upstream vLLM still passes them because its
-    # requirements/xpu.txt pins the pre-break v0.1.10.1 wheel, so against
-    # the kernels built here every MoE model dies at engine startup with
-    # `TypeError: XpuFusedMoe.__init__() got an unexpected keyword argument
-    # 'is_fp8'`. Dropping the kwargs is behavior-preserving: the XPU WNA16
-    # path stores int4 weights as uint8 and the fp8 paths use float8
-    # dtypes, exactly what _get_weights_dtype keys on. --replace-fail makes
-    # this substitution error out once upstream vLLM adapts the call site,
-    # so the workaround can't linger silently.
-    # TODO: drop when vLLM bumps its vllm_xpu_kernels pin past v0.1.10.1
-    # and updates the XpuFusedMoe construction to match
-    # https://github.com/vllm-project/vllm-xpu-kernels/pull/446.
-    substituteInPlace vllm/model_executor/layers/fused_moe/experts/xpu_moe.py \
-      --replace-fail 'is_fp8=self.is_fp8,' "" \
-      --replace-fail 'is_int4=self.is_int4,' "" \
-      --replace-fail 'is_mxfp4=self.is_mxfp4,' "" \
-      --replace-fail 'is_mxfp8=self.is_mxfp8,' "" \
-      --replace-fail 'is_block_fp8=self.is_block_fp8,' ""
 
     # Strip the Rust frontend (PR #40848: vllm-rs). setuptools-rust would
     # demand rustPlatform.cargoSetupHook with a vendored Cargo.lock; the Rust

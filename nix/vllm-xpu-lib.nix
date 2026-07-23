@@ -154,8 +154,7 @@ stdenv.mkDerivation ({
 
   dontUseCmakeConfigure = false;
   cmakeBuildType = "Release";
-  enableParallelBuilding = compileJobs == null;
-  buildFlags = lib.optional (compileJobs != null) "-j${toString compileJobs}";
+  enableParallelBuilding = true;
 
   # Content-addressed: the kernel .so is mostly SYCL device-image binary
   # produced by the SYCL-TLA compile pipeline. RUNPATH does encode some
@@ -195,6 +194,12 @@ stdenv.mkDerivation ({
     # cmakeFlagsArray, not cmakeFlags: the latter is word-split without
     # recursive expansion, so $NIX_BUILD_CORES would reach icpx literal.
     cmakeFlagsArray+=("-DVLLM_XPU_SYCL_LINK_PARALLELISM=$NIX_BUILD_CORES")
+  '';
+
+  # Run after configure has captured the daemon-wide value for device linking,
+  # but before cmakeBuildHook constructs `-j$NIX_BUILD_CORES`.
+  preBuild = lib.optionalString (compileJobs != null) ''
+    export NIX_BUILD_CORES=${toString compileJobs}
   '';
 
   cmakeFlags = [

@@ -182,6 +182,13 @@ python3Packages.buildPythonPackage {
     # the nixpkgs toolkit layout already provides. --set-default leaves it
     # overridable for users pointing at a system install.
     "--set-default ONEAPI_ROOT ${intel-oneapi-base}"
+    # torch.utils.cpp_extension probes SYCL_HOME directly before falling back
+    # to the intel-sycl-rt wheel. The toolkit is already in this package's
+    # closure, so expose its compiler root explicitly and avoid a misleading
+    # "intel-sycl-rt package ... is not installed" warning at every process
+    # start. CMPLR_ROOT is the equivalent oneAPI compiler convention.
+    "--set-default SYCL_HOME ${syclHome}"
+    "--set-default CMPLR_ROOT ${syclHome}"
     # Triton's spirv_utils JIT (triton/backends/intel/driver.py:_compute_compilation_options_lazy)
     # needs the level_zero SDK at JIT-compile time, separately from ONEAPI_ROOT:
     # the intel-oneapi-base toolkit ships SYCL headers under

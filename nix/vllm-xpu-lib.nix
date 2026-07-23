@@ -48,6 +48,9 @@
   # Derivations that must finish before this memory-heavy SYCL build starts.
   # They order the daemon's fan-out and need not be runtime dependencies.
   buildDependencies ? [ ],
+  # Optional per-library compile cap. This is intentionally separate from
+  # NIX_BUILD_CORES, which still controls SYCL device-link parallelism.
+  compileJobs ? null,
 }:
 
 let
@@ -151,7 +154,8 @@ stdenv.mkDerivation ({
 
   dontUseCmakeConfigure = false;
   cmakeBuildType = "Release";
-  enableParallelBuilding = true;
+  enableParallelBuilding = compileJobs == null;
+  buildFlags = lib.optional (compileJobs != null) "-j${toString compileJobs}";
 
   # Content-addressed: the kernel .so is mostly SYCL device-image binary
   # produced by the SYCL-TLA compile pipeline. RUNPATH does encode some

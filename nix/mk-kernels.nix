@@ -47,8 +47,9 @@
       libName,
       featureFlags ? [],
       buildDependencies ? [],
+      compileJobs ? null,
     }:
-      factory {inherit libName featureFlags aotDevices useCcache kernelChunkPrefillConfig kernelPagedDecodeConfig kernelChunkPrefillExtra kernelPagedDecodeExtra buildDependencies;};
+      factory {inherit libName featureFlags aotDevices useCcache kernelChunkPrefillConfig kernelPagedDecodeConfig kernelChunkPrefillExtra kernelPagedDecodeExtra buildDependencies compileJobs;};
 
   # Per-lib feature flag matrices: enable only the chosen lib's source
   # subdir, disable all other libs and ext modules. VLLM_XPU_LIBS_ONLY
@@ -163,6 +164,10 @@
       libName = "attn_kernels_xe_2";
       featureFlags = attnFlags;
       buildDependencies = [mqaLogits];
+      # oneAPI 2026 frontends for the generated FA2 translation units are
+      # substantially heavier than the other split libraries. Keep device
+      # linking at NIX_BUILD_CORES, but bound simultaneous C++ frontends.
+      compileJobs = 12;
     };
   in {
     gdn-attn-kernels-xe-2 = gdnAttn;

@@ -5,6 +5,7 @@
   python3Packages,
   cmake,
   ninja,
+  openssl,
   which,
   runCommandLocal,
   stdenv,
@@ -221,6 +222,8 @@ python3Packages.buildPythonPackage {
     # overridable via CC=... in the unit env or shell.
     "--set-default CC ${stdenv.cc}/bin/cc"
     "--set-default CXX ${stdenv.cc}/bin/c++"
+    # Inductor invokes openssl when hashing generated compile artifacts.
+    "--prefix PATH : ${openssl}/bin"
     # ocloc shim — see `oclocSymlink` let-binding above for rationale.
     "--prefix PATH : ${oclocSymlink}/bin"
   ];

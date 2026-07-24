@@ -8,7 +8,7 @@
     # not move. Pinning the revision in the input URL makes nixpkgs updates an
     # explicit change in this repository, preventing surprise torch rebuilds.
     nixpkgs.url =
-      "github:NixOS/nixpkgs/241313f4e8e508cb9b13278c2b0fa25b9ca27163";
+      "github:NixOS/nixpkgs/e2587caef70cea85dd97d7daab492899902dbf5d";
     flake-utils.url = "github:numtide/flake-utils";
 
     vllm-xpu-kernels-src = {

@@ -1,6 +1,9 @@
-{ config, lib, pkgs, ... }:
-
-let
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}: let
   cfg = config.services.vllm-xpu;
 
   effectivePackage =
@@ -15,7 +18,7 @@ let
     CCL_LOG_LEVEL = "warn";
   };
 
-  instanceModule = { name, ... }: {
+  instanceModule = {name, ...}: {
     options = {
       enable = lib.mkEnableOption "this vLLM-XPU instance";
 
@@ -50,6 +53,17 @@ let
         example = "palmfuture/Qwen3.6-35B-A3B-GPTQ-Int4";
       };
 
+      revision = lib.mkOption {
+        type = lib.types.nullOr (lib.types.strMatching "[0-9a-fA-F]{40}");
+        default = null;
+        description = ''
+          Immutable Hugging Face commit passed through as `vllm serve
+          --revision <commit>`. The cache GC manifest records this revision.
+          Null keeps the whole model repository rooted for backward
+          compatibility.
+        '';
+      };
+
       servedName = lib.mkOption {
         type = lib.types.str;
         description = ''
@@ -62,7 +76,7 @@ let
       };
 
       runner = lib.mkOption {
-        type = lib.types.nullOr (lib.types.enum [ "generate" "pooling" "draft" ]);
+        type = lib.types.nullOr (lib.types.enum ["generate" "pooling" "draft"]);
         default = null;
         description = ''
           Pass `--runner <kind>`. `pooling` exposes `/v1/embeddings`
@@ -476,28 +490,37 @@ let
 
   enabledInstances = lib.filterAttrs (_: i: i.enable) cfg.instances;
 
-  mkServeArgs = inst: lib.concatStringsSep " " (
-    [
-      (lib.escapeShellArg inst.model)
-      "--host" (lib.escapeShellArg inst.host)
-      "--port" (toString inst.port)
-      "--served-model-name" (lib.escapeShellArg inst.servedName)
-      "--dtype" (lib.escapeShellArg inst.dtype)
-      "--gpu-memory-utilization" (toString inst.gpuMemoryUtilization)
-    ]
-    ++ lib.optionals (inst.runner != null) [ "--runner" (lib.escapeShellArg inst.runner) ]
-    ++ lib.optionals (inst.quantization != null) [ "--quantization" (lib.escapeShellArg inst.quantization) ]
-    ++ lib.optionals (inst.attentionBackend != null) [
-      "--attention-backend" (lib.escapeShellArg inst.attentionBackend)
-    ]
-    ++ lib.optionals (inst.kvCacheDtype != null) [ "--kv-cache-dtype" (lib.escapeShellArg inst.kvCacheDtype) ]
-    ++ lib.optionals (inst.maxModelLen != null) [ "--max-model-len" (toString inst.maxModelLen) ]
-    ++ lib.optionals (inst.maxNumSeqs != null) [ "--max-num-seqs" (toString inst.maxNumSeqs) ]
-    ++ lib.optionals (inst.speculativeConfig != null) [
-      "--speculative-config" (lib.escapeShellArg (builtins.toJSON inst.speculativeConfig))
-    ]
-    ++ lib.optionals inst.enforceEager [ "--enforce-eager" ]
-    ++ lib.optionals
+  mkServeArgs = inst:
+    lib.concatStringsSep " " (
+      [
+        (lib.escapeShellArg inst.model)
+        "--host"
+        (lib.escapeShellArg inst.host)
+        "--port"
+        (toString inst.port)
+        "--served-model-name"
+        (lib.escapeShellArg inst.servedName)
+        "--dtype"
+        (lib.escapeShellArg inst.dtype)
+        "--gpu-memory-utilization"
+        (toString inst.gpuMemoryUtilization)
+      ]
+      ++ lib.optionals (inst.runner != null) ["--runner" (lib.escapeShellArg inst.runner)]
+      ++ lib.optionals (inst.revision != null) ["--revision" (lib.escapeShellArg inst.revision)]
+      ++ lib.optionals (inst.quantization != null) ["--quantization" (lib.escapeShellArg inst.quantization)]
+      ++ lib.optionals (inst.attentionBackend != null) [
+        "--attention-backend"
+        (lib.escapeShellArg inst.attentionBackend)
+      ]
+      ++ lib.optionals (inst.kvCacheDtype != null) ["--kv-cache-dtype" (lib.escapeShellArg inst.kvCacheDtype)]
+      ++ lib.optionals (inst.maxModelLen != null) ["--max-model-len" (toString inst.maxModelLen)]
+      ++ lib.optionals (inst.maxNumSeqs != null) ["--max-num-seqs" (toString inst.maxNumSeqs)]
+      ++ lib.optionals (inst.speculativeConfig != null) [
+        "--speculative-config"
+        (lib.escapeShellArg (builtins.toJSON inst.speculativeConfig))
+      ]
+      ++ lib.optionals inst.enforceEager ["--enforce-eager"]
+      ++ lib.optionals
       (inst.cudagraphCaptureSizes != null || inst.cudagraphMode != null)
       [
         "--compilation-config"
@@ -510,82 +533,98 @@ let
           }
         )))
       ]
-    ++ lib.optionals (inst.reasoningParser != null) [
-      "--reasoning-parser" (lib.escapeShellArg inst.reasoningParser)
-    ]
-    ++ lib.optionals (inst.reasoningParserPlugin != null) [
-      "--reasoning-parser-plugin" (lib.escapeShellArg (toString inst.reasoningParserPlugin))
-    ]
-    ++ lib.optionals inst.enableAutoToolChoice [ "--enable-auto-tool-choice" ]
-    ++ lib.optionals (inst.toolCallParser != null) [
-      "--tool-call-parser" (lib.escapeShellArg inst.toolCallParser)
-    ]
-    ++ lib.optionals (inst.toolCallParserPlugin != null) [
-      "--tool-parser-plugin" (lib.escapeShellArg (toString inst.toolCallParserPlugin))
-    ]
-    ++ lib.optionals (inst.limitMmPerPrompt != null) [
-      "--limit-mm-per-prompt" (lib.escapeShellArg (builtins.toJSON inst.limitMmPerPrompt))
-    ]
-    ++ lib.optionals inst.languageModelOnly [ "--language-model-only" ]
-    ++ map lib.escapeShellArg inst.extraArgs
-  );
+      ++ lib.optionals (inst.reasoningParser != null) [
+        "--reasoning-parser"
+        (lib.escapeShellArg inst.reasoningParser)
+      ]
+      ++ lib.optionals (inst.reasoningParserPlugin != null) [
+        "--reasoning-parser-plugin"
+        (lib.escapeShellArg (toString inst.reasoningParserPlugin))
+      ]
+      ++ lib.optionals inst.enableAutoToolChoice ["--enable-auto-tool-choice"]
+      ++ lib.optionals (inst.toolCallParser != null) [
+        "--tool-call-parser"
+        (lib.escapeShellArg inst.toolCallParser)
+      ]
+      ++ lib.optionals (inst.toolCallParserPlugin != null) [
+        "--tool-parser-plugin"
+        (lib.escapeShellArg (toString inst.toolCallParserPlugin))
+      ]
+      ++ lib.optionals (inst.limitMmPerPrompt != null) [
+        "--limit-mm-per-prompt"
+        (lib.escapeShellArg (builtins.toJSON inst.limitMmPerPrompt))
+      ]
+      ++ lib.optionals inst.languageModelOnly ["--language-model-only"]
+      ++ map lib.escapeShellArg inst.extraArgs
+    );
 
   hfHomeFor = inst:
-    if cfg.sharedHfCache != null then cfg.sharedHfCache else inst.cacheDir;
+    if cfg.sharedHfCache != null
+    then cfg.sharedHfCache
+    else inst.cacheDir;
 
   buildKeyFor = inst: builtins.substring 0 32 (builtins.baseNameOf (toString inst.package));
   buildCacheDirFor = inst: "${inst.cacheDir}/build/${buildKeyFor inst}";
 
-  mkUnit = name: inst: lib.nameValuePair "vllm-xpu-${name}" {
-    description = "vLLM XPU serve (${inst.servedName})";
-    wantedBy = [ "multi-user.target" ];
-    after = [ "network-online.target" ];
-    wants = [ "network-online.target" ];
+  mkUnit = name: inst:
+    lib.nameValuePair "vllm-xpu-${name}" {
+      description = "vLLM XPU serve (${inst.servedName})";
+      wantedBy = ["multi-user.target"];
+      after = ["network-online.target"];
+      wants = ["network-online.target"];
 
-    environment = {
-      VLLM_TARGET_DEVICE = "xpu";
-      HOME = buildCacheDirFor inst;
-      HF_HOME = hfHomeFor inst;
-      VLLM_CACHE_ROOT = buildCacheDirFor inst;
-    } // inst.cclEnv
-      // lib.optionalAttrs inst.enableXpuGraph {
-        VLLM_XPU_ENABLE_XPU_GRAPH = "1";
-      }
-      // inst.extraEnvironment;
+      environment =
+        {
+          VLLM_TARGET_DEVICE = "xpu";
+          HOME = buildCacheDirFor inst;
+          HF_HOME = hfHomeFor inst;
+          VLLM_CACHE_ROOT = buildCacheDirFor inst;
+        }
+        // inst.cclEnv
+        // lib.optionalAttrs inst.enableXpuGraph {
+          VLLM_XPU_ENABLE_XPU_GRAPH = "1";
+        }
+        // inst.extraEnvironment;
 
-    serviceConfig = {
-      Type = "simple";
-      User = cfg.user;
-      Group = cfg.group;
-      SupplementaryGroups = [ "render" "video" ]
-        ++ lib.optional (cfg.sharedHfCache != null) cfg.sharedHfCacheGroup;
+      serviceConfig =
+        {
+          Type = "simple";
+          User = cfg.user;
+          Group = cfg.group;
+          SupplementaryGroups =
+            ["render" "video"]
+            ++ lib.optional (cfg.sharedHfCache != null) cfg.sharedHfCacheGroup;
 
-      ExecStartPre = "-${pkgs.findutils}/bin/find ${inst.cacheDir}/build -mindepth 1 -maxdepth 1 ! -name ${buildKeyFor inst} -exec ${pkgs.coreutils}/bin/rm -rf {} +";
+          ExecStartPre = "-${pkgs.findutils}/bin/find ${inst.cacheDir}/build -mindepth 1 -maxdepth 1 ! -name ${buildKeyFor inst} -exec ${pkgs.coreutils}/bin/rm -rf {} +";
 
-      ExecStart = "${inst.package}/bin/vllm serve ${mkServeArgs inst}";
+          ExecStart = "${inst.package}/bin/vllm serve ${mkServeArgs inst}";
 
-      Restart = "on-failure";
-      RestartSec = 5;
-      TimeoutStartSec = 0;
+          Restart = "on-failure";
+          RestartSec = 5;
+          TimeoutStartSec = 0;
 
-      DeviceAllow = [ "char-drm rw" ];
-      PrivateDevices = false;
+          DeviceAllow = ["char-drm rw"];
+          PrivateDevices = false;
 
-      WorkingDirectory = inst.cacheDir;
+          WorkingDirectory = inst.cacheDir;
 
-      ProtectSystem = "strict";
-      ProtectHome = true;
-      NoNewPrivileges = true;
-      ReadWritePaths = [ inst.cacheDir ]
-        ++ lib.optional (cfg.sharedHfCache != null) cfg.sharedHfCache;
-    } // lib.optionalAttrs (cfg.sharedHfCache != null) {
-      UMask = "0002";
-    } // lib.optionalAttrs (inst.environmentFile != null) {
-      EnvironmentFile = inst.environmentFile;
+          ProtectSystem = "strict";
+          ProtectHome = true;
+          NoNewPrivileges = true;
+          ReadWritePaths =
+            [inst.cacheDir]
+            ++ lib.optional (cfg.sharedHfCache != null) cfg.sharedHfCache;
+        }
+        // lib.optionalAttrs (cfg.sharedHfCache != null) {
+          UMask = "0002";
+        }
+        // lib.optionalAttrs (inst.environmentFile != null) {
+          EnvironmentFile = inst.environmentFile;
+        };
     };
-  };
-in
-{
+in {
+  imports = [./hf-cache.nix];
+
   options.services.vllm-xpu = {
     package = lib.mkOption {
       type = lib.types.package;
@@ -673,7 +712,7 @@ in
 
     aotDevices = lib.mkOption {
       type = lib.types.listOf lib.types.str;
-      default = [ ];
+      default = [];
       example = lib.literalExpression ''[ "bmg" ]'';
       description = ''
         SYCL AOT target list compiled into the kernel `.so`s. Passed
@@ -700,9 +739,10 @@ in
       description = ''
         Named vLLM-XPU instances. Each enabled instance gets its own
         systemd unit `vllm-xpu-<name>.service`, its own listen port,
-        and its own HF cache directory under `/var/lib/vllm-xpu/`.
-        They share `/dev/dri`, the `vllm` user/group, and the BMG
-        single-card oneCCL env defaults.
+        and its own build cache under `/var/lib/vllm-xpu/`. By default they
+        share the Hugging Face model cache at `/var/cache/huggingface`.
+        They also share `/dev/dri`, the `vllm` user/group, and the BMG
+        single-card oneCCL environment defaults.
 
         Typical layout: one chat instance plus one pooling-mode
         embedder co-resident on a single B70.
@@ -732,33 +772,54 @@ in
     };
   };
 
-  config = lib.mkIf (enabledInstances != {}) {
-    users.users.${cfg.user} = {
-      isSystemUser = true;
-      group = cfg.group;
-      home = "/var/lib/vllm-xpu";
-      createHome = false;
-      extraGroups = [ "render" "video" ]
-        ++ lib.optional (cfg.sharedHfCache != null) cfg.sharedHfCacheGroup;
-    };
-    users.groups = {
-      ${cfg.group} = { };
-    } // lib.optionalAttrs (cfg.sharedHfCache != null) {
-      ${cfg.sharedHfCacheGroup} = { };
-    };
+  config = lib.mkMerge [
+    {
+      services.hf-cache =
+        {
+          roots =
+            lib.mapAttrsToList (name: inst: {
+              source = "vllm-xpu.${name}";
+              type = "model";
+              repo = inst.model;
+              revision = inst.revision;
+            })
+            enabledInstances;
+        }
+        // lib.optionalAttrs (cfg.sharedHfCache != null) {
+          home = cfg.sharedHfCache;
+        };
+    }
+    (lib.mkIf (enabledInstances != {}) {
+      users.users.${cfg.user} = {
+        isSystemUser = true;
+        group = cfg.group;
+        home = "/var/lib/vllm-xpu";
+        createHome = false;
+        extraGroups =
+          ["render" "video"]
+          ++ lib.optional (cfg.sharedHfCache != null) cfg.sharedHfCacheGroup;
+      };
+      users.groups =
+        {
+          ${cfg.group} = {};
+        }
+        // lib.optionalAttrs (cfg.sharedHfCache != null) {
+          ${cfg.sharedHfCacheGroup} = {};
+        };
 
-    systemd.tmpfiles.rules =
-      [ "d /var/lib/vllm-xpu 0750 ${cfg.user} ${cfg.group} - -" ]
-      ++ lib.concatLists (lib.mapAttrsToList
-        (_: inst: [
-          "d ${inst.cacheDir} 0750 ${cfg.user} ${cfg.group} - -"
-          "d ${inst.cacheDir}/build 0750 ${cfg.user} ${cfg.group} - -"
-          "d ${buildCacheDirFor inst} 0750 ${cfg.user} ${cfg.group} - -"
-        ])
-        enabledInstances)
-      ++ lib.optional (cfg.sharedHfCache != null)
+      systemd.tmpfiles.rules =
+        ["d /var/lib/vllm-xpu 0750 ${cfg.user} ${cfg.group} - -"]
+        ++ lib.concatLists (lib.mapAttrsToList
+          (_: inst: [
+            "d ${inst.cacheDir} 0750 ${cfg.user} ${cfg.group} - -"
+            "d ${inst.cacheDir}/build 0750 ${cfg.user} ${cfg.group} - -"
+            "d ${buildCacheDirFor inst} 0750 ${cfg.user} ${cfg.group} - -"
+          ])
+          enabledInstances)
+        ++ lib.optional (cfg.sharedHfCache != null)
         "d ${cfg.sharedHfCache} 2775 ${cfg.user} ${cfg.sharedHfCacheGroup} - -";
 
-    systemd.services = lib.mapAttrs' mkUnit enabledInstances;
-  };
+      systemd.services = lib.mapAttrs' mkUnit enabledInstances;
+    })
+  ];
 }

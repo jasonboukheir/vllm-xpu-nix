@@ -7,8 +7,7 @@
     # `nix flake update`, even when the vllm-xpu-nix source input itself does
     # not move. Pinning the revision in the input URL makes nixpkgs updates an
     # explicit change in this repository, preventing surprise torch rebuilds.
-    nixpkgs.url =
-      "github:NixOS/nixpkgs/e2587caef70cea85dd97d7daab492899902dbf5d";
+    nixpkgs.url = "github:NixOS/nixpkgs/e2587caef70cea85dd97d7daab492899902dbf5d";
     flake-utils.url = "github:numtide/flake-utils";
 
     vllm-xpu-kernels-src = {
@@ -277,7 +276,9 @@
     // {
       # System-independent outputs (NixOS modules, overlays).
       #
-      # Two modules are exposed:
+      # Three modules are exposed:
+      #   - `nixosModules.hf-cache`: generation-aware cache roots and GC for
+      #     Hugging Face models, datasets, and Spaces.
       #   - `nixosModules.vllm-xpu`: the pure option module. Reads
       #     `pkgs.vllm-xpu` etc., so the consumer must apply
       #     `overlays.default` themselves (or supply the package
@@ -287,6 +288,7 @@
       #     consumers just `imports = [ inputs.vllm-xpu-nix.nixosModules.default ]`
       #     and `pkgs.vllm-xpu` / `pkgs.vllm-xpu-unstable` are visible
       #     without writing their own overlay.
+      nixosModules.hf-cache = ./nix/modules/hf-cache.nix;
       nixosModules.vllm-xpu = ./nix/modules/vllm-xpu.nix;
       nixosModules.default = {...}: {
         imports = [./nix/modules/vllm-xpu.nix];

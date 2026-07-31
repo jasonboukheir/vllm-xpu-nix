@@ -37,6 +37,7 @@ any consumer pin recent enough to expose `pkgs.intel-oneapi.base`
     instances.chat = {
       enable               = true;
       model                = "palmfuture/Qwen3.6-35B-A3B-GPTQ-Int4";
+      revision             = "d1fef185160f938fca00c3c664f21250dd544d63";
       servedName           = "qwen3.6-35b-a3b";
       dtype                = "bfloat16";
       quantization         = "inc";
@@ -76,9 +77,66 @@ any consumer pin recent enough to expose `pkgs.intel-oneapi.base`
 Each enabled `instances.<name>` becomes a `vllm-xpu-<name>.service`
 systemd unit running under a shared `vllm` user with `render`/`video`
 supplementary groups for `/dev/dri` access. Per-instance state lives
-at `/var/lib/vllm-xpu/<name>` (used as `HF_HOME` and
-`VLLM_CACHE_ROOT`). The default `cclEnv` is the BMG single-card
-oneCCL configuration; override per host for multi-card setups.
+at `/var/lib/vllm-xpu/<name>`. Models default to the shared
+`/var/cache/huggingface` `HF_HOME`; package-keyed compilation caches remain
+per-instance. The default `cclEnv` is the BMG single-card oneCCL configuration;
+override per host for multi-card setups.
+
+## Hugging Face cache garbage collection
+
+Set an immutable `revision` on each instance that downloads a Hugging Face
+model. The module passes it to `vllm serve --revision` and contributes it to
+`/etc/huggingface/cache-roots.json`. Because that manifest is part of the system
+closure, every retained NixOS generation keeps its own cache roots.
+
+After switching models and rebuilding, inspect stale cache revisions with:
+
+```console
+sudo hf-cache-gc
+```
+
+The command is dry-run-only unless `--delete` is explicit:
+
+```console
+sudo hf-cache-gc --delete
+```
+
+It scans every `/nix/var/nix/profiles/system-*-link` generation, unions their
+cache roots, and removes only Hugging Face revisions absent from all retained
+generations. An instance without a `revision` roots its entire model repository
+for backward compatibility.
+
+The underlying `nixosModules.hf-cache` module is independent of vLLM and also
+manages datasets and Spaces. Other services can contribute roots declaratively:
+
+```nix
+services.hf-cache.roots = [
+  {
+    type = "dataset";
+    repo = "openai/gsm8k";
+    revision = "0123456789abcdef0123456789abcdef01234567";
+    source = "evaluation-suite";
+  }
+  {
+    type = "space";
+    repo = "owner/demo";
+    # Null revision conservatively roots every cached revision.
+    revision = null;
+  }
+];
+```
+
+For migration safety, collection is refused while any retained system
+generation predates cache manifests. Once the newly built generation is known
+good, remove those older generations normally, then rerun the collector:
+
+```console
+sudo nix-env --profile /nix/var/nix/profiles/system --delete-generations old
+sudo hf-cache-gc --delete
+```
+
+`nix-collect-garbage` still manages Nix store paths. `hf-cache-gc` is the
+corresponding generation-aware collector for runtime Hugging Face downloads.
 
 ### BYO-overlay variant
 

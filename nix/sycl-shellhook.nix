@@ -9,7 +9,7 @@
 }: ''
   syclHome="${intel-oneapi}/compiler/latest"
   mkdir -p .dev-bin
-  ln -sf ${pkgs.intel-compute-runtime}/bin/ocloc-* .dev-bin/ocloc 2>/dev/null || true
+  ln -sf ${pkgs.intel-compute-runtime}/bin/ocloc .dev-bin/ocloc
   export PATH="$PWD/.dev-bin:$syclHome/bin:$PATH"
   # Build needs igc + compute-runtime; *running* on the GPU from inside
   # the shell (e.g. pytest tests/) additionally needs the Level-Zero

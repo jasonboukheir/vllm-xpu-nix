@@ -7,7 +7,7 @@
     # `nix flake update`, even when the vllm-xpu-nix source input itself does
     # not move. Pinning the revision in the input URL makes nixpkgs updates an
     # explicit change in this repository, preventing surprise torch rebuilds.
-    nixpkgs.url = "github:NixOS/nixpkgs/e2587caef70cea85dd97d7daab492899902dbf5d";
+    nixpkgs.url = "github:NixOS/nixpkgs/b7c2ada94fe99c15b0dbcf4d11fd7850b957a436";
     flake-utils.url = "github:numtide/flake-utils";
 
     vllm-xpu-kernels-src = {
@@ -74,9 +74,9 @@
       kernelsUnstableVersion = mkInputVersion {
         name = "vllm-xpu-kernels-unstable-src";
         input = vllm-xpu-kernels-unstable-src;
-        # main descends from the v0.1.11 tag (git describe -> v0.1.11-N);
+        # main descends from the v0.1.12 tag (git describe -> v0.1.12-N);
         # the +unstable.<date>.g<rev> suffix marks the snapshot ahead of it.
-        base = "0.1.11";
+        base = "0.1.12";
         unstable = true;
       };
       vllmStableVersion = mkInputVersion {
@@ -86,7 +86,7 @@
       vllmUnstableVersion = mkInputVersion {
         name = "vllm-xpu-unstable-src";
         input = vllm-xpu-unstable-src;
-        base = "0.25.0";
+        base = "0.26.0";
         unstable = true;
       };
 

@@ -130,7 +130,7 @@ python3Packages.buildPythonPackage ({
   preBuild = ''
     ${ccachePreBuild}
     mkdir -p $TMPDIR/bin
-    ln -sf ${intel-compute-runtime}/bin/ocloc-* $TMPDIR/bin/ocloc
+    ln -sf ${intel-compute-runtime}/bin/ocloc $TMPDIR/bin/ocloc
     export PATH=$TMPDIR/bin:${syclHome}/bin:$PATH
     export LD_LIBRARY_PATH=${intel-graphics-compiler}/lib:${intel-compute-runtime}/lib:$LD_LIBRARY_PATH
     export SYCL_HOME=${syclHome}

@@ -17,7 +17,7 @@
         description = "Hugging Face repository id, such as `owner/name`.";
       };
       revision = lib.mkOption {
-        type = lib.types.nullOr (lib.types.strMatching "[0-9a-fA-F]{40}");
+        type = lib.types.nullOr (lib.types.strMatching "[0-9a-f]{40}");
         default = null;
         description = ''
           Immutable Hugging Face commit to retain. Null roots every cached
@@ -47,6 +47,7 @@
   };
 in {
   options.services.hf-cache = {
+    enable = lib.mkEnableOption "authoritative Hugging Face cache management";
     home = lib.mkOption {
       type = lib.types.path;
       default = "/var/cache/huggingface";
@@ -62,7 +63,7 @@ in {
     };
   };
 
-  config = {
+  config = lib.mkIf cfg.enable {
     environment.etc."huggingface/cache-roots.json".source = manifestFile;
     environment.systemPackages = [gc];
   };

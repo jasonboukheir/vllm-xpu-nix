@@ -95,16 +95,22 @@ After switching models and rebuilding, inspect stale cache revisions with:
 sudo hf-cache-gc
 ```
 
-The command is dry-run-only unless `--delete` is explicit:
+The command is dry-run-only unless `--delete` is explicit. The shared cache is
+authoritatively managed: repositories or revisions not declared by a retained
+generation are candidates for deletion, including interactive downloads. Add
+roots for tokenizer, code, draft-model, adapter, or other repositories supplied
+through vLLM extra arguments. Stop cache writers and avoid NixOS switches while
+executing deletion:
 
 ```console
 sudo hf-cache-gc --delete
 ```
 
-It scans every `/nix/var/nix/profiles/system-*-link` generation, unions their
-cache roots, and removes only Hugging Face revisions absent from all retained
-generations. An instance without a `revision` roots its entire model repository
-for backward compatibility.
+It scans every `/nix/var/nix/profiles/system-*-link` generation plus their
+specialisations and the current and booted systems under `/run`, unions their
+cache roots, and removes only Hugging Face revisions absent from all of them. An
+instance without a `revision` roots its entire model repository for backward
+compatibility.
 
 The underlying `nixosModules.hf-cache` module is independent of vLLM and also
 manages datasets and Spaces. Other services can contribute roots declaratively:
@@ -124,6 +130,7 @@ services.hf-cache.roots = [
     revision = null;
   }
 ];
+services.hf-cache.enable = true;
 ```
 
 For migration safety, collection is refused while any retained system

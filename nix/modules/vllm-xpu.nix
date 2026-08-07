@@ -54,7 +54,7 @@
       };
 
       revision = lib.mkOption {
-        type = lib.types.nullOr (lib.types.strMatching "[0-9a-fA-F]{40}");
+        type = lib.types.nullOr (lib.types.strMatching "[0-9a-f]{40}");
         default = null;
         description = ''
           Immutable Hugging Face commit passed through as `vllm serve
@@ -773,22 +773,20 @@ in {
   };
 
   config = lib.mkMerge [
-    {
-      services.hf-cache =
-        {
-          roots =
-            lib.mapAttrsToList (name: inst: {
-              source = "vllm-xpu.${name}";
-              type = "model";
-              repo = inst.model;
-              revision = inst.revision;
-            })
-            enabledInstances;
-        }
-        // lib.optionalAttrs (cfg.sharedHfCache != null) {
-          home = cfg.sharedHfCache;
-        };
-    }
+    (lib.mkIf (cfg.sharedHfCache != null && enabledInstances != {}) {
+      services.hf-cache = {
+        enable = true;
+        home = cfg.sharedHfCache;
+        roots =
+          lib.mapAttrsToList (name: inst: {
+            source = "vllm-xpu.${name}";
+            type = "model";
+            repo = inst.model;
+            revision = inst.revision;
+          })
+          enabledInstances;
+      };
+    })
     (lib.mkIf (enabledInstances != {}) {
       users.users.${cfg.user} = {
         isSystemUser = true;

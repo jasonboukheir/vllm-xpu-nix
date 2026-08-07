@@ -183,6 +183,32 @@
         kernels = vllm-xpu-kernels-unstable;
       };
 
+      # Exact package deployed by Brutus's chat + embedding services. Keep the
+      # host-facing build policy here so `nix build .#vllm-xpu-chat` and the
+      # NixOS module consumer resolve to one derivation and one store output.
+      # The kernel set covers Qwen3.6-27B's head_dim=256 full attention plus
+      # the bidirectional head_dim=64 Jina embedding encoder.
+      vllm-xpu-chat = vllm-xpu-unstable.override {
+        withTorchvision = true;
+        aotDevices = ["bmg"];
+        kernelConfig = {
+          chunkPrefill = "chunk_prefill_default";
+          chunkPrefillExtra = [
+            "256,true,true,false,false,false"
+            "256,false,true,false,false,false"
+            "256,false,true,false,false,true"
+            "64,false,false,false,false,false"
+          ];
+          pagedDecode = "paged_decode_default";
+          pagedDecodeExtra = [
+            "8,256,16,true,false,false"
+            "8,256,32,true,false,false"
+            "8,256,64,true,false,false"
+            "8,256,64,false,false,false"
+          ];
+        };
+      };
+
       # ---- shells + misc helpers ----
       syclToolchainShellHook = import ./nix/sycl-shellhook.nix {
         inherit pkgs intel-oneapi;
@@ -229,6 +255,7 @@
           vllm-xpu-kernels-unstable
           vllm-xpu
           vllm-xpu-unstable
+          vllm-xpu-chat
           ;
         inherit
           (stableLibs)
@@ -311,6 +338,7 @@
         // pick "vllm-xpu-kernels"
         // pick "vllm-xpu-kernels-unstable"
         // pick "vllm-xpu"
-        // pick "vllm-xpu-unstable";
+        // pick "vllm-xpu-unstable"
+        // pick "vllm-xpu-chat";
     };
 }

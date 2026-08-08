@@ -134,11 +134,11 @@
     "vllm-xpu-unstable-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1786168177,
-        "narHash": "sha256-p/40eusEsVB2EuqyNhqTHcVm531JbdPDG+NlU7GqnKk=",
+        "lastModified": 1786169175,
+        "narHash": "sha256-8NakJprsKpmUClSziuQMSaQ1w27GSGnLqovSOq+cBpw=",
         "ref": "refs/heads/experimental/kvarn-xpu-46812",
-        "rev": "431bdfd4b0fb29731345b9a5be579a79bd2a9bbd",
-        "revCount": 19704,
+        "rev": "4b33f3004b1fc2aa27bd1308ee50aff4fcbb03f0",
+        "revCount": 19705,
         "type": "git",
         "url": "https://git.sunnycareboo.com/jasonbk/vllm.git"
       },

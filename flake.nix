@@ -342,6 +342,9 @@
       kvarn-eager-k4v2 = mkKvarnEagerRunner
         "vllm-xpu-kvarn-eager-k4v2"
         chatProfile.kvarnEagerK4V2;
+      kvarn-mtp-eager-k4v4 = mkKvarnEagerRunner
+        "vllm-xpu-kvarn-mtp-eager-k4v4"
+        chatProfile.kvarnMtpEagerK4V4;
 
       # ---- shells + misc helpers ----
       syclToolchainShellHook = import ./nix/sycl-shellhook.nix {
@@ -416,6 +419,10 @@
         vllm-xpu-kvarn-eager-k4v2 = {
           type = "app";
           program = "${kvarn-eager-k4v2}/bin/vllm-xpu-kvarn-eager-k4v2";
+        };
+        vllm-xpu-kvarn-mtp-eager-k4v4 = {
+          type = "app";
+          program = "${kvarn-mtp-eager-k4v4}/bin/vllm-xpu-kvarn-mtp-eager-k4v4";
         };
         autoround = {
           type = "app";

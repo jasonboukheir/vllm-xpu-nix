@@ -42,6 +42,7 @@ in {
       maxModelLen = 8192;
       enforceEager = true;
       enableXpuGraph = false;
+      extraArgs = chat.extraArgs ++ ["--no-enable-prefix-caching"];
     };
 
   kvarnEagerK4V2 =
@@ -55,6 +56,7 @@ in {
       maxModelLen = 8192;
       enforceEager = true;
       enableXpuGraph = false;
+      extraArgs = chat.extraArgs ++ ["--no-enable-prefix-caching"];
     };
 
   embedding = {

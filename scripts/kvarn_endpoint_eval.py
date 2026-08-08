@@ -153,6 +153,30 @@ def _checkpoint(endpoint: str, model: str, ids: list[int], top_k: int,
     return float(target_lp), {_token_key(k): float(v) for k, v in top.items()}
 
 
+def _pair_order(mode: str, pair_index: int) -> tuple[str, str]:
+    if mode == "bf16-first" or (mode == "alternating" and pair_index % 2 == 0):
+        return "bf16", "kvarn"
+    return "kvarn", "bf16"
+
+
+def _paired_checkpoint(
+    order: tuple[str, str],
+    endpoints: dict[str, str],
+    models: dict[str, str],
+    ids: list[int],
+    top_k: int,
+    timeout: float,
+) -> dict[str, Any]:
+    """Query a pair sequentially with one immutable token prefix."""
+    prefix = list(ids)
+    results = {}
+    for mode in order:
+        results[mode] = _checkpoint(
+            endpoints[mode], models[mode], list(prefix), top_k, timeout
+        )
+    return {"request_order": list(order), **results}
+
+
 def _load_samples(args: argparse.Namespace) -> list[dict[str, Any]]:
     if args.token_ids:
         ids = [int(x) for x in args.token_ids.split(",") if x.strip()]
@@ -169,6 +193,9 @@ def _load_samples(args: argparse.Namespace) -> list[dict[str, Any]]:
             if len(ids) < 2 or not all(isinstance(x, int) for x in ids):
                 raise ValueError(f"line {line_no}: need at least two integer token IDs")
             samples.append({"id": str(item.get("id", line_no)), "token_ids": ids})
+    sample_ids = [sample["id"] for sample in samples]
+    if len(sample_ids) != len(set(sample_ids)):
+        raise ValueError("dataset contains a duplicate sample id")
     return samples
 
 
@@ -184,6 +211,11 @@ def main() -> None:
     parser.add_argument("--kvarn-model", help="KVarN served model; default: endpoint's first model")
     parser.add_argument("--checkpoints", default="128,256,512,1024,2048,4096,8192")
     parser.add_argument("--top-logprobs", type=int, default=20)
+    parser.add_argument(
+        "--pair-order", choices=("alternating", "bf16-first", "kvarn-first"),
+        default="alternating",
+        help="endpoint request order; alternating reduces systematic order bias",
+    )
     parser.add_argument("--timeout", type=float, default=600)
     parser.add_argument("--output", required=True, help="per-checkpoint JSONL path")
     parser.add_argument("--summary", required=True, help="summary JSON path")
@@ -198,7 +230,7 @@ def main() -> None:
     kvarn_model = args.model or args.kvarn_model or kvarn_models["data"][0]["id"]
     extra_metadata = json.loads(Path(args.metadata_json).read_text()) if args.metadata_json else {}
     metadata = {
-        "schema_version": 1, "created_unix": time.time(), "python": sys.version,
+        "schema_version": 2, "created_unix": time.time(), "python": sys.version,
         "platform": platform.platform(), "seed": 0, "temperature": 0,
         "top_logprobs": args.top_logprobs, "checkpoints": checkpoints,
         "bf16_model": bf16_model, "kvarn_model": kvarn_model,
@@ -206,6 +238,11 @@ def main() -> None:
         "bf16_models_response": bf16_models, "kvarn_models_response": kvarn_models,
         "input_sha256": _json_hash(samples),
         "evaluation_path": "fresh-prompt-prefill-proxy",
+        "cache_lifecycle": "new-request-and-new-kv-cache-for-every-checkpoint",
+        "persistent_decode": False,
+        "pair_order": args.pair_order,
+        "pairing": "identical-token-id-prefix",
+        "sample_count": len(samples),
         "metric_distribution": "equal-returned-support-plus-residual",
         "extra": extra_metadata,
     }
@@ -214,10 +251,14 @@ def main() -> None:
     run_id = _json_hash({
         "schema_version": metadata["schema_version"], "seed": 0,
         "top_logprobs": args.top_logprobs, "checkpoints": checkpoints,
+        "pair_order": args.pair_order,
         "bf16_model": bf16_model, "kvarn_model": kvarn_model,
         "input_sha256": metadata["input_sha256"], "extra": extra_metadata,
     })
     rows = []
+    pair_index = 0
+    endpoints = {"bf16": args.bf16_url, "kvarn": args.kvarn_url}
+    models = {"bf16": bf16_model, "kvarn": kvarn_model}
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.open("w", encoding="utf-8") as handle:
@@ -229,17 +270,32 @@ def main() -> None:
                 if checkpoint >= len(ids):
                     continue
                 prefix = ids[:checkpoint + 1]
-                ref_lp, ref_top = _checkpoint(args.bf16_url, bf16_model, prefix,
-                                               args.top_logprobs, args.timeout)
-                mode_lp, mode_top = _checkpoint(args.kvarn_url, kvarn_model, prefix,
-                                                 args.top_logprobs, args.timeout)
+                order = _pair_order(args.pair_order, pair_index)
+                paired = _paired_checkpoint(
+                    order, endpoints, models, prefix,
+                    args.top_logprobs, args.timeout,
+                )
+                ref_lp, ref_top = paired["bf16"]
+                mode_lp, mode_top = paired["kvarn"]
                 divergences = coarsened_divergences(ref_top, mode_top)
                 kl, js = divergences if divergences is not None else (None, None)
                 ref_order = sorted(ref_top, key=ref_top.get, reverse=True)
                 mode_order = sorted(mode_top, key=mode_top.get, reverse=True)
                 row = {
-                    "run_id": run_id, "sample_id": sample["id"],
+                    "run_id": run_id,
+                    "pair_id": _json_hash({
+                        "run_id": run_id, "sample_id": sample["id"],
+                        "checkpoint": checkpoint,
+                    }),
+                    "pair_index": pair_index,
+                    "request_order": paired["request_order"],
+                    "evaluation_path": "fresh-prompt-prefill-proxy",
+                    "persistent_decode": False,
+                    "sample_id": sample["id"],
                     "sample_sha256": _json_hash(ids), "checkpoint": checkpoint,
+                    "context_token_count": checkpoint,
+                    "request_token_count": len(prefix),
+                    "prompt_token_ids_sha256": _json_hash(prefix),
                     "target_token_id": ids[checkpoint], "bf16_target_logprob": ref_lp,
                     "kvarn_target_logprob": mode_lp,
                     "target_logprob_delta": mode_lp - ref_lp,
@@ -254,6 +310,7 @@ def main() -> None:
                 rows.append(row)
                 handle.write(json.dumps(row, sort_keys=True) + "\n")
                 handle.flush()
+                pair_index += 1
     summary = {"run_id": run_id, "metadata": metadata, "metrics": aggregate(rows)}
     Path(args.summary).write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
 

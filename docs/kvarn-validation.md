@@ -90,6 +90,13 @@ endpoint rebuilds each prefix rather than advancing one persistent cache through
 the teacher-forced continuation. It must not be used as the decode-aware gate
 above until vLLM exposes a stateful forced-token/logit capture path.
 
+The default `--pair-order alternating` deterministically reverses which endpoint
+is queried first at each checkpoint to reduce systematic request-order bias.
+Every output row records that order, a stable pair ID, the exact prefix hash,
+and `persistent_decode: false`. Sample IDs must be unique. Keep both endpoints
+otherwise idle during a run: alternating order cannot correct interference from
+unrelated traffic, thermal drift, or a changing server configuration.
+
 Endpoint logprobs usually expose only top-k probabilities. KL and
 Jensen-Shannon are reported only where both endpoints return identical token
 support; otherwise the cross-probabilities are unknown and the fields are null.

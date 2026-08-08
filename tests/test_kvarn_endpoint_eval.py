@@ -1,5 +1,6 @@
 import importlib.util
 import math
+from argparse import Namespace
 from pathlib import Path
 
 
@@ -65,3 +66,52 @@ def test_aggregate_omits_unavailable_divergences():
     assert result["count"] == 1
     assert result["divergence_count"] == 0
     assert result["kl_nats"]["mean"] is None
+
+
+def test_pair_order_alternates_deterministically():
+    assert MODULE._pair_order("alternating", 0) == ("bf16", "kvarn")
+    assert MODULE._pair_order("alternating", 1) == ("kvarn", "bf16")
+    assert MODULE._pair_order("alternating", 2) == ("bf16", "kvarn")
+    assert MODULE._pair_order("bf16-first", 9) == ("bf16", "kvarn")
+    assert MODULE._pair_order("kvarn-first", 0) == ("kvarn", "bf16")
+
+
+def test_paired_checkpoint_uses_identical_prefix_and_records_order(monkeypatch):
+    calls = []
+
+    def checkpoint(endpoint, model, ids, top_k, timeout):
+        calls.append((endpoint, model, list(ids), top_k, timeout))
+        if endpoint == "kvarn":
+            return -1.25, {"token_id:7": -0.1}
+        return -1.0, {"token_id:7": -0.2}
+
+    monkeypatch.setattr(MODULE, "_checkpoint", checkpoint)
+    result = MODULE._paired_checkpoint(
+        ("kvarn", "bf16"),
+        {"bf16": "bf16", "kvarn": "kvarn"},
+        {"bf16": "reference", "kvarn": "candidate"},
+        [1, 2, 3],
+        20,
+        10,
+    )
+
+    assert [call[0] for call in calls] == ["kvarn", "bf16"]
+    assert calls[0][2] == calls[1][2] == [1, 2, 3]
+    assert result["request_order"] == ["kvarn", "bf16"]
+    assert result["bf16"][0] == -1.0
+    assert result["kvarn"][0] == -1.25
+
+
+def test_load_samples_rejects_duplicate_ids(tmp_path):
+    dataset = tmp_path / "samples.jsonl"
+    dataset.write_text(
+        '{"id":"same","token_ids":[1,2]}\n'
+        '{"id":"same","token_ids":[3,4]}\n'
+    )
+    args = Namespace(token_ids=None, dataset=str(dataset))
+    try:
+        MODULE._load_samples(args)
+    except ValueError as exc:
+        assert "duplicate sample id" in str(exc)
+    else:
+        raise AssertionError("duplicate sample id was accepted")

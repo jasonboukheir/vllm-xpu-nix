@@ -68,6 +68,36 @@ in {
     extraArgs = chat.extraArgs ++ ["--no-enable-prefix-caching"];
   };
 
+  kvarnPrefixEagerK4V4 =
+    (builtins.removeAttrs chat [
+      "speculativeConfig"
+      "cudagraphCaptureSizes"
+    ])
+    // {
+      servedName = "qwen3.6-27b-kvarn-prefix-eager-k4v4";
+      kvCacheDtype = "kvarn_k4v4_g128";
+      maxModelLen = 8192;
+      enforceEager = true;
+      enableXpuGraph = false;
+    };
+
+  kvarnGraphK4V4 =
+    (builtins.removeAttrs chat ["speculativeConfig"])
+    // {
+      servedName = "qwen3.6-27b-kvarn-graph-k4v4";
+      kvCacheDtype = "kvarn_k4v4_g128";
+      maxModelLen = 8192;
+      extraArgs = chat.extraArgs ++ ["--no-enable-prefix-caching"];
+    };
+
+  # Final integration gate: exercise all cache consumers together. Keep the
+  # context bounded until the eager prefix and MTP state-content gates pass.
+  kvarnMtpPrefixGraphK4V4 = chat // {
+    servedName = "qwen3.6-27b-kvarn-mtp-prefix-graph-k4v4";
+    kvCacheDtype = "kvarn_k4v4_g128";
+    maxModelLen = 8192;
+  };
+
   embedding = {
     model = "jinaai/jina-embeddings-v5-text-nano-retrieval";
     servedName = "jina-embeddings-v5-nano";

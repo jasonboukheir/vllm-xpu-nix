@@ -1,4 +1,4 @@
-{
+let
   chat = {
     model = "Lorbus/Qwen3.6-27B-int4-AutoRound";
     servedName = "qwen3.6-27b";
@@ -28,6 +28,34 @@
       })
     ];
   };
+in {
+  inherit chat;
+
+  kvarnEagerK4V4 =
+    (builtins.removeAttrs chat [
+      "speculativeConfig"
+      "cudagraphCaptureSizes"
+    ])
+    // {
+      servedName = "qwen3.6-27b-kvarn-k4v4";
+      kvCacheDtype = "kvarn_k4v4_g128";
+      maxModelLen = 8192;
+      enforceEager = true;
+      enableXpuGraph = false;
+    };
+
+  kvarnEagerK4V2 =
+    (builtins.removeAttrs chat [
+      "speculativeConfig"
+      "cudagraphCaptureSizes"
+    ])
+    // {
+      servedName = "qwen3.6-27b-kvarn-k4v2";
+      kvCacheDtype = "kvarn_k4v2_g128";
+      maxModelLen = 8192;
+      enforceEager = true;
+      enableXpuGraph = false;
+    };
 
   embedding = {
     model = "jinaai/jina-embeddings-v5-text-nano-retrieval";

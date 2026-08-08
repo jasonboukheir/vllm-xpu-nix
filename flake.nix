@@ -35,6 +35,7 @@
     vllm-xpu-unstable-src = {
       type = "git";
       url = "https://git.sunnycareboo.com/jasonbk/vllm.git";
+      ref = "refs/heads/experimental/kvarn-xpu-46812";
       flake = false;
     };
 
@@ -315,6 +316,33 @@
         '';
       };
 
+      mkKvarnEagerRunner = name: profile:
+        pkgs.writeShellApplication {
+          inherit name;
+          text = ''
+            runtime_root="''${XDG_CACHE_HOME:-$HOME/.cache}/${name}"
+            mkdir -p "$runtime_root"
+
+            export VLLM_TARGET_DEVICE=xpu
+            export HF_HOME=/var/cache/huggingface
+            export CCL_PROCESS_LAUNCHER=none
+            export CCL_ATL_TRANSPORT=ofi
+            export CCL_ZE_IPC_EXCHANGE=sockets
+            export CCL_LOG_LEVEL=warn
+
+            HOME="$runtime_root" VLLM_CACHE_ROOT="$runtime_root" \
+              exec ${vllm-xpu-chat}/bin/vllm serve \
+                ${mkMaintenanceServeArgs 8000 profile}
+          '';
+        };
+
+      kvarn-eager-k4v4 = mkKvarnEagerRunner
+        "vllm-xpu-kvarn-eager-k4v4"
+        chatProfile.kvarnEagerK4V4;
+      kvarn-eager-k4v2 = mkKvarnEagerRunner
+        "vllm-xpu-kvarn-eager-k4v2"
+        chatProfile.kvarnEagerK4V2;
+
       # ---- shells + misc helpers ----
       syclToolchainShellHook = import ./nix/sycl-shellhook.nix {
         inherit pkgs intel-oneapi;
@@ -380,6 +408,14 @@
         vllm-xpu-chat = {
           type = "app";
           program = "${vllm-xpu-maintenance}/bin/vllm-xpu-maintenance";
+        };
+        vllm-xpu-kvarn-eager-k4v4 = {
+          type = "app";
+          program = "${kvarn-eager-k4v4}/bin/vllm-xpu-kvarn-eager-k4v4";
+        };
+        vllm-xpu-kvarn-eager-k4v2 = {
+          type = "app";
+          program = "${kvarn-eager-k4v2}/bin/vllm-xpu-kvarn-eager-k4v2";
         };
         autoround = {
           type = "app";

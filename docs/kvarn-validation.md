@@ -68,6 +68,29 @@ post-warmup quarter until pilot data supports a tighter envelope.
 The existing `scripts/kl_eval.py` compares BF16 and AutoRound model weights and
 must not be used as evidence for KV-cache accuracy.
 
+Use `scripts/kvarn_endpoint_eval.py` for the paired KV-cache comparison. Start
+BF16-KV and KVarN servers with the same weights, tokenizer, engine arguments,
+and deterministic settings, then provide exact teacher-forced token sequences:
+
+```console
+python scripts/kvarn_endpoint_eval.py \
+  --dataset validation-tokens.jsonl \
+  --bf16-url http://127.0.0.1:8000 \
+  --kvarn-url http://127.0.0.1:8001 \
+  --output results/checkpoints.jsonl \
+  --summary results/summary.json \
+  --metadata-json engine-metadata.json
+```
+
+Each input row has `token_ids`, or `prompt_token_ids` and
+`continuation_token_ids`, plus an optional `id`. The runner uses echoed prompt
+logprobs to force both caches through identical tokens. Endpoint logprobs expose
+only top-k probabilities, so its KL and Jensen-Shannon values use the shared
+top-k tokens plus a residual bucket. They are reproducible, coarsened drift
+signals—not substitutes for the full-vocabulary logits required by the final
+accuracy gate. Set `--top-logprobs -1` for full logprobs only when the server and
+available output storage can safely support them.
+
 ## Hybrid page-accounting gate
 
 Record all four values below for each mode:

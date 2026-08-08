@@ -341,6 +341,9 @@
       kvarn-eager-k4v4 = mkKvarnRunner
         "vllm-xpu-kvarn-eager-k4v4"
         chatProfile.kvarnEagerK4V4;
+      bf16-kv-eager = mkKvarnRunner
+        "vllm-xpu-bf16-kv-eager"
+        chatProfile.bf16KvEager;
       kvarn-eager-k4v2 = mkKvarnRunner
         "vllm-xpu-kvarn-eager-k4v2"
         chatProfile.kvarnEagerK4V2;
@@ -426,6 +429,10 @@
         vllm-xpu-kvarn-eager-k4v4 = {
           type = "app";
           program = "${kvarn-eager-k4v4}/bin/vllm-xpu-kvarn-eager-k4v4";
+        };
+        vllm-xpu-bf16-kv-eager = {
+          type = "app";
+          program = "${bf16-kv-eager}/bin/vllm-xpu-bf16-kv-eager";
         };
         vllm-xpu-kvarn-eager-k4v2 = {
           type = "app";

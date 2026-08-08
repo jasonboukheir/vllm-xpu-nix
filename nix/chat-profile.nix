@@ -31,6 +31,23 @@ let
 in {
   inherit chat;
 
+  # Paired accuracy baseline: identical AutoRound weights and native BF16 GDN
+  # state, with only the full-attention KV representation differing from the
+  # KVarN eager profiles below.
+  bf16KvEager =
+    (builtins.removeAttrs chat [
+      "speculativeConfig"
+      "cudagraphCaptureSizes"
+    ])
+    // {
+      servedName = "qwen3.6-27b-bf16-kv-eager";
+      kvCacheDtype = "auto";
+      maxModelLen = 8192;
+      enforceEager = true;
+      enableXpuGraph = false;
+      extraArgs = chat.extraArgs ++ ["--no-enable-prefix-caching"];
+    };
+
   kvarnEagerK4V4 =
     (builtins.removeAttrs chat [
       "speculativeConfig"

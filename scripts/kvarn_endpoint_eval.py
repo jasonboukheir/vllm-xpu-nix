@@ -6,9 +6,12 @@ Both endpoints receive identical token prefixes.  Each JSONL input row must have
 have an ``id``.  The completions API's echoed prompt logprobs provide the
 teacher-forced target probability at each requested context checkpoint.
 
-KL/JS are computed over the union of returned top-k tokens plus one residual
-"other" bucket.  They are therefore explicitly coarsened-distribution metrics,
-not full-vocabulary KL/JS.
+KL/JS are emitted only when both endpoints return the same token support. With
+truncated top-k output, differing supports have unknown cross-probabilities and
+cannot yield a defensible KL/JS; the other drift signals remain available.
+
+This endpoint protocol replays each prefix as a fresh prompt. It is a prefill
+and quantized-store smoke test, not the paper's accumulated pseudo-decode test.
 """
 from __future__ import annotations
 
@@ -45,16 +48,18 @@ def _percentile(values: list[float], q: float) -> float | None:
 
 def coarsened_divergences(
     ref_logprobs: dict[str, float], mode_logprobs: dict[str, float]
-) -> tuple[float, float]:
-    """Return KL(ref||mode), JS on top-k union plus residual probability."""
-    keys = set(ref_logprobs) | set(mode_logprobs)
-    # A token absent from one top-k has unknown mass.  Coarsen all tokens not
-    # present in *both* distributions into the residual bucket; this avoids
-    # inventing probabilities and gives a reproducible lower-resolution metric.
-    shared = set(ref_logprobs) & set(mode_logprobs)
-    del keys
-    p_known = {k: math.exp(ref_logprobs[k]) for k in shared}
-    q_known = {k: math.exp(mode_logprobs[k]) for k in shared}
+) -> tuple[float, float] | None:
+    """Return KL/JS on common support plus residual, or None if unknowable.
+
+    If top-k supports differ, the probability assigned by one endpoint to a
+    token returned only by the other is unknown. Folding those tokens into an
+    endpoint-specific residual can make completely disjoint predictions report
+    KL=0, so fail closed instead of manufacturing a reassuring metric.
+    """
+    if set(ref_logprobs) != set(mode_logprobs):
+        return None
+    p_known = {k: math.exp(value) for k, value in ref_logprobs.items()}
+    q_known = {k: math.exp(value) for k, value in mode_logprobs.items()}
     p_known["__other__"] = max(0.0, 1.0 - sum(p_known.values()))
     q_known["__other__"] = max(0.0, 1.0 - sum(q_known.values()))
 
@@ -75,8 +80,8 @@ def coarsened_divergences(
 
 def aggregate(rows: Iterable[dict[str, Any]]) -> dict[str, Any]:
     rows = list(rows)
-    kls = [r["kl_ref_mode_nats"] for r in rows]
-    js = [r["js_nats"] for r in rows]
+    kls = [r["kl_ref_mode_nats"] for r in rows if r["kl_ref_mode_nats"] is not None]
+    js = [r["js_nats"] for r in rows if r["js_nats"] is not None]
     deltas = [r["target_logprob_delta"] for r in rows]
     top1 = [float(r["top1_agreement"]) for r in rows]
     top5 = [float(r["top5_agreement"]) for r in rows]
@@ -85,14 +90,16 @@ def aggregate(rows: Iterable[dict[str, Any]]) -> dict[str, Any]:
         subset = [r for r in rows if r["checkpoint"] == checkpoint]
         by_checkpoint[str(checkpoint)] = aggregate(subset) | {"by_checkpoint": {}} if len(subset) < len(rows) else {}
     slope = None
-    if len(rows) > 1:
-        xs = [math.log2(r["checkpoint"]) for r in rows]
+    slope_rows = [r for r in rows if r["kl_ref_mode_nats"] is not None]
+    if len(slope_rows) > 1:
+        xs = [math.log2(r["checkpoint"]) for r in slope_rows]
         x_mean, y_mean = statistics.fmean(xs), statistics.fmean(kls)
         denominator = sum((x - x_mean) ** 2 for x in xs)
         if denominator:
             slope = sum((x - x_mean) * (y - y_mean) for x, y in zip(xs, kls)) / denominator
     return {
         "count": len(rows),
+        "divergence_count": len(kls),
         "kl_nats": {"mean": statistics.fmean(kls) if kls else None,
                     "p50": _percentile(kls, .50), "p95": _percentile(kls, .95),
                     "p99": _percentile(kls, .99)},
@@ -197,7 +204,9 @@ def main() -> None:
         "bf16_model": bf16_model, "kvarn_model": kvarn_model,
         "bf16_url": args.bf16_url, "kvarn_url": args.kvarn_url,
         "bf16_models_response": bf16_models, "kvarn_models_response": kvarn_models,
-        "input_sha256": _json_hash(samples), "metric_distribution": "shared-top-k-plus-residual",
+        "input_sha256": _json_hash(samples),
+        "evaluation_path": "fresh-prompt-prefill-proxy",
+        "metric_distribution": "equal-returned-support-plus-residual",
         "extra": extra_metadata,
     }
     # Stable across reruns of the same inputs/configuration; timestamps and
@@ -224,7 +233,8 @@ def main() -> None:
                                                args.top_logprobs, args.timeout)
                 mode_lp, mode_top = _checkpoint(args.kvarn_url, kvarn_model, prefix,
                                                  args.top_logprobs, args.timeout)
-                kl, js = coarsened_divergences(ref_top, mode_top)
+                divergences = coarsened_divergences(ref_top, mode_top)
+                kl, js = divergences if divergences is not None else (None, None)
                 ref_order = sorted(ref_top, key=ref_top.get, reverse=True)
                 mode_order = sorted(mode_top, key=mode_top.get, reverse=True)
                 row = {
@@ -234,6 +244,7 @@ def main() -> None:
                     "kvarn_target_logprob": mode_lp,
                     "target_logprob_delta": mode_lp - ref_lp,
                     "kl_ref_mode_nats": kl, "js_nats": js,
+                    "divergence_support_complete": divergences is not None,
                     "top1_agreement": ref_order[:1] == mode_order[:1],
                     # Treat BF16's top-1 as the reference prediction and ask
                     # whether KVarN retains it in its top five.

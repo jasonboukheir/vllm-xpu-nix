@@ -84,12 +84,18 @@ python scripts/kvarn_endpoint_eval.py \
 
 Each input row has `token_ids`, or `prompt_token_ids` and
 `continuation_token_ids`, plus an optional `id`. The runner uses echoed prompt
-logprobs to force both caches through identical tokens. Endpoint logprobs expose
-only top-k probabilities, so its KL and Jensen-Shannon values use the shared
-top-k tokens plus a residual bucket. They are reproducible, coarsened drift
-signals—not substitutes for the full-vocabulary logits required by the final
-accuracy gate. Set `--top-logprobs -1` for full logprobs only when the server and
-available output storage can safely support them.
+logprobs on fresh requests. This validates tokenization, prompt/prefill, and
+quantized-store behavior, but it does **not** reproduce accumulated decode: the
+endpoint rebuilds each prefix rather than advancing one persistent cache through
+the teacher-forced continuation. It must not be used as the decode-aware gate
+above until vLLM exposes a stateful forced-token/logit capture path.
+
+Endpoint logprobs usually expose only top-k probabilities. KL and
+Jensen-Shannon are reported only where both endpoints return identical token
+support; otherwise the cross-probabilities are unknown and the fields are null.
+Set `--top-logprobs -1` for full logprobs only when the server and available
+output storage can safely support them. Even then, this remains a prefill proxy,
+not a substitute for the persistent-cache pseudo-decode experiment.
 
 ## Hybrid page-accounting gate
 

@@ -12,7 +12,9 @@ SPEC.loader.exec_module(MODULE)
 
 def test_coarsened_divergence_identical_is_zero():
     logprobs = {"token_id:1": math.log(.6), "token_id:2": math.log(.3)}
-    kl, js = MODULE.coarsened_divergences(logprobs, logprobs)
+    result = MODULE.coarsened_divergences(logprobs, logprobs)
+    assert result is not None
+    kl, js = result
     assert math.isclose(kl, 0, abs_tol=1e-14)
     assert math.isclose(js, 0, abs_tol=1e-14)
 
@@ -20,10 +22,21 @@ def test_coarsened_divergence_identical_is_zero():
 def test_coarsened_divergence_includes_residual_mass():
     ref = {"token_id:1": math.log(.6)}
     mode = {"token_id:1": math.log(.3)}
-    kl, js = MODULE.coarsened_divergences(ref, mode)
+    result = MODULE.coarsened_divergences(ref, mode)
+    assert result is not None
+    kl, js = result
     expected = .6 * math.log(.6 / .3) + .4 * math.log(.4 / .7)
     assert math.isclose(kl, expected)
     assert 0 < js < kl
+
+
+def test_differing_topk_support_does_not_report_false_zero_kl():
+    # Collapsing endpoint-specific tokens into "other" makes these maximally
+    # different top-1 predictions look identical. Their cross-probabilities
+    # are unknown, so the evaluator must withhold KL/JS.
+    ref = {"token_id:1": math.log(.99)}
+    mode = {"token_id:2": math.log(.99)}
+    assert MODULE.coarsened_divergences(ref, mode) is None
 
 
 def test_aggregate_percentiles_and_agreement():
@@ -34,8 +47,21 @@ def test_aggregate_percentiles_and_agreement():
     } for checkpoint, value in enumerate((1., 2., 3., 4.), 1)]
     result = MODULE.aggregate(rows)
     assert result["count"] == 4
+    assert result["divergence_count"] == 4
     assert result["kl_nats"]["p50"] == 2.5
     assert math.isclose(result["kl_nats"]["p95"], 3.85)
     assert result["top1_agreement"] == .25
     assert set(result["by_checkpoint"]) == {"1", "2", "3", "4"}
     assert result["kl_slope_per_log2_context"] > 0
+
+
+def test_aggregate_omits_unavailable_divergences():
+    row = {
+        "checkpoint": 128, "kl_ref_mode_nats": None, "js_nats": None,
+        "target_logprob_delta": .1, "top1_agreement": False,
+        "top5_agreement": True,
+    }
+    result = MODULE.aggregate([row])
+    assert result["count"] == 1
+    assert result["divergence_count"] == 0
+    assert result["kl_nats"]["mean"] is None

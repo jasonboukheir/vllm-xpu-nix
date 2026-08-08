@@ -316,7 +316,7 @@
         '';
       };
 
-      mkKvarnEagerRunner = name: profile:
+      mkKvarnRunner = name: profile:
         pkgs.writeShellApplication {
           inherit name;
           text = ''
@@ -330,21 +330,32 @@
             export CCL_ZE_IPC_EXCHANGE=sockets
             export CCL_LOG_LEVEL=warn
 
+            ${pkgs.lib.optionalString (profile.enableXpuGraph or false) "export VLLM_XPU_ENABLE_XPU_GRAPH=1"}
+
             HOME="$runtime_root" VLLM_CACHE_ROOT="$runtime_root" \
               exec ${vllm-xpu-chat}/bin/vllm serve \
                 ${mkMaintenanceServeArgs 8000 profile}
           '';
         };
 
-      kvarn-eager-k4v4 = mkKvarnEagerRunner
+      kvarn-eager-k4v4 = mkKvarnRunner
         "vllm-xpu-kvarn-eager-k4v4"
         chatProfile.kvarnEagerK4V4;
-      kvarn-eager-k4v2 = mkKvarnEagerRunner
+      kvarn-eager-k4v2 = mkKvarnRunner
         "vllm-xpu-kvarn-eager-k4v2"
         chatProfile.kvarnEagerK4V2;
-      kvarn-mtp-eager-k4v4 = mkKvarnEagerRunner
+      kvarn-mtp-eager-k4v4 = mkKvarnRunner
         "vllm-xpu-kvarn-mtp-eager-k4v4"
         chatProfile.kvarnMtpEagerK4V4;
+      kvarn-prefix-eager-k4v4 = mkKvarnRunner
+        "vllm-xpu-kvarn-prefix-eager-k4v4"
+        chatProfile.kvarnPrefixEagerK4V4;
+      kvarn-graph-k4v4 = mkKvarnRunner
+        "vllm-xpu-kvarn-graph-k4v4"
+        chatProfile.kvarnGraphK4V4;
+      kvarn-mtp-prefix-graph-k4v4 = mkKvarnRunner
+        "vllm-xpu-kvarn-mtp-prefix-graph-k4v4"
+        chatProfile.kvarnMtpPrefixGraphK4V4;
 
       # ---- shells + misc helpers ----
       syclToolchainShellHook = import ./nix/sycl-shellhook.nix {
@@ -423,6 +434,18 @@
         vllm-xpu-kvarn-mtp-eager-k4v4 = {
           type = "app";
           program = "${kvarn-mtp-eager-k4v4}/bin/vllm-xpu-kvarn-mtp-eager-k4v4";
+        };
+        vllm-xpu-kvarn-prefix-eager-k4v4 = {
+          type = "app";
+          program = "${kvarn-prefix-eager-k4v4}/bin/vllm-xpu-kvarn-prefix-eager-k4v4";
+        };
+        vllm-xpu-kvarn-graph-k4v4 = {
+          type = "app";
+          program = "${kvarn-graph-k4v4}/bin/vllm-xpu-kvarn-graph-k4v4";
+        };
+        vllm-xpu-kvarn-mtp-prefix-graph-k4v4 = {
+          type = "app";
+          program = "${kvarn-mtp-prefix-graph-k4v4}/bin/vllm-xpu-kvarn-mtp-prefix-graph-k4v4";
         };
         autoround = {
           type = "app";

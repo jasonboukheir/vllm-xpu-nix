@@ -59,6 +59,15 @@ in {
       extraArgs = chat.extraArgs ++ ["--no-enable-prefix-caching"];
     };
 
+  kvarnMtpEagerK4V4 = (builtins.removeAttrs chat ["cudagraphCaptureSizes"]) // {
+    servedName = "qwen3.6-27b-kvarn-mtp-k4v4";
+    kvCacheDtype = "kvarn_k4v4_g128";
+    maxModelLen = 8192;
+    enforceEager = true;
+    enableXpuGraph = false;
+    extraArgs = chat.extraArgs ++ ["--no-enable-prefix-caching"];
+  };
+
   embedding = {
     model = "jinaai/jina-embeddings-v5-text-nano-retrieval";
     servedName = "jina-embeddings-v5-nano";

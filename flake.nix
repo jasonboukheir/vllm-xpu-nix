@@ -209,6 +209,112 @@
         };
       };
 
+      chatProfile = import ./nix/chat-profile.nix;
+
+      mkMaintenanceServeArgs = port: inst:
+        pkgs.lib.concatStringsSep " " (
+          [
+            (pkgs.lib.escapeShellArg inst.model)
+            "--host" "127.0.0.1"
+            "--port" (toString port)
+            "--served-model-name" (pkgs.lib.escapeShellArg inst.servedName)
+            "--dtype" (pkgs.lib.escapeShellArg inst.dtype)
+            "--gpu-memory-utilization" (toString inst.gpuMemoryUtilization)
+          ]
+          ++ pkgs.lib.optionals (inst ? runner) ["--runner" (pkgs.lib.escapeShellArg inst.runner)]
+          ++ pkgs.lib.optionals (inst ? quantization) ["--quantization" (pkgs.lib.escapeShellArg inst.quantization)]
+          ++ pkgs.lib.optionals (inst ? kvCacheDtype) ["--kv-cache-dtype" (pkgs.lib.escapeShellArg inst.kvCacheDtype)]
+          ++ ["--max-model-len" (toString inst.maxModelLen)]
+          ++ ["--max-num-seqs" (toString inst.maxNumSeqs)]
+          ++ pkgs.lib.optionals (inst ? speculativeConfig) [
+            "--speculative-config"
+            (pkgs.lib.escapeShellArg (builtins.toJSON inst.speculativeConfig))
+          ]
+          ++ pkgs.lib.optionals inst.enforceEager ["--enforce-eager"]
+          ++ pkgs.lib.optionals (inst ? cudagraphCaptureSizes) [
+            "--compilation-config"
+            (pkgs.lib.escapeShellArg (builtins.toJSON {
+              cudagraph_capture_sizes = inst.cudagraphCaptureSizes;
+            }))
+          ]
+          ++ pkgs.lib.optionals (inst ? reasoningParser) ["--reasoning-parser" inst.reasoningParser]
+          ++ pkgs.lib.optionals (inst.enableAutoToolChoice or false) ["--enable-auto-tool-choice"]
+          ++ pkgs.lib.optionals (inst ? toolCallParser) ["--tool-call-parser" inst.toolCallParser]
+          ++ pkgs.lib.optionals (inst.languageModelOnly or false) ["--language-model-only"]
+          ++ map pkgs.lib.escapeShellArg inst.extraArgs
+        );
+
+      vllm-xpu-maintenance = pkgs.writeShellApplication {
+        name = "vllm-xpu-maintenance";
+        runtimeInputs = [pkgs.coreutils pkgs.curl];
+        text = ''
+          set -m
+
+          runtime_root="''${XDG_CACHE_HOME:-$HOME/.cache}/vllm-xpu-maintenance"
+          mkdir -p "$runtime_root/chat" "$runtime_root/embedding"
+
+          export VLLM_TARGET_DEVICE=xpu
+          export HF_HOME=/var/cache/huggingface
+          export CCL_PROCESS_LAUNCHER=none
+          export CCL_ATL_TRANSPORT=ofi
+          export CCL_ZE_IPC_EXCHANGE=sockets
+          export CCL_LOG_LEVEL=warn
+
+          cleanup() {
+            trap - EXIT INT TERM
+            kill "''${chat_pid:-}" "''${embedding_pid:-}" 2>/dev/null || true
+            wait "''${chat_pid:-}" "''${embedding_pid:-}" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+          trap 'cleanup; exit 130' INT TERM
+
+          HOME="$runtime_root/embedding" \
+          VLLM_CACHE_ROOT="$runtime_root/embedding" \
+            ${vllm-xpu-chat}/bin/vllm serve \
+              ${mkMaintenanceServeArgs 8001 chatProfile.embedding} &
+          embedding_pid=$!
+
+          for _ in $(seq 1 180); do
+            if curl --fail --silent --max-time 2 \
+              http://127.0.0.1:8001/v1/models >/dev/null; then
+              break
+            fi
+            if ! kill -0 "$embedding_pid" 2>/dev/null; then
+              wait "$embedding_pid"
+            fi
+            sleep 1
+          done
+          curl --fail --silent --max-time 2 \
+            http://127.0.0.1:8001/v1/models >/dev/null
+
+          chat_attempt=1
+          while :; do
+            HOME="$runtime_root/chat" \
+            VLLM_CACHE_ROOT="$runtime_root/chat" \
+            VLLM_XPU_ENABLE_XPU_GRAPH=1 \
+              ${vllm-xpu-chat}/bin/vllm serve \
+                ${mkMaintenanceServeArgs 8000 chatProfile.chat} &
+            chat_pid=$!
+
+            if wait "$chat_pid"; then
+              exit 0
+            else
+              chat_status=$?
+            fi
+            chat_pid=""
+
+            if [ "$chat_attempt" -ge 3 ]; then
+              echo "chat failed after $chat_attempt attempts" >&2
+              exit "$chat_status"
+            fi
+
+            echo "chat attempt $chat_attempt failed; retrying with compiled artifacts" >&2
+            chat_attempt=$((chat_attempt + 1))
+            sleep 5
+          done
+        '';
+      };
+
       # ---- shells + misc helpers ----
       syclToolchainShellHook = import ./nix/sycl-shellhook.nix {
         inherit pkgs intel-oneapi;
@@ -239,7 +345,7 @@
         # `vllm-xpu`/`vllm-xpu-unstable` outputs are just two fixed
         # instantiations of mkVllm; mkVllm { src; version; kernels; ... }
         # builds against the same pinned substrate from any src.
-        inherit mkVllm mkVllmXpuKernels;
+        inherit mkVllm mkVllmXpuKernels chatProfile;
       };
 
       packages = {
@@ -271,6 +377,10 @@
       };
 
       apps = {
+        vllm-xpu-chat = {
+          type = "app";
+          program = "${vllm-xpu-maintenance}/bin/vllm-xpu-maintenance";
+        };
         autoround = {
           type = "app";
           program = "${auto-round-xpu}/bin/auto-round";

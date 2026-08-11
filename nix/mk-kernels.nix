@@ -10,7 +10,8 @@
   intel-pti,
   torch-xpu,
   cutlass-src,
-}: let
+}:
+let
   # oneDNN is no longer vendored as the `third_party/oneDNN` submodule; the
   # kernels' cmake/Modules/FindoneDNN.cmake clones it via FetchContent at
   # configure time, which the offline Nix sandbox cannot do. Prefetch it as a
@@ -25,31 +26,46 @@
     hash = "sha256-t5+DF4/qgEYQpTY8Qox0BTfpykfs5kFqYy6HrEJaVu0=";
   };
 
-  mkXpuLibFactory = {
-    src,
-    version,
-    aotDevices ? [],
-    useCcache ? true,
-    kernelChunkPrefillConfig ? null,
-    kernelPagedDecodeConfig ? null,
-    kernelChunkPrefillExtra ? [],
-    kernelPagedDecodeExtra ? [],
-  }: let
-    factory = pkgs.callPackage ./vllm-xpu-lib.nix {
-      intel-oneapi-base = intel-oneapi;
-      inherit intel-pti torch-xpu;
-      python3Packages = pkgs.python312Packages;
-      inherit src version;
-      inherit cutlass-src onednn-src;
-    };
-  in
+  mkXpuLibFactory =
+    {
+      src,
+      version,
+      aotDevices ? [ ],
+      useCcache ? true,
+      kernelChunkPrefillConfig ? null,
+      kernelPagedDecodeConfig ? null,
+      kernelChunkPrefillExtra ? [ ],
+      kernelPagedDecodeExtra ? [ ],
+    }:
+    let
+      factory = pkgs.callPackage ./vllm-xpu-lib.nix {
+        intel-oneapi-base = intel-oneapi;
+        inherit intel-pti torch-xpu;
+        python3Packages = pkgs.python312Packages;
+        inherit src version;
+        inherit cutlass-src onednn-src;
+      };
+    in
     {
       libName,
-      featureFlags ? [],
-      buildDependencies ? [],
+      featureFlags ? [ ],
+      buildDependencies ? [ ],
       compileJobs ? null,
     }:
-      factory {inherit libName featureFlags aotDevices useCcache kernelChunkPrefillConfig kernelPagedDecodeConfig kernelChunkPrefillExtra kernelPagedDecodeExtra buildDependencies compileJobs;};
+    factory {
+      inherit
+        libName
+        featureFlags
+        aotDevices
+        useCcache
+        kernelChunkPrefillConfig
+        kernelPagedDecodeConfig
+        kernelChunkPrefillExtra
+        kernelPagedDecodeExtra
+        buildDependencies
+        compileJobs
+        ;
+    };
 
   # Per-lib feature flag matrices: enable only the chosen lib's source
   # subdir, disable all other libs and ext modules. VLLM_XPU_LIBS_ONLY
@@ -122,61 +138,108 @@
     "-DXPUMEM_ALLOCATOR_ENABLED=OFF"
   ];
 
-  mkKernelLibs = {
-    src,
-    version,
-    aotDevices ? [],
-    useCcache ? true,
-    kernelChunkPrefillConfig ? null,
-    kernelPagedDecodeConfig ? null,
-    kernelChunkPrefillExtra ? [],
-    kernelPagedDecodeExtra ? [],
-  }: let
-    mkLib = mkXpuLibFactory {inherit src version aotDevices useCcache kernelChunkPrefillConfig kernelPagedDecodeConfig kernelChunkPrefillExtra kernelPagedDecodeExtra;};
-    # Each library still builds with NIX_BUILD_CORES internally. Chaining the
-    # derivations prevents the daemon from running several SYCL compiler farms
-    # at once; GDN alone peaks at tens of GiB under icpx -O3.
-    gdnAttn = mkLib {
-      libName = "gdn_attn_kernels_xe_2";
-      featureFlags = gdnAttnFlags;
+  mkKernelLibs =
+    {
+      src,
+      version,
+      aotDevices ? [ ],
+      useCcache ? true,
+      kernelChunkPrefillConfig ? null,
+      kernelPagedDecodeConfig ? null,
+      kernelChunkPrefillExtra ? [ ],
+      kernelPagedDecodeExtra ? [ ],
+    }:
+    let
+      mkLib = mkXpuLibFactory {
+        inherit
+          src
+          version
+          aotDevices
+          useCcache
+          kernelChunkPrefillConfig
+          kernelPagedDecodeConfig
+          kernelChunkPrefillExtra
+          kernelPagedDecodeExtra
+          ;
+      };
+      # Each library still builds with NIX_BUILD_CORES internally. Chaining the
+      # derivations prevents the daemon from running several SYCL compiler farms
+      # at once; GDN alone peaks at tens of GiB under icpx -O3.
+      gdnAttn = mkLib {
+        libName = "gdn_attn_kernels_xe_2";
+        featureFlags = gdnAttnFlags;
+      };
+      groupedGemmXeDefault = mkLib {
+        libName = "grouped_gemm_xe_default";
+        featureFlags = groupedGemmXeDefaultFlags;
+        buildDependencies = [ gdnAttn ];
+      };
+      groupedGemmXe2 = mkLib {
+        libName = "grouped_gemm_xe_2";
+        featureFlags = groupedGemmXe2Flags;
+        buildDependencies = [ groupedGemmXeDefault ];
+      };
+      mhc = mkLib {
+        libName = "mhc_kernels_xe_2";
+        featureFlags = mhcFlags;
+        buildDependencies = [ groupedGemmXe2 ];
+      };
+      mqaLogits = mkLib {
+        libName = "mqa_logits_kernels_xe_2";
+        featureFlags = mqaLogitsFlags;
+        buildDependencies = [ mhc ];
+      };
+      attn = mkLib {
+        libName = "attn_kernels_xe_2";
+        featureFlags = attnFlags;
+        buildDependencies = [ mqaLogits ];
+        # oneAPI 2026 frontends for the generated FA2 translation units are
+        # substantially heavier than the other split libraries. Keep device
+        # linking at NIX_BUILD_CORES, but bound simultaneous C++ frontends.
+        compileJobs = 12;
+      };
+    in
+    {
+      gdn-attn-kernels-xe-2 = gdnAttn;
+      grouped-gemm-xe-default = groupedGemmXeDefault;
+      grouped-gemm-xe-2 = groupedGemmXe2;
+      mhc-kernels-xe-2 = mhc;
+      mqa-logits-kernels-xe-2 = mqaLogits;
+      attn-kernels-xe-2 = attn;
     };
-    groupedGemmXeDefault = mkLib {
-      libName = "grouped_gemm_xe_default";
-      featureFlags = groupedGemmXeDefaultFlags;
-      buildDependencies = [gdnAttn];
-    };
-    groupedGemmXe2 = mkLib {
-      libName = "grouped_gemm_xe_2";
-      featureFlags = groupedGemmXe2Flags;
-      buildDependencies = [groupedGemmXeDefault];
-    };
-    mhc = mkLib {
-      libName = "mhc_kernels_xe_2";
-      featureFlags = mhcFlags;
-      buildDependencies = [groupedGemmXe2];
-    };
-    mqaLogits = mkLib {
-      libName = "mqa_logits_kernels_xe_2";
-      featureFlags = mqaLogitsFlags;
-      buildDependencies = [mhc];
-    };
-    attn = mkLib {
-      libName = "attn_kernels_xe_2";
-      featureFlags = attnFlags;
-      buildDependencies = [mqaLogits];
-      # oneAPI 2026 frontends for the generated FA2 translation units are
-      # substantially heavier than the other split libraries. Keep device
-      # linking at NIX_BUILD_CORES, but bound simultaneous C++ frontends.
-      compileJobs = 12;
-    };
-  in {
-    gdn-attn-kernels-xe-2 = gdnAttn;
-    grouped-gemm-xe-default = groupedGemmXeDefault;
-    grouped-gemm-xe-2 = groupedGemmXe2;
-    mhc-kernels-xe-2 = mhc;
-    mqa-logits-kernels-xe-2 = mqaLogits;
-    attn-kernels-xe-2 = attn;
-  };
+
+  # Fast compile-only target for attention-kernel development. Unlike the
+  # production split-library set, this intentionally has no serialization
+  # dependency on GDN/MoE/MHC/MQA libraries: editing only Xe2 attention should
+  # compile one derivation, not rebuild all six unrelated kernel families.
+  # The final Python package still uses mkKernelLibs and therefore retains the
+  # production memory-safe serialization chain.
+  mkAttnKernelDev =
+    {
+      src,
+      version,
+      aotDevices ? [ ],
+      useCcache ? true,
+      kernelChunkPrefillConfig ? null,
+      kernelPagedDecodeConfig ? null,
+      kernelChunkPrefillExtra ? [ ],
+      kernelPagedDecodeExtra ? [ ],
+    }:
+    (mkXpuLibFactory {
+      inherit
+        src
+        version
+        aotDevices
+        useCcache
+        ;
+      inherit kernelChunkPrefillConfig kernelPagedDecodeConfig;
+      inherit kernelChunkPrefillExtra kernelPagedDecodeExtra;
+    })
+      {
+        libName = "attn_kernels_xe_2";
+        featureFlags = attnFlags;
+        compileJobs = 12;
+      };
 
   # Overridable via the standard nixpkgs `.override` mechanism:
   #
@@ -202,35 +265,52 @@
   # names, plus optional extra config lines appended to that preset at build
   # time (no fork needed). Omit a field to keep the full sweep for that
   # stage.
-  mkVllmXpuKernels = pkgs.lib.makeOverridable ({
-    src,
-    version,
-    aotDevices ? [],
-    useCcache ? true,
-    kernelConfig ? {},
-  }: let
-    cfg = {
-      chunkPrefill = null;
-      pagedDecode = null;
-      chunkPrefillExtra = [];
-      pagedDecodeExtra = [];
-    } // kernelConfig;
-    kernelCfg = {
-      kernelChunkPrefillConfig = cfg.chunkPrefill;
-      kernelPagedDecodeConfig = cfg.pagedDecode;
-      kernelChunkPrefillExtra = cfg.chunkPrefillExtra;
-      kernelPagedDecodeExtra = cfg.pagedDecodeExtra;
-    };
-    libs = mkKernelLibs ({inherit src version aotDevices useCcache;} // kernelCfg);
-  in
-    pkgs.callPackage ./vllm-xpu-kernels.nix ({
+  mkVllmXpuKernels = pkgs.lib.makeOverridable (
+    {
+      src,
+      version,
+      aotDevices ? [ ],
+      useCcache ? true,
+      kernelConfig ? { },
+    }:
+    let
+      cfg = {
+        chunkPrefill = null;
+        pagedDecode = null;
+        chunkPrefillExtra = [ ];
+        pagedDecodeExtra = [ ];
+      }
+      // kernelConfig;
+      kernelCfg = {
+        kernelChunkPrefillConfig = cfg.chunkPrefill;
+        kernelPagedDecodeConfig = cfg.pagedDecode;
+        kernelChunkPrefillExtra = cfg.chunkPrefillExtra;
+        kernelPagedDecodeExtra = cfg.pagedDecodeExtra;
+      };
+      libs = mkKernelLibs (
+        {
+          inherit
+            src
+            version
+            aotDevices
+            useCcache
+            ;
+        }
+        // kernelCfg
+      );
+    in
+    pkgs.callPackage ./vllm-xpu-kernels.nix (
+      {
         intel-oneapi-base = intel-oneapi;
         inherit intel-pti torch-xpu useCcache;
         python3Packages = pkgs.python312Packages;
         inherit src version aotDevices;
         inherit cutlass-src onednn-src;
       }
-      // libs));
-in {
-  inherit mkKernelLibs mkVllmXpuKernels;
+      // libs
+    )
+  );
+in
+{
+  inherit mkAttnKernelDev mkKernelLibs mkVllmXpuKernels;
 }

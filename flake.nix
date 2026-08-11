@@ -45,443 +45,600 @@
     };
   };
 
-  outputs = {
-    self,
-    nixpkgs,
-    flake-utils,
-    vllm-xpu-kernels-src,
-    vllm-xpu-kernels-unstable-src,
-    vllm-xpu-src,
-    vllm-xpu-unstable-src,
-    sycl-tla-src,
-  }: let
-    systemOutputs = flake-utils.lib.eachSystem ["x86_64-linux"] (system: let
-      pkgs = import nixpkgs {
-        inherit system;
-        config.allowUnfree = true;
-        overlays = [(import ./nix/python-test-workarounds-overlay.nix)];
-      };
+  outputs =
+    {
+      self,
+      nixpkgs,
+      flake-utils,
+      vllm-xpu-kernels-src,
+      vllm-xpu-kernels-unstable-src,
+      vllm-xpu-src,
+      vllm-xpu-unstable-src,
+      sycl-tla-src,
+    }:
+    let
+      systemOutputs = flake-utils.lib.eachSystem [ "x86_64-linux" ] (
+        system:
+        let
+          pkgs = import nixpkgs {
+            inherit system;
+            config.allowUnfree = true;
+            overlays = [ (import ./nix/python-test-workarounds-overlay.nix) ];
+          };
 
-      # ---- source narrowing + version stamping ----
-      mkKernelsSrc = import ./nix/lib/kernels-src.nix {inherit (pkgs) lib;};
-      vllm-xpu-kernels-src' = mkKernelsSrc vllm-xpu-kernels-src;
-      vllm-xpu-kernels-unstable-src' = mkKernelsSrc vllm-xpu-kernels-unstable-src;
+          # ---- source narrowing + version stamping ----
+          mkKernelsSrc = import ./nix/lib/kernels-src.nix { inherit (pkgs) lib; };
+          vllm-xpu-kernels-src' = mkKernelsSrc vllm-xpu-kernels-src;
+          vllm-xpu-kernels-unstable-src' = mkKernelsSrc vllm-xpu-kernels-unstable-src;
 
-      mkInputVersion = import ./nix/lib/mk-input-version.nix {lockFile = ./flake.lock;};
-      kernelsStableVersion = mkInputVersion {
-        name = "vllm-xpu-kernels-src";
-        input = vllm-xpu-kernels-src;
-      };
-      kernelsUnstableVersion = mkInputVersion {
-        name = "vllm-xpu-kernels-unstable-src";
-        input = vllm-xpu-kernels-unstable-src;
-        # main descends from the v0.1.12 tag (git describe -> v0.1.12-N);
-        # the +unstable.<date>.g<rev> suffix marks the snapshot ahead of it.
-        base = "0.1.12";
-        unstable = true;
-      };
-      vllmStableVersion = mkInputVersion {
-        name = "vllm-xpu-src";
-        input = vllm-xpu-src;
-      };
-      vllmUnstableVersion = mkInputVersion {
-        name = "vllm-xpu-unstable-src";
-        input = vllm-xpu-unstable-src;
-        base = "0.26.0";
-        unstable = true;
-      };
+          mkInputVersion = import ./nix/lib/mk-input-version.nix { lockFile = ./flake.lock; };
+          kernelsStableVersion = mkInputVersion {
+            name = "vllm-xpu-kernels-src";
+            input = vllm-xpu-kernels-src;
+          };
+          kernelsUnstableVersion = mkInputVersion {
+            name = "vllm-xpu-kernels-unstable-src";
+            input = vllm-xpu-kernels-unstable-src;
+            # main descends from the v0.1.12 tag (git describe -> v0.1.12-N);
+            # the +unstable.<date>.g<rev> suffix marks the snapshot ahead of it.
+            base = "0.1.12";
+            unstable = true;
+          };
+          vllmStableVersion = mkInputVersion {
+            name = "vllm-xpu-src";
+            input = vllm-xpu-src;
+          };
+          vllmUnstableVersion = mkInputVersion {
+            name = "vllm-xpu-unstable-src";
+            input = vllm-xpu-unstable-src;
+            base = "0.26.0";
+            unstable = true;
+          };
 
-      # ---- toolchain + base substrate ----
-      intel-oneapi = import ./nix/intel-oneapi.nix {inherit pkgs;};
+          # ---- toolchain + base substrate ----
+          intel-oneapi = import ./nix/intel-oneapi.nix { inherit pkgs; };
 
-      intel-pti = pkgs.callPackage ./nix/intel-pti.nix {
-        intel-oneapi-base = intel-oneapi;
-      };
+          intel-pti = pkgs.callPackage ./nix/intel-pti.nix {
+            intel-oneapi-base = intel-oneapi;
+          };
 
-      torch-xpu = pkgs.callPackage ./nix/torch-xpu.nix {
-        intel-oneapi-base = intel-oneapi;
-        inherit intel-pti;
-        python3Packages = pkgs.python312Packages;
-      };
+          torch-xpu = pkgs.callPackage ./nix/torch-xpu.nix {
+            intel-oneapi-base = intel-oneapi;
+            inherit intel-pti;
+            python3Packages = pkgs.python312Packages;
+          };
 
-      triton-xpu = pkgs.callPackage ./nix/triton-xpu.nix {
-        intel-oneapi-base = intel-oneapi;
-        inherit intel-pti;
-        python3Packages = pkgs.python312Packages;
-      };
+          triton-xpu = pkgs.callPackage ./nix/triton-xpu.nix {
+            intel-oneapi-base = intel-oneapi;
+            inherit intel-pti;
+            python3Packages = pkgs.python312Packages;
+          };
 
-      torchvision-xpu = pkgs.callPackage ./nix/torchvision-xpu.nix {
-        inherit torch-xpu;
-        python3Packages = pkgs.python312Packages;
-      };
+          torchvision-xpu = pkgs.callPackage ./nix/torchvision-xpu.nix {
+            inherit torch-xpu;
+            python3Packages = pkgs.python312Packages;
+          };
 
-      python312PackagesXpu = import ./nix/python-xpu.nix {
-        inherit pkgs torch-xpu torchvision-xpu;
-      };
+          python312PackagesXpu = import ./nix/python-xpu.nix {
+            inherit pkgs torch-xpu torchvision-xpu;
+          };
 
-      flash-linear-attention = pkgs.callPackage ./nix/flash-linear-attention.nix {
-        inherit torch-xpu triton-xpu;
-        python3Packages = python312PackagesXpu;
-      };
+          flash-linear-attention = pkgs.callPackage ./nix/flash-linear-attention.nix {
+            inherit torch-xpu triton-xpu;
+            python3Packages = python312PackagesXpu;
+          };
 
-      auto-round-xpu = pkgs.callPackage ./nix/auto-round-xpu.nix {
-        inherit torch-xpu triton-xpu flash-linear-attention;
-        python3Packages = python312PackagesXpu;
-      };
+          auto-round-xpu = pkgs.callPackage ./nix/auto-round-xpu.nix {
+            inherit torch-xpu triton-xpu flash-linear-attention;
+            python3Packages = python312PackagesXpu;
+          };
 
-      quantize = pkgs.callPackage ./nix/quantize.nix {
-        inherit auto-round-xpu;
-        python3Packages = python312PackagesXpu;
-      };
+          quantize = pkgs.callPackage ./nix/quantize.nix {
+            inherit auto-round-xpu;
+            python3Packages = python312PackagesXpu;
+          };
 
-      kl-eval = pkgs.callPackage ./nix/kl-eval.nix {
-        inherit auto-round-xpu;
-        python3Packages = python312PackagesXpu;
-      };
+          kl-eval = pkgs.callPackage ./nix/kl-eval.nix {
+            inherit auto-round-xpu;
+            python3Packages = python312PackagesXpu;
+          };
 
-      # ---- kernel + vllm build factories ----
-      inherit
-        (import ./nix/mk-kernels.nix {
-          inherit pkgs intel-oneapi intel-pti torch-xpu;
-          cutlass-src = sycl-tla-src;
-        })
-        mkKernelLibs
-        mkVllmXpuKernels
-        ;
+          # ---- kernel + vllm build factories ----
+          inherit
+            (import ./nix/mk-kernels.nix {
+              inherit
+                pkgs
+                intel-oneapi
+                intel-pti
+                torch-xpu
+                ;
+              cutlass-src = sycl-tla-src;
+            })
+            mkAttnKernelDev
+            mkKernelLibs
+            mkVllmXpuKernels
+            ;
 
-      stableLibs = mkKernelLibs {
-        src = vllm-xpu-kernels-src';
-        version = kernelsStableVersion;
-      };
-      unstableLibs = mkKernelLibs {
-        src = vllm-xpu-kernels-unstable-src';
-        version = kernelsUnstableVersion;
-      };
+          stableLibs = mkKernelLibs {
+            src = vllm-xpu-kernels-src';
+            version = kernelsStableVersion;
+          };
+          unstableLibs = mkKernelLibs {
+            src = vllm-xpu-kernels-unstable-src';
+            version = kernelsUnstableVersion;
+          };
+          unstableAttnKernelDev = mkAttnKernelDev {
+            src = vllm-xpu-kernels-unstable-src';
+            version = kernelsUnstableVersion;
+            aotDevices = [ "bmg" ];
+            kernelChunkPrefillConfig = "chunk_prefill_default";
+            kernelChunkPrefillExtra = [
+              "256,false,true,false,false,false"
+              "256,false,true,false,false,true"
+            ];
+            kernelPagedDecodeConfig = "paged_decode_default";
+            kernelPagedDecodeExtra = [
+              "8,256,16,true,false,false"
+              "8,256,32,true,false,false"
+              "8,256,64,true,false,false"
+            ];
+          };
 
-      vllm-xpu-kernels = mkVllmXpuKernels {
-        src = vllm-xpu-kernels-src';
-        version = kernelsStableVersion;
-      };
-      vllm-xpu-kernels-unstable = mkVllmXpuKernels {
-        src = vllm-xpu-kernels-unstable-src';
-        version = kernelsUnstableVersion;
-      };
+          vllm-xpu-kernels = mkVllmXpuKernels {
+            src = vllm-xpu-kernels-src';
+            version = kernelsStableVersion;
+          };
+          vllm-xpu-kernels-unstable = mkVllmXpuKernels {
+            src = vllm-xpu-kernels-unstable-src';
+            version = kernelsUnstableVersion;
+          };
+          unstableKernelsDev = mkVllmXpuKernels {
+            src = vllm-xpu-kernels-unstable-src';
+            version = kernelsUnstableVersion;
+            aotDevices = [ "bmg" ];
+            kernelConfig = {
+              chunkPrefill = "chunk_prefill_default";
+              chunkPrefillExtra = [
+                "256,false,true,false,false,false"
+                "256,false,true,false,false,true"
+              ];
+              pagedDecode = "paged_decode_default";
+              pagedDecodeExtra = [
+                "8,256,16,true,false,false"
+                "8,256,32,true,false,false"
+                "8,256,64,true,false,false"
+              ];
+            };
+          };
 
-      mkVllm = import ./nix/mk-vllm.nix {
-        inherit pkgs intel-oneapi intel-pti torch-xpu triton-xpu flash-linear-attention;
-        python3Packages = python312PackagesXpu;
-      };
+          mkVllm = import ./nix/mk-vllm.nix {
+            inherit
+              pkgs
+              intel-oneapi
+              intel-pti
+              torch-xpu
+              triton-xpu
+              flash-linear-attention
+              ;
+            python3Packages = python312PackagesXpu;
+          };
 
-      vllm-xpu = mkVllm {
-        src = vllm-xpu-src;
-        version = vllmStableVersion;
-        kernels = vllm-xpu-kernels;
-      };
+          vllm-xpu = mkVllm {
+            src = vllm-xpu-src;
+            version = vllmStableVersion;
+            kernels = vllm-xpu-kernels;
+          };
 
-      vllm-xpu-unstable = mkVllm {
-        src = vllm-xpu-unstable-src;
-        version = vllmUnstableVersion;
-        kernels = vllm-xpu-kernels-unstable;
-      };
+          vllm-xpu-unstable = mkVllm {
+            src = vllm-xpu-unstable-src;
+            version = vllmUnstableVersion;
+            kernels = vllm-xpu-kernels-unstable;
+          };
 
-      # Exact package deployed by Brutus's chat + embedding services. Keep the
-      # host-facing build policy here so `nix build .#vllm-xpu-chat` and the
-      # NixOS module consumer resolve to one derivation and one store output.
-      # The kernel set covers Qwen3.6-27B's head_dim=256 full attention plus
-      # the bidirectional head_dim=64 Jina embedding encoder.
-      vllm-xpu-chat = vllm-xpu-unstable.override {
-        withTorchvision = true;
-        aotDevices = ["bmg"];
-        kernelConfig = {
-          chunkPrefill = "chunk_prefill_default";
-          chunkPrefillExtra = [
-            "256,true,true,false,false,false"
-            "256,false,true,false,false,false"
-            "256,false,true,false,false,true"
-            "64,false,false,false,false,false"
-          ];
-          pagedDecode = "paged_decode_default";
-          pagedDecodeExtra = [
-            "8,256,16,true,false,false"
-            "8,256,32,true,false,false"
-            "8,256,64,true,false,false"
-            "8,256,64,false,false,false"
-          ];
-        };
-      };
+          # Local-source validation package for KVarN iteration.  Reuse the
+          # narrowly configured, cache-backed kernel package above instead of
+          # rebuilding every model-family kernel through vllm-xpu-chat.
+          unstableVllmKvarnDev = mkVllm {
+            src = vllm-xpu-unstable-src;
+            version = vllmUnstableVersion;
+            kernels = unstableKernelsDev;
+          };
 
-      chatProfile = import ./nix/chat-profile.nix;
+          # Exact package deployed by Brutus's chat + embedding services. Keep the
+          # host-facing build policy here so `nix build .#vllm-xpu-chat` and the
+          # NixOS module consumer resolve to one derivation and one store output.
+          # The kernel set covers Qwen3.6-27B's head_dim=256 full attention plus
+          # the bidirectional head_dim=64 Jina embedding encoder.
+          vllm-xpu-chat = vllm-xpu-unstable.override {
+            withTorchvision = true;
+            aotDevices = [ "bmg" ];
+            kernelConfig = {
+              chunkPrefill = "chunk_prefill_default";
+              chunkPrefillExtra = [
+                "256,true,true,false,false,false"
+                "256,false,true,false,false,false"
+                "256,false,true,false,false,true"
+                "64,false,false,false,false,false"
+              ];
+              pagedDecode = "paged_decode_default";
+              pagedDecodeExtra = [
+                "8,256,16,true,false,false"
+                "8,256,32,true,false,false"
+                "8,256,64,true,false,false"
+                "8,256,64,false,false,false"
+              ];
+            };
+          };
 
-      mkMaintenanceServeArgs = port: inst:
-        pkgs.lib.concatStringsSep " " (
-          [
-            (pkgs.lib.escapeShellArg inst.model)
-            "--host" "127.0.0.1"
-            "--port" (toString port)
-            "--served-model-name" (pkgs.lib.escapeShellArg inst.servedName)
-            "--dtype" (pkgs.lib.escapeShellArg inst.dtype)
-            "--gpu-memory-utilization" (toString inst.gpuMemoryUtilization)
-          ]
-          ++ pkgs.lib.optionals (inst ? runner) ["--runner" (pkgs.lib.escapeShellArg inst.runner)]
-          ++ pkgs.lib.optionals (inst ? quantization) ["--quantization" (pkgs.lib.escapeShellArg inst.quantization)]
-          ++ pkgs.lib.optionals (inst ? kvCacheDtype) ["--kv-cache-dtype" (pkgs.lib.escapeShellArg inst.kvCacheDtype)]
-          ++ ["--max-model-len" (toString inst.maxModelLen)]
-          ++ ["--max-num-seqs" (toString inst.maxNumSeqs)]
-          ++ pkgs.lib.optionals (inst ? speculativeConfig) [
-            "--speculative-config"
-            (pkgs.lib.escapeShellArg (builtins.toJSON inst.speculativeConfig))
-          ]
-          ++ pkgs.lib.optionals inst.enforceEager ["--enforce-eager"]
-          ++ pkgs.lib.optionals (inst ? cudagraphCaptureSizes) [
-            "--compilation-config"
-            (pkgs.lib.escapeShellArg (builtins.toJSON {
-              cudagraph_capture_sizes = inst.cudagraphCaptureSizes;
-            }))
-          ]
-          ++ pkgs.lib.optionals (inst ? reasoningParser) ["--reasoning-parser" inst.reasoningParser]
-          ++ pkgs.lib.optionals (inst.enableAutoToolChoice or false) ["--enable-auto-tool-choice"]
-          ++ pkgs.lib.optionals (inst ? toolCallParser) ["--tool-call-parser" inst.toolCallParser]
-          ++ pkgs.lib.optionals (inst.languageModelOnly or false) ["--language-model-only"]
-          ++ map pkgs.lib.escapeShellArg inst.extraArgs
-        );
+          chatProfile = import ./nix/chat-profile.nix;
 
-      vllm-xpu-maintenance = pkgs.writeShellApplication {
-        name = "vllm-xpu-maintenance";
-        runtimeInputs = [pkgs.coreutils pkgs.curl];
-        text = ''
-          set -m
+          mkMaintenanceServeArgs =
+            port: inst:
+            pkgs.lib.concatStringsSep " " (
+              [
+                (pkgs.lib.escapeShellArg inst.model)
+                "--host"
+                "127.0.0.1"
+                "--port"
+                (toString port)
+                "--served-model-name"
+                (pkgs.lib.escapeShellArg inst.servedName)
+                "--dtype"
+                (pkgs.lib.escapeShellArg inst.dtype)
+                "--gpu-memory-utilization"
+                (toString inst.gpuMemoryUtilization)
+              ]
+              ++ pkgs.lib.optionals (inst ? runner) [
+                "--runner"
+                (pkgs.lib.escapeShellArg inst.runner)
+              ]
+              ++ pkgs.lib.optionals (inst ? quantization) [
+                "--quantization"
+                (pkgs.lib.escapeShellArg inst.quantization)
+              ]
+              ++ pkgs.lib.optionals (inst ? kvCacheDtype) [
+                "--kv-cache-dtype"
+                (pkgs.lib.escapeShellArg inst.kvCacheDtype)
+              ]
+              ++ [
+                "--max-model-len"
+                (toString inst.maxModelLen)
+              ]
+              ++ [
+                "--max-num-seqs"
+                (toString inst.maxNumSeqs)
+              ]
+              ++ pkgs.lib.optionals (inst ? speculativeConfig) [
+                "--speculative-config"
+                (pkgs.lib.escapeShellArg (builtins.toJSON inst.speculativeConfig))
+              ]
+              ++ pkgs.lib.optionals inst.enforceEager [ "--enforce-eager" ]
+              ++ pkgs.lib.optionals (inst ? cudagraphCaptureSizes) [
+                "--compilation-config"
+                (pkgs.lib.escapeShellArg (
+                  builtins.toJSON {
+                    cudagraph_capture_sizes = inst.cudagraphCaptureSizes;
+                  }
+                ))
+              ]
+              ++ pkgs.lib.optionals (inst ? reasoningParser) [
+                "--reasoning-parser"
+                inst.reasoningParser
+              ]
+              ++ pkgs.lib.optionals (inst.enableAutoToolChoice or false) [ "--enable-auto-tool-choice" ]
+              ++ pkgs.lib.optionals (inst ? toolCallParser) [
+                "--tool-call-parser"
+                inst.toolCallParser
+              ]
+              ++ pkgs.lib.optionals (inst.languageModelOnly or false) [ "--language-model-only" ]
+              ++ map pkgs.lib.escapeShellArg inst.extraArgs
+            );
 
-          runtime_root="''${XDG_CACHE_HOME:-$HOME/.cache}/vllm-xpu-maintenance"
-          mkdir -p "$runtime_root/chat" "$runtime_root/embedding"
+          vllm-xpu-maintenance = pkgs.writeShellApplication {
+            name = "vllm-xpu-maintenance";
+            runtimeInputs = [
+              pkgs.coreutils
+              pkgs.curl
+            ];
+            text = ''
+              set -m
 
-          export VLLM_TARGET_DEVICE=xpu
-          export HF_HOME=/var/cache/huggingface
-          export CCL_PROCESS_LAUNCHER=none
-          export CCL_ATL_TRANSPORT=ofi
-          export CCL_ZE_IPC_EXCHANGE=sockets
-          export CCL_LOG_LEVEL=warn
+              runtime_root="''${XDG_CACHE_HOME:-$HOME/.cache}/vllm-xpu-maintenance"
+              mkdir -p "$runtime_root/chat" "$runtime_root/embedding"
 
-          cleanup() {
-            trap - EXIT INT TERM
-            kill "''${chat_pid:-}" "''${embedding_pid:-}" 2>/dev/null || true
-            wait "''${chat_pid:-}" "''${embedding_pid:-}" 2>/dev/null || true
-          }
-          trap cleanup EXIT
-          trap 'cleanup; exit 130' INT TERM
+              export VLLM_TARGET_DEVICE=xpu
+              export HF_HOME=/var/cache/huggingface
+              export CCL_PROCESS_LAUNCHER=none
+              export CCL_ATL_TRANSPORT=ofi
+              export CCL_ZE_IPC_EXCHANGE=sockets
+              export CCL_LOG_LEVEL=warn
 
-          HOME="$runtime_root/embedding" \
-          VLLM_CACHE_ROOT="$runtime_root/embedding" \
-            ${vllm-xpu-chat}/bin/vllm serve \
-              ${mkMaintenanceServeArgs 8001 chatProfile.embedding} &
-          embedding_pid=$!
+              cleanup() {
+                trap - EXIT INT TERM
+                kill "''${chat_pid:-}" "''${embedding_pid:-}" 2>/dev/null || true
+                wait "''${chat_pid:-}" "''${embedding_pid:-}" 2>/dev/null || true
+              }
+              trap cleanup EXIT
+              trap 'cleanup; exit 130' INT TERM
 
-          for _ in $(seq 1 180); do
-            if curl --fail --silent --max-time 2 \
-              http://127.0.0.1:8001/v1/models >/dev/null; then
-              break
-            fi
-            if ! kill -0 "$embedding_pid" 2>/dev/null; then
-              wait "$embedding_pid"
-            fi
-            sleep 1
-          done
-          curl --fail --silent --max-time 2 \
-            http://127.0.0.1:8001/v1/models >/dev/null
+              HOME="$runtime_root/embedding" \
+              VLLM_CACHE_ROOT="$runtime_root/embedding" \
+                ${vllm-xpu-chat}/bin/vllm serve \
+                  ${mkMaintenanceServeArgs 8001 chatProfile.embedding} &
+              embedding_pid=$!
 
-          chat_attempt=1
-          while :; do
-            HOME="$runtime_root/chat" \
-            VLLM_CACHE_ROOT="$runtime_root/chat" \
-            VLLM_XPU_ENABLE_XPU_GRAPH=1 \
-              ${vllm-xpu-chat}/bin/vllm serve \
-                ${mkMaintenanceServeArgs 8000 chatProfile.chat} &
-            chat_pid=$!
+              for _ in $(seq 1 180); do
+                if curl --fail --silent --max-time 2 \
+                  http://127.0.0.1:8001/v1/models >/dev/null; then
+                  break
+                fi
+                if ! kill -0 "$embedding_pid" 2>/dev/null; then
+                  wait "$embedding_pid"
+                fi
+                sleep 1
+              done
+              curl --fail --silent --max-time 2 \
+                http://127.0.0.1:8001/v1/models >/dev/null
 
-            if wait "$chat_pid"; then
-              exit 0
-            else
-              chat_status=$?
-            fi
-            chat_pid=""
+              chat_attempt=1
+              while :; do
+                HOME="$runtime_root/chat" \
+                VLLM_CACHE_ROOT="$runtime_root/chat" \
+                VLLM_XPU_ENABLE_XPU_GRAPH=1 \
+                  ${vllm-xpu-chat}/bin/vllm serve \
+                    ${mkMaintenanceServeArgs 8000 chatProfile.chat} &
+                chat_pid=$!
 
-            if [ "$chat_attempt" -ge 3 ]; then
-              echo "chat failed after $chat_attempt attempts" >&2
-              exit "$chat_status"
-            fi
+                if wait "$chat_pid"; then
+                  exit 0
+                else
+                  chat_status=$?
+                fi
+                chat_pid=""
 
-            echo "chat attempt $chat_attempt failed; retrying with compiled artifacts" >&2
-            chat_attempt=$((chat_attempt + 1))
-            sleep 5
-          done
-        '';
-      };
+                if [ "$chat_attempt" -ge 3 ]; then
+                  echo "chat failed after $chat_attempt attempts" >&2
+                  exit "$chat_status"
+                fi
 
-      mkKvarnRunner = name: profile:
-        pkgs.writeShellApplication {
-          inherit name;
-          text = ''
-            runtime_root="''${XDG_CACHE_HOME:-$HOME/.cache}/${name}"
-            mkdir -p "$runtime_root"
+                echo "chat attempt $chat_attempt failed; retrying with compiled artifacts" >&2
+                chat_attempt=$((chat_attempt + 1))
+                sleep 5
+              done
+            '';
+          };
 
-            export VLLM_TARGET_DEVICE=xpu
-            export HF_HOME=/var/cache/huggingface
-            export CCL_PROCESS_LAUNCHER=none
-            export CCL_ATL_TRANSPORT=ofi
-            export CCL_ZE_IPC_EXCHANGE=sockets
-            export CCL_LOG_LEVEL=warn
+          mkKvarnRunner =
+            name: profile:
+            pkgs.writeShellApplication {
+              inherit name;
+              text = ''
+                runtime_root="''${XDG_CACHE_HOME:-$HOME/.cache}/${name}"
+                mkdir -p "$runtime_root"
 
-            ${pkgs.lib.optionalString (profile.enableXpuGraph or false) "export VLLM_XPU_ENABLE_XPU_GRAPH=1"}
+                export VLLM_TARGET_DEVICE=xpu
+                export HF_HOME=/var/cache/huggingface
+                export CCL_PROCESS_LAUNCHER=none
+                export CCL_ATL_TRANSPORT=ofi
+                export CCL_ZE_IPC_EXCHANGE=sockets
+                export CCL_LOG_LEVEL=warn
 
-            HOME="$runtime_root" VLLM_CACHE_ROOT="$runtime_root" \
-              exec ${vllm-xpu-chat}/bin/vllm serve \
-                ${mkMaintenanceServeArgs 8000 profile}
-          '';
-        };
+                ${pkgs.lib.optionalString (profile.enableXpuGraph or false) "export VLLM_XPU_ENABLE_XPU_GRAPH=1"}
+                ${pkgs.lib.optionalString (profile.kvarnDpasSafe or false) ''
+                  export KVARN_NATIVE_XPU=1
+                  export KVARN_NATIVE_XPU_DPAS_LAYOUT=1
+                  export KVARN_NATIVE_XPU_DECODE=${if profile.kvarnNativeDecode or false then "1" else "0"}
+                  export KVARN_NATIVE_XPU_SPLITS=${toString (profile.kvarnNativeSplits or 1)}
+                  export KVARN_NATIVE_XPU_PERSISTENT_SCRATCH=${if profile.kvarnNativePersistentScratch or false then "1" else "0"}
+                  export KVARN_NATIVE_XPU_HADAMARD_SCATTER=${if profile.kvarnNativeHadamardScatter or false then "1" else "0"}
+                  export KVARN_SINKHORN_ITERS=${toString (profile.kvarnSinkhornIters or 8)}
+                  export KVARN_FUSED_VERIFY_MIN_BLOCKS=${toString (profile.kvarnFusedVerifyMinBlocks or 64)}
+                  export KVARN_FUSED_VERIFY=${if profile.kvarnFusedVerify or true then "1" else "0"}
+                ''}
 
-      kvarn-eager-k4v4 = mkKvarnRunner
-        "vllm-xpu-kvarn-eager-k4v4"
-        chatProfile.kvarnEagerK4V4;
-      bf16-kv-eager = mkKvarnRunner
-        "vllm-xpu-bf16-kv-eager"
-        chatProfile.bf16KvEager;
-      kvarn-eager-k4v2 = mkKvarnRunner
-        "vllm-xpu-kvarn-eager-k4v2"
-        chatProfile.kvarnEagerK4V2;
-      kvarn-mtp-eager-k4v4 = mkKvarnRunner
-        "vllm-xpu-kvarn-mtp-eager-k4v4"
-        chatProfile.kvarnMtpEagerK4V4;
-      kvarn-prefix-eager-k4v4 = mkKvarnRunner
-        "vllm-xpu-kvarn-prefix-eager-k4v4"
-        chatProfile.kvarnPrefixEagerK4V4;
-      kvarn-graph-k4v4 = mkKvarnRunner
-        "vllm-xpu-kvarn-graph-k4v4"
-        chatProfile.kvarnGraphK4V4;
-      kvarn-mtp-prefix-graph-k4v4 = mkKvarnRunner
-        "vllm-xpu-kvarn-mtp-prefix-graph-k4v4"
-        chatProfile.kvarnMtpPrefixGraphK4V4;
+                HOME="$runtime_root" VLLM_CACHE_ROOT="$runtime_root" \
+                  exec ${vllm-xpu-chat}/bin/vllm serve \
+                    ${mkMaintenanceServeArgs 8000 profile} \
+                    "$@"
+              '';
+            };
 
-      # ---- shells + misc helpers ----
-      syclToolchainShellHook = import ./nix/sycl-shellhook.nix {
-        inherit pkgs intel-oneapi;
-        cutlass-src = sycl-tla-src;
-      };
+          kvarn-eager-k4v4 = mkKvarnRunner "vllm-xpu-kvarn-eager-k4v4" chatProfile.kvarnEagerK4V4;
+          kvarn-compact-eager-k4v4 = mkKvarnRunner "vllm-xpu-kvarn-compact-eager-k4v4" chatProfile.kvarnCompactEagerK4V4;
+          kvarn-compact-native-eager-k4v4 = mkKvarnRunner "vllm-xpu-kvarn-compact-native-eager-k4v4" chatProfile.kvarnCompactNativeEagerK4V4;
+          bf16-kv-eager = mkKvarnRunner "vllm-xpu-bf16-kv-eager" chatProfile.bf16KvEager;
+          bf16-kv-graph = mkKvarnRunner "vllm-xpu-bf16-kv-graph" chatProfile.bf16KvGraph;
+          bf16-kv-mtp-graph = mkKvarnRunner "vllm-xpu-bf16-kv-mtp-graph" chatProfile.bf16KvMtpGraph;
+          bf16-kv-prefix-graph = mkKvarnRunner "vllm-xpu-bf16-kv-prefix-graph" chatProfile.bf16KvPrefixGraph;
+          kvarn-eager-k4v2 = mkKvarnRunner "vllm-xpu-kvarn-eager-k4v2" chatProfile.kvarnEagerK4V2;
+          kvarn-mtp-eager-k4v4 = mkKvarnRunner "vllm-xpu-kvarn-mtp-eager-k4v4" chatProfile.kvarnMtpEagerK4V4;
+          kvarn-compact-mtp-eager-k4v4 = mkKvarnRunner "vllm-xpu-kvarn-compact-mtp-eager-k4v4" chatProfile.kvarnCompactMtpEagerK4V4;
+          kvarn-prefix-eager-k4v4 = mkKvarnRunner "vllm-xpu-kvarn-prefix-eager-k4v4" chatProfile.kvarnPrefixEagerK4V4;
+          kvarn-compact-prefix-eager-k4v4 = mkKvarnRunner "vllm-xpu-kvarn-compact-prefix-eager-k4v4" chatProfile.kvarnCompactPrefixEagerK4V4;
+          kvarn-graph-k4v4 = mkKvarnRunner "vllm-xpu-kvarn-graph-k4v4" chatProfile.kvarnGraphK4V4;
+          kvarn-compact-graph-k4v4 = mkKvarnRunner "vllm-xpu-kvarn-compact-graph-k4v4" chatProfile.kvarnCompactGraphK4V4;
+          kvarn-compact-native-graph-k4v4 = mkKvarnRunner "vllm-xpu-kvarn-compact-native-graph-k4v4" chatProfile.kvarnCompactNativeGraphK4V4;
+          kvarn-compact-mtp-graph-k4v4 = mkKvarnRunner "vllm-xpu-kvarn-compact-mtp-graph-k4v4" chatProfile.kvarnCompactMtpGraphK4V4;
+          kvarn-compact-prefix-graph-k4v4 = mkKvarnRunner "vllm-xpu-kvarn-compact-prefix-graph-k4v4" chatProfile.kvarnCompactPrefixGraphK4V4;
+          kvarn-mtp-prefix-graph-k4v4 = mkKvarnRunner "vllm-xpu-kvarn-mtp-prefix-graph-k4v4" chatProfile.kvarnMtpPrefixGraphK4V4;
 
-      hfMetadata = pkgs.callPackage ./nix/hf-metadata.nix {};
+          # ---- shells + misc helpers ----
+          syclToolchainShellHook = import ./nix/sycl-shellhook.nix {
+            inherit pkgs intel-oneapi;
+            cutlass-src = sycl-tla-src;
+          };
 
-      lint = import ./nix/lint.nix {inherit pkgs;};
-    in {
-      # Per-system helpers consumers reach via
-      # `inputs.vllm-xpu-nix.lib.${pkgs.system}.fromHfConfig`.
-      # `lib.${system}` (rather than just `lib`) is intentional — the
-      # helpers wrap `pkgs.fetchurl` (system-scoped) and the mk* builders
-      # close over this system's pkgs / torch-xpu / oneAPI substrate.
-      lib = {
-        inherit
-          (hfMetadata)
-          fetchHfConfig
-          readHfConfig
-          attnParamsFromConfig
-          fromHfConfig
-          unionKernelSet
-          ;
-        # Parameterized builders, so a consumer can build a vllm (or the
-        # kernels) from an arbitrary source — e.g. a local submodule
-        # checkout — without overriding flake inputs. The packages.*
-        # `vllm-xpu`/`vllm-xpu-unstable` outputs are just two fixed
-        # instantiations of mkVllm; mkVllm { src; version; kernels; ... }
-        # builds against the same pinned substrate from any src.
-        inherit mkVllm mkVllmXpuKernels chatProfile;
-      };
+          hfMetadata = pkgs.callPackage ./nix/hf-metadata.nix { };
 
-      packages = {
-        inherit
-          intel-oneapi
-          intel-pti
-          torch-xpu
-          triton-xpu
-          torchvision-xpu
-          flash-linear-attention
-          auto-round-xpu
-          vllm-xpu-kernels
-          vllm-xpu-kernels-unstable
-          vllm-xpu
-          vllm-xpu-unstable
-          vllm-xpu-chat
-          ;
-        inherit
-          (stableLibs)
-          attn-kernels-xe-2
-          gdn-attn-kernels-xe-2
-          mhc-kernels-xe-2
-          mqa-logits-kernels-xe-2
-          grouped-gemm-xe-2
-          grouped-gemm-xe-default
-          ;
-        default = intel-oneapi;
-        inherit quantize kl-eval lint;
-      };
+          lint = import ./nix/lint.nix { inherit pkgs; };
+        in
+        {
+          # Per-system helpers consumers reach via
+          # `inputs.vllm-xpu-nix.lib.${pkgs.system}.fromHfConfig`.
+          # `lib.${system}` (rather than just `lib`) is intentional — the
+          # helpers wrap `pkgs.fetchurl` (system-scoped) and the mk* builders
+          # close over this system's pkgs / torch-xpu / oneAPI substrate.
+          lib = {
+            inherit (hfMetadata)
+              fetchHfConfig
+              readHfConfig
+              attnParamsFromConfig
+              fromHfConfig
+              unionKernelSet
+              ;
+            # Parameterized builders, so a consumer can build a vllm (or the
+            # kernels) from an arbitrary source — e.g. a local submodule
+            # checkout — without overriding flake inputs. The packages.*
+            # `vllm-xpu`/`vllm-xpu-unstable` outputs are just two fixed
+            # instantiations of mkVllm; mkVllm { src; version; kernels; ... }
+            # builds against the same pinned substrate from any src.
+            inherit mkVllm mkVllmXpuKernels chatProfile;
+          };
 
-      apps = {
-        vllm-xpu-chat = {
-          type = "app";
-          program = "${vllm-xpu-maintenance}/bin/vllm-xpu-maintenance";
-        };
-        vllm-xpu-kvarn-eager-k4v4 = {
-          type = "app";
-          program = "${kvarn-eager-k4v4}/bin/vllm-xpu-kvarn-eager-k4v4";
-        };
-        vllm-xpu-bf16-kv-eager = {
-          type = "app";
-          program = "${bf16-kv-eager}/bin/vllm-xpu-bf16-kv-eager";
-        };
-        vllm-xpu-kvarn-eager-k4v2 = {
-          type = "app";
-          program = "${kvarn-eager-k4v2}/bin/vllm-xpu-kvarn-eager-k4v2";
-        };
-        vllm-xpu-kvarn-mtp-eager-k4v4 = {
-          type = "app";
-          program = "${kvarn-mtp-eager-k4v4}/bin/vllm-xpu-kvarn-mtp-eager-k4v4";
-        };
-        vllm-xpu-kvarn-prefix-eager-k4v4 = {
-          type = "app";
-          program = "${kvarn-prefix-eager-k4v4}/bin/vllm-xpu-kvarn-prefix-eager-k4v4";
-        };
-        vllm-xpu-kvarn-graph-k4v4 = {
-          type = "app";
-          program = "${kvarn-graph-k4v4}/bin/vllm-xpu-kvarn-graph-k4v4";
-        };
-        vllm-xpu-kvarn-mtp-prefix-graph-k4v4 = {
-          type = "app";
-          program = "${kvarn-mtp-prefix-graph-k4v4}/bin/vllm-xpu-kvarn-mtp-prefix-graph-k4v4";
-        };
-        autoround = {
-          type = "app";
-          program = "${auto-round-xpu}/bin/auto-round";
-        };
-        quantize = {
-          type = "app";
-          program = "${quantize}/bin/quantize";
-        };
-        kl-eval = {
-          type = "app";
-          program = "${kl-eval}/bin/kl-eval";
-        };
-        lint = {
-          type = "app";
-          program = "${lint}/bin/lint";
-        };
-      };
+          packages = {
+            inherit
+              intel-oneapi
+              intel-pti
+              torch-xpu
+              triton-xpu
+              torchvision-xpu
+              flash-linear-attention
+              auto-round-xpu
+              vllm-xpu-kernels
+              vllm-xpu-kernels-unstable
+              unstableKernelsDev
+              unstableVllmKvarnDev
+              unstableAttnKernelDev
+              vllm-xpu
+              vllm-xpu-unstable
+              vllm-xpu-chat
+              ;
+            inherit (stableLibs)
+              attn-kernels-xe-2
+              gdn-attn-kernels-xe-2
+              mhc-kernels-xe-2
+              mqa-logits-kernels-xe-2
+              grouped-gemm-xe-2
+              grouped-gemm-xe-default
+              ;
+            unstable-gdn-attn-kernels-xe-2 =
+              unstableLibs.gdn-attn-kernels-xe-2;
+            default = intel-oneapi;
+            inherit quantize kl-eval lint;
+          };
 
-      devShells = import ./nix/devshells.nix {
-        inherit pkgs syclToolchainShellHook lint torch-xpu triton-xpu;
-        # Dev shells track the unstable (fork) variant — the one actually
-        # deployed — so `nix develop` never realizes the stable closure.
-        kernelLibs = unstableLibs;
-        vllmPkg = vllm-xpu-unstable;
-        vllmKernels = vllm-xpu-kernels-unstable;
-      };
-    });
-  in
+          apps = {
+            vllm-xpu-chat = {
+              type = "app";
+              program = "${vllm-xpu-maintenance}/bin/vllm-xpu-maintenance";
+            };
+            vllm-xpu-kvarn-eager-k4v4 = {
+              type = "app";
+              program = "${kvarn-eager-k4v4}/bin/vllm-xpu-kvarn-eager-k4v4";
+            };
+            vllm-xpu-kvarn-compact-eager-k4v4 = {
+              type = "app";
+              program = "${kvarn-compact-eager-k4v4}/bin/vllm-xpu-kvarn-compact-eager-k4v4";
+            };
+            vllm-xpu-kvarn-compact-native-eager-k4v4 = {
+              type = "app";
+              program = "${kvarn-compact-native-eager-k4v4}/bin/vllm-xpu-kvarn-compact-native-eager-k4v4";
+            };
+            vllm-xpu-bf16-kv-eager = {
+              type = "app";
+              program = "${bf16-kv-eager}/bin/vllm-xpu-bf16-kv-eager";
+            };
+            vllm-xpu-bf16-kv-graph = {
+              type = "app";
+              program = "${bf16-kv-graph}/bin/vllm-xpu-bf16-kv-graph";
+            };
+            vllm-xpu-bf16-kv-mtp-graph = {
+              type = "app";
+              program = "${bf16-kv-mtp-graph}/bin/vllm-xpu-bf16-kv-mtp-graph";
+            };
+            vllm-xpu-bf16-kv-prefix-graph = {
+              type = "app";
+              program = "${bf16-kv-prefix-graph}/bin/vllm-xpu-bf16-kv-prefix-graph";
+            };
+            vllm-xpu-kvarn-eager-k4v2 = {
+              type = "app";
+              program = "${kvarn-eager-k4v2}/bin/vllm-xpu-kvarn-eager-k4v2";
+            };
+            vllm-xpu-kvarn-mtp-eager-k4v4 = {
+              type = "app";
+              program = "${kvarn-mtp-eager-k4v4}/bin/vllm-xpu-kvarn-mtp-eager-k4v4";
+            };
+            vllm-xpu-kvarn-compact-mtp-eager-k4v4 = {
+              type = "app";
+              program = "${kvarn-compact-mtp-eager-k4v4}/bin/vllm-xpu-kvarn-compact-mtp-eager-k4v4";
+            };
+            vllm-xpu-kvarn-prefix-eager-k4v4 = {
+              type = "app";
+              program = "${kvarn-prefix-eager-k4v4}/bin/vllm-xpu-kvarn-prefix-eager-k4v4";
+            };
+            vllm-xpu-kvarn-compact-prefix-eager-k4v4 = {
+              type = "app";
+              program = "${kvarn-compact-prefix-eager-k4v4}/bin/vllm-xpu-kvarn-compact-prefix-eager-k4v4";
+            };
+            vllm-xpu-kvarn-graph-k4v4 = {
+              type = "app";
+              program = "${kvarn-graph-k4v4}/bin/vllm-xpu-kvarn-graph-k4v4";
+            };
+            vllm-xpu-kvarn-compact-graph-k4v4 = {
+              type = "app";
+              program = "${kvarn-compact-graph-k4v4}/bin/vllm-xpu-kvarn-compact-graph-k4v4";
+            };
+            vllm-xpu-kvarn-compact-native-graph-k4v4 = {
+              type = "app";
+              program = "${kvarn-compact-native-graph-k4v4}/bin/vllm-xpu-kvarn-compact-native-graph-k4v4";
+            };
+            vllm-xpu-kvarn-compact-mtp-graph-k4v4 = {
+              type = "app";
+              program = "${kvarn-compact-mtp-graph-k4v4}/bin/vllm-xpu-kvarn-compact-mtp-graph-k4v4";
+            };
+            vllm-xpu-kvarn-compact-prefix-graph-k4v4 = {
+              type = "app";
+              program = "${kvarn-compact-prefix-graph-k4v4}/bin/vllm-xpu-kvarn-compact-prefix-graph-k4v4";
+            };
+            vllm-xpu-kvarn-mtp-prefix-graph-k4v4 = {
+              type = "app";
+              program = "${kvarn-mtp-prefix-graph-k4v4}/bin/vllm-xpu-kvarn-mtp-prefix-graph-k4v4";
+            };
+            autoround = {
+              type = "app";
+              program = "${auto-round-xpu}/bin/auto-round";
+            };
+            quantize = {
+              type = "app";
+              program = "${quantize}/bin/quantize";
+            };
+            kl-eval = {
+              type = "app";
+              program = "${kl-eval}/bin/kl-eval";
+            };
+            lint = {
+              type = "app";
+              program = "${lint}/bin/lint";
+            };
+          };
+
+          devShells = import ./nix/devshells.nix {
+            inherit
+              pkgs
+              syclToolchainShellHook
+              lint
+              torch-xpu
+              triton-xpu
+              ;
+            # Dev shells track the unstable (fork) variant — the one actually
+            # deployed — so `nix develop` never realizes the stable closure.
+            kernelLibs = unstableLibs;
+            vllmPkg = vllm-xpu-unstable;
+            vllmKernels = vllm-xpu-kernels-unstable;
+          };
+        }
+      );
+    in
     systemOutputs
     // {
       # System-independent outputs (NixOS modules, overlays).
@@ -500,19 +657,21 @@
       #     without writing their own overlay.
       nixosModules.hf-cache = ./nix/modules/hf-cache.nix;
       nixosModules.vllm-xpu = ./nix/modules/vllm-xpu.nix;
-      nixosModules.default = {...}: {
-        imports = [./nix/modules/vllm-xpu.nix];
-        nixpkgs.overlays = [self.overlays.default];
+      nixosModules.default = { ... }: {
+        imports = [ ./nix/modules/vllm-xpu.nix ];
+        nixpkgs.overlays = [ self.overlays.default ];
       };
 
       # Overlay that injects the XPU package set into a host's pkgs.
       # Pair with the bare `nixosModules.vllm-xpu`, or just import
       # `nixosModules.default` which applies this for you.
-      overlays.default = _final: prev: let
-        pkgs = systemOutputs.packages.${prev.stdenv.hostPlatform.system} or {};
-        pick = name: lib.optionalAttrs (pkgs ? ${name}) {${name} = pkgs.${name};};
-        inherit (nixpkgs) lib;
-      in
+      overlays.default =
+        _final: prev:
+        let
+          pkgs = systemOutputs.packages.${prev.stdenv.hostPlatform.system} or { };
+          pick = name: lib.optionalAttrs (pkgs ? ${name}) { ${name} = pkgs.${name}; };
+          inherit (nixpkgs) lib;
+        in
         pick "torch-xpu"
         // pick "triton-xpu"
         // pick "intel-pti"

@@ -273,6 +273,54 @@
         '';
       };
 
+      kvarnDpasSafe = lib.mkOption {
+        type = lib.types.bool;
+        default = false;
+        description = "Enable the native XPU KVarN path and DPAS cache layout.";
+      };
+
+      kvarnNativeDecode = lib.mkOption {
+        type = lib.types.bool;
+        default = false;
+        description = "Use the native XPU compact KVarN decode reader.";
+      };
+
+      kvarnNativeSplits = lib.mkOption {
+        type = lib.types.ints.positive;
+        default = 1;
+        description = "Split count used by the native XPU KVarN decode reader.";
+      };
+
+      kvarnNativePersistentScratch = lib.mkOption {
+        type = lib.types.bool;
+        default = false;
+        description = "Reuse caller-owned scratch for native XPU KVarN split reduction.";
+      };
+
+      kvarnNativeHadamardScatter = lib.mkOption {
+        type = lib.types.bool;
+        default = false;
+        description = "Use the native XPU Hadamard KVarN cache scatter producer.";
+      };
+
+      kvarnSinkhornIters = lib.mkOption {
+        type = lib.types.ints.positive;
+        default = 8;
+        description = "Sinkhorn iteration count used for compact KVarN cache packing.";
+      };
+
+      kvarnFusedVerifyMinBlocks = lib.mkOption {
+        type = lib.types.ints.unsigned;
+        default = 64;
+        description = "Minimum block count for the fused KVarN MTP verification reader.";
+      };
+
+      kvarnFusedVerify = lib.mkOption {
+        type = lib.types.bool;
+        default = true;
+        description = "Enable the fused KVarN MTP verification reader.";
+      };
+
       cudagraphCaptureSizes = lib.mkOption {
         type = lib.types.nullOr (lib.types.listOf lib.types.int);
         default = null;
@@ -583,6 +631,17 @@
         // inst.cclEnv
         // lib.optionalAttrs inst.enableXpuGraph {
           VLLM_XPU_ENABLE_XPU_GRAPH = "1";
+        }
+        // lib.optionalAttrs inst.kvarnDpasSafe {
+          KVARN_NATIVE_XPU = "1";
+          KVARN_NATIVE_XPU_DPAS_LAYOUT = "1";
+          KVARN_NATIVE_XPU_DECODE = if inst.kvarnNativeDecode then "1" else "0";
+          KVARN_NATIVE_XPU_SPLITS = toString inst.kvarnNativeSplits;
+          KVARN_NATIVE_XPU_PERSISTENT_SCRATCH = if inst.kvarnNativePersistentScratch then "1" else "0";
+          KVARN_NATIVE_XPU_HADAMARD_SCATTER = if inst.kvarnNativeHadamardScatter then "1" else "0";
+          KVARN_SINKHORN_ITERS = toString inst.kvarnSinkhornIters;
+          KVARN_FUSED_VERIFY_MIN_BLOCKS = toString inst.kvarnFusedVerifyMinBlocks;
+          KVARN_FUSED_VERIFY = if inst.kvarnFusedVerify then "1" else "0";
         }
         // inst.extraEnvironment;
 

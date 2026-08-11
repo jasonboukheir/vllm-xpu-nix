@@ -14,7 +14,10 @@ let
     };
     enforceEager = false;
     enableXpuGraph = true;
-    cudagraphCaptureSizes = [3 6];
+    cudagraphCaptureSizes = [
+      3
+      6
+    ];
     reasoningParser = "qwen3";
     enableAutoToolChoice = true;
     toolCallParser = "qwen3_xml";
@@ -28,7 +31,8 @@ let
       })
     ];
   };
-in {
+in
+rec {
   inherit chat;
 
   # Paired accuracy baseline: identical AutoRound weights and native BF16 GDN
@@ -45,7 +49,32 @@ in {
       maxModelLen = 8192;
       enforceEager = true;
       enableXpuGraph = false;
-      extraArgs = chat.extraArgs ++ ["--no-enable-prefix-caching"];
+      extraArgs = chat.extraArgs ++ [ "--no-enable-prefix-caching" ];
+    };
+
+  # Matched graph-mode control for the compact KVarN performance gate.
+  bf16KvGraph = (builtins.removeAttrs chat [ "speculativeConfig" ]) // {
+    servedName = "qwen3.6-27b-bf16-kv-graph";
+    kvCacheDtype = "auto";
+    maxModelLen = 8192;
+    cudagraphCaptureSizes = [ 4 ];
+    extraArgs = chat.extraArgs ++ [ "--no-enable-prefix-caching" ];
+  };
+
+  # Matched native-KV controls for the two-token MTP correctness gate. These
+  # deliberately retain the production qlen=3 graph sizes and prefix-cache
+  # setting; only speculative decoding differs between the pair.
+  bf16KvMtpGraph = chat // {
+    servedName = "qwen3.6-27b-bf16-kv-mtp-graph";
+    kvCacheDtype = "auto";
+    maxModelLen = 8192;
+    cudagraphCaptureSizes = chat.cudagraphCaptureSizes;
+  };
+
+  bf16KvPrefixGraph =
+    (builtins.removeAttrs bf16KvMtpGraph [ "speculativeConfig" ])
+    // {
+      servedName = "qwen3.6-27b-bf16-kv-prefix-graph";
     };
 
   kvarnEagerK4V4 =
@@ -59,8 +88,26 @@ in {
       maxModelLen = 8192;
       enforceEager = true;
       enableXpuGraph = false;
-      extraArgs = chat.extraArgs ++ ["--no-enable-prefix-caching"];
+      extraArgs = chat.extraArgs ++ [ "--no-enable-prefix-caching" ];
     };
+
+  kvarnCompactEagerK4V4 = kvarnEagerK4V4 // {
+    servedName = "qwen3.6-27b-kvarn-compact-k4v4";
+    kvCacheDtype = "kvarn_k4v4_g128_compact";
+    kvarnDpasSafe = true;
+  };
+
+  # Handwritten Xe2 reader/producer, retained in a separate profile after its
+  # full-vocabulary accuracy and matched serving gates passed.
+  kvarnCompactNativeEagerK4V4 = kvarnCompactEagerK4V4 // {
+    servedName = "qwen3.6-27b-kvarn-compact-native-k4v4";
+    kvarnNativeDecode = true;
+    # The native kernel falls back to direct split-1 until there is at least
+    # one 64-token tile per split, then uses split-16 for long-context decode.
+    kvarnNativeSplits = 16;
+    kvarnNativePersistentScratch = false;
+    kvarnNativeHadamardScatter = true;
+  };
 
   kvarnEagerK4V2 =
     (builtins.removeAttrs chat [
@@ -73,16 +120,27 @@ in {
       maxModelLen = 8192;
       enforceEager = true;
       enableXpuGraph = false;
-      extraArgs = chat.extraArgs ++ ["--no-enable-prefix-caching"];
+      extraArgs = chat.extraArgs ++ [ "--no-enable-prefix-caching" ];
     };
 
-  kvarnMtpEagerK4V4 = (builtins.removeAttrs chat ["cudagraphCaptureSizes"]) // {
+  kvarnMtpEagerK4V4 = (builtins.removeAttrs chat [ "cudagraphCaptureSizes" ]) // {
     servedName = "qwen3.6-27b-kvarn-mtp-k4v4";
     kvCacheDtype = "kvarn_k4v4_g128";
     maxModelLen = 8192;
     enforceEager = true;
     enableXpuGraph = false;
-    extraArgs = chat.extraArgs ++ ["--no-enable-prefix-caching"];
+    extraArgs = chat.extraArgs ++ [ "--no-enable-prefix-caching" ];
+  };
+
+  # Compact production candidate with two-token MTP. Keep the native compact
+  # producer, but use the Triton reader for both one-token drafter passes and
+  # three-token verification; the optional native reader has a separate MTP
+  # batch/graph gate.
+  kvarnCompactMtpEagerK4V4 = kvarnCompactEagerK4V4 // {
+    servedName = "qwen3.6-27b-kvarn-compact-mtp-k4v4";
+    speculativeConfig = chat.speculativeConfig;
+    kvarnNativeHadamardScatter = true;
+    kvarnFusedVerifyMinBlocks = 0;
   };
 
   kvarnPrefixEagerK4V4 =
@@ -96,15 +154,56 @@ in {
       maxModelLen = 8192;
       enforceEager = true;
       enableXpuGraph = false;
+      extraArgs = chat.extraArgs ++ [ "--enable-prefix-caching" ];
     };
 
-  kvarnGraphK4V4 =
-    (builtins.removeAttrs chat ["speculativeConfig"])
+  kvarnCompactPrefixEagerK4V4 = kvarnPrefixEagerK4V4 // {
+    servedName = "qwen3.6-27b-kvarn-compact-prefix-eager-k4v4";
+    kvCacheDtype = "kvarn_k4v4_g128_compact";
+    kvarnDpasSafe = true;
+  };
+
+  kvarnGraphK4V4 = (builtins.removeAttrs chat [ "speculativeConfig" ]) // {
+    servedName = "qwen3.6-27b-kvarn-graph-k4v4";
+    kvCacheDtype = "kvarn_k4v4_g128";
+    maxModelLen = 8192;
+    cudagraphCaptureSizes = [ 4 ];
+    extraArgs = chat.extraArgs ++ [ "--no-enable-prefix-caching" ];
+  };
+
+  kvarnCompactGraphK4V4 = kvarnGraphK4V4 // {
+    servedName = "qwen3.6-27b-kvarn-compact-graph-k4v4";
+    kvCacheDtype = "kvarn_k4v4_g128_compact";
+    kvarnDpasSafe = true;
+  };
+
+  kvarnCompactNativeGraphK4V4 = kvarnCompactGraphK4V4 // {
+    servedName = "qwen3.6-27b-kvarn-compact-native-graph-k4v4";
+    kvarnNativeDecode = true;
+    kvarnNativeSplits = 16;
+    kvarnNativePersistentScratch = false;
+    kvarnNativeHadamardScatter = true;
+  };
+
+  kvarnCompactMtpGraphK4V4 = chat // {
+    servedName = "qwen3.6-27b-kvarn-compact-mtp-graph-k4v4";
+    kvCacheDtype = "kvarn_k4v4_g128_compact";
+    maxModelLen = 8192;
+    kvarnDpasSafe = true;
+    kvarnNativeDecode = true;
+    # B12 (B4 x qlen3) serving winner; also preserves the best MTP acceptance.
+    kvarnNativeSplits = 32;
+    # Four iterations is the forced-decode-validated compact K4V4 setting.
+    kvarnSinkhornIters = 4;
+    cudagraphCaptureSizes = chat.cudagraphCaptureSizes;
+    kvarnNativeHadamardScatter = true;
+    kvarnFusedVerifyMinBlocks = 0;
+  };
+
+  kvarnCompactPrefixGraphK4V4 =
+    (builtins.removeAttrs kvarnCompactMtpGraphK4V4 [ "speculativeConfig" ])
     // {
-      servedName = "qwen3.6-27b-kvarn-graph-k4v4";
-      kvCacheDtype = "kvarn_k4v4_g128";
-      maxModelLen = 8192;
-      extraArgs = chat.extraArgs ++ ["--no-enable-prefix-caching"];
+      servedName = "qwen3.6-27b-kvarn-compact-prefix-graph-k4v4";
     };
 
   # Final integration gate: exercise all cache consumers together. Keep the
@@ -124,6 +223,6 @@ in {
     maxNumSeqs = 8;
     gpuMemoryUtilization = 0.05;
     enforceEager = true;
-    extraArgs = ["--trust-remote-code"];
+    extraArgs = [ "--trust-remote-code" ];
   };
 }

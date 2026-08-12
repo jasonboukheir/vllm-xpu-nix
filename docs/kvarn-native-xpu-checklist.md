@@ -974,8 +974,15 @@ full64 promotion run. Artifact:
   the implementation had already been rejected and replaced by the retained
   native qlen-3 verifier plus virtual-query Triton fallback. Focused KVarN
   metadata/config coverage passes 38/38. Local cleanup commit: `965941d6f3`.
+- [x] Audit graph dispatch semantics against the pinned vLLM source. Capture
+  sizes are token counts and two-token MTP has uniform decode qlen 3, so sizes
+  3/6 cover B1/B2. B3/B4 submit 9/12 tokens, exceed the configured maximum,
+  and explicitly dispatch with graph mode `NONE`. This is the intended graph
+  VRAM/concurrency tradeoff, not a hidden fallback; live validation must prove
+  graph replay for B1/B2 and eager execution plus parity for B3/B4.
 - [ ] With Brutus vLLM still disabled, build the final pinned source and rerun
   the matched eager BF16/native-KV oracle before graph mode.
-- [ ] Re-enable graph sizes 3/6 only after eager parity, then rerun qlen-3
+- [ ] Re-enable graph sizes 3/6 only after eager parity, prove B1/B2 graph
+  replay and B3/B4 intentional eager fallback, then rerun qlen-3
   lifecycle, prefix 127/128/129/4096, one 114688-token request, two/four tiny
   concurrent requests, mixed contexts, cancellation, and B2/B4 performance.

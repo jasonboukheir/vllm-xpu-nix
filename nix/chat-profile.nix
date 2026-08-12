@@ -191,7 +191,10 @@ rec {
     maxModelLen = 8192;
     kvarnDpasSafe = true;
     kvarnNativeDecode = true;
-    # B12 (B4 x qlen3) serving winner; also preserves the best MTP acceptance.
+    # B12 (B4 x qlen3) reader/kernel winner; also preserves the best MTP
+    # acceptance. Graph sizes [3, 6] cover B1/B2 verification. B3/B4 execute
+    # this same retained path through intentional eager fallback so extra graph
+    # captures do not consume the KV-cache VRAM budget.
     kvarnNativeSplits = 32;
     # Four iterations is the forced-decode-validated compact K4V4 setting.
     kvarnSinkhornIters = 4;

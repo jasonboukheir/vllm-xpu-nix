@@ -29,7 +29,9 @@ and cache-lifecycle check.
    4, request teardown/reuse, noncontiguous block tables, partial tails, and
    cancellation.
 4. Restore prefix caching, two-token MTP, XPU graph sizes `[3, 6]`, and the
-   co-resident embedding service one at a time.
+   co-resident embedding service one at a time. For qlen 3, these token-batch
+   sizes capture B1 and B2; B3/B4 (9/12 tokens) deliberately use eager
+   submission to avoid spending KV-cache VRAM on two more graphs.
 5. Run the full paired accuracy, capacity, and throughput matrix.
 
 ## Accuracy matrix

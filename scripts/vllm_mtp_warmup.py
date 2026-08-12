@@ -63,9 +63,22 @@ def completion(
 
 def run(base_url: str, model: str, ready_timeout: float, max_tokens: int) -> None:
     wait_for_model(base_url, model, ready_timeout)
-    # Cross one 128-token compact KVarN tile in B1, then compile the ragged B4
-    # qlen=3 scheduler/rejection shapes used by concurrent short requests.
-    completion(base_url, model, [list(range(1, 135))], max_tokens)
+    # Cross one 128-token compact KVarN tile, then reuse the same prompt so the
+    # prefix-hit path builds packed-cache metadata. A clean-cache launch proved
+    # that one pass alone left _kvarn_build_packed_kv_kernel for the first user
+    # request.
+    tile_prompt = list(range(1, 135))
+    completion(base_url, model, [tile_prompt], max_tokens)
+    completion(base_url, model, [tile_prompt], max_tokens)
+
+    # Exercise a multi-record compact flush. Short tile warmup does not compile
+    # _kvarn_flush_record_kernel, which otherwise appears when a real 4K prefix
+    # first becomes cacheable.
+    record_prompt = (tile_prompt * 31)[:4097]
+    completion(base_url, model, [record_prompt], 3)
+
+    # Compile the ragged B4 qlen=3 scheduler/rejection shapes used by concurrent
+    # short requests.
     completion(
         base_url,
         model,

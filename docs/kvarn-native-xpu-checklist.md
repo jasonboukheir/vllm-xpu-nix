@@ -1101,3 +1101,34 @@ full64 promotion run. Artifact:
   matched native BF16-KV+MTP2 control. LiteLLM/Open WebUI are not part of this
   comparison. Do not complete the goal from maintenance apps or isolated
   harnesses alone.
+- [x] Evaluate the disabled Brutus instance rather than inferring its settings.
+  The pinned deployment input currently resolves to revision `81d3022` and the
+  instance is BF16 compute/INC weights, MTP2, `max_model_len=114688`,
+  `max_num_seqs=4`, 0.90 GPU-memory utilization, and graph sizes `[3, 6]`.
+  That evaluation also found that the NixOS module silently discarded the
+  profile's `asyncScheduling = false`; the module now renders
+  `--no-async-scheduling`. Explicit full-envelope candidate/control profiles
+  and maintenance runners prevent the final direct-vLLM A/B from reusing the
+  earlier 8192-token oracle profiles or changing the public model name.
+- [x] Run the exact full-envelope startup pair directly on Brutus with local
+  vLLM and kernel source overrides. Native BF16 KV is not a runnable matched
+  control at the production envelope: vLLM exposes 6.54 GiB for KV, requires
+  8.09 GiB for one 114688-token request, and estimates a 90688-token maximum.
+  Do not disguise this result by lowering the control to 8192. Compact K4V4
+  starts with 155520--156928 attention tokens (1.36--1.37x one maximum-length
+  request). Each of its three Mamba pools has 17 physical pages, one null
+  sentinel, 16 usable pages, and a proven four-page per-request peak (one
+  committed, one transition, two speculative), giving exactly 4.00x recurrent
+  concurrency without copying the attention prefix for MTP candidates.
+- [x] Pass a fresh-cache exact-Brutus compact direct-vLLM lifecycle. Graph
+  capture covers sizes 3 and 6; the post-warmup B4 gate reaches four running,
+  zero waiting, returns KV usage from 75% to 0%, exercises acceptance lengths
+  1/2/3 and consecutive rejection recovery, and reproduces greedy-token SHA
+  `b3cbecf4768c455c52cdf7fc42ce050366c13f4404fb38bd53e57d4a16a36ec9`.
+  Prefix reuse at 127/128/129/4096 preserves decoded output with maximum
+  selected/common-support logprob delta 0.125. A genuinely empty compile cache
+  showed the old warmup left packed-build and record-flush JIT for user
+  traffic; it now includes repeated 134-token and 4097-token requests. On a
+  second empty cache all inference JIT occurred during warmup and none occurred
+  during the following B4 gate. Artifacts:
+  `/tmp/brutus-kvarn-k4v4-mtp2-{e2e-gate,prefix,post-warmup-v2}.json`.

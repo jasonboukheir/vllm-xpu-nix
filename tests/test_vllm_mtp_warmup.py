@@ -24,6 +24,8 @@ def test_run_uses_real_b1_tile_and_ragged_b4_requests(monkeypatch) -> None:
 
     assert observed == [
         ("http://127.0.0.1:8000", "model", [134], 8),
+        ("http://127.0.0.1:8000", "model", [134], 8),
+        ("http://127.0.0.1:8000", "model", [4097], 3),
         ("http://127.0.0.1:8000", "model", [14, 15, 16, 17], 8),
     ]
 

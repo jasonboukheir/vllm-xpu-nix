@@ -248,10 +248,11 @@
         type = lib.types.bool;
         default = false;
         description = ''
-          After the direct vLLM API becomes ready, run real B1 and ragged B4
-          greedy completions through the scheduler. This compiles MTP2
-          rejection/state-feedback and compact-cache tile kernels that dummy
-          model-runner warmups cannot reach. The warmup is part of service
+          After the direct vLLM API becomes ready, run real tile-crossing,
+          repeated-prefix, 4K-record-flush, and ragged B4 greedy completions
+          through the scheduler. This compiles MTP2 rejection/state-feedback
+          and compact-cache lifecycle kernels that dummy model-runner warmups
+          cannot reach. The warmup is part of service
           startup and repeats after every vLLM restart. Requires two-token MTP
           and capacity for at least four sequences. It does not involve any
           proxy or router.
@@ -273,6 +274,18 @@
           `cudagraphCaptureSizes`. Embedding workloads (`runner =
           "pooling"`) typically leave this on — eager-mode throughput
           is at the kernel ceiling for pooled forward passes.
+        '';
+      };
+
+      asyncScheduling = lib.mkOption {
+        type = lib.types.nullOr lib.types.bool;
+        default = null;
+        description = ''
+          Explicitly enable or disable vLLM async scheduling. Set this for
+          matched serving comparisons so a profile cannot silently inherit a
+          different vLLM default. Compact KVarN MTP currently requires
+          synchronous scheduling because cache ownership uses exact committed
+          host lengths.
         '';
       };
 
@@ -584,6 +597,9 @@
         (lib.escapeShellArg (builtins.toJSON inst.speculativeConfig))
       ]
       ++ lib.optionals inst.enforceEager ["--enforce-eager"]
+      ++ lib.optionals (inst.asyncScheduling != null) [
+        (if inst.asyncScheduling then "--async-scheduling" else "--no-async-scheduling")
+      ]
       ++ lib.optionals
       (inst.cudagraphCaptureSizes != null || inst.cudagraphMode != null)
       [

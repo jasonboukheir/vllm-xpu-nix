@@ -1033,3 +1033,17 @@ full64 promotion run. Artifact:
   admits four requests. This proves one maximum-length request is schedulable
   and four shorter requests can coexist; actually filling a 114,688-token
   request and a fresh matched post-fix B2/B4 performance run remain pending.
+- [x] Fill the configured context ceiling with a real request. A compact
+  graph+MTP2 server accepted and completed one 114,687-token random prompt plus
+  one generated token (114,688 total) in 547.43 seconds at 209.50 total tok/s.
+  Live usage rose through 68.75% and 93.75%, then returned to 0% with zero
+  running/waiting requests. Artifact:
+  `/tmp/kvarn-compact-mtp-graph-max114688-real-request.json`.
+- [ ] Pass the fresh post-boundary-fix B4/6K/O512 performance gate. The warm
+  seed-20260809 compact run completes 4/4 at 51.53 output tok/s, 32.33 ms TPOT,
+  15.72 s TTFT, and 84.45% draft acceptance. Its matched BF16/native-KV run
+  reaches 74.94 tok/s, 30.74 ms TPOT, 10.72 s TTFT, and 92.43% acceptance.
+  Compact passes the 1.10x TPOT limit at 1.052x but fails throughput at 68.76%
+  of BF16. Do not ship based on the older passing median; isolate the
+  long-prefix acceptance and TTFT gaps first. Artifacts:
+  `/tmp/{kvarn-compact,bf16}-mtp-boundaryfix-graph-6k-c4-o512-warm.json`.

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import urllib.request
@@ -148,6 +149,7 @@ def run(base_url: str, model: str, prompts: list[list[int]]) -> dict[str, Any]:
     after = parse_metrics(request(f"{base_url}/metrics"))
     if first != second:
         raise AssertionError("replayed MTP requests produced different token IDs")
+    completion_json = json.dumps(first, separators=(",", ":")).encode()
     observed = delta(before, after)
     if observed.draft_tokens != 2 * observed.drafts:
         raise AssertionError(
@@ -161,6 +163,8 @@ def run(base_url: str, model: str, prompts: list[list[int]]) -> dict[str, Any]:
         "qlen": 3,
         "speculative_tokens": 2,
         "replay_token_ids_identical": True,
+        "completion_token_ids": first,
+        "completion_token_ids_sha256": hashlib.sha256(completion_json).hexdigest(),
         "stream_step_lengths": step_lengths,
         "consecutive_rejection_recovered": True,
         "drafts": observed.drafts,

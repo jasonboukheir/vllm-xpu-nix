@@ -987,8 +987,17 @@ full64 promotion run. Artifact:
   on abort. A scheduler-level B4 regression also admits four tiny MTP2
   requests, aborts one, and immediately admits a replacement through the same
   null-aware pools. Local vLLM commits: `c38f6d171e`, `5993077257`.
-- [ ] With Brutus vLLM still disabled, build the final pinned source and rerun
-  the matched eager BF16/native-KV oracle before graph mode.
+- [x] With Brutus vLLM still disabled, build the exact local source through the
+  deploy-equivalent `vllm-xpu-chat` output and rerun the matched eager
+  BF16/native-KV oracle before graph mode. Both modes produce the identical B4
+  greedy-token SHA-256
+  `b3cbecf4768c455c52cdf7fc42ce050366c13f4404fb38bd53e57d4a16a36ec9`.
+  BF16 records 221 verification steps, acceptance lengths 30/27/164, and
+  355/442 accepted drafts (80.32%); compact K4V4 records 224 steps,
+  33/30/161, and 352/448 (78.57%), a passing -1.75 percentage-point delta.
+  Both exercise consecutive rejection/recovery and deterministic replay.
+  Artifacts: `/tmp/bf16-mtp-eager-current-source-with-tokens.json` and
+  `/tmp/kvarn-compact-mtp-eager-current-source-with-tokens.json`.
 - [ ] Re-enable graph sizes 3/6 only after eager parity, prove B1/B2 graph
   replay and B3/B4 intentional eager fallback, then rerun qlen-3
   lifecycle, prefix 127/128/129/4096, one 114688-token request, two/four tiny

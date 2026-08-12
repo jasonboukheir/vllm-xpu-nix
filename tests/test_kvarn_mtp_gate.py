@@ -42,6 +42,8 @@ def test_run_requires_two_drafts_and_every_acceptance_length(monkeypatch):
     monkeypatch.setattr(gate, "stream_step_lengths", lambda *_args: [1, 1, 2])
     result = gate.run("http://server", "model", [[7]])
     assert result["qlen"] == 3
+    assert result["completion_token_ids"] == [[1, 2, 3]]
+    assert len(result["completion_token_ids_sha256"]) == 64
     assert result["acceptance_lengths"] == {1: 3, 2: 3, 3: 3}
     assert result["consecutive_rejection_recovered"] is True
 

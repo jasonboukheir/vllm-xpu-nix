@@ -1002,3 +1002,34 @@ full64 promotion run. Artifact:
   replay and B3/B4 intentional eager fallback, then rerun qlen-3
   lifecycle, prefix 127/128/129/4096, one 114688-token request, two/four tiny
   concurrent requests, mixed contexts, cancellation, and B2/B4 performance.
+- [x] Root-cause the remaining compact+prefix corruption at the cache boundary.
+  Independent physical pools incorrectly retained a 16-token Mamba logical
+  boundary while compact attention used 128 tokens. MTP verification could
+  therefore publish a recurrent candidate for a different prefix than the
+  attention cache. Align-mode KVarN now shares the attention logical boundary
+  without padding or merging the physical recurrent pages. The minimal patch,
+  with the investigative synchronization barriers removed, exactly matches the
+  BF16 B4 greedy-token SHA-256 above in both eager and graph-enabled launches.
+  Local vLLM commits: `8dd7421d74`, `7bd0de0484`.
+- [x] Capture graph sizes 3 and 6 in both mixed prefill/decode PIECEWISE and
+  decode FULL modes. The B4 lifecycle exercises live native KVarN dispatch at
+  B=1, B=2, and B=4, produces qlen 3 with two speculative tokens, recovers from
+  consecutive rejection, and repeats the BF16 token SHA exactly. Sizes 3/6
+  cover B1/B2; the previously audited B3/B4 9/12-token work remains the
+  intentional eager fallback. Warm B4 gate duration is about 4.2-5.0 seconds.
+  Artifacts: `/tmp/kvarn-compact-mtp-graph-prefix-shared-logical-boundary.json`,
+  `/tmp/kvarn-compact-mtp-graph-prefix-shared-logical-boundary-replay.json`,
+  and `/tmp/kvarn-compact-mtp-graph-minimal-final.json`.
+- [x] Revalidate prefix and cancellation on compact graph+MTP2. Prefix reuse at
+  127/128/129/4096 tokens preserves decoded output exactly; maximum comparable
+  logprob drift is 0.312, inside the matched BF16 0.5 envelope. A forced client
+  disconnect returns reported cache usage to 0%, and the immediate B4 recovery
+  request again produces the exact BF16 SHA. Artifacts:
+  `/tmp/kvarn-compact-mtp-graph-prefix-reuse-final.json` and
+  `/tmp/kvarn-compact-mtp-graph-post-cancel.json`.
+- [x] Prove the full-context allocator envelope without reducing the configured
+  maximum. At `max_model_len=114688`, startup exposes 341,760 compact attention
+  tokens (2.98 maximum-length requests) while each independent Mamba pool still
+  admits four requests. This proves one maximum-length request is schedulable
+  and four shorter requests can coexist; actually filling a 114,688-token
+  request and a fresh matched post-fix B2/B4 performance run remain pending.

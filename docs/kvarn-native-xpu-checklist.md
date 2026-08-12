@@ -960,9 +960,16 @@ full64 promotion run. Artifact:
   MTP2 requests reach a four-state peak only with nine physical Mamba pages.
   Drive two requests through acceptance lengths 1/2/3, require disjoint state
   page identities, and verify complete teardown reclamation.
-- [x] Pass both complete CPU allocator suites (112 tests), pinned Ruff, and the
+- [x] Pass both complete CPU allocator suites (114 tests), pinned Ruff, and the
   local-source `vllm-xpu-unstable` Nix build. Local vLLM commits are
-  `4adb725b12` and `87c4a24c7d`; pushing is deferred until SSH is available.
+  `4adb725b12`, `87c4a24c7d`, and `a403ba1626`; pushing is deferred until SSH
+  is available.
+- [x] Derive the next-launch capacity expectation from the last 5.47-GiB
+  profile (`max_num_seqs=4`): each of the three 16-layer Mamba pools grows from
+  the invalid eight pages to 17 physical pages (one null plus 16 usable), and
+  the 17-layer compact attention pool retains approximately 1,351 physical
+  pages / 172,800 usable tokens. Exact startup values may differ by one page
+  because the journal rounds available memory to two decimals.
 - [ ] With Brutus vLLM still disabled, build the final pinned source and rerun
   the matched eager BF16/native-KV oracle before graph mode.
 - [ ] Re-enable graph sizes 3/6 only after eager parity, then rerun qlen-3

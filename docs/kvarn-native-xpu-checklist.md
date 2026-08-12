@@ -343,12 +343,14 @@ both experimental variants are removed. Acceptance varies with the server's
 sampling sequence, so their unmatched 57.23%/66.59% acceptance values are not
 used as corruption evidence. Artifacts:
 `/tmp/kvarn-compact-mtp-{shared-flush-indices,explicit-flush-sync}-seed2.json`.
-Raising `--max-num-batched-tokens` from the MTP default of 2048 to 8192 is
-also rejected. The larger compile range raises peak activation usage to
-1.68 GiB, reduces cache capacity from 98,304 tokens / 12x to 40,960 / 5x,
-and the first B4 run completes only two requests after roughly 102 seconds
-before being stopped. This trades away both capacity and serving performance;
-retain 2048 and optimize the compact flush itself.
+An early pre-boundary-fix trial raising `--max-num-batched-tokens` from 2048 to
+8192 was initially rejected: it raised peak activation usage to 1.68 GiB,
+reduced attention capacity from 98,304 tokens / 12x to 40,960 / 5x, and its
+first B4 run completed only two requests before being stopped. That result is
+not authoritative for the corrected independent-pool allocator: recurrent
+capacity now limits B4 at 4x regardless of the excess attention capacity, and
+the post-fix matched retest below completes all four requests. Keep this old
+trial only as cold/pre-fix history rather than using it to select 2048.
 A fused Triton RTN/K4V4 pack prototype was byte-exact for all K and V packed,
 scale, zero-point, and auxiliary fields, but improved startup TTFT by only
 about 31 ms and did not materially change serving performance. The prototype
@@ -1063,3 +1065,19 @@ full64 promotion run. Artifact:
   2048-token chunks (temporarily reporting 2 running/2 waiting), while Mamba
   usage remains within the four-page-per-request contract. Artifact:
   `/tmp/kvarn-compact-mtp-boundaryfix-b4-graph-6k-o512-seed0.json`.
+- [ ] Close the remaining matched B4 performance gap after scheduler-budget
+  attribution. With `max_num_batched_tokens=8192`, compact admits all four 6K
+  requests together (`Running: 4`, `Waiting: 0`) without changing the limiting
+  Mamba geometry (16 usable pages, four pages/request, 4x). Literal seed 0
+  improves from 51.24 to 68.68 output tok/s, from 31.53 to 25.97 ms median
+  TPOT, and from 16.36 to 15.88 s median TTFT. The identically configured BF16
+  control reaches 76.72 tok/s, 23.08 ms, and 13.79 s: compact passes the mean
+  TPOT gate at 1.037x but reaches only 89.52% of BF16 throughput, below the 95%
+  ship gate. A 4096-token discriminator is decisively worse at 31.23 tok/s,
+  68.87 ms mean TPOT, and 65.57 s duration. Retain 8192 as the leading
+  experimental scheduler setting, do not promote it yet, and attribute the
+  remaining roughly 1.7-second completion gap in compact prefill/publication.
+  Artifacts:
+  `/tmp/{kvarn-compact,bf16}-mtp-boundaryfix-b4-budget8192-graph-6k-o512-seed0.json`
+  and
+  `/tmp/kvarn-compact-mtp-boundaryfix-b4-budget4096-graph-6k-o512-seed0.json`.

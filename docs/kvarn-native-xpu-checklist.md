@@ -1233,3 +1233,19 @@ full64 promotion run. Artifact:
   IDs before the mainloop, so the 114688-token deployment bound does not make
   the native kernel scan empty context. Artifacts:
   `/tmp/brutus-{kvarn,bf16}-current-direct-vllm-b{1,2}-6k-o512.json`.
+- [x] Establish the 32K crossover and identify chunked prefill as the next
+  blocker. At B1, compact decode remains slower (26.26 ms TPOT versus BF16's
+  20.87 ms). At B2, compact decode is finally faster: 35.97 ms versus 46.60
+  ms, a 22.8% TPOT reduction, confirming that K4V4's bandwidth advantage
+  emerges under concurrent long-context decode. Total request throughput
+  still loses because compact TTFT is 31.02 s versus 13.67 s at B2 (and the
+  independent B1 samples are 68.89 s versus 23.46 s). The cause is structural:
+  every 4096-token continuation enters `_cached_multiquery_path`, rebuilds the
+  complete compressed history into shared FP16 K/V scratch, then invokes
+  FlashAttention. A 32K prefill therefore materializes 4K + 8K + ... + 32K
+  per full-attention layer. This preserves the 4096-token activation/capacity
+  envelope but creates quadratic prefix traffic. Do not trade away the
+  full-context BF16 oracle by raising the scheduler budget; the next design
+  must make cached chunked prefill consume compact pages directly or otherwise
+  avoid rebuilding prior chunks. Artifacts:
+  `/tmp/brutus-{kvarn,bf16}-current-direct-vllm-b{1,2}-32k-o512.json`.

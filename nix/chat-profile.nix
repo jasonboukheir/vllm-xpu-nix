@@ -69,6 +69,10 @@ rec {
     kvCacheDtype = "auto";
     maxModelLen = 8192;
     cudagraphCaptureSizes = chat.cudagraphCaptureSizes;
+    # Keep the scheduler matched to the compact KVarN MTP candidate. KVarN
+    # currently requires exact host lengths, which async speculative scheduling
+    # does not expose without a device-to-host synchronization.
+    asyncScheduling = false;
   };
 
   bf16KvPrefixGraph =
@@ -140,7 +144,11 @@ rec {
     servedName = "qwen3.6-27b-kvarn-compact-mtp-k4v4";
     speculativeConfig = chat.speculativeConfig;
     kvarnNativeHadamardScatter = true;
-    kvarnFusedVerifyMinBlocks = 0;
+    # Materialize + FlashAttention is substantially faster for short and
+    # medium cached histories. Switch to the native fused verifier only once
+    # avoiding its O(context) materialization is expected to amortize the
+    # higher per-query launch/reduction cost (64 KVarN blocks = 8192 tokens).
+    kvarnFusedVerifyMinBlocks = 64;
   };
 
   kvarnPrefixEagerK4V4 =
@@ -200,7 +208,14 @@ rec {
     kvarnSinkhornIters = 4;
     cudagraphCaptureSizes = chat.cudagraphCaptureSizes;
     kvarnNativeHadamardScatter = true;
-    kvarnFusedVerifyMinBlocks = 0;
+    # Keep the materialized FlashAttention verifier below the measured
+    # crossover; forcing the fused verifier at 6K cut B4 throughput nearly in
+    # half (73.41 -> 40.57 tok/s).
+    kvarnFusedVerifyMinBlocks = 64;
+    # KVarN makes host-side tile ownership/flush decisions from exact committed
+    # lengths. Async speculative scheduling keeps rejection correction only on
+    # device, forcing a D2H queue barrier in every drafter pass.
+    asyncScheduling = false;
   };
 
   kvarnCompactPrefixGraphK4V4 =

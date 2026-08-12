@@ -244,6 +244,20 @@
         example = lib.literalExpression ''{ method = "qwen3_next_mtp"; num_speculative_tokens = 2; }'';
       };
 
+      mtpStartupWarmup = lib.mkOption {
+        type = lib.types.bool;
+        default = false;
+        description = ''
+          After the direct vLLM API becomes ready, run real B1 and ragged B4
+          greedy completions through the scheduler. This compiles MTP2
+          rejection/state-feedback and compact-cache tile kernels that dummy
+          model-runner warmups cannot reach. The warmup is part of service
+          startup and repeats after every vLLM restart. Requires two-token MTP
+          and capacity for at least four sequences. It does not involve any
+          proxy or router.
+        '';
+      };
+
       enforceEager = lib.mkOption {
         type = lib.types.bool;
         default = false;
@@ -681,6 +695,9 @@
         }
         // lib.optionalAttrs (inst.environmentFile != null) {
           EnvironmentFile = inst.environmentFile;
+        }
+        // lib.optionalAttrs inst.mtpStartupWarmup {
+          ExecStartPost = "${pkgs.python3}/bin/python ${../../scripts/vllm_mtp_warmup.py} --base-url http://127.0.0.1:${toString inst.port} --model ${lib.escapeShellArg inst.servedName}";
         };
     };
 in {
@@ -849,6 +866,20 @@ in {
       };
     })
     (lib.mkIf (enabledInstances != {}) {
+      assertions = lib.mapAttrsToList (name: inst: {
+        assertion =
+          !inst.mtpStartupWarmup
+          || (
+            inst.speculativeConfig != null
+            && (inst.speculativeConfig.num_speculative_tokens or 0) == 2
+            && (inst.maxNumSeqs == null || inst.maxNumSeqs >= 4)
+          );
+        message = ''
+          services.vllm-xpu.instances.${name}.mtpStartupWarmup requires
+          speculativeConfig.num_speculative_tokens = 2 and maxNumSeqs >= 4.
+        '';
+      }) enabledInstances;
+
       users.users.${cfg.user} = {
         isSystemUser = true;
         group = cfg.group;

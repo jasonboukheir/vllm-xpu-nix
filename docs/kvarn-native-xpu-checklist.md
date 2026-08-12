@@ -1220,3 +1220,16 @@ full64 promotion run. Artifact:
   opt-in for diagnostics, but do not enable it in the deployment profile.
   Artifacts: `/tmp/brutus-kvarn-persistent-fresh-aot-{e2e-gate,b4-6k-`
   `o512-measured}.json`.
+- [x] Localize the remaining direct-vLLM deficit across captured and eager
+  verifier batch sizes. At B1 (captured qlen-3 size 3), compact reaches 35.21
+  tok/s and 19.71 ms TPOT versus BF16's 42.09 tok/s and 15.78 ms: 83.7%
+  throughput and 1.249x TPOT. At B2 (captured size 6), compact reaches 63.38
+  tok/s and 26.90 ms versus 77.02 tok/s and 20.66 ms: 82.3% and 1.302x. B4's
+  intentional eager fallback is slightly closer at 87.0% and 1.284x. Thus
+  graph capture is active but does not hide the compact attention cost; the
+  remaining gap exists in both captured verifier sizes and eager B4. Source
+  inspection also confirms the paged-decode scheduler already partitions
+  work from each device-side actual sequence length and rejects excess split
+  IDs before the mainloop, so the 114688-token deployment bound does not make
+  the native kernel scan empty context. Artifacts:
+  `/tmp/brutus-{kvarn,bf16}-current-direct-vllm-b{1,2}-6k-o512.json`.

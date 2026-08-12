@@ -113,6 +113,16 @@ Record all four values below for each mode:
 3. Tail-pool and graph-workspace bytes outside paged KV storage.
 4. Engine-reported KV memory and token capacity at startup.
 
+For independent KVarN hybrid pools, distinguish physical from usable blocks.
+Each physical pool permanently owns one null block, so usable capacity is
+`physical_blocks - 1`. Size Mamba pools for
+`1 + max_num_seqs * peak_states_per_request`; with align-mode two-token MTP,
+the current proven peak is four recurrent-state pages per request. Allocate the
+remaining budget as attention-token pages rather than an integer number of
+maximum-context bundles. The resulting attention capacity must still cover one
+`max_model_len` request. Startup concurrency calculations and per-pool logs must
+use usable blocks, never the raw physical count.
+
 The predicted allocation must agree with the engine within one block. A KVarN
 candidate fails even when its raw compression looks good if hybrid page padding
 or the FP16 tail pool erases the usable capacity gain. Compare the 16 compressed

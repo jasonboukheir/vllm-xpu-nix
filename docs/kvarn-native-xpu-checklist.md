@@ -1249,3 +1249,41 @@ full64 promotion run. Artifact:
   must make cached chunked prefill consume compact pages directly or otherwise
   avoid rebuilding prior chunks. Artifacts:
   `/tmp/brutus-{kvarn,bf16}-current-direct-vllm-b{1,2}-32k-o512.json`.
+- [x] Replace cumulative Triton history reconstruction with the native Xe2
+  compact-to-FP16 materializer and repeat direct-vLLM gates from identical
+  dirty local vLLM/kernel worktrees. The exact random multi-request kernel
+  oracle passes; isolated timing is 0.099 ms at 8K and 0.360 ms at 32K. In
+  serving, B1 32K/128 compact TTFT falls from 68.89 s to 19.890 s, effectively
+  matching the fresh BF16 control at 19.489 s while preserving MTP2 (100%
+  acceptance at both positions in this compact sample). B1 6K/512 remains
+  close in prefill (4.515 s compact versus 4.181 s BF16) but compact decode is
+  slower (19.02 versus 15.64 ms TPOT). The matched B4 6K/512 lifecycle gate
+  completes all four requests with both speculative positions active and
+  releases all state: post-run metrics show zero running/waiting requests,
+  zero capacity waits, and zero KV-cache usage. Performance remains open:
+  compact is 59.00 tok/s / 38.93 ms TPOT versus BF16 at 79.11 tok/s /
+  31.32 ms. Capacity and graph evidence is unchanged at the original 4096
+  batching budget: compact 7.64 GiB / 297,984 tokens / 2.60x, BF16 8.51 GiB /
+  120,040 / 1.05x, with compact's three Mamba pools each reporting 17
+  physical, one null, 16 usable, four peak-resident blocks per request, and
+  4.00x concurrency. This is a functional/capacity pass and a long-prefill
+  fix, not the final performance acceptance. Artifacts:
+  `/tmp/kvarn-native-materialize-b{1,4}-6k-o512.json`,
+  `/tmp/kvarn-native-materialize-b1-32k-o128.json`, and
+  `/tmp/bf16-local-matched-b{1,4}-6k-o512.json`,
+  `/tmp/bf16-local-matched-b1-32k-o128.json`.
+- [x] Reject direct reuse of the cached/chunk-prefill kernel for qlen-3 MTP
+  verification.  A direct B4/6K oracle is numerically strong (maximum absolute
+  difference 0.000672 versus the established virtual-row native verifier),
+  but the chunk scheduler takes 23.44 ms versus 0.794 ms because it lacks the
+  verifier's split-K parallelism.  Host publication is not the missing cost:
+  the fused Hadamard/scatter publisher submits in about 4 us and executes in
+  about 57 us at B12.  The next kernel must preserve split-K while assigning
+  one request/KV-head/split workgroup to all three temporal positions, so each
+  compact K/V tile is reconstructed once and reused across qlen=3 rather than
+  treating the positions as twelve independent virtual batch rows.
+  A smaller eight-query-row specialization is also rejected.  It preserves
+  the same 0.000672 maximum difference but regresses to 132.7 ms median with
+  severe tail latency; the original 32-subgroup workgroup's cooperative tile
+  reconstruction is essential.  Do not pursue reduced query-tile occupancy as
+  a substitute for split-K qlen-3 scheduling.

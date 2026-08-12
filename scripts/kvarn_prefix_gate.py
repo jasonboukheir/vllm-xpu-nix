@@ -60,7 +60,10 @@ def compare_results(
     """
     for key in ("token_ids", "text", "finish_reason"):
         if cached[key] != uncached[key]:
-            raise AssertionError(f"cached {key} differs from uncached result")
+            raise AssertionError(
+                f"cached {key} differs from uncached result: "
+                f"uncached={uncached[key]!r}, cached={cached[key]!r}"
+            )
 
     left = uncached["logprobs"]
     right = cached["logprobs"]
@@ -124,7 +127,21 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-url", default="http://127.0.0.1:8000")
     parser.add_argument("--model", required=True)
-    parser.add_argument("--seed-token-ids", type=Path, required=True)
+    seed_group = parser.add_mutually_exclusive_group(required=True)
+    seed_group.add_argument("--seed-token-ids", type=Path)
+    seed_group.add_argument(
+        "--seed-text",
+        help="Natural text to tokenize through the endpoint for this model.",
+    )
+    parser.add_argument(
+        "--seed-text-sections",
+        type=int,
+        default=1,
+        help=(
+            "Expand seed text into this many uniquely numbered sections before "
+            "tokenization, avoiding periodic synthetic prompts at long lengths."
+        ),
+    )
     parser.add_argument("--lengths", default="127,128,129,4096")
     # BF16 MTP controls reach 0.437 at the 129-token boundary while producing
     # identical tokens.  Use a rounded 0.5 envelope as the numerical gate;
@@ -133,7 +150,30 @@ def main() -> None:
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
 
-    seed = json.loads(args.seed_token_ids.read_text())
+    if args.seed_text is not None:
+        if args.seed_text_sections < 1:
+            parser.error("--seed-text-sections must be positive")
+        seed_text = "\n".join(
+            f"Section {index}: {args.seed_text} Reference number {index}."
+            for index in range(args.seed_text_sections)
+        )
+        tokenized = request_json(
+            f"{args.base_url.rstrip('/')}/tokenize",
+            {"model": args.model, "prompt": seed_text},
+        )
+        seed = tokenized["tokens"]
+    else:
+        assert args.seed_token_ids is not None
+        seed = json.loads(args.seed_token_ids.read_text())
+    # Lifecycle fixtures contain a batch of prompts, while older prefix
+    # fixtures contain one flat token list. Accept the unambiguous single-row
+    # form so both gates can use the same authoritative real-token prompt.
+    if (
+        isinstance(seed, list)
+        and len(seed) == 1
+        and isinstance(seed[0], list)
+    ):
+        seed = seed[0]
     if (
         not isinstance(seed, list)
         or len(seed) < 2

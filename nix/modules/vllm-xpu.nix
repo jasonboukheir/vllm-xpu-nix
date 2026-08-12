@@ -325,6 +325,18 @@
         description = "Use the native XPU compact KVarN decode reader.";
       };
 
+      kvarnNativeChunkPrefill = lib.mkOption {
+        type = lib.types.bool;
+        default = false;
+        description = "Attend cached prefill chunks directly from compact KVarN pages.";
+      };
+
+      kvarnNativeMaterialize = lib.mkOption {
+        type = lib.types.bool;
+        default = false;
+        description = "Use the native XPU compact-to-fp16 materializer before FlashAttention.";
+      };
+
       kvarnNativeSplits = lib.mkOption {
         type = lib.types.ints.positive;
         default = 1;
@@ -683,6 +695,8 @@
           KVARN_NATIVE_XPU = "1";
           KVARN_NATIVE_XPU_DPAS_LAYOUT = "1";
           KVARN_NATIVE_XPU_DECODE = if inst.kvarnNativeDecode then "1" else "0";
+          KVARN_NATIVE_XPU_CHUNK_PREFILL = if inst.kvarnNativeChunkPrefill then "1" else "0";
+          KVARN_NATIVE_XPU_MATERIALIZE = if inst.kvarnNativeMaterialize then "1" else "0";
           KVARN_NATIVE_XPU_SPLITS = toString inst.kvarnNativeSplits;
           KVARN_NATIVE_XPU_PERSISTENT_SCRATCH = if inst.kvarnNativePersistentScratch then "1" else "0";
           KVARN_NATIVE_XPU_HADAMARD_SCATTER = if inst.kvarnNativeHadamardScatter then "1" else "0";

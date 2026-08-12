@@ -451,6 +451,7 @@
           bf16-kv-eager = mkKvarnRunner "vllm-xpu-bf16-kv-eager" chatProfile.bf16KvEager;
           bf16-kv-graph = mkKvarnRunner "vllm-xpu-bf16-kv-graph" chatProfile.bf16KvGraph;
           bf16-kv-mtp-graph = mkKvarnRunner "vllm-xpu-bf16-kv-mtp-graph" chatProfile.bf16KvMtpGraph;
+          brutus-bf16-kv-mtp-graph = mkKvarnRunner "vllm-xpu-brutus-bf16-kv-mtp-graph" chatProfile.brutusBf16KvMtpGraph;
           bf16-kv-prefix-graph = mkKvarnRunner "vllm-xpu-bf16-kv-prefix-graph" chatProfile.bf16KvPrefixGraph;
           kvarn-eager-k4v2 = mkKvarnRunner "vllm-xpu-kvarn-eager-k4v2" chatProfile.kvarnEagerK4V2;
           kvarn-mtp-eager-k4v4 = mkKvarnRunner "vllm-xpu-kvarn-mtp-eager-k4v4" chatProfile.kvarnMtpEagerK4V4;
@@ -461,6 +462,7 @@
           kvarn-compact-graph-k4v4 = mkKvarnRunner "vllm-xpu-kvarn-compact-graph-k4v4" chatProfile.kvarnCompactGraphK4V4;
           kvarn-compact-native-graph-k4v4 = mkKvarnRunner "vllm-xpu-kvarn-compact-native-graph-k4v4" chatProfile.kvarnCompactNativeGraphK4V4;
           kvarn-compact-mtp-graph-k4v4 = mkKvarnRunner "vllm-xpu-kvarn-compact-mtp-graph-k4v4" chatProfile.kvarnCompactMtpGraphK4V4;
+          brutus-kvarn-compact-mtp-graph-k4v4 = mkKvarnRunner "vllm-xpu-brutus-kvarn-compact-mtp-graph-k4v4" chatProfile.brutusKvarnCompactMtpGraphK4V4;
           kvarn-compact-prefix-graph-k4v4 = mkKvarnRunner "vllm-xpu-kvarn-compact-prefix-graph-k4v4" chatProfile.kvarnCompactPrefixGraphK4V4;
           kvarn-mtp-prefix-graph-k4v4 = mkKvarnRunner "vllm-xpu-kvarn-mtp-prefix-graph-k4v4" chatProfile.kvarnMtpPrefixGraphK4V4;
 
@@ -558,6 +560,10 @@
               type = "app";
               program = "${bf16-kv-mtp-graph}/bin/vllm-xpu-bf16-kv-mtp-graph";
             };
+            vllm-xpu-brutus-bf16-kv-mtp-graph = {
+              type = "app";
+              program = "${brutus-bf16-kv-mtp-graph}/bin/vllm-xpu-brutus-bf16-kv-mtp-graph";
+            };
             vllm-xpu-bf16-kv-prefix-graph = {
               type = "app";
               program = "${bf16-kv-prefix-graph}/bin/vllm-xpu-bf16-kv-prefix-graph";
@@ -597,6 +603,10 @@
             vllm-xpu-kvarn-compact-mtp-graph-k4v4 = {
               type = "app";
               program = "${kvarn-compact-mtp-graph-k4v4}/bin/vllm-xpu-kvarn-compact-mtp-graph-k4v4";
+            };
+            vllm-xpu-brutus-kvarn-compact-mtp-graph-k4v4 = {
+              type = "app";
+              program = "${brutus-kvarn-compact-mtp-graph-k4v4}/bin/vllm-xpu-brutus-kvarn-compact-mtp-graph-k4v4";
             };
             vllm-xpu-kvarn-compact-prefix-graph-k4v4 = {
               type = "app";

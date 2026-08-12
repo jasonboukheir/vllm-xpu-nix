@@ -1,4 +1,14 @@
 let
+  kvarnRepresentationAttrs = [
+    "kvCacheDtype"
+    "kvarnDpasSafe"
+    "kvarnFusedVerifyMinBlocks"
+    "kvarnNativeDecode"
+    "kvarnNativeHadamardScatter"
+    "kvarnNativeSplits"
+    "kvarnSinkhornIters"
+  ];
+
   chat = {
     model = "Lorbus/Qwen3.6-27B-int4-AutoRound";
     servedName = "qwen3.6-27b";
@@ -72,6 +82,17 @@ rec {
     # Keep the scheduler matched to the compact KVarN MTP candidate. KVarN
     # currently requires exact host lengths, which async speculative scheduling
     # does not expose without a device-to-host synchronization.
+    asyncScheduling = false;
+  };
+
+  # Final direct-vLLM production control. Brutus runs the candidate below at
+  # maxModelLen=114688; this control deliberately retains that context
+  # envelope, MTP2, B4 admission, graph sizes, scheduler, model, sampling, and
+  # API settings. Sequential startup is expected because both consume the same
+  # XPU and memory budget.
+  brutusBf16KvMtpGraph = chat // {
+    servedName = "qwen3.6-27b-kvarn-compact-mtp-graph-k4v4";
+    kvCacheDtype = "auto";
     asyncScheduling = false;
   };
 
@@ -217,6 +238,22 @@ rec {
     # device, forcing a D2H queue barrier in every drafter pass.
     asyncScheduling = false;
   };
+
+  # Final direct-vLLM production candidate. Keep the public served name and
+  # full Brutus context envelope identical to the BF16 control; only the KV
+  # representation and representation-specific KVarN implementation knobs
+  # differ.
+  brutusKvarnCompactMtpGraphK4V4 =
+    let
+      candidate = kvarnCompactMtpGraphK4V4 // {
+        servedName = brutusBf16KvMtpGraph.servedName;
+        maxModelLen = brutusBf16KvMtpGraph.maxModelLen;
+      };
+    in
+      assert
+        builtins.removeAttrs candidate kvarnRepresentationAttrs
+        == builtins.removeAttrs brutusBf16KvMtpGraph kvarnRepresentationAttrs;
+      candidate;
 
   kvarnCompactPrefixGraphK4V4 =
     (builtins.removeAttrs kvarnCompactMtpGraphK4V4 [ "speculativeConfig" ])

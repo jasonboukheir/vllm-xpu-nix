@@ -941,3 +941,30 @@ full64 promotion run. Artifact:
   Compact measures 0.125029 on the established seed and 0.183944 on a distinct
   seed, both inside the BF16 envelope. Set the numerical bound to a rounded 0.5
   while retaining exact token/text/finish equality as the hard gate.
+
+## MTP capacity redesign checkpoint
+
+- [x] Reproduce the apparent tiny-request cache pressure as exact allocator
+  arithmetic. The deployed Mamba pool had eight physical pages, one permanent
+  null page, and four peak align-mode MTP2 states per request. One peak request
+  therefore reported `4 / 7 = 57.1%`; a second peak needed nine physical pages.
+- [x] Fix independent-pool capacity reporting to exclude the null page and log
+  physical, null, and usable counts separately.
+- [x] Replace maximum-context request bundles with separate policies: reserve
+  `max_num_seqs` peak Mamba state bundles, then expose the remaining attention
+  pages as a shared token pool. Fail configuration if that residual pool cannot
+  hold one `max_model_len` request.
+- [x] Reconcile asymmetric multi-worker cache layouts per physical pool instead
+  of scaling every independent pool through the legacy aggregate block count.
+- [x] Add a real allocator regression proving that two simultaneous align-mode
+  MTP2 requests reach a four-state peak only with nine physical Mamba pages.
+  Drive two requests through acceptance lengths 1/2/3, require disjoint state
+  page identities, and verify complete teardown reclamation.
+- [x] Pass both complete CPU allocator suites (112 tests), pinned Ruff, and the
+  local-source `vllm-xpu-unstable` Nix build. Local vLLM commits are
+  `4adb725b12` and `87c4a24c7d`; pushing is deferred until SSH is available.
+- [ ] With Brutus vLLM still disabled, build the final pinned source and rerun
+  the matched eager BF16/native-KV oracle before graph mode.
+- [ ] Re-enable graph sizes 3/6 only after eager parity, then rerun qlen-3
+  lifecycle, prefix 127/128/129/4096, one 114688-token request, two/four tiny
+  concurrent requests, mixed contexts, cancellation, and B2/B4 performance.

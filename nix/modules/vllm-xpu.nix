@@ -234,7 +234,9 @@
           The K value (`num_speculative_tokens`) must match
           `cudagraphCaptureSizes` because vLLM rounds capture sizes up
           to multiples of (K + 1) — verify-pass shape = 1 real + K
-          spec. K=2 wants `[3]`, K=3 wants `[4]`, etc. Requires the
+          spec. Capture sizes count tokens, so K=2 uses `3 * B`: `[3 6]`
+          captures request batches B1/B2, while B3/B4 intentionally fall back
+          to eager submission unless `[9 12]` are also captured. Requires the
           GDN spec-decode dispatcher patch on XPU (`vllm-xpu-unstable`
           tracks it); otherwise the SYCL `gdn_attention` kernel
           asserts on the first verify pass.
@@ -325,7 +327,7 @@
         type = lib.types.nullOr (lib.types.listOf lib.types.int);
         default = null;
         description = ''
-          Batch sizes to capture into PIECEWISE XPU graphs (passed via
+          Token-batch sizes to capture into XPU graphs (passed via
           `--compilation-config '{"cudagraph_capture_sizes":[…]}'`).
           Defaults to `null` which lets vLLM pick — typically 19 sizes
           from 1 to 128 costing ~7 GiB of VRAM, which OOMs the KV

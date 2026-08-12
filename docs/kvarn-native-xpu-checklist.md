@@ -960,7 +960,7 @@ full64 promotion run. Artifact:
   MTP2 requests reach a four-state peak only with nine physical Mamba pages.
   Drive two requests through acceptance lengths 1/2/3, require disjoint state
   page identities, and verify complete teardown reclamation.
-- [x] Pass both complete CPU allocator suites (114 tests), pinned Ruff, and the
+- [x] Pass both complete CPU allocator suites (115 tests), pinned Ruff, and the
   local-source `vllm-xpu-unstable` Nix build. Local vLLM commits are
   `4adb725b12`, `87c4a24c7d`, and `a403ba1626`; pushing is deferred until SSH
   is available.
@@ -980,6 +980,13 @@ full64 promotion run. Artifact:
   and explicitly dispatch with graph mode `NONE`. This is the intended graph
   VRAM/concurrency tradeoff, not a hidden fallback; live validation must prove
   graph replay for B1/B2 and eager execution plus parity for B3/B4.
+- [x] Combine independent pools, align-mode MTP2, prefix reuse, and cancellation
+  in one allocator lifecycle: the replay request receives the scheduler's
+  shared-prefix boundary, reuses cached attention/recurrent pages, keeps its
+  three private target/draft pages separate, and returns those private pages
+  on abort. A scheduler-level B4 regression also admits four tiny MTP2
+  requests, aborts one, and immediately admits a replacement through the same
+  null-aware pools. Local vLLM commits: `c38f6d171e`, `5993077257`.
 - [ ] With Brutus vLLM still disabled, build the final pinned source and rerun
   the matched eager BF16/native-KV oracle before graph mode.
 - [ ] Re-enable graph sizes 3/6 only after eager parity, prove B1/B2 graph

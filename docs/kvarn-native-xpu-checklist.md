@@ -1177,3 +1177,32 @@ full64 promotion run. Artifact:
   than trading target-logit numerics for fewer partials. Artifacts:
   `/tmp/brutus-bf16-live-token-current-{lifecycle,bench}.json` and
   `/tmp/brutus-kvarn-live-token-split{16,24}-{lifecycle,bench}.json`.
+- [x] Repeat the exact Brutus pair through vLLM's API directly after clarifying
+  that LiteLLM is only the deployment router. Both instances expose the shared
+  model name at `/v1/models`, answer `/v1/chat/completions`, use MTP2 with
+  graph sizes 3/6, and pass the qlen-3 lifecycle with identical greedy-token
+  SHA `4df19b280e89ec1f5c48b4bd11c5a6c6856ada83d3d58070bb73d1b97964af3d`.
+  BF16 reports 8.51 GiB / 120,040 attention tokens (1.05x the 114688-token
+  envelope). Compact reports 7.64 GiB / 297,984 attention tokens (2.60x), plus
+  three independent Mamba pools with 17 physical, one null, 16 usable, and
+  four peak resident blocks per request (4.00x recurrent concurrency). Both
+  B4 runs finish with zero running/waiting requests and zero KV-cache usage.
+  The matched 4x6000/512 seed-0 result remains below the performance gate:
+  compact reaches 64.01 tok/s and 37.14 ms mean TPOT versus BF16's 73.57 tok/s
+  and 28.93 ms, or 87.0% throughput and 1.284x TPOT. Compact draft acceptance
+  is higher (94.51% versus 91.31%), so acceptance does not explain the gap.
+  The compact run compiled packed-build/record-flush Triton shapes during its
+  first B4 traffic; it is valid lifecycle/capacity evidence but must be
+  repeated after the complete API warmup before it can be the final clean
+  performance artifact. Artifacts:
+  `/tmp/brutus-{bf16,kvarn}-current-direct-vllm-{e2e-gate,b4-6k-o512}.json`.
+- [x] Reject two narrow split-32 decoder optimizations before rebuilding the
+  serving closure. Computing the reducer denominator once per workgroup passes
+  the numerical oracle but measures 173.125 us versus the original 173.099 us
+  device median. Reusing V column-scale fragments across both 64-token halves
+  of each 128-token page also passes, but spills about 20 registers and regresses
+  device median to 252.162 us. Both production-kernel experiments were removed.
+  A missing standalone Torch registration shim was restored so subsequent
+  decoder iterations build three objects rather than the 642-object generic
+  attention extension. Artifacts: `/tmp/kvarn-reduce32-{original,shared-`
+  `denominator,vscale-page-reuse}.json`.

@@ -1047,3 +1047,19 @@ full64 promotion run. Artifact:
   of BF16. Do not ship based on the older passing median; isolate the
   long-prefix acceptance and TTFT gaps first. Artifacts:
   `/tmp/{kvarn-compact,bf16}-mtp-boundaryfix-graph-6k-c4-o512-warm.json`.
+- [x] Separate captured B2 execution from intentional B4 eager fallback with a
+  literal seed-0 matched run. At B2/6K/O512 compact reaches 58.78 tok/s,
+  19.27 ms TPOT, 7.53 s TTFT, and 95.45% acceptance versus BF16's 61.07 tok/s,
+  19.80 ms, 6.52 s, and 97.41%. The 96.25% throughput and 0.973x TPOT ratios
+  pass both gates, so graph size 6 and qlen-3 state ownership are not the broad
+  regression. Artifacts:
+  `/tmp/{kvarn-compact,bf16}-mtp-boundaryfix-b2-graph-6k-o512-seed0.json`.
+- [ ] Restore B4 prefill/TTFT performance after the shared-boundary correctness
+  fix. A direct literal seed-0 compact repeat reaches 51.24 tok/s, 31.53 ms
+  TPOT, 16.36 s TTFT, and 93.62% acceptance, versus the pre-fix artifact's
+  68.99 tok/s, 31.97 ms, 12.57 s, and 91.97%. Stable TPOT and acceptance with
+  slower/staggered first tokens localize the regression to chunked prefill and
+  scheduling, not decode arithmetic. The scheduler admits 6K requests in
+  2048-token chunks (temporarily reporting 2 running/2 waiting), while Mamba
+  usage remains within the four-page-per-request contract. Artifact:
+  `/tmp/kvarn-compact-mtp-boundaryfix-b4-graph-6k-o512-seed0.json`.

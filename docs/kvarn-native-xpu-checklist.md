@@ -970,6 +970,10 @@ full64 promotion run. Artifact:
   the 17-layer compact attention pool retains approximately 1,351 physical
   pages / 172,800 usable tokens. Exact startup values may differ by one page
   because the journal rounds available memory to two decimals.
+- [x] Remove the stale shared-dequant verifier interface and routing comments;
+  the implementation had already been rejected and replaced by the retained
+  native qlen-3 verifier plus virtual-query Triton fallback. Focused KVarN
+  metadata/config coverage passes 38/38. Local cleanup commit: `965941d6f3`.
 - [ ] With Brutus vLLM still disabled, build the final pinned source and rerun
   the matched eager BF16/native-KV oracle before graph mode.
 - [ ] Re-enable graph sizes 3/6 only after eager parity, then rerun qlen-3

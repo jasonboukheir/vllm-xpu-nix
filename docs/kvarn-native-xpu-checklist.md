@@ -1111,15 +1111,19 @@ full64 promotion run. Artifact:
   and maintenance runners prevent the final direct-vLLM A/B from reusing the
   earlier 8192-token oracle profiles or changing the public model name.
 - [x] Run the exact full-envelope startup pair directly on Brutus with local
-  vLLM and kernel source overrides. Native BF16 KV is not a runnable matched
-  control at the production envelope: vLLM exposes 6.54 GiB for KV, requires
-  8.09 GiB for one 114688-token request, and estimates a 90688-token maximum.
-  Do not disguise this result by lowering the control to 8192. Compact K4V4
-  starts with 155520--156928 attention tokens (1.36--1.37x one maximum-length
-  request). Each of its three Mamba pools has 17 physical pages, one null
-  sentinel, 16 usable pages, and a proven four-page per-request peak (one
-  committed, one transition, two speculative), giving exactly 4.00x recurrent
-  concurrency without copying the attention prefix for MTP candidates.
+  vLLM and kernel source overrides. A cold BF16 compilation can transiently
+  leave only 6.01--6.54 GiB for KV and reject the 114688-token envelope, but
+  this is not its steady-state capacity: after AOT artifacts exist, the exact
+  default-2048 profile starts with 9.04 GiB / 127685 tokens. With the retained
+  4096 scheduler budget it starts with 8.51 GiB / 120040 tokens (1.05x one
+  maximum request). Compact K4V4 starts cold with 5.42 GiB / 170112 attention
+  tokens (1.48x); a warm restart reaches 7.64 GiB / 297984 tokens (2.60x).
+  Each of its three Mamba pools has 17 physical pages, one null sentinel, 16
+  usable pages, and a proven four-page per-request peak (one committed, one
+  transition, two speculative), giving exactly 4.00x recurrent concurrency
+  without copying the attention prefix for MTP candidates. Cold-start memory
+  accounting remains a deployment defect; do not claim that a first-build
+  failure proves the configured context is intrinsically impossible.
 - [x] Pass a fresh-cache exact-Brutus compact direct-vLLM lifecycle. Graph
   capture covers sizes 3 and 6; the post-warmup B4 gate reaches four running,
   zero waiting, returns KV usage from 75% to 0%, exercises acceptance lengths
@@ -1132,3 +1136,21 @@ full64 promotion run. Artifact:
   second empty cache all inference JIT occurred during warmup and none occurred
   during the following B4 gate. Artifacts:
   `/tmp/brutus-kvarn-k4v4-mtp2-{e2e-gate,prefix,post-warmup-v2}.json`.
+- [ ] Pass the exact direct-vLLM performance comparison at a scheduler budget
+  that preserves the 114688-token BF16 envelope. Budgets 8192 and 6144 fail
+  even after warm AOT (7.75 and 7.85 GiB available versus 8.09 GiB required).
+  The shared 4096 profile admits BF16 with 8.51 GiB / 120040 tokens and compact
+  with 5.42 GiB / 170112 tokens. Both exact qlen-3 lifecycle runs pass and emit
+  the same greedy-token SHA
+  `4df19b280e89ec1f5c48b4bd11c5a6c6856ada83d3d58070bb73d1b97964af3d`,
+  but B4/6000/512 compact reaches only 45.31 tok/s and 37.47 ms mean TPOT
+  versus BF16's 74.15 tok/s and 28.89 ms: 61.11% throughput and 1.297x TPOT.
+  Artifacts: `/tmp/brutus-{bf16-mtp2,kvarn-k4v4-mtp2}-exact114688-`
+  `batched4096-{e2e-gate,greedy-graph-6k-o512-seed0}.json` and
+  `/tmp/brutus-kvarn-k4v4-mtp2-exact114688-batched4096-perf-gate.json`.
+- [x] Reject bounded cross-layer packing as the remaining prefill solution.
+  Combining only large (at least eight-block) flushes across four layers keeps
+  small MTP boundary ordering unchanged and passes the full qlen-3 lifecycle,
+  but improves the exact compact run only to 47.03 tok/s, 37.19 ms TPOT, and
+  24.41 s TTFT. The experimental code was removed. Artifacts:
+  `/tmp/brutus-kvarn-cross-layer-prefill-{lifecycle,batched4096-seed0}.json`.

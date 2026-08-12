@@ -17,6 +17,12 @@ let
     kvCacheDtype = "auto";
     maxModelLen = 114688;
     maxNumSeqs = 4;
+    # Double vLLM's speculative default of 2048 tokens to reduce long-prefill
+    # serialization. Larger tested ranges (6144 and 8192) raise steady-state
+    # XPU activation memory enough that the matched BF16 control can no longer
+    # allocate one 114688-token request, so scheduler budget is not a free
+    # throughput knob for this deployment.
+    maxNumBatchedTokens = 4096;
     gpuMemoryUtilization = 0.90;
     speculativeConfig = {
       method = "mtp";

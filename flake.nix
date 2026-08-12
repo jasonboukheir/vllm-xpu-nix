@@ -313,6 +313,9 @@
                 (pkgs.lib.escapeShellArg (builtins.toJSON inst.speculativeConfig))
               ]
               ++ pkgs.lib.optionals inst.enforceEager [ "--enforce-eager" ]
+              ++ pkgs.lib.optionals (inst ? asyncScheduling) [
+                (if inst.asyncScheduling then "--async-scheduling" else "--no-async-scheduling")
+              ]
               ++ pkgs.lib.optionals (inst ? cudagraphCaptureSizes) [
                 "--compilation-config"
                 (pkgs.lib.escapeShellArg (
@@ -422,7 +425,6 @@
                 export CCL_ATL_TRANSPORT=ofi
                 export CCL_ZE_IPC_EXCHANGE=sockets
                 export CCL_LOG_LEVEL=warn
-
                 ${pkgs.lib.optionalString (profile.enableXpuGraph or false) "export VLLM_XPU_ENABLE_XPU_GRAPH=1"}
                 ${pkgs.lib.optionalString (profile.kvarnDpasSafe or false) ''
                   export KVARN_NATIVE_XPU=1

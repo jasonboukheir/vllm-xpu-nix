@@ -1081,3 +1081,23 @@ full64 promotion run. Artifact:
   `/tmp/{kvarn-compact,bf16}-mtp-boundaryfix-b4-budget8192-graph-6k-o512-seed0.json`
   and
   `/tmp/kvarn-compact-mtp-boundaryfix-b4-budget4096-graph-6k-o512-seed0.json`.
+
+## Direct-vLLM final acceptance
+
+- [x] Replace synthetic V1 model-runner warmup with a real post-readiness vLLM
+  API warmup. Even valid synthetic request/block state could not reproduce the
+  scheduler's accepted-token feedback and still left
+  `eagle_step_slot_mapping_metadata_kernel` and
+  `_kvarn_build_packed_kv_kernel` to compile on the first user request; a cold
+  attempt also added 119 seconds to startup. The retained opt-in NixOS module
+  hook waits on direct `/v1/models`, then submits a 134-token B1 request and a
+  ragged 14/15/16/17-token B4 request. All expected JIT occurs inside that
+  hook. The immediately following B4 lifecycle oracle emits no JIT warnings,
+  returns cache usage to 0%, and preserves the matched BF16 greedy-token SHA
+  `b3cbecf4768c455c52cdf7fc42ce050366c13f4404fb38bd53e57d4a16a36ec9`.
+  Artifact: `/tmp/kvarn-compact-mtp-apiwarm-b4-oracle.json`.
+- [ ] Final acceptance requires two clean direct-vLLM E2E runs with the exact
+  declarative settings Brutus supplies to vLLM: compact K4V4 KVarN+MTP2 and a
+  matched native BF16-KV+MTP2 control. LiteLLM/Open WebUI are not part of this
+  comparison. Do not complete the goal from maintenance apps or isolated
+  harnesses alone.

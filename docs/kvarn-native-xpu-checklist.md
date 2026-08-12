@@ -1165,3 +1165,15 @@ full64 promotion run. Artifact:
   87.1% throughput and 1.261x TPOT. Widening the opt-in combined query/store
   path is rejected: 63.59 tok/s and 37.04 ms TPOT. Artifacts:
   `/tmp/brutus-kvarn-real-token-slice-{unfused,fused}-{lifecycle,bench}.json`.
+- [x] Re-establish the matched current-source BF16 oracle and reject lower
+  native split counts for the exact MTP2 profile. BF16 reproduces 74.11 tok/s,
+  28.92 ms mean TPOT, and 11.78 s TTFT with the same lifecycle SHA. Split-16
+  remains exact on the lifecycle gate but falls to 61.63 tok/s / 37.73 ms and
+  89.90% draft acceptance. Split-24 reaches 64.18 tok/s / 36.93 ms and 95.33%
+  acceptance, still below retained split-32 at 64.57 tok/s / 36.44 ms. Source
+  inspection confirms native decode handles B1--B4 target steps while qlen-3
+  verification uses the context-aware verifier, so a B12 native split hybrid
+  is inapplicable. Retain split-32 and optimize its mainloop/reduction rather
+  than trading target-logit numerics for fewer partials. Artifacts:
+  `/tmp/brutus-bf16-live-token-current-{lifecycle,bench}.json` and
+  `/tmp/brutus-kvarn-live-token-split{16,24}-{lifecycle,bench}.json`.

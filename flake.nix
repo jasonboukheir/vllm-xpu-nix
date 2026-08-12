@@ -308,6 +308,10 @@
                 "--max-num-seqs"
                 (toString inst.maxNumSeqs)
               ]
+              ++ pkgs.lib.optionals (inst ? maxNumBatchedTokens) [
+                "--max-num-batched-tokens"
+                (toString inst.maxNumBatchedTokens)
+              ]
               ++ pkgs.lib.optionals (inst ? speculativeConfig) [
                 "--speculative-config"
                 (pkgs.lib.escapeShellArg (builtins.toJSON inst.speculativeConfig))

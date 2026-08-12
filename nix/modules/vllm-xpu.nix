@@ -207,6 +207,17 @@
         '';
       };
 
+      maxNumBatchedTokens = lib.mkOption {
+        type = lib.types.nullOr lib.types.int;
+        default = null;
+        description = ''
+          Pass `--max-num-batched-tokens <n>`. This is the scheduler's total
+          token budget per iteration, not a KV reservation. MTP defaults can
+          reduce it to 2048, serializing long B4 prefills even when recurrent
+          and attention cache capacity can admit every request.
+        '';
+      };
+
       gpuMemoryUtilization = lib.mkOption {
         type = lib.types.float;
         default = 0.9;
@@ -592,6 +603,10 @@
       ++ lib.optionals (inst.kvCacheDtype != null) ["--kv-cache-dtype" (lib.escapeShellArg inst.kvCacheDtype)]
       ++ lib.optionals (inst.maxModelLen != null) ["--max-model-len" (toString inst.maxModelLen)]
       ++ lib.optionals (inst.maxNumSeqs != null) ["--max-num-seqs" (toString inst.maxNumSeqs)]
+      ++ lib.optionals (inst.maxNumBatchedTokens != null) [
+        "--max-num-batched-tokens"
+        (toString inst.maxNumBatchedTokens)
+      ]
       ++ lib.optionals (inst.speculativeConfig != null) [
         "--speculative-config"
         (lib.escapeShellArg (builtins.toJSON inst.speculativeConfig))

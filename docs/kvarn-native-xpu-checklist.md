@@ -1206,3 +1206,17 @@ full64 promotion run. Artifact:
   decoder iterations build three objects rather than the 642-object generic
   attention extension. Artifacts: `/tmp/kvarn-reduce32-{original,shared-`
   `denominator,vscale-page-reuse}.json`.
+- [x] Reject enabling caller-owned persistent split scratch in the exact
+  Brutus compact profile. The isolated B4/context-6000 native call improves
+  from 238.385 us to 173.099 us when its three temporary tensors are reused,
+  but a genuinely fresh AOT compile followed by a clean reconstruction shows
+  no end-to-end gain: 63.95 tok/s and 36.86 ms mean TPOT versus the adjacent
+  non-persistent 64.01 tok/s and 37.14 ms. The warm reconstruction restores
+  the expected 7.64 GiB / 297,984-token attention cache; the cold compile's
+  5.47 GiB report is transient compiler residency, not scratch consumption.
+  The qlen-3 lifecycle remains exact with SHA
+  `4df19b280e89ec1f5c48b4bd11c5a6c6856ada83d3d58070bb73d1b97964af3d`,
+  every acceptance length, and rejection recovery. Keep the implementation
+  opt-in for diagnostics, but do not enable it in the deployment profile.
+  Artifacts: `/tmp/brutus-kvarn-persistent-fresh-aot-{e2e-gate,b4-6k-`
+  `o512-measured}.json`.

@@ -4,6 +4,8 @@ let
     "kvarnDpasSafe"
     "kvarnFusedVerifyMinBlocks"
     "kvarnNativeDecode"
+    "kvarnNativeChunkPrefill"
+    "kvarnNativeMaterialize"
     "kvarnNativeHadamardScatter"
     "kvarnNativeSplits"
     "kvarnSinkhornIters"
@@ -226,6 +228,8 @@ rec {
     maxModelLen = 8192;
     kvarnDpasSafe = true;
     kvarnNativeDecode = true;
+    kvarnNativeChunkPrefill = false;
+    kvarnNativeMaterialize = true;
     # B12 (B4 x qlen3) reader/kernel winner; also preserves the best MTP
     # acceptance. Graph sizes [3, 6] cover B1/B2 verification. B3/B4 execute
     # this same retained path through intentional eager fallback so extra graph

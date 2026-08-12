@@ -434,6 +434,8 @@
                   export KVARN_NATIVE_XPU=1
                   export KVARN_NATIVE_XPU_DPAS_LAYOUT=1
                   export KVARN_NATIVE_XPU_DECODE=${if profile.kvarnNativeDecode or false then "1" else "0"}
+                  export KVARN_NATIVE_XPU_CHUNK_PREFILL=${if profile.kvarnNativeChunkPrefill or false then "1" else "0"}
+                  export KVARN_NATIVE_XPU_MATERIALIZE=${if profile.kvarnNativeMaterialize or false then "1" else "0"}
                   export KVARN_NATIVE_XPU_SPLITS=${toString (profile.kvarnNativeSplits or 1)}
                   export KVARN_NATIVE_XPU_PERSISTENT_SCRATCH=${if profile.kvarnNativePersistentScratch or false then "1" else "0"}
                   export KVARN_NATIVE_XPU_HADAMARD_SCATTER=${if profile.kvarnNativeHadamardScatter or false then "1" else "0"}
@@ -531,6 +533,9 @@
               ;
             unstable-gdn-attn-kernels-xe-2 =
               unstableLibs.gdn-attn-kernels-xe-2;
+            brutus-kvarn-compact-mtp-graph-k4v4 =
+              brutus-kvarn-compact-mtp-graph-k4v4;
+            brutus-bf16-kv-mtp-graph = brutus-bf16-kv-mtp-graph;
             default = intel-oneapi;
             inherit quantize kl-eval lint;
           };

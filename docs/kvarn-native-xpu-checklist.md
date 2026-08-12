@@ -1154,3 +1154,14 @@ full64 promotion run. Artifact:
   but improves the exact compact run only to 47.03 tok/s, 37.19 ms TPOT, and
   24.41 s TTFT. The experimental code was removed. Artifacts:
   `/tmp/brutus-kvarn-cross-layer-prefill-{lifecycle,batched4096-seed0}.json`.
+- [x] Slice unified K/V updates to the backend metadata's real token count.
+  The dispatcher previously passed the full 4096-row compile buffer even when
+  only a B4 qlen-3 decode was live. Graph-capture dummy runs retain their
+  capture-shaped fallback. The exact lifecycle keeps oracle SHA
+  `4df19b280e89ec1f5c48b4bd11c5a6c6856ada83d3d58070bb73d1b97964af3d`
+  and exercises acceptance lengths 1/2/3 plus consecutive rejection recovery.
+  The standard 4x6000/512 seed-0 benchmark improves from 45.31 to 64.57 tok/s
+  and mean TPOT from 37.47 to 36.44 ms, but still misses the BF16 gates at
+  87.1% throughput and 1.261x TPOT. Widening the opt-in combined query/store
+  path is rejected: 63.59 tok/s and 37.04 ms TPOT. Artifacts:
+  `/tmp/brutus-kvarn-real-token-slice-{unfused,fused}-{lifecycle,bench}.json`.

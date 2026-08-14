@@ -1,11 +1,12 @@
 {
   chat = {
-    model = "Lorbus/Qwen3.6-27B-int4-AutoRound";
+    model = "shawnw3i/Huihui-Qwen3.6-27B-abliterated-AWQ-MTP";
+    revision = "ed099273cf30ad72a88116d759856f147b7bcbff";
     servedName = "qwen3.6-27b";
     dtype = "bfloat16";
-    quantization = "inc";
+    quantization = "auto_awq";
     kvCacheDtype = "auto";
-    maxModelLen = 114688;
+    maxModelLen = 65536;
     maxNumSeqs = 4;
     gpuMemoryUtilization = 0.90;
     speculativeConfig = {
@@ -18,7 +19,11 @@
     reasoningParser = "qwen3";
     enableAutoToolChoice = true;
     toolCallParser = "qwen3_xml";
-    languageModelOnly = true;
+    languageModelOnly = false;
+    limitMmPerPrompt = {
+      image = 2;
+      video = 0;
+    };
     extraArgs = [
       "--override-generation-config"
       (builtins.toJSON {

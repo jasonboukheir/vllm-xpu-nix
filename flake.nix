@@ -7,7 +7,7 @@
     # `nix flake update`, even when the vllm-xpu-nix source input itself does
     # not move. Pinning the revision in the input URL makes nixpkgs updates an
     # explicit change in this repository, preventing surprise torch rebuilds.
-    nixpkgs.url = "github:NixOS/nixpkgs/b7c2ada94fe99c15b0dbcf4d11fd7850b957a436";
+    nixpkgs.url = "github:NixOS/nixpkgs/0e251e24a4f24e036a084b6b4b2d2491af4167f4";
     flake-utils.url = "github:numtide/flake-utils";
 
     vllm-xpu-kernels-src = {
@@ -74,9 +74,9 @@
       kernelsUnstableVersion = mkInputVersion {
         name = "vllm-xpu-kernels-unstable-src";
         input = vllm-xpu-kernels-unstable-src;
-        # main descends from the v0.1.12 tag (git describe -> v0.1.12-N);
+        # main descends from the v0.1.13.1 tag (git describe -> v0.1.13.1-N);
         # the +unstable.<date>.g<rev> suffix marks the snapshot ahead of it.
-        base = "0.1.12";
+        base = "0.1.13.1";
         unstable = true;
       };
       vllmStableVersion = mkInputVersion {
@@ -222,6 +222,7 @@
             "--gpu-memory-utilization" (toString inst.gpuMemoryUtilization)
           ]
           ++ pkgs.lib.optionals (inst ? runner) ["--runner" (pkgs.lib.escapeShellArg inst.runner)]
+          ++ pkgs.lib.optionals (inst ? revision) ["--revision" (pkgs.lib.escapeShellArg inst.revision)]
           ++ pkgs.lib.optionals (inst ? quantization) ["--quantization" (pkgs.lib.escapeShellArg inst.quantization)]
           ++ pkgs.lib.optionals (inst ? kvCacheDtype) ["--kv-cache-dtype" (pkgs.lib.escapeShellArg inst.kvCacheDtype)]
           ++ ["--max-model-len" (toString inst.maxModelLen)]
@@ -240,6 +241,10 @@
           ++ pkgs.lib.optionals (inst ? reasoningParser) ["--reasoning-parser" inst.reasoningParser]
           ++ pkgs.lib.optionals (inst.enableAutoToolChoice or false) ["--enable-auto-tool-choice"]
           ++ pkgs.lib.optionals (inst ? toolCallParser) ["--tool-call-parser" inst.toolCallParser]
+          ++ pkgs.lib.optionals (inst ? limitMmPerPrompt) [
+            "--limit-mm-per-prompt"
+            (pkgs.lib.escapeShellArg (builtins.toJSON inst.limitMmPerPrompt))
+          ]
           ++ pkgs.lib.optionals (inst.languageModelOnly or false) ["--language-model-only"]
           ++ map pkgs.lib.escapeShellArg inst.extraArgs
         );

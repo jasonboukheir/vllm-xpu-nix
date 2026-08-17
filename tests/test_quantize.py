@@ -40,6 +40,27 @@ class QuantizeTests(unittest.TestCase):
             config = quantize.workspace_config(Path(directory) / "Qwen" / "Qwen3-8B")
             self.assertEqual(config["publish"]["repo"], "jasonboukheir/Qwen3-8B-W4A16-AutoRound")
             self.assertFalse(config["publish"]["private"])
+            self.assertEqual(config["quantization"]["ignore"], ["lm_head"])
+            self.assertEqual(config["quantization"]["calibration"], {})
+
+    def test_ignore_rules_accept_exact_and_regex_selectors(self):
+        config = {"quantization": {"ignore": ["lm_head", r"re:.*mtp\.fc$"]}}
+        self.assertEqual(quantize.ignore_rules(config), ["lm_head", r"re:.*mtp\.fc$"])
+
+    def test_ignore_rules_reject_commas(self):
+        with self.assertRaises(SystemExit):
+            quantize.ignore_rules({"quantization": {"ignore": ["lm_head,mtp.fc"]}})
+
+    def test_test_subcommand_defaults_to_two_timing_points(self):
+        args = quantize.parser().parse_args(["test"])
+        self.assertIs(args.func, quantize.cmd_test)
+        self.assertEqual(args.test_iters, [5, 20])
+        self.assertEqual(args.test_calibration_samples, 32)
+        self.assertFalse(args.full_calibration)
+
+    def test_doctor_subcommand(self):
+        args = quantize.parser().parse_args(["doctor"])
+        self.assertIs(args.func, quantize.cmd_doctor)
 
 
 if __name__ == "__main__":

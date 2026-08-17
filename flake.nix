@@ -128,8 +128,13 @@
         python3Packages = python312PackagesXpu;
       };
 
+      llm-compressor-xpu = pkgs.callPackage ./nix/llm-compressor-xpu.nix {
+        inherit torch-xpu auto-round-xpu;
+        python3Packages = python312PackagesXpu;
+      };
+
       quantize = pkgs.callPackage ./nix/quantize.nix {
-        inherit auto-round-xpu;
+        inherit auto-round-xpu llm-compressor-xpu;
         python3Packages = python312PackagesXpu;
       };
 
@@ -328,6 +333,10 @@
 
       hfMetadata = pkgs.callPackage ./nix/hf-metadata.nix {};
 
+      mkQuantizationWorkspace = import ./nix/quantization-workspace.nix {
+        inherit pkgs quantize;
+      };
+
       lint = import ./nix/lint.nix {inherit pkgs;};
     in {
       # Per-system helpers consumers reach via
@@ -350,7 +359,7 @@
         # `vllm-xpu`/`vllm-xpu-unstable` outputs are just two fixed
         # instantiations of mkVllm; mkVllm { src; version; kernels; ... }
         # builds against the same pinned substrate from any src.
-        inherit mkVllm mkVllmXpuKernels chatProfile;
+        inherit mkVllm mkVllmXpuKernels mkQuantizationWorkspace chatProfile;
       };
 
       packages = {
@@ -362,6 +371,7 @@
           torchvision-xpu
           flash-linear-attention
           auto-round-xpu
+          llm-compressor-xpu
           vllm-xpu-kernels
           vllm-xpu-kernels-unstable
           vllm-xpu
@@ -405,7 +415,7 @@
       };
 
       devShells = import ./nix/devshells.nix {
-        inherit pkgs syclToolchainShellHook lint torch-xpu triton-xpu;
+        inherit pkgs syclToolchainShellHook lint quantize torch-xpu triton-xpu;
         # Dev shells track the unstable (fork) variant — the one actually
         # deployed — so `nix develop` never realizes the stable closure.
         kernelLibs = unstableLibs;

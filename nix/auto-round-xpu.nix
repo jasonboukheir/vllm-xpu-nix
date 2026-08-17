@@ -24,12 +24,12 @@
 
 python3Packages.buildPythonPackage rec {
   pname = "auto-round";
-  version = "0.12.3";
+  version = "0.14.2";
   pyproject = true;
 
   src = fetchurl {
-    url = "https://files.pythonhosted.org/packages/d6/8e/2723a5ccee074c6e823e24ebb198cbcfebce86097d6076e3a5ecf4d8b4e9/auto_round-${version}.tar.gz";
-    hash = "sha256-vDNw98PavK411/UT4L6joe5gu5v+B2b/JeTMcf3xjzE=";
+    url = "https://files.pythonhosted.org/packages/source/a/auto-round/auto_round-${version}.tar.gz";
+    hash = "sha256-HxiK1VB2MUYUGA/SrilBOxOxssekO1aVhJ81syZYsdk=";
   };
 
   build-system = with python3Packages; [

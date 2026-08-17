@@ -12,28 +12,30 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import time
 from urllib.parse import urlparse
 
-from huggingface_hub import HfApi, snapshot_download
+from huggingface_hub import HfApi
 
 
 SCHEMA = 1
 FORMATS = {
-    "w4a16": ("W4A16", "auto_round", False),
-    "w8a16": ("W8A16", "auto_round", False),
-    "w3a16": ("W3A16", "auto_round", False),
-    "w2a16": ("W2A16", "auto_round", False),
-    "mxfp4": ("MXFP4", "auto_round", True),
-    "mxfp8": ("MXFP8", "auto_round", True),
-    "fp8": ("FP8_STATIC", "auto_round", True),
+    "w4a16": ("W4A16", "compressed-tensors", False),
+    "w8a16": ("W8A16", "compressed-tensors", False),
+    "w3a16": ("W3A16", "compressed-tensors", False),
+    "w2a16": ("W2A16", "compressed-tensors", False),
+    "mxfp4": ("MXFP4", "compressed-tensors", True),
+    "mxfp8": ("MXFP8", "compressed-tensors", True),
+    "fp8": ("FP8_STATIC", "compressed-tensors", True),
 }
 ALIASES = {"int4": "w4a16", "int8": "w8a16", "int3": "w3a16", "int2": "w2a16"}
 RECIPES = {
-    "default": ("auto-round", []),
-    "light": ("auto-round-light", []),
-    "overnight": ("auto-round", ["--iters", "400", "--nsamples", "256", "--dynamic_max_gap", "100"]),
-    "best": ("auto-round-best", []),
+    "light": {"iters": 50, "samples": 128, "batch_size": 4, "sequence_length": 2048},
+    "default": {"iters": 200, "samples": 128, "batch_size": 4, "sequence_length": 2048},
+    "overnight": {"iters": 400, "samples": 256, "batch_size": 4, "sequence_length": 2048},
+    "best": {"iters": 1000, "samples": 512, "batch_size": 8, "sequence_length": 2048},
 }
+DEFAULT_IGNORE = ["lm_head"]
 
 
 def die(message: str) -> "NoReturn":
@@ -72,6 +74,23 @@ def workspace_config(path: Path) -> dict:
     return json.loads(config_path.read_text())
 
 
+def ignore_rules(config: dict) -> list[str]:
+    """Return validated llm-compressor selectors kept at source precision."""
+    value = config.get("quantization", {}).get("ignore", DEFAULT_IGNORE)
+    if not isinstance(value, list):
+        die("quantization.ignore must be a JSON array of module-name strings")
+    result = []
+    for index, rule in enumerate(value):
+        if not isinstance(rule, str) or not rule.strip():
+            die(f"quantization.ignore[{index}] must be a non-empty string")
+        rule = rule.strip()
+        if "," in rule:
+            die(f"quantization.ignore[{index}] must not contain a comma: {rule!r}")
+        if rule not in result:
+            result.append(rule)
+    return result
+
+
 def file_manifest(root: Path) -> list[dict]:
     result = []
     for path in sorted(p for p in root.rglob("*") if p.is_file()):
@@ -81,6 +100,14 @@ def file_manifest(root: Path) -> list[dict]:
                 digest.update(chunk)
         result.append({"path": str(path.relative_to(root)), "size": path.stat().st_size, "sha256": digest.hexdigest()})
     return result
+
+
+def sha256_path(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(8 * 1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def ensure_model_card(root: Path, repo: str, sha: str, fmt: str, recipe: str, kv_cache: str) -> None:
@@ -126,7 +153,13 @@ def cmd_init(args: argparse.Namespace) -> None:
     config = {
         "schema": SCHEMA,
         "source": {"repo": repo, "revision": revision},
-        "quantization": {"format": "w4a16", "recipe": "default", "kv_cache": "none"},
+        "quantization": {
+            "format": "w4a16",
+            "recipe": "default",
+            "kv_cache": "none",
+            "ignore": DEFAULT_IGNORE,
+            "calibration": {},
+        },
         "publish": {"repo": hf_repo, "private": False},
     }
     (target / "quantization.json").write_text(json.dumps(config, indent=2) + "\n")
@@ -138,7 +171,9 @@ def cmd_init(args: argparse.Namespace) -> None:
     vllm-xpu-nix.lib.x86_64-linux.mkQuantizationWorkspace {{ workspace = self; }};
 }}
 ''')
-    (target / ".gitignore").write_text("/artifacts/\n/runs/\n/.direnv/\n/.envrc.local\n")
+    (target / ".gitignore").write_text(
+        "/artifacts/\n/checkpoints/\n/runs/\n/.direnv/\n/.envrc.local\n"
+    )
     (target / "README.md").write_text(f"# {repo} — W4A16 AutoRound\n\nQuantization workspace. See `quantization.json` for the pinned recipe.\n")
     print(target)
 
@@ -161,13 +196,50 @@ def resolve_run_config(args: argparse.Namespace) -> tuple[Path, dict, str, str, 
     return workspace, config, repo, revision, fmt
 
 
-def cmd_run(args: argparse.Namespace) -> None:
+def execute_run(args: argparse.Namespace, *, test_mode: bool = False) -> None:
     workspace, config, repo, revision, fmt = resolve_run_config(args)
     recipe = args.recipe or config.get("quantization", {}).get("recipe") or "default"
     args.kv_cache = args.kv_cache or config.get("quantization", {}).get("kv_cache") or "none"
+    ignored = ignore_rules(config)
+    calibration = config.get("quantization", {}).get("calibration", {})
+    if not isinstance(calibration, dict):
+        die("quantization.calibration must be a JSON object")
+    profile = RECIPES[recipe]
+    if test_mode and (
+        len(args.test_iters) != 2
+        or args.test_iters[0] <= 0
+        or args.test_iters[0] >= args.test_iters[1]
+    ):
+        die("--test-iters requires two positive increasing values, such as 5 20")
+    if test_mode and args.test_calibration_samples <= 0:
+        die("--test-calibration-samples must be positive")
+    args.batch_size = args.batch_size or calibration.get("batch_size", profile["batch_size"])
+    args.seqlen = args.seqlen or calibration.get("sequence_length", profile["sequence_length"])
+    target_calibration_samples = args.calibration_samples or calibration.get("samples", profile["samples"])
+    if test_mode and not args.full_calibration:
+        args.calibration_samples = min(target_calibration_samples, args.test_calibration_samples)
+    else:
+        args.calibration_samples = target_calibration_samples
+    args.dataset = args.dataset or calibration.get("dataset", "NeelNanda/pile-10k")
+    args.seed = args.seed if args.seed is not None else calibration.get("seed", 42)
+    args.torch_compile = (
+        args.torch_compile
+        if args.torch_compile is not None
+        else bool(config.get("quantization", {}).get("torch_compile", False))
+    )
+    checkpoint_config = config.get("quantization", {}).get("checkpoint", {})
+    if not isinstance(checkpoint_config, dict):
+        die("quantization.checkpoint must be a JSON object")
+    checkpoint_enabled = (
+        args.checkpoint
+        if args.checkpoint is not None
+        else False
+        if test_mode
+        else bool(checkpoint_config.get("enabled", True))
+    )
+    if args.resume and not checkpoint_enabled:
+        die("--resume requires checkpointing; remove --no-checkpoint")
     scheme, export_format, experimental = FORMATS[fmt]
-    if args.kv_cache == "fp8":
-        export_format = "compressed-tensors"
     if experimental and not args.allow_experimental:
         die(f"{fmt} is experimental on Intel XPU; pass --allow-experimental after validating the vLLM kernel path")
     api = HfApi(token=os.environ.get("HF_TOKEN"))
@@ -175,11 +247,11 @@ def cmd_run(args: argparse.Namespace) -> None:
     resolved_sha = info.sha
     variant = f"{repo.split('/')[-1]}-{fmt.upper()}-AutoRound"
     final_dir = workspace / "artifacts" / variant
-    if final_dir.exists():
+    if not test_mode and final_dir.exists():
         die(f"artifact already exists: {final_dir}; move it aside before rerunning")
     run_id = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     run_dir = workspace / "runs" / run_id
-    output_dir = run_dir / "output"
+    output_dir = run_dir / ("test-output" if test_mode else "output")
     output_dir.mkdir(parents=True)
     started = dt.datetime.now(dt.timezone.utc).isoformat()
     manifest = {
@@ -196,46 +268,151 @@ def cmd_run(args: argparse.Namespace) -> None:
             "sequence_length": args.seqlen,
             "dataset": args.dataset,
             "seed": args.seed,
+            "ignore": ignored,
+            "target_calibration_samples": target_calibration_samples,
+            "checkpoint": {
+                "enabled": checkpoint_enabled,
+                "resume": args.resume,
+            },
         },
         "started_at": started,
+        "mode": "test" if test_mode else "run",
     }
     manifest_path = run_dir / "manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
-    binary, recipe_flags = RECIPES[recipe]
-    if args.kv_cache == "fp8":
-        if fmt != "w4a16":
-            die("the calibrated FP8 KV path is currently validated only with W4A16")
-        script = os.environ.get("QUANTIZE_LLMCOMPRESSOR_SCRIPT")
-        if not script:
-            die("llm-compressor runner is missing from this package")
-        recipe_iters = {"light": 50, "default": 200, "overnight": 400, "best": 1000}[recipe]
-        command = [sys.executable, script, "--model", repo, "--revision", resolved_sha,
-                   "--scheme", scheme, "--output-dir", str(output_dir), "--iters", str(recipe_iters),
-                   "--samples", str(args.calibration_samples), "--seqlen", str(args.seqlen),
-                   "--batch-size", str(args.batch_size), "--dataset", args.dataset, "--seed", str(args.seed)]
-    else:
-        source_path = snapshot_download(repo_id=repo, revision=resolved_sha)
-        extra = args.extra[1:] if args.extra[:1] == ["--"] else args.extra
-        command = [binary, "--model", source_path, "--scheme", scheme,
-                   "--format", export_format, "--device", "0", "--batch_size", str(args.batch_size),
-                   "--gradient_accumulate_steps", str(args.gradient_accumulate), "--seqlen", str(args.seqlen),
-                   "--nsamples", str(args.calibration_samples), "--dataset", args.dataset, "--seed", str(args.seed),
-                   "--output_dir", str(output_dir), *recipe_flags, *extra]
+    if args.kv_cache == "fp8" and fmt != "w4a16":
+        die("the calibrated FP8 KV path is currently validated only with W4A16")
+    script = os.environ.get("QUANTIZE_LLMCOMPRESSOR_SCRIPT")
+    if not script:
+        die("llm-compressor runner is missing from this package")
+    recipe_iters = args.test_iters[-1] if test_mode else profile["iters"]
+    command = [sys.executable, script, "--model", repo, "--revision", resolved_sha,
+               "--scheme", scheme, "--output-dir", str(output_dir), "--iters", str(recipe_iters),
+               "--samples", str(args.calibration_samples), "--seqlen", str(args.seqlen),
+               "--batch-size", str(args.batch_size), "--dataset", args.dataset, "--seed", str(args.seed),
+               "--kv-cache", args.kv_cache, "--ignore-json", json.dumps(ignored),
+               "--resolved-ignore-output", str(run_dir / "ignore-matches.json")]
+    if checkpoint_enabled:
+        command.extend([
+            "--checkpoint-root", str(workspace / "checkpoints"),
+            "--checkpoint-info-output", str(run_dir / "checkpoint.json"),
+        ])
+        lock_path = workspace / "flake.lock"
+        if lock_path.exists():
+            command.extend(["--workspace-lock-sha256", sha256_path(lock_path)])
+    if args.resume:
+        command.append("--resume")
+    if args.torch_compile:
+        command.append("--enable-torch-compile")
     manifest["command"] = command
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
     print(f">>> {repo}@{resolved_sha} -> {fmt} ({recipe})")
+    elapsed = None
     try:
+        low_elapsed = None
+        if test_mode:
+            low_iters, high_iters = args.test_iters
+            low_command = command.copy()
+            low_command[low_command.index("--iters") + 1] = str(low_iters)
+            low_command.append("--no-save")
+            low_started = time.monotonic()
+            subprocess.run(low_command, check=True)
+            low_elapsed = time.monotonic() - low_started
+            manifest["test_timing"] = {
+                "low_iters": low_iters,
+                "low_elapsed_seconds": low_elapsed,
+                "high_iters": high_iters,
+            }
+            manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
+        run_started = time.monotonic()
         subprocess.run(command, check=True)
+        elapsed = time.monotonic() - run_started
+        matches_path = run_dir / "ignore-matches.json"
+        if matches_path.exists():
+            manifest["quantization"]["resolved_ignore_matches"] = json.loads(matches_path.read_text())
+        checkpoint_path = run_dir / "checkpoint.json"
+        if checkpoint_path.exists():
+            manifest["checkpoint"] = json.loads(checkpoint_path.read_text())
         ensure_model_card(output_dir, repo, resolved_sha, fmt, recipe, args.kv_cache)
-        final_dir.parent.mkdir(parents=True, exist_ok=True)
-        output_dir.rename(final_dir)
-        manifest.update(status="complete", completed_at=dt.datetime.now(dt.timezone.utc).isoformat(),
-                        artifact=str(final_dir.relative_to(workspace)), files=file_manifest(final_dir))
+        if test_mode:
+            target_iters = profile["iters"]
+            assert low_elapsed is not None
+            low_iters, high_iters = args.test_iters
+            seconds_per_iteration = max(
+                0.0, (elapsed - low_elapsed) / (high_iters - low_iters)
+            )
+            measured_fixed_seconds = max(
+                0.0, low_elapsed - seconds_per_iteration * low_iters
+            )
+            sample_scale = target_calibration_samples / args.calibration_samples
+            estimated_fixed_seconds = measured_fixed_seconds * sample_scale
+            estimate = estimated_fixed_seconds + seconds_per_iteration * target_iters
+            manifest.update(
+                status="complete",
+                completed_at=dt.datetime.now(dt.timezone.utc).isoformat(),
+                elapsed_seconds=elapsed,
+                estimated_full_run_seconds=estimate,
+                estimated_seconds_per_iteration=seconds_per_iteration,
+                measured_fixed_seconds=measured_fixed_seconds,
+                estimated_full_sample_fixed_seconds=estimated_fixed_seconds,
+                test_output=str(output_dir.relative_to(workspace)),
+                files=file_manifest(output_dir),
+            )
+            print(
+                f">>> {low_iters}/{high_iters}-iteration tests completed; "
+                f"fitted {recipe!r} estimate: {estimate / 3600:.1f} hours"
+            )
+            print(
+                ">>> estimate is directional; the full run also uses "
+                f"{target_calibration_samples} rather than {args.calibration_samples} samples"
+            )
+        else:
+            final_dir.parent.mkdir(parents=True, exist_ok=True)
+            output_dir.rename(final_dir)
+            manifest.update(status="complete", completed_at=dt.datetime.now(dt.timezone.utc).isoformat(),
+                            elapsed_seconds=elapsed, artifact=str(final_dir.relative_to(workspace)),
+                            files=file_manifest(final_dir))
     except BaseException as exc:
         manifest.update(status="failed", completed_at=dt.datetime.now(dt.timezone.utc).isoformat(), error=str(exc))
         raise
     finally:
         manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
+
+
+def cmd_run(args: argparse.Namespace) -> None:
+    execute_run(args)
+
+
+def cmd_test(args: argparse.Namespace) -> None:
+    execute_run(args, test_mode=True)
+
+
+def cmd_doctor(_args: argparse.Namespace) -> None:
+    """Fail fast unless the packaged llm-compressor stack can see an Intel XPU."""
+    probe = """
+import json
+import torch
+from llmcompressor.modifiers.autoround import AutoRoundModifier
+
+available = torch.xpu.is_available()
+sdpa = "not-run"
+if available:
+    query = torch.randn((1, 8, 16, 64), device="xpu", dtype=torch.bfloat16)
+    torch.nn.functional.scaled_dot_product_attention(query, query, query)
+    torch.xpu.synchronize()
+    sdpa = "ok"
+result = {
+    "torch": torch.__version__,
+    "xpu_available": available,
+    "xpu_count": torch.xpu.device_count(),
+    "devices": [torch.xpu.get_device_name(i) for i in range(torch.xpu.device_count())],
+    "llmcompressor_autoround": AutoRoundModifier.__name__,
+    "bf16_sdpa": sdpa,
+}
+print(json.dumps(result, indent=2))
+raise SystemExit(0 if available else 1)
+"""
+    subprocess.run([sys.executable, "-c", probe], check=True)
 
 
 def cmd_export(args: argparse.Namespace) -> None:
@@ -280,6 +457,17 @@ Run `quantize COMMAND --help` for command-specific choices and safety behavior."
         formatter_class=formatter,
     )
     sub = p.add_subparsers(dest="command", metavar="COMMAND")
+    doctor = sub.add_parser(
+        "doctor",
+        help="verify that the packaged Torch, llm-compressor, and Intel XPU runtime work",
+        description="""Probe the exact packaged quantization closure before loading a model.
+
+The command prints the Torch version, discovered Intel XPU devices, and the
+llm-compressor AutoRound modifier. It exits unsuccessfully when no XPU is
+visible, preventing an accidental CPU quantization run.""",
+        formatter_class=formatter,
+    )
+    doctor.set_defaults(func=cmd_doctor)
     init = sub.add_parser(
         "init",
         help="create a reproducible per-model flake workspace",
@@ -367,37 +555,26 @@ are never overwritten. W4A16 is the conservative Intel XPU default.""",
     run.add_argument(
         "--batch-size",
         type=int,
-        default=int(os.environ.get("AUTOROUND_QUANTIZE_BS", "4")),
-        help="samples processed per XPU step; raise for speed only when VRAM allows (default: %(default)s)",
-    )
-    run.add_argument(
-        "--gradient-accumulate",
-        type=int,
-        default=int(os.environ.get("AUTOROUND_QUANTIZE_GA", "2")),
-        help="native AutoRound accumulation steps; trades memory for effective batch size (default: %(default)s)",
+        help="samples processed per XPU step; defaults to the recipe profile (best: 8)",
     )
     run.add_argument(
         "--seqlen",
         type=int,
-        default=int(os.environ.get("AUTOROUND_QUANTIZE_SEQLEN", "2048")),
-        help="calibration token length; longer context costs more memory and time (default: %(default)s)",
+        help="calibration token length; defaults to quantization.calibration.sequence_length or 2048",
     )
     run.add_argument(
         "--calibration-samples",
         type=int,
-        default=128,
-        help="number of dataset samples used to tune weights and static KV scales (default: %(default)s)",
+        help="samples used to tune weights and KV scales; defaults to the recipe profile (best: 512)",
     )
     run.add_argument(
         "--dataset",
-        default="NeelNanda/pile-10k",
-        help="Hugging Face calibration dataset; use representative data for better scales (default: %(default)s)",
+        help="calibration dataset override; defaults to quantization.calibration.dataset or NeelNanda/pile-10k",
     )
     run.add_argument(
         "--seed",
         type=int,
-        default=42,
-        help="calibration sampling seed recorded for reproducibility (default: %(default)s)",
+        help="calibration seed override; defaults to quantization.calibration.seed or 42",
     )
     run.add_argument(
         "--allow-experimental",
@@ -405,12 +582,61 @@ are never overwritten. W4A16 is the conservative Intel XPU default.""",
         help="acknowledge that the selected non-W4A16 format lacks a fully validated Intel vLLM kernel path",
     )
     run.add_argument(
-        "extra",
-        nargs=argparse.REMAINDER,
-        metavar="-- AUTO_ROUND_ARGS",
-        help="advanced native AutoRound arguments after --; not used by the llm-compressor FP8-KV path",
+        "--torch-compile",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="enable AutoRound torch.compile acceleration; defaults to quantization.torch_compile or false",
+    )
+    run.add_argument(
+        "--checkpoint",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="commit a content-addressed resume point after every decoder block (default: enabled for run, disabled for test)",
+    )
+    run.add_argument(
+        "--resume",
+        action="store_true",
+        help="continue the matching checkpoint DAG; refuses checkpoints produced by different inputs or settings",
     )
     run.set_defaults(func=cmd_run)
+    test = sub.add_parser(
+        "test",
+        parents=[run],
+        add_help=False,
+        help="run a small end-to-end quantization preflight and estimate full runtime",
+        description="""Exercise the real model, backend, ignore rules, calibration, packing, and save path with reduced work.
+
+The test uses the full recipe sample count, batch size, and sequence length so
+it can expose memory failures. Only AutoRound iterations are reduced. Output
+remains under runs/<timestamp>/test-output and is never promoted or exported;
+the two-point fitted estimate is directional rather than a guarantee.""",
+        epilog="""Examples:
+  quantize test
+  quantize test --kv-cache fp8
+  quantize test --test-iters 5 20""",
+        formatter_class=formatter,
+    )
+    test.add_argument(
+        "--test-iters",
+        type=int,
+        nargs=2,
+        default=[5, 20],
+        metavar=("LOW", "HIGH"),
+        help="two iteration counts used to fit runtime after fixed costs (default: 5 20)",
+    )
+    test.add_argument(
+        "--test-calibration-samples",
+        type=int,
+        default=32,
+        metavar="COUNT",
+        help="sample count for the timing passes while retaining full batch/sequence pressure (default: 32)",
+    )
+    test.add_argument(
+        "--full-calibration",
+        action="store_true",
+        help="use the recipe's full calibration sample count in both timing passes; much slower but tests host-cache capacity",
+    )
+    test.set_defaults(func=cmd_test)
     export = sub.add_parser(
         "export",
         help="create a Hugging Face repo and upload through Xet",
@@ -468,7 +694,7 @@ uses the Hub API rather than a second Git/LFS checkout and is safe to retry.""",
 def main() -> None:
     p = parser()
     argv = sys.argv[1:]
-    if argv and argv[0] not in {"init", "run", "export", "-h", "--help"}:
+    if argv and argv[0] not in {"doctor", "init", "run", "test", "export", "-h", "--help"}:
         argv.insert(0, "run")
     args = p.parse_args(argv)
     if not hasattr(args, "func"):

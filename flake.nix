@@ -135,6 +135,7 @@
 
       quantize = pkgs.callPackage ./nix/quantize.nix {
         inherit auto-round-xpu llm-compressor-xpu;
+        intel-oneapi-base = intel-oneapi;
         python3Packages = python312PackagesXpu;
       };
 

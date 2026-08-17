@@ -16,6 +16,7 @@
   kernelLibs,
   vllmPkg,
   lint,
+  quantize,
   torch-xpu,
   triton-xpu,
   vllmKernels,
@@ -32,6 +33,7 @@
       skopeo
       pre-commit
       lint
+      quantize
     ];
     shellHook = ''
       cat <<'EOF'
@@ -55,6 +57,10 @@
       Lint local checkouts (pinned ruff matching each project's pins):
         lint                       # defaults to ../vllm and ../vllm-xpu-kernels
         lint /path/to/vllm /path/to/vllm-xpu-kernels
+
+      Quantization workspace:
+        quantize --help
+        quantize init OWNER/MODEL
 
       The kernels-dev / vllm-dev shells below are wired to the *unstable*
       (fork) variant — the one actually deployed — so entering them never

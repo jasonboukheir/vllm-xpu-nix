@@ -33,7 +33,11 @@ RECIPES = {
     "light": {"iters": 50, "samples": 128, "batch_size": 4, "sequence_length": 2048},
     "default": {"iters": 200, "samples": 128, "batch_size": 4, "sequence_length": 2048},
     "overnight": {"iters": 400, "samples": 256, "batch_size": 4, "sequence_length": 2048},
-    "best": {"iters": 1000, "samples": 512, "batch_size": 8, "sequence_length": 2048},
+    # 1,000 iterations retains AutoRound's highest-accuracy tuning schedule.
+    # 512 samples is unsafe for large models on a 96 GiB unified-memory XPU:
+    # the per-block activation corpus alone can consume tens of GiB. 128 is the
+    # upstream default and remains practical with memory-bounded input streaming.
+    "best": {"iters": 1000, "samples": 128, "batch_size": 4, "sequence_length": 2048},
 }
 DEFAULT_IGNORE = ["lm_head"]
 
@@ -274,6 +278,7 @@ def execute_run(args: argparse.Namespace, *, test_mode: bool = False) -> None:
                 "enabled": checkpoint_enabled,
                 "resume": args.resume,
             },
+            "low_gpu_mem_usage": True,
         },
         "started_at": started,
         "mode": "test" if test_mode else "run",
@@ -555,7 +560,7 @@ are never overwritten. W4A16 is the conservative Intel XPU default.""",
     run.add_argument(
         "--batch-size",
         type=int,
-        help="samples processed per XPU step; defaults to the recipe profile (best: 8)",
+        help="samples processed per XPU optimization step; defaults to the recipe profile (best: 4)",
     )
     run.add_argument(
         "--seqlen",
@@ -565,7 +570,7 @@ are never overwritten. W4A16 is the conservative Intel XPU default.""",
     run.add_argument(
         "--calibration-samples",
         type=int,
-        help="samples used to tune weights and KV scales; defaults to the recipe profile (best: 512)",
+        help="samples used to tune weights and KV scales; defaults to the recipe profile (best: 128)",
     )
     run.add_argument(
         "--dataset",

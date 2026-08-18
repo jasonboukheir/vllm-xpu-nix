@@ -13,11 +13,13 @@ import re
 import signal
 import tempfile
 import time
+from unittest.mock import patch
 
 import torch
 from auto_round.calib_dataset import get_dataset
 from compressed_tensors.utils import match_named_modules
 from llmcompressor.modifiers.autoround import AutoRoundModifier as UpstreamAutoRoundModifier
+from llmcompressor.modifiers.autoround import base as autoround_base
 from llmcompressor.modifiers.quantization import QuantizationModifier
 from llmcompressor.pipelines.sequential import pipeline as sequential_pipeline
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -400,7 +402,41 @@ class CheckpointDag:
 
 
 class AutoRoundModifier(UpstreamAutoRoundModifier):
-    """AutoRound modifier that commits/restores at sequential block boundaries."""
+    """Memory-bounded AutoRound with resumable sequential block boundaries.
+
+    llm-compressor 0.13 captures decoder inputs on their execution device and
+    later moves the complete calibration corpus to that device before invoking
+    AutoRound.  That makes ``batch_size`` ineffective as a memory bound.  Keep
+    the corpus on CPU and enable AutoRound's supported low-GPU-memory mode so it
+    only onloads the minibatch being optimized.
+    """
+
+    low_gpu_mem_usage: bool = True
+
+    def input_capture_hook(self, module, args, kwargs):
+        if module._tmp_name not in self._all_module_input:
+            self._all_module_input[module._tmp_name] = []
+        self._all_module_input[module._tmp_name].append(
+            (cpu_tree(args), cpu_tree(kwargs))
+        )
+
+    @staticmethod
+    def _move_inputs_to(inputs, _device):
+        """Leave the full corpus on CPU; AutoRound streams its minibatches."""
+        return inputs
+
+    def apply_autoround(self, state, modules):
+        original_autoround = autoround_base.AutoRound
+
+        def memory_bounded_autoround(*args, **kwargs):
+            kwargs["low_gpu_mem_usage"] = self.low_gpu_mem_usage
+            return original_autoround(*args, **kwargs)
+
+        # AutoRound is imported into llm-compressor's modifier module. Patch
+        # only for this synchronous call, keeping the workaround tightly scoped
+        # to the pinned 0.13 API until upstream exposes the option itself.
+        with patch.object(autoround_base, "AutoRound", memory_bounded_autoround):
+            return super().apply_autoround(state, modules)
 
     def _build_layer_config_for_autoround(self, wrapped_model) -> dict[str, dict]:
         """Ignore KV-only schemes when translating weight overrides to AutoRound.
@@ -606,6 +642,7 @@ def main() -> None:
                 "seed": args.seed,
                 "kv_cache": args.kv_cache,
                 "torch_compile": args.enable_torch_compile,
+                "low_gpu_mem_usage": True,
                 "ignore": ignore_fragments,
                 "resolved_ignore": resolved_ignores,
             },

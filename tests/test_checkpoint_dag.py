@@ -18,6 +18,57 @@ SPEC.loader.exec_module(module)
 
 
 class CheckpointDagTests(unittest.TestCase):
+    def test_autoround_capture_offloads_nested_inputs_to_cpu(self):
+        modifier = module.AutoRoundModifier(
+            targets=["Linear"], scheme="W4A16", iters=5, batch_size=1
+        )
+        layer = torch.nn.Linear(2, 2)
+        layer._tmp_name = "model.layers.0"
+        source = torch.ones(2, requires_grad=True)
+
+        modifier.input_capture_hook(
+            layer, (source,), {"nested": [source + 1]}
+        )
+
+        args, kwargs = modifier._all_module_input[layer._tmp_name][0]
+        self.assertEqual(args[0].device.type, "cpu")
+        self.assertFalse(args[0].requires_grad)
+        self.assertEqual(kwargs["nested"][0].device.type, "cpu")
+        self.assertFalse(kwargs["nested"][0].requires_grad)
+        moved = modifier._move_inputs_to([(args, kwargs)], torch.device("xpu"))
+        self.assertIs(moved[0][0][0], args[0])
+
+    def test_low_gpu_memory_mode_defaults_on(self):
+        modifier = module.AutoRoundModifier(
+            targets=["Linear"], scheme="W4A16", iters=5, batch_size=1
+        )
+        self.assertTrue(modifier.low_gpu_mem_usage)
+
+    def test_low_gpu_memory_mode_is_forwarded_to_autoround(self):
+        modifier = module.AutoRoundModifier(
+            targets=["Linear"], scheme="W4A16", iters=5, batch_size=1
+        )
+        seen = {}
+
+        def fake_autoround(*args, **kwargs):
+            seen.update(kwargs)
+            return object()
+
+        def fake_apply(_self, _state, _modules):
+            return module.autoround_base.AutoRound(model=object())
+
+        with (
+            patch.object(module.autoround_base, "AutoRound", fake_autoround),
+            patch.object(
+                module.UpstreamAutoRoundModifier,
+                "apply_autoround",
+                fake_apply,
+            ),
+        ):
+            modifier.apply_autoround(object(), [])
+
+        self.assertTrue(seen["low_gpu_mem_usage"])
+
     def test_checkpoint_manager_attaches_to_modifier(self):
         modifier = module.AutoRoundModifier(
             targets=["Linear"], scheme="W4A16", iters=5, batch_size=1

@@ -69,9 +69,14 @@ weight metadata controls serialization. The runner preserves the KV scales
 across AutoRound's weight cleanup and writes them as an indexed safetensors
 shard.
 
-The `best` profile is the full quality-oriented AutoRound profile: 1,000
-iterations, 512 samples, sequence length 2,048, and batch size 8. Values under
-`quantization.calibration` or explicit CLI flags override the profile.
+The `best` profile keeps AutoRound's quality-oriented 1,000 tuning iterations,
+with 128 samples, sequence length 2,048, and batch size 4. The runner enables
+AutoRound's low-GPU-memory mode and keeps the full per-block activation corpus
+on CPU, onloading only the optimization minibatch. This matters on Intel
+unified-memory GPUs: llm-compressor's stock modifier otherwise copies the
+complete corpus to XPU, so 512 samples can exhaust RAM and swap despite a small
+nominal batch size. Configuration and explicit CLI flags can override this;
+larger sample counts require a full-calibration preflight and memory monitoring.
 
 Run the end-to-end preflight before the full job:
 

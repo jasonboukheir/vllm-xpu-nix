@@ -2,7 +2,6 @@ import importlib.util
 import json
 from pathlib import Path
 import tempfile
-from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -87,37 +86,13 @@ class CheckpointDagTests(unittest.TestCase):
         self.assertEqual(wrapped.attention.k_scale.item(), 0.25)
         self.assertEqual(wrapped.attention.v_scale.item(), 0.5)
 
-    def test_kv_calibration_reapplies_only_kv_scheme_after_autoround(self):
-        modifier = module.CalibratedKVModifier(
-            kv_cache_scheme={
-                "num_bits": 8,
-                "type": "float",
-                "strategy": "tensor",
-                "dynamic": False,
-                "symmetric": True,
-            }
-        )
-        model = torch.nn.Module()
-        state = SimpleNamespace(model=model)
-        with (
-            patch.object(module, "_apply_kv_cache_scheme") as apply_kv,
-            patch.object(module.QuantizationModifier, "on_calibration_start") as start,
-        ):
-            modifier.on_calibration_start(state, object())
-
-        apply_kv.assert_called_once_with(
-            model,
-            modifier.resolved_config.kv_cache_scheme,
-            modifier.resolved_config.quantization_status,
-        )
-        start.assert_called_once()
-
     def test_kv_scales_are_added_as_an_indexed_checkpoint_shard(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)
             save_file(
                 {
-                    "model.language_model.layers.3.self_attn.q_proj.weight": torch.ones(2),
+                    "model.language_model.layers.3.self_attn.q_proj.weight_packed": torch.ones(2),
+                    "model.language_model.layers.3.self_attn.q_proj.weight_scale": torch.ones(2),
                     "model.language_model.layers.3.self_attn.k_proj.weight": torch.ones(2),
                 },
                 output / "model.safetensors",

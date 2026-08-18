@@ -63,10 +63,11 @@ validation correctly reports that they are not model modules.
 All weight quantization is orchestrated by llm-compressor. Its
 `AutoRoundModifier` invokes Intel AutoRound as the optimization algorithm and
 llm-compressor writes compressed-tensors output for vLLM. With `kv_cache=fp8`,
-a separate `QuantizationModifier` runs after AutoRound in the same oneshot
-lifecycle, so its static KV observers see the quantized model. The runner
-preserves those scales across llm-compressor 0.13's weight cleanup and writes
-them as an indexed safetensors shard.
+a separate `QuantizationModifier` calibrates static KV scales first in the same
+oneshot lifecycle. AutoRound remains the final modifier so its compressed
+weight metadata controls serialization. The runner preserves the KV scales
+across AutoRound's weight cleanup and writes them as an indexed safetensors
+shard.
 
 The `best` profile is the full quality-oriented AutoRound profile: 1,000
 iterations, 512 samples, sequence length 2,048, and batch size 8. Values under

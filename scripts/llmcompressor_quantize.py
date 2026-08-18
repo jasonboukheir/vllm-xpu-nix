@@ -10,18 +10,54 @@ import os
 from pathlib import Path
 import random
 import re
+import signal
 import tempfile
+import time
 
 import torch
 from auto_round.calib_dataset import get_dataset
-from compressed_tensors.quantization.lifecycle.apply import _apply_kv_cache_scheme
 from compressed_tensors.utils import match_named_modules
 from llmcompressor.modifiers.autoround import AutoRoundModifier as UpstreamAutoRoundModifier
 from llmcompressor.modifiers.quantization import QuantizationModifier
+from llmcompressor.pipelines.sequential import pipeline as sequential_pipeline
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from llmcompressor import oneshot
 from safetensors import safe_open
 from safetensors.torch import save_file
+
+
+def install_trace_watchdog(timeout_seconds: int) -> None:
+    """Log and bound llm-compressor's CPU-only torch.fx tracing stage."""
+    original = sequential_pipeline.trace_subgraphs
+
+    def traced(*args, **kwargs):
+        started = time.monotonic()
+        print(
+            f"Tracing sequential subgraphs on CPU (timeout: {timeout_seconds}s)...",
+            flush=True,
+        )
+
+        def timeout_handler(_signum, _frame):
+            raise TimeoutError(
+                "torch.fx sequential-subgraph tracing exceeded "
+                f"{timeout_seconds}s; no quantization blocks were started"
+            )
+
+        previous = signal.signal(signal.SIGALRM, timeout_handler)
+        signal.alarm(timeout_seconds)
+        try:
+            result = original(*args, **kwargs)
+        finally:
+            signal.alarm(0)
+            signal.signal(signal.SIGALRM, previous)
+        print(
+            f"Traced {len(result)} sequential subgraphs in "
+            f"{time.monotonic() - started:.1f}s",
+            flush=True,
+        )
+        return result
+
+    sequential_pipeline.trace_subgraphs = traced
 
 
 def canonical_json(value) -> bytes:
@@ -146,11 +182,14 @@ def add_kv_scales_to_checkpoint(output: Path, runtime_scales: dict[str, torch.Te
     for runtime_name, value in runtime_scales.items():
         module_name, scale_name = runtime_name.rsplit(".", 1)
         suffix = module_name.removeprefix("model.")
-        candidates = [
-            key.rsplit(".", 2)[0]
-            for key in saved_keys
-            if key.endswith(f"{suffix}.q_proj.weight")
-        ]
+        marker = f"{suffix}.q_proj."
+        candidates = sorted(
+            {
+                key.split(".q_proj.", 1)[0]
+                for key in saved_keys
+                if marker in key
+            }
+        )
         if len(candidates) != 1:
             raise RuntimeError(
                 f"cannot map KV scale {runtime_name!r} to exactly one checkpoint attention module"
@@ -450,25 +489,6 @@ class AutoRoundModifier(UpstreamAutoRoundModifier):
 class CalibratedKVModifier(QuantizationModifier):
     """Capture final KV scales before llm-compressor lifecycle cleanup."""
 
-    def on_calibration_start(self, state, event, **kwargs):
-        """Recreate KV qparams after AutoRound's weight-only cleanup.
-
-        llm-compressor initializes every modifier before running either
-        calibration pass. AutoRound 0.13 then removes qparams it does not own,
-        including the KV placeholders. Reapplying only the KV scheme here avoids
-        disturbing the packed weight schemes while giving the subsequent KV pass
-        fresh observers and k/v scale parameters.
-        """
-        config = self.resolved_config
-        if config.kv_cache_scheme is None:
-            raise RuntimeError("calibrated KV modifier has no resolved KV scheme")
-        _apply_kv_cache_scheme(
-            state.model,
-            config.kv_cache_scheme,
-            config.quantization_status,
-        )
-        return super().on_calibration_start(state, event, **kwargs)
-
     def on_calibration_end(self, state, event, **kwargs):
         object.__setattr__(self, "calibrated_scales", collect_kv_scales(state.model))
         return super().on_calibration_end(state, event, **kwargs)
@@ -495,6 +515,12 @@ def main() -> None:
     parser.add_argument("--workspace-lock-sha256")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument(
+        "--trace-timeout-seconds",
+        type=int,
+        default=600,
+        help="fail if llm-compressor's CPU-only torch.fx trace exceeds this duration",
+    )
+    parser.add_argument(
         "--ignore-json",
         default="[]",
         help="JSON array of module-name fragments to preserve at source precision",
@@ -505,6 +531,14 @@ def main() -> None:
         parser.error(
             "Intel XPU is unavailable; refusing to fall back to CPU for quantization"
         )
+    if args.trace_timeout_seconds <= 0:
+        parser.error("--trace-timeout-seconds must be positive")
+    probe = torch.randn((1, 4, 16, 64), device="xpu", dtype=torch.bfloat16)
+    torch.nn.functional.scaled_dot_product_attention(probe, probe, probe)
+    torch.xpu.synchronize()
+    print(f"XPU compute probe passed: {torch.xpu.get_device_name(0)}", flush=True)
+    del probe
+    install_trace_watchdog(args.trace_timeout_seconds)
 
     ignore_fragments = json.loads(args.ignore_json)
     if not isinstance(ignore_fragments, list) or not all(
@@ -598,12 +632,12 @@ def main() -> None:
         )
     if dag is not None:
         autoround_modifier.attach_checkpoint_dag(dag)
-    recipe = [autoround_modifier]
+    recipe = []
     kv_modifier = None
     if args.kv_cache == "fp8":
-        # AutoRound runs first, then KV calibration observes the quantized model.
-        # The local AutoRound compatibility shim preserves the KV placeholders
-        # initialized by this shared llm-compressor lifecycle until that pass.
+        # This is the ordering used by llm-compressor's combined AutoRound/KV
+        # example. Capture calibrated KV scales first, then let AutoRound remain
+        # the final modifier so compressed weight metadata drives serialization.
         kv_modifier = CalibratedKVModifier(
                 kv_cache_scheme={
                     "num_bits": 8,
@@ -614,6 +648,7 @@ def main() -> None:
                 }
             )
         recipe.append(kv_modifier)
+    recipe.append(autoround_modifier)
     oneshot(
         model=model,
         tokenizer=tokenizer,

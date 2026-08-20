@@ -29,6 +29,9 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from graft_checkpoint_extras import graft_in_place, read_json
+from activation_store import ActivationStore, DiskBackedBlockIO
+from artifact_integrity import tensor_inventory, validate_inventory
+from quantization_resources import JsonlTelemetry, atomic_json, meminfo, solve_resources
 from safetensors import safe_open
 from safetensors.torch import save_file
 
@@ -122,6 +125,128 @@ def cpu_tree(value):
     if isinstance(value, list):
         return [cpu_tree(child) for child in value]
     return value
+
+
+def tensor_diagnostics(value) -> dict:
+    """Streaming-safe numerical summary for nested activation/state trees."""
+    finite_count = nan_count = posinf_count = neginf_count = elements = 0
+    minimum = maximum = None
+    absolute_sum = square_sum = 0.0
+    def visit(item):
+        nonlocal finite_count, nan_count, posinf_count, neginf_count, elements
+        nonlocal minimum, maximum, absolute_sum, square_sum
+        if isinstance(item, torch.Tensor):
+            tensor = item.detach().float().cpu()
+            elements += tensor.numel()
+            nan_count += torch.isnan(tensor).sum().item()
+            posinf_count += torch.isposinf(tensor).sum().item()
+            neginf_count += torch.isneginf(tensor).sum().item()
+            finite = tensor[torch.isfinite(tensor)]
+            finite_count += finite.numel()
+            if finite.numel():
+                low, high = finite.min().item(), finite.max().item()
+                minimum = low if minimum is None else min(minimum, low)
+                maximum = high if maximum is None else max(maximum, high)
+                absolute_sum += finite.abs().sum().item()
+                square_sum += finite.square().sum().item()
+        elif isinstance(item, dict):
+            for child in item.values(): visit(child)
+        elif isinstance(item, (tuple, list)):
+            for child in item: visit(child)
+    visit(value)
+    return {"elements": elements, "finite": finite_count, "nan": nan_count,
+            "posinf": posinf_count, "neginf": neginf_count, "min": minimum,
+            "max": maximum, "mean_abs": absolute_sum / finite_count if finite_count else None,
+            "rms": (square_sum / finite_count) ** 0.5 if finite_count else None}
+
+
+class DiskIntermediatesCache:
+    """Drop-in llm-compressor frontier backed by immutable store records."""
+
+    store: ActivationStore | None = None
+    identity: dict = {}
+    diagnostics: JsonlTelemetry | None = None
+
+    def __init__(self, handles=None, offload_device="cpu", onload_device=None):
+        self.handles = handles or []
+        self.offload_device = torch.device(offload_device) if offload_device else None
+        self.onload_device = onload_device
+
+    @classmethod
+    def configure(cls, store, identity, diagnostics):
+        cls.store, cls.identity, cls.diagnostics = store, identity, diagnostics
+
+    @classmethod
+    def from_dataloader(cls, dataloader, model_device=torch.device("cpu"), offload_device=torch.device("cpu")):
+        cache = cls(offload_device=offload_device, onload_device=model_device)
+        for batch in dataloader:
+            cache.append(batch)
+        cls.diagnostics.emit("frontier_committed", role="intermediate_frontier", batches=len(cache))
+        return cache
+
+    @classmethod
+    def empty(cls, num_batches, offload_device):
+        cache = cls(offload_device=offload_device)
+        for _ in range(num_batches): cache.append({})
+        return cache
+
+    def __len__(self):
+        return len(self.handles)
+
+    def _write(self, index, values):
+        writer = self.store.writer(
+            f"frontier-{index:06d}-{time.time_ns()}",
+            identity={**self.identity, "role": "intermediate_frontier", "batch": index},
+        )
+        writer.append(cpu_tree(values))
+        new_handle = writer.commit()
+        old = self.handles[index] if index < len(self.handles) else None
+        if index < len(self.handles): self.handles[index] = new_handle
+        else: self.handles.append(new_handle)
+        if old is not None:
+            import shutil
+            shutil.rmtree(old.path)
+
+    def append(self, values):
+        self._write(len(self.handles), values)
+
+    def fetch(self, batch_index, input_names=None):
+        values = self.store.open(self.handles[batch_index])[0]
+        if input_names is not None:
+            values = {key: value for key, value in values.items() if key in input_names}
+        def onload(value):
+            if isinstance(value, torch.Tensor) and self.onload_device is not None:
+                return value.to(self.onload_device)
+            if isinstance(value, dict): return {k: onload(v) for k, v in value.items()}
+            if isinstance(value, tuple): return tuple(onload(v) for v in value)
+            if isinstance(value, list): return [onload(v) for v in value]
+            return value
+        return onload(values)
+
+    def update(self, batch_index, values):
+        current = self.store.open(self.handles[batch_index])[0]
+        current.update(values)
+        self._write(batch_index, current)
+
+    def delete(self, batch_index, consumed_names=None):
+        current = self.store.open(self.handles[batch_index])[0]
+        for name in list(current) if consumed_names is None else consumed_names:
+            current.pop(name, None)
+        self._write(batch_index, current)
+
+    def iter(self, input_names=None):
+        for index in range(len(self)): yield self.fetch(index, input_names)
+
+    def iter_prefetch(self, input_names=None):
+        yield from self.iter(input_names)
+
+    def pin_memory(self, batch_index, input_names=None):
+        # Authoritative storage is never pinned. The bounded staging layer owns
+        # pinning; synchronous pageable transfer is the safe baseline fallback.
+        return None
+
+    def size(self):
+        return {torch.device("cpu"): sum(h.path.joinpath("manifest.json").stat().st_size for h in self.handles)}
 
 
 def collect_kv_scales(model) -> dict[str, torch.Tensor]:
@@ -221,8 +346,10 @@ class CheckpointDag:
 
     schema = 1
 
-    def __init__(self, root: Path, plan: dict, *, resume: bool):
+    def __init__(self, root: Path, plan: dict, *, resume: bool,
+                 activation_store: ActivationStore | None = None):
         self.plan = plan
+        self.activation_store = activation_store
         self.run_hash = hashlib.sha256(canonical_json(plan)).hexdigest()
         self.root = root / self.run_hash
         self.nodes = self.root / "nodes"
@@ -255,6 +382,8 @@ class CheckpointDag:
             "q_input_sha256": None,
             "rng_slot": None,
             "rng_sha256": None,
+            "q_corpus": None,
+            "q_corpus_history": [],
         }
         self._validate_head()
         print(f"Checkpoint DAG: {self.root} ({len(self.head['completed'])} blocks complete)")
@@ -309,6 +438,9 @@ class CheckpointDag:
             digest = self.head.get(f"{kind}_sha256")
             if slot and sha256_file(self.root / slot) != digest:
                 raise RuntimeError(f"checkpoint {kind} snapshot hash mismatch")
+        if self.head.get("q_corpus") and self.activation_store is not None:
+            from activation_store import CorpusHandle
+            self.activation_store.open(CorpusHandle(**self.head["q_corpus"]), verify_all=True)
 
     def completed_layer(self, index: int, layer_name: str) -> bool:
         completed = self.head["completed"]
@@ -328,9 +460,13 @@ class CheckpointDag:
         module.load_state_dict(state, strict=True)
         q_input = None
         if index == len(self.head["completed"]) - 1:
-            q_input = torch.load(
-                self.root / self.head["q_input_slot"], map_location="cpu", weights_only=True
-            )
+            if self.head.get("q_corpus") and self.activation_store is not None:
+                from activation_store import CorpusHandle
+                q_input = self.activation_store.open(CorpusHandle(**self.head["q_corpus"]), verify_all=True)[0]
+            else:
+                q_input = torch.load(
+                    self.root / self.head["q_input_slot"], map_location="cpu", weights_only=True
+                )
             rng = torch.load(
                 self.root / self.head["rng_slot"], map_location="cpu", weights_only=False
             )
@@ -369,7 +505,17 @@ class CheckpointDag:
         slot_number = index % 2
         q_slot = f"q-input-{slot_number}.pt"
         rng_slot = f"rng-{slot_number}.pt"
-        self._atomic_torch(self.root / q_slot, cpu_tree(q_input))
+        q_corpus = None
+        if self.activation_store is not None:
+            writer = self.activation_store.writer(
+                f"q-{self.run_hash[:12]}-{index:04d}",
+                identity={"run_hash": self.run_hash, "block": index, "layer": layer_name,
+                          "role": "propagated_q_input"},
+            )
+            writer.append(cpu_tree(q_input))
+            q_corpus = writer.commit()._asdict()
+        else:
+            self._atomic_torch(self.root / q_slot, cpu_tree(q_input))
         rng = {
             "python": random.getstate(),
             "torch": torch.get_rng_state(),
@@ -382,14 +528,32 @@ class CheckpointDag:
             "node_hash": node_hash,
             "path": str(node_path.relative_to(self.root)),
         })
+        q_history = list(self.head.get("q_corpus_history", []))
+        if q_corpus:
+            q_history.append(q_corpus)
+        obsolete_q = q_history[:-2]
+        q_history = q_history[-2:]
         self.head.update(
             head=node_hash,
-            q_input_slot=q_slot,
-            q_input_sha256=sha256_file(self.root / q_slot),
+            q_input_slot=None if q_corpus else q_slot,
+            q_input_sha256=None if q_corpus else sha256_file(self.root / q_slot),
+            q_corpus=q_corpus,
+            q_corpus_history=q_history,
             rng_slot=rng_slot,
             rng_sha256=sha256_file(self.root / rng_slot),
         )
         self._atomic_json(self.root / "head.json", self.head)
+        # Only after the new head is durable may generations older than the two
+        # independently resumable q roots be reclaimed.
+        for obsolete in obsolete_q:
+            generation = obsolete["generation"]
+            if Path(generation).name != generation:
+                raise RuntimeError("invalid q corpus generation in checkpoint head")
+            path = self.activation_store.root / generation
+            if path.is_dir():
+                import shutil
+                shutil.rmtree(path)
+                self._fsync_dir(path.parent)
         print(f"Committed checkpoint block {index}: {layer_name} ({node_hash[:16]})")
 
     def _atomic_torch(self, path: Path, value) -> None:
@@ -418,7 +582,20 @@ class AutoRoundModifier(UpstreamAutoRoundModifier):
 
     low_gpu_mem_usage: bool = True
 
+    def attach_activation_store(self, store: ActivationStore, identity: dict,
+                                telemetry: JsonlTelemetry) -> None:
+        object.__setattr__(self, "_activation_store", store)
+        object.__setattr__(self, "_activation_identity", identity)
+        object.__setattr__(self, "_diagnostics", telemetry)
+        object.__setattr__(self, "_stored_corpora", {})
+
     def input_capture_hook(self, module, args, kwargs):
+        if isinstance(self._all_module_input.get(module._tmp_name), DiskBackedBlockIO):
+            # AutoRound's internal reference/prediction forwards re-enter the
+            # llm-compressor hook after the authoritative capture is published.
+            # The legacy list accumulated these unused duplicates; immutable
+            # storage must neither mutate nor duplicate them.
+            return
         if module._tmp_name not in self._all_module_input:
             self._all_module_input[module._tmp_name] = []
         self._all_module_input[module._tmp_name].append(
@@ -431,6 +608,27 @@ class AutoRoundModifier(UpstreamAutoRoundModifier):
         return inputs
 
     def apply_autoround(self, state, modules):
+        store = getattr(self, "_activation_store", None)
+        if store is not None:
+            # Capture hooks have finished and live model arguments are gone. Spill
+            # retained snapshots now, then replace the list with a lazy Sequence.
+            for name, values in list(self._all_module_input.items()):
+                if isinstance(values, DiskBackedBlockIO):
+                    continue
+                writer = store.writer(
+                    f"fp-{name.replace('.', '-')}",
+                    identity={**self._activation_identity, "role": "fp_input", "module": name},
+                )
+                for value in values:
+                    writer.append(value)
+                handle = writer.commit()
+                corpus = store.open(handle)
+                self._all_module_input[name] = corpus
+                self._stored_corpora[name] = handle._asdict()
+                self._diagnostics.emit(
+                    "activation_corpus_committed", component="decoder", layer=name,
+                    role="fp_input", samples=len(corpus), logical_bytes=corpus.manifest["logical_bytes"],
+                )
         original_autoround = autoround_base.AutoRound
 
         def memory_bounded_autoround(*args, **kwargs):
@@ -506,8 +704,17 @@ class AutoRoundModifier(UpstreamAutoRoundModifier):
 
     def on_sequential_epoch_end(self, state, event, modules, **kwargs):
         dag = getattr(self, "_checkpoint_dag", None)
+        diagnostics = getattr(self, "_diagnostics", None)
+        started = time.monotonic()
         if dag is None:
-            return super().on_sequential_epoch_end(state, event, modules, **kwargs)
+            result = super().on_sequential_epoch_end(state, event, modules, **kwargs)
+            if diagnostics is not None:
+                for module in modules or []:
+                    if self._is_decoding_layer(module):
+                        diagnostics.emit("block_complete", component="decoder",
+                                         layer=module._tmp_name, wall_seconds=time.monotonic() - started,
+                                         storage=getattr(self, "_activation_store").telemetry)
+            return result
         decoding_layers = [module for module in (modules or []) if self._is_decoding_layer(module)]
         if not decoding_layers:
             return super().on_sequential_epoch_end(state, event, modules, **kwargs)
@@ -525,6 +732,11 @@ class AutoRoundModifier(UpstreamAutoRoundModifier):
             super().on_sequential_epoch_end(state, event, modules, **kwargs)
             dag.commit(index, layer_name, module, self._q_input)
         object.__setattr__(self, "_checkpoint_index", index + 1)
+        if diagnostics is not None:
+            diagnostics.emit("block_complete", component="decoder", layer=layer_name,
+                             block=index, wall_seconds=time.monotonic() - started,
+                             propagated_q=tensor_diagnostics(self._q_input),
+                             storage=getattr(self, "_activation_store", None).telemetry)
 
 
 class CalibratedKVModifier(QuantizationModifier):
@@ -533,6 +745,21 @@ class CalibratedKVModifier(QuantizationModifier):
     def on_calibration_end(self, state, event, **kwargs):
         object.__setattr__(self, "calibrated_scales", collect_kv_scales(state.model))
         return super().on_calibration_end(state, event, **kwargs)
+
+
+def calibrated_kv_cache_scheme() -> dict:
+    """Static FP8 KV scheme whose statistics span the full calibration corpus."""
+    return {
+        "num_bits": 8,
+        "type": "float",
+        "strategy": "tensor",
+        "dynamic": False,
+        "symmetric": True,
+        # compressed-tensors otherwise defaults static quantization to
+        # memoryless_minmax, which replaces its range on every minibatch and
+        # makes a 512-sample run depend only on the final batch.
+        "observer": "static_minmax",
+    }
 
 
 def main() -> None:
@@ -554,6 +781,9 @@ def main() -> None:
     parser.add_argument("--checkpoint-root")
     parser.add_argument("--checkpoint-info-output")
     parser.add_argument("--workspace-lock-sha256")
+    parser.add_argument("--activation-store-config", default="{}")
+    parser.add_argument("--resource-config", default="{}")
+    parser.add_argument("--diagnostics-dir")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument(
         "--trace-timeout-seconds",
@@ -567,6 +797,15 @@ def main() -> None:
         help="JSON array of module-name fragments to preserve at source precision",
     )
     args = parser.parse_args()
+
+    storage_config = json.loads(args.activation_store_config)
+    resource_config = json.loads(args.resource_config)
+    diagnostics_dir = Path(args.diagnostics_dir or Path(args.output_dir).parent / "eval")
+    diagnostics_dir.mkdir(parents=True, exist_ok=True)
+    telemetry = JsonlTelemetry(diagnostics_dir / "telemetry.jsonl", common={
+        "model": args.model, "revision": args.revision, "dataset": args.dataset,
+        "seed": args.seed,
+    })
 
     if not torch.xpu.is_available():
         parser.error(
@@ -617,6 +856,44 @@ def main() -> None:
         dataset_name=args.dataset,
         seed=args.seed,
     )
+    sample_bytes = 0
+    for item in dataset:
+        def count_bytes(value):
+            if isinstance(value, torch.Tensor):
+                return value.numel() * value.element_size()
+            if isinstance(value, dict):
+                return sum(count_bytes(child) for child in value.values())
+            if isinstance(value, (tuple, list)):
+                return sum(count_bytes(child) for child in value)
+            return 0
+        sample_bytes += count_bytes(item)
+    model_bytes = sum(value.numel() * value.element_size() for value in model.parameters())
+    scratch = Path(storage_config.get("path") or Path(args.output_dir).parent / "activation-store")
+    scratch.mkdir(parents=True, exist_ok=True)
+    estimates = {
+        # Transformers loads this checkpoint through mmap-backed safetensors;
+        # sequential compression onloads the active block. Account reclaimable
+        # model backing separately from bounded anonymous active-block state.
+        "model_optimizer_bytes": 12 * 1024**3,
+        "model_file_cache_bytes": model_bytes,
+        "activation_frontier_bytes": sample_bytes,
+        "live_minibatch_bytes": max(1, sample_bytes // max(1, args.samples)) * args.batch_size * 2,
+        "safety_margin_bytes": 4 * 1024**3,
+        "activation_disk_bytes": sample_bytes * 5,
+        "checkpoint_disk_bytes": model_bytes + sample_bytes * 2,
+    }
+    admission = solve_resources(storage_config, resource_config, estimates, path=scratch)
+    atomic_json(diagnostics_dir / "preflight.json", {
+        "status": "pass", "storage": storage_config, "resources": resource_config,
+        "estimates": estimates, "resolved": admission,
+    })
+    telemetry.emit("preflight_pass", admission=admission, meminfo=meminfo())
+    activation_store = ActivationStore(scratch, lru_bytes=admission["memory"]["pageable_lru"])
+    activation_store.collect_orphans()
+    store_identity = {"model": args.model, "revision": args.revision,
+                      "dataset_sha256": hash_calibration_data(dataset), "seed": args.seed,
+                      "samples": args.samples, "seqlen": args.seqlen}
+    DiskIntermediatesCache.configure(activation_store, store_identity, telemetry)
     dag = None
     if args.resume and not args.checkpoint_root:
         parser.error("--resume requires --checkpoint-root")
@@ -658,7 +935,10 @@ def main() -> None:
                 "workspace_lock_sha256": args.workspace_lock_sha256,
             },
         }
-        dag = CheckpointDag(Path(args.checkpoint_root), plan, resume=args.resume)
+        dag = CheckpointDag(
+            Path(args.checkpoint_root), plan, resume=args.resume,
+            activation_store=activation_store,
+        )
         if args.checkpoint_info_output:
             Path(args.checkpoint_info_output).write_text(
                 json.dumps({"run_hash": dag.run_hash, "path": str(dag.root)}, indent=2)
@@ -672,6 +952,11 @@ def main() -> None:
             enable_torch_compile=args.enable_torch_compile,
             batch_size=args.batch_size,
         )
+    autoround_modifier.attach_activation_store(
+        activation_store,
+        store_identity,
+        telemetry,
+    )
     if dag is not None:
         autoround_modifier.attach_checkpoint_dag(dag)
     recipe = []
@@ -681,18 +966,13 @@ def main() -> None:
         # example. Capture calibrated KV scales first, then let AutoRound remain
         # the final modifier so compressed weight metadata drives serialization.
         kv_modifier = CalibratedKVModifier(
-                kv_cache_scheme={
-                    "num_bits": 8,
-                    "type": "float",
-                    "strategy": "tensor",
-                    "dynamic": False,
-                    "symmetric": True,
-                }
+                kv_cache_scheme=calibrated_kv_cache_scheme()
             )
         recipe.append(kv_modifier)
     recipe.append(autoround_modifier)
-    oneshot(
-        model=model,
+    with patch.object(sequential_pipeline, "IntermediatesCache", DiskIntermediatesCache):
+        oneshot(
+         model=model,
         tokenizer=tokenizer,
         # Calibration is text-only. Passing the tokenizer as the processor
         # prevents llm-compressor from auto-loading Qwen's vision/video
@@ -705,8 +985,8 @@ def main() -> None:
         num_calibration_samples=args.samples,
         shuffle_calibration_samples=False,
         batch_size=args.batch_size,
-        data_collator="truncation",
-    )
+         data_collator="truncation",
+        )
     if not args.no_save:
         output = Path(args.output_dir)
         output.mkdir(parents=True, exist_ok=True)
@@ -715,6 +995,23 @@ def main() -> None:
             if not kv_scales:
                 raise RuntimeError("FP8 KV calibration produced no captured scales")
             restore_kv_scales(model, kv_scales)
+            merged = {}
+            for key, value in kv_scales.items():
+                layer, kind = key.rsplit(".", 1)
+                merged.setdefault(layer, {})[kind] = {
+                        "chosen_scale": value.detach().float().cpu().reshape(-1).tolist(),
+                        # Observer internals in llm-compressor 0.13 do not expose
+                        # samples after finalize; mark unavailable rather than
+                        # manufacturing misleading percentile/error values.
+                        "observation_count": None, "min": None, "max": None,
+                        "percentiles": None, "fp8_clipping_rate": None,
+                        "absolute_error": None, "relative_error": None,
+                        "sqnr_db": None, "error_by_token_position": None,
+                    }
+            atomic_json(diagnostics_dir / "kv-calibration.json", {
+                "status": "partial", "reason": "pinned observer exposes finalized scales only",
+                "layers": merged,
+            })
         model.save_pretrained(output, save_compressed=True)
         checkpoint_scale_keys = (
             add_kv_scales_to_checkpoint(output, kv_scales) if kv_scales else []
@@ -736,6 +1033,34 @@ def main() -> None:
             raise RuntimeError("saved checkpoint is missing calibrated FP8 kv_cache_scheme")
         if args.kv_cache == "fp8" and len(checkpoint_scale_keys) != len(kv_scales):
             raise RuntimeError("saved checkpoint is missing calibrated FP8 KV scale tensors")
+        integrity = validate_inventory(
+            source_snapshot, output, ignored=ignore_fragments,
+            kv_expected=checkpoint_scale_keys,
+        )
+        atomic_json(diagnostics_dir / "artifact-integrity.json", integrity)
+        telemetry.emit("artifact_integrity_pass", report=integrity)
+        output_names = tensor_inventory(output)
+        components = {
+            "full_attention_kv": "quantized" if args.kv_cache == "fp8" else "ignored",
+            "gated_deltanet_recurrent_state": "unsupported",
+            "mtp": "preserved" if any("mtp" in key for key in output_names) else "not_present",
+            "vision": "preserved" if any("visual" in key or "vision" in key for key in output_names) else "not_present",
+        }
+        atomic_json(diagnostics_dir / "components.json", {
+            "observed": ["decoder_activation_inputs", "propagated_quantized_inputs"],
+            "components": components, "ignored_selectors": ignore_fragments,
+        })
+        atomic_json(diagnostics_dir / "export-gates.json", {
+            "exportable": False,
+            "gates": {
+                "artifact_inventory": {"status": "pass", "report": "artifact-integrity.json"},
+                "fixed_seed_kl_top_token": {"status": "pending"},
+                "short_generation_repetition": {"status": "pending"},
+                "context_length_sweep": {"status": "pending"},
+                "vllm_loader_reload": {"status": "pending"},
+            },
+            "waivers": [],
+        })
     if dag is not None:
         dag.close()
 

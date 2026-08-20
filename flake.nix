@@ -215,6 +215,10 @@
         };
       };
 
+      kv-kernel-ab = pkgs.callPackage ./nix/kv-kernel-ab.nix {
+        inherit vllm-xpu-chat;
+      };
+
       chatProfile = import ./nix/chat-profile.nix;
 
       mkMaintenanceServeArgs = port: inst:
@@ -389,7 +393,7 @@
           grouped-gemm-xe-default
           ;
         default = intel-oneapi;
-        inherit quantize kl-eval lint;
+        inherit quantize kl-eval kv-kernel-ab lint;
       };
 
       apps = {
@@ -408,6 +412,10 @@
         kl-eval = {
           type = "app";
           program = "${kl-eval}/bin/kl-eval";
+        };
+        kv-kernel-ab = {
+          type = "app";
+          program = "${kv-kernel-ab}/bin/kv-kernel-ab";
         };
         lint = {
           type = "app";

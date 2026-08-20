@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -34,12 +35,27 @@ RECIPES = {
     "default": {"iters": 200, "samples": 128, "batch_size": 4, "sequence_length": 2048},
     "overnight": {"iters": 400, "samples": 256, "batch_size": 4, "sequence_length": 2048},
     # 1,000 iterations retains AutoRound's highest-accuracy tuning schedule.
-    # 512 samples is unsafe for large models on a 96 GiB unified-memory XPU:
-    # the per-block activation corpus alone can consume tens of GiB. 128 is the
-    # upstream default and remains practical with memory-bounded input streaming.
-    "best": {"iters": 1000, "samples": 128, "batch_size": 4, "sequence_length": 2048},
+    "best": {"iters": 1000, "samples": 512, "batch_size": 4, "sequence_length": 2048},
 }
 DEFAULT_IGNORE = ["lm_head"]
+DEFAULT_STORAGE = {
+    "mode": "disk", "path": None, "limit_gib": None, "min_free_gib": 200,
+    "min_free_percent": 10, "extent_mib": "auto", "pageable_lru_gib": "auto",
+    "pinned_staging_mib": 512, "pinned_slots": 2, "strict_pinned": False,
+    "reader_workers": 1, "writer_workers": 1, "prefetch_batches": 2,
+    "read_queue_mib": 512, "write_queue_mib": 512, "reorder_queue_mib": 512,
+    "cleanup": "success",
+}
+DEFAULT_RESOURCES = {
+    "host_mem_available_floor_gib": 24, "host_mem_abort_floor_gib": 12,
+    "host_mem_resume_gib": 28, "pressure_grace_seconds": 120,
+    "pressure_poll_ms": 500, "pause_timeout_seconds": 900,
+    "resume_settle_seconds": 30, "memory_high_gib": 68, "memory_max_gib": 76,
+    "memory_swap_max_gib": 24, "oom_score_adjust": 500, "cpu_weight": 25,
+    "io_weight": 25, "nice": 10, "io_scheduling_class": "best-effort",
+    "io_scheduling_priority": 7, "read_bandwidth_mib_s": 300,
+    "write_bandwidth_mib_s": 200, "read_iops": 4000, "write_iops": 2000,
+}
 
 
 def die(message: str) -> "NoReturn":
@@ -162,7 +178,10 @@ def cmd_init(args: argparse.Namespace) -> None:
             "recipe": "default",
             "kv_cache": "none",
             "ignore": DEFAULT_IGNORE,
-            "calibration": {},
+            "calibration": {
+                "storage": DEFAULT_STORAGE,
+                "resources": DEFAULT_RESOURCES,
+            },
         },
         "publish": {"repo": hf_repo, "private": False},
     }
@@ -226,6 +245,24 @@ def execute_run(args: argparse.Namespace, *, test_mode: bool = False) -> None:
         args.calibration_samples = target_calibration_samples
     args.dataset = args.dataset or calibration.get("dataset", "NeelNanda/pile-10k")
     args.seed = args.seed if args.seed is not None else calibration.get("seed", 42)
+    storage = {**DEFAULT_STORAGE, **calibration.get("storage", {})}
+    resources = {**DEFAULT_RESOURCES, **calibration.get("resources", {})}
+    if storage["mode"] not in {"disk", "memory"}:
+        die("quantization.calibration.storage.mode must be disk or memory")
+    if args.isolate and os.environ.get("QUANTIZE_SYSTEMD_SCOPE") != "1":
+        properties = [
+            f"MemoryHigh={resources['memory_high_gib']}G",
+            f"MemoryMax={resources['memory_max_gib']}G",
+            f"MemorySwapMax={resources['memory_swap_max_gib']}G",
+            f"CPUWeight={resources['cpu_weight']}",
+            f"IOWeight={resources['io_weight']}",
+        ]
+        command = ["systemd-run", "--user", "--scope", "--quiet", "--collect",
+                   "--setenv=QUANTIZE_SYSTEMD_SCOPE=1"]
+        for prop in properties:
+            command.extend(["--property", prop])
+        command.extend([sys.executable, str(Path(__file__).resolve()), *sys.argv[1:]])
+        raise SystemExit(subprocess.run(command).returncode)
     args.torch_compile = (
         args.torch_compile
         if args.torch_compile is not None
@@ -250,6 +287,10 @@ def execute_run(args: argparse.Namespace, *, test_mode: bool = False) -> None:
     info = api.model_info(repo, revision=revision)
     resolved_sha = info.sha
     variant = f"{repo.split('/')[-1]}-{fmt.upper()}-AutoRound"
+    if args.variant_suffix:
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", args.variant_suffix):
+            die("--variant-suffix must contain only letters, digits, dot, underscore, or hyphen")
+        variant = f"{variant}-{args.variant_suffix}"
     final_dir = workspace / "artifacts" / variant
     if not test_mode and final_dir.exists():
         die(f"artifact already exists: {final_dir}; move it aside before rerunning")
@@ -257,6 +298,10 @@ def execute_run(args: argparse.Namespace, *, test_mode: bool = False) -> None:
     run_dir = workspace / "runs" / run_id
     output_dir = run_dir / ("test-output" if test_mode else "output")
     output_dir.mkdir(parents=True)
+    eval_dir = run_dir / "eval"
+    eval_dir.mkdir()
+    if storage["path"] is None:
+        storage["path"] = str(workspace / ".cache" / "autoround")
     started = dt.datetime.now(dt.timezone.utc).isoformat()
     manifest = {
         "schema": SCHEMA,
@@ -279,7 +324,11 @@ def execute_run(args: argparse.Namespace, *, test_mode: bool = False) -> None:
                 "resume": args.resume,
             },
             "low_gpu_mem_usage": True,
+            "storage": storage,
+            "resources": resources,
+            "variant": variant,
         },
+        "reports": {"eval": str(eval_dir.relative_to(workspace))},
         "started_at": started,
         "mode": "test" if test_mode else "run",
     }
@@ -296,7 +345,10 @@ def execute_run(args: argparse.Namespace, *, test_mode: bool = False) -> None:
                "--samples", str(args.calibration_samples), "--seqlen", str(args.seqlen),
                "--batch-size", str(args.batch_size), "--dataset", args.dataset, "--seed", str(args.seed),
                "--kv-cache", args.kv_cache, "--ignore-json", json.dumps(ignored),
-               "--resolved-ignore-output", str(run_dir / "ignore-matches.json")]
+               "--resolved-ignore-output", str(run_dir / "ignore-matches.json"),
+               "--activation-store-config", json.dumps(storage),
+               "--resource-config", json.dumps(resources),
+               "--diagnostics-dir", str(eval_dir)]
     if checkpoint_enabled:
         command.extend([
             "--checkpoint-root", str(workspace / "checkpoints"),
@@ -372,6 +424,7 @@ def execute_run(args: argparse.Namespace, *, test_mode: bool = False) -> None:
                 f"{target_calibration_samples} rather than {args.calibration_samples} samples"
             )
         else:
+            shutil.copytree(eval_dir, output_dir / "eval", dirs_exist_ok=True)
             final_dir.parent.mkdir(parents=True, exist_ok=True)
             output_dir.rename(final_dir)
             manifest.update(status="complete", completed_at=dt.datetime.now(dt.timezone.utc).isoformat(),
@@ -431,6 +484,24 @@ def cmd_export(args: argparse.Namespace) -> None:
     artifact = Path(args.artifact).resolve() if args.artifact else (choices[0] if len(choices) == 1 else None)
     if artifact is None or not artifact.is_dir():
         die("pass --artifact when the workspace does not contain exactly one artifact")
+    gates_path = artifact / "eval" / "export-gates.json"
+    gates = json.loads(gates_path.read_text()) if gates_path.exists() else {
+        "exportable": False, "gates": {"evaluation_manifest": {"status": "missing"}}, "waivers": []
+    }
+    if not gates.get("exportable"):
+        if not args.waive_gates:
+            failed = [name for name, gate in gates.get("gates", {}).items() if gate.get("status") != "pass"]
+            die(f"artifact is not exportable; incomplete gates: {', '.join(failed)}; use --waive-gates with --waiver-reason only after review")
+        if not args.waiver_reason:
+            die("--waive-gates requires --waiver-reason")
+        gates.setdefault("waivers", []).append({
+            "at": dt.datetime.now(dt.timezone.utc).isoformat(), "reason": args.waiver_reason,
+            "failed_gates": [name for name, gate in gates.get("gates", {}).items() if gate.get("status") != "pass"],
+        })
+        gates["exportable"] = True
+        gates["exported_with_waiver"] = True
+        gates_path.parent.mkdir(parents=True, exist_ok=True)
+        gates_path.write_text(json.dumps(gates, indent=2, sort_keys=True) + "\n")
     configured_private = bool(config.get("publish", {}).get("private", False))
     private = args.private or (configured_private and not args.public)
     if args.dry_run:
@@ -582,6 +653,10 @@ are never overwritten. W4A16 is the conservative Intel XPU default.""",
         help="calibration seed override; defaults to quantization.calibration.seed or 42",
     )
     run.add_argument(
+        "--variant-suffix",
+        help="append a version label to the artifact directory without replacing an older artifact",
+    )
+    run.add_argument(
         "--allow-experimental",
         action="store_true",
         help="acknowledge that the selected non-W4A16 format lacks a fully validated Intel vLLM kernel path",
@@ -602,6 +677,10 @@ are never overwritten. W4A16 is the conservative Intel XPU default.""",
         "--resume",
         action="store_true",
         help="continue the matching checkpoint DAG; refuses checkpoints produced by different inputs or settings",
+    )
+    run.add_argument(
+        "--isolate", action=argparse.BooleanOptionalAction, default=True,
+        help="run in a transient user systemd scope with configured memory/CPU/I/O protection (default: enabled)",
     )
     run.set_defaults(func=cmd_run)
     test = sub.add_parser(
@@ -660,6 +739,13 @@ uses the Hub API rather than a second Git/LFS checkout and is safe to retry.""",
         "--workspace",
         metavar="DIR",
         help="workspace containing quantization.json and artifacts/ (default: current directory)",
+    )
+    export.add_argument(
+        "--waive-gates", action="store_true",
+        help="permit export with failed/pending evaluation gates and record the waiver",
+    )
+    export.add_argument(
+        "--waiver-reason", help="required audit reason when --waive-gates is used",
     )
     export.add_argument(
         "--repo",

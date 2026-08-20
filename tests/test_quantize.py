@@ -41,7 +41,10 @@ class QuantizeTests(unittest.TestCase):
             self.assertEqual(config["publish"]["repo"], "jasonboukheir/Qwen3-8B-W4A16-AutoRound")
             self.assertFalse(config["publish"]["private"])
             self.assertEqual(config["quantization"]["ignore"], ["lm_head"])
-            self.assertEqual(config["quantization"]["calibration"], {})
+            calibration = config["quantization"]["calibration"]
+            self.assertEqual(calibration["storage"]["mode"], "disk")
+            self.assertEqual(calibration["storage"]["pinned_staging_mib"], 512)
+            self.assertEqual(calibration["resources"]["memory_high_gib"], 68)
 
     def test_ignore_rules_accept_exact_and_regex_selectors(self):
         config = {"quantization": {"ignore": ["lm_head", r"re:.*mtp\.fc$"]}}

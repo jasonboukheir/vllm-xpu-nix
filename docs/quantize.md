@@ -69,14 +69,29 @@ weight metadata controls serialization. The runner preserves the KV scales
 across AutoRound's weight cleanup and writes them as an indexed safetensors
 shard.
 
-The `best` profile keeps AutoRound's quality-oriented 1,000 tuning iterations,
-with 128 samples, sequence length 2,048, and batch size 4. The runner enables
-AutoRound's low-GPU-memory mode and keeps the full per-block activation corpus
-on CPU, onloading only the optimization minibatch. This matters on Intel
-unified-memory GPUs: llm-compressor's stock modifier otherwise copies the
-complete corpus to XPU, so 512 samples can exhaust RAM and swap despite a small
-nominal batch size. Configuration and explicit CLI flags can override this;
-larger sample counts require a full-calibration preflight and memory monitoring.
+Static FP8 KV-cache calibration uses an accumulating min/max observer. K and V
+ranges are collected separately per full-attention layer across the complete
+calibration corpus instead of being replaced by the final minibatch.
+
+The `best` profile keeps AutoRound's quality-oriented 1,000 tuning iterations
+and uses 512 samples, sequence length 2,048, and batch size 4. Retained
+AutoRound captures are published into a versioned disk activation store after
+capture and exposed through lazy exact-range reads. A manifest is published
+only after every immutable extent is checksummed and fsynced. The initial
+baseline deliberately uses one record per extent, one synchronous reader, the
+kernel page cache, and no userspace LRU; telemetry must justify later
+coalescing or cache changes.
+
+New workspaces contain the complete `calibration.storage` and
+`calibration.resources` configuration from issue #4. The scratch path defaults
+to `<workspace>/.cache/autoround`. Preflight accounts for the model/optimizer
+estimate, live frontier and minibatch, all bounded queues, pinned allowance,
+safety reserve, checkpoint generations, filesystem reserve, cgroup headroom,
+and `MemAvailable`. It fails before quantization when the aggregate does not
+fit. `auto` pageable LRU currently resolves to zero.
+
+Runs use a transient user systemd scope by default (`--no-isolate` opts out)
+with the configured memory limits, CPU/IO weights, nice level, and OOM score.
 
 Run the end-to-end preflight before the full job:
 
@@ -141,6 +156,29 @@ This uses the same aligned calibration dataset for AutoRound and KV observers,
 then saves compressed-tensors metadata that vLLM consumes with
 `--kv-cache-dtype fp8`. The manifest records the immutable source SHA, sequence
 length, and sample count.
+
+## Diagnostics and export gates
+
+Reports are written incrementally under `runs/<id>/eval/` and copied into the
+artifact. `telemetry.jsonl` is append-and-fsync crash-safe. It records corpus
+roles and bytes, exact-range reads, checksums, cache behavior, block times,
+propagated activation ranges and NaN/Inf counts, preflight accounting, and
+component disposition. KV reports keep K and V separate per attention layer;
+values unavailable from the pinned observer are explicit `null` fields.
+
+Serialization is not an export gate. `artifact-integrity.json` compares source
+and output safetensors inventories, protects MTP, vision, embeddings and
+`lm_head`, checks ignored dtype/shape, processor assets, KV scale mapping, and
+index/shard agreement. `export-gates.json` additionally requires fixed-seed
+BF16/quantized KL and top-token agreement, generation/repetition checks,
+context-length sweeps, and an intended-vLLM-loader reload. GPU-dependent gates
+start as `pending`, so `quantize export` refuses the artifact. A reviewed
+exception requires `--waive-gates --waiver-reason TEXT`; failed gates,
+timestamp, and reason are recorded before upload.
+
+Real-model verification remains a 512×2048, 1,000-iteration Qwen3.8 block,
+then two blocks and a restart. Populate the pending evaluation gates and compare
+telemetry against the requested RAM/cache/lookahead baselines before a full run.
 
 The generated development shell includes `huggingface_hub`, `hf-xet`, Git LFS,
 Git, and jq. Authentication is runtime state outside Nix:

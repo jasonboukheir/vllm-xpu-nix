@@ -62,6 +62,23 @@ def die(message: str) -> "NoReturn":
     raise SystemExit(f"quantize: {message}")
 
 
+def atomic_json(path: Path, value: dict) -> None:
+    """Publish JSON only after its complete contents reach stable storage."""
+    path = Path(path)
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    with temporary.open("w", encoding="utf-8") as stream:
+        json.dump(value, stream, indent=2)
+        stream.write("\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(temporary, path)
+    directory_fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(directory_fd)
+    finally:
+        os.close(directory_fd)
+
+
 def normalize_model(value: str) -> tuple[str, str | None]:
     """Return (owner/name, URL tree revision)."""
     if value.startswith(("http://", "https://")):
@@ -333,7 +350,7 @@ def execute_run(args: argparse.Namespace, *, test_mode: bool = False) -> None:
         "mode": "test" if test_mode else "run",
     }
     manifest_path = run_dir / "manifest.json"
-    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
+    atomic_json(manifest_path, manifest)
     if args.kv_cache == "fp8" and fmt != "w4a16":
         die("the calibrated FP8 KV path is currently validated only with W4A16")
     script = os.environ.get("QUANTIZE_LLMCOMPRESSOR_SCRIPT")
@@ -349,6 +366,20 @@ def execute_run(args: argparse.Namespace, *, test_mode: bool = False) -> None:
                "--activation-store-config", json.dumps(storage),
                "--resource-config", json.dumps(resources),
                "--diagnostics-dir", str(eval_dir)]
+    reference_command = None
+    reference_info = eval_dir / "bf16-reference.json"
+    if args.kv_cache == "fp8":
+        reference_eval = eval_dir / "bf16-reference-capture"
+        reference_eval.mkdir()
+        reference_command = command.copy()
+        reference_command.extend([
+            "--phase", "bf16-reference",
+            "--reference-root", str(workspace / "references"),
+            "--reference-info-output", str(reference_info),
+            "--no-save",
+        ])
+        reference_command[reference_command.index("--diagnostics-dir") + 1] = str(reference_eval)
+        command.extend(["--phase", "quantize", "--bf16-reference", str(reference_info)])
     if checkpoint_enabled:
         command.extend([
             "--checkpoint-root", str(workspace / "checkpoints"),
@@ -362,27 +393,68 @@ def execute_run(args: argparse.Namespace, *, test_mode: bool = False) -> None:
     if args.torch_compile:
         command.append("--enable-torch-compile")
     manifest["command"] = command
-    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
+    if reference_command is not None:
+        manifest["phases"] = {
+            "bf16_reference": {"status": "pending", "command": reference_command},
+            "w4_post_kv": {"status": "pending", "command": command},
+            "selective_kv": {"status": "pending"},
+        }
+    atomic_json(manifest_path, manifest)
     print(f">>> {repo}@{resolved_sha} -> {fmt} ({recipe})")
     elapsed = None
+
+    def run_phase(phase_command: list[str], log_name: str) -> None:
+        """Stream a phase while preserving its complete crash log under eval/."""
+        log_path = eval_dir / log_name
+        with log_path.open("w", encoding="utf-8", buffering=1) as log:
+            process = subprocess.Popen(
+                phase_command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+            )
+            assert process.stdout is not None
+            for line in process.stdout:
+                sys.stdout.write(line)
+                sys.stdout.flush()
+                log.write(line)
+            returncode = process.wait()
+        if returncode:
+            raise subprocess.CalledProcessError(returncode, phase_command)
+
     try:
         low_elapsed = None
+        if reference_command is not None:
+            run_phase(reference_command, "bf16-reference.log")
+            reference = json.loads(reference_info.read_text())
+            if reference.get("status") != "complete":
+                raise RuntimeError("BF16 reference phase did not publish a complete manifest")
+            manifest["phases"]["bf16_reference"] = {
+                "status": "complete",
+                "identity_sha256": reference["identity_sha256"],
+                "report": str(reference_info.relative_to(workspace)),
+            }
+            manifest["phases"]["w4_post_kv"]["status"] = "running"
+            atomic_json(manifest_path, manifest)
         if test_mode:
             low_iters, high_iters = args.test_iters
             low_command = command.copy()
             low_command[low_command.index("--iters") + 1] = str(low_iters)
             low_command.append("--no-save")
             low_started = time.monotonic()
-            subprocess.run(low_command, check=True)
+            run_phase(low_command, "w4-post-kv-low.log")
             low_elapsed = time.monotonic() - low_started
             manifest["test_timing"] = {
                 "low_iters": low_iters,
                 "low_elapsed_seconds": low_elapsed,
                 "high_iters": high_iters,
             }
-            manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
+            atomic_json(manifest_path, manifest)
         run_started = time.monotonic()
-        subprocess.run(command, check=True)
+        run_phase(command, "w4-post-kv.log")
+        if reference_command is not None:
+            manifest["phases"]["w4_post_kv"]["status"] = "complete"
         elapsed = time.monotonic() - run_started
         matches_path = run_dir / "ignore-matches.json"
         if matches_path.exists():
@@ -434,7 +506,7 @@ def execute_run(args: argparse.Namespace, *, test_mode: bool = False) -> None:
         manifest.update(status="failed", completed_at=dt.datetime.now(dt.timezone.utc).isoformat(), error=str(exc))
         raise
     finally:
-        manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
+        atomic_json(manifest_path, manifest)
 
 
 def cmd_run(args: argparse.Namespace) -> None:

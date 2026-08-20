@@ -63,11 +63,11 @@ validation correctly reports that they are not model modules.
 All weight quantization is orchestrated by llm-compressor. Its
 `AutoRoundModifier` invokes Intel AutoRound as the optimization algorithm and
 llm-compressor writes compressed-tensors output for vLLM. With `kv_cache=fp8`,
-a separate `QuantizationModifier` calibrates static KV scales first in the same
-oneshot lifecycle. AutoRound remains the final modifier so its compressed
-weight metadata controls serialization. The runner preserves the KV scales
-across AutoRound's weight cleanup and writes them as an indexed safetensors
-shard.
+the runner first captures an immutable BF16 K/V reference, runs AutoRound W4,
+and then performs a KV-only observation pass over the actual post-W4 model.
+The KV modifier has no Linear targets, so it cannot replace AutoRound's weight
+schemes. The runner additionally snapshots the exact W4 module set before that
+pass and restores and validates it afterward.
 
 Static FP8 KV-cache calibration uses an accumulating min/max observer. K and V
 ranges are collected separately per full-attention layer across the complete
@@ -146,16 +146,17 @@ for a disposable full run with `--no-checkpoint`.
 
 MXFP4/MXFP8/FP8 are intentionally experimental on Intel XPU and require
 `--allow-experimental`. To produce W4A16 weights and calibrated static FP8
-KV-cache scales in one llm-compressor pass:
+KV-cache scales with the phased pipeline:
 
 ```bash
 nix run .#quantize -- run --kv-cache fp8 --calibration-samples 128
 ```
 
-This uses the same aligned calibration dataset for AutoRound and KV observers,
-then saves compressed-tensors metadata that vLLM consumes with
-`--kv-cache-dtype fp8`. The manifest records the immutable source SHA, sequence
-length, and sample count.
+This uses the same exact tokenized calibration corpus for the BF16 reference,
+AutoRound, and post-W4 KV observers. FP8 scales minimize reconstruction error
+for the tensors the W4 model will actually cache; BF16 remains the diagnostic
+reference rather than a target a scale is expected to repair. The saved
+compressed-tensors metadata is consumed by vLLM with `--kv-cache-dtype fp8`.
 
 ## Diagnostics and export gates
 
@@ -169,7 +170,11 @@ values unavailable from the pinned observer are explicit `null` fields.
 Serialization is not an export gate. `artifact-integrity.json` compares source
 and output safetensors inventories, protects MTP, vision, embeddings and
 `lm_head`, checks ignored dtype/shape, processor assets, KV scale mapping, and
-index/shard agreement. `export-gates.json` additionally requires fixed-seed
+index/shard agreement. `weight-compression.json` independently requires every
+in-memory AutoRound target to appear as one `weight_packed`, `weight_scale`, and
+`weight_shape` tensor and requires a packed 4-bit config group. This catches a
+valid-looking, reloadable checkpoint that accidentally serialized BF16 weights.
+`export-gates.json` additionally requires fixed-seed
 BF16/quantized KL and top-token agreement, generation/repetition checks,
 context-length sweeps, and an intended-vLLM-loader reload. GPU-dependent gates
 start as `pending`, so `quantize export` refuses the artifact. A reviewed

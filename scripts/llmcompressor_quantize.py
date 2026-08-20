@@ -6,6 +6,7 @@ import fcntl
 import hashlib
 import importlib.metadata
 import json
+import math
 import os
 from pathlib import Path
 import random
@@ -24,6 +25,8 @@ from llmcompressor import oneshot
 from llmcompressor.modifiers.autoround import AutoRoundModifier as UpstreamAutoRoundModifier
 from llmcompressor.modifiers.autoround import base as autoround_base
 from llmcompressor.modifiers.quantization import QuantizationModifier
+from llmcompressor.observers import Observer
+from llmcompressor.observers.min_max import StaticMinMaxObserver
 from llmcompressor.pipelines.sequential import pipeline as sequential_pipeline
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -288,11 +291,14 @@ def restore_kv_scales(model, scales: dict[str, torch.Tensor]) -> None:
 
 
 def add_kv_scales_to_checkpoint(output: Path, runtime_scales: dict[str, torch.Tensor]) -> list[str]:
-    """Add tiny KV tensors as a shard and index them without rewriting model bytes.
+    """Ensure every KV scale tensor is indexed exactly once.
 
     Some Transformers composite models rename checkpoint keys while saving and
-    omit newly registered attention parameters.  An explicit safetensors index
-    lets us retain the large shard untouched while making the scales loadable.
+    omit newly registered attention parameters from the generated index even
+    though they are present in the shard headers.  Prefer those already-written
+    tensors; only create a tiny supplemental shard for genuinely missing ones.
+    This avoids duplicate tensor names across shards, which makes the artifact
+    inventory ambiguous and causes strict loaders to reject it.
     """
     index_path = output / "model.safetensors.index.json"
     if index_path.exists():
@@ -310,6 +316,13 @@ def add_kv_scales_to_checkpoint(output: Path, runtime_scales: dict[str, torch.Te
                     weight_map[key] = shard.name
 
     saved_keys = tuple(weight_map)
+    header_locations: dict[str, list[str]] = {}
+    for shard in sorted(output.glob("*.safetensors")):
+        if shard.name == "model-kv-scales.safetensors":
+            continue
+        with safe_open(shard, framework="pt") as stream:
+            for key in stream.keys():
+                header_locations.setdefault(key, []).append(shard.name)
     checkpoint_scales = {}
     for runtime_name, value in runtime_scales.items():
         module_name, scale_name = runtime_name.rsplit(".", 1)
@@ -329,11 +342,23 @@ def add_kv_scales_to_checkpoint(output: Path, runtime_scales: dict[str, torch.Te
         checkpoint_scales[f"{candidates[0]}.{scale_name}"] = value
 
     shard_name = "model-kv-scales.safetensors"
-    save_file(checkpoint_scales, output / shard_name, metadata={"format": "pt"})
-    weight_map.update({key: shard_name for key in checkpoint_scales})
-    metadata["total_size"] = int(metadata.get("total_size", 0)) + sum(
-        value.numel() * value.element_size() for value in checkpoint_scales.values()
-    )
+    supplemental = {}
+    for key, value in checkpoint_scales.items():
+        locations = header_locations.get(key, [])
+        if len(locations) > 1:
+            raise RuntimeError(
+                f"KV scale tensor is duplicated across base shards: {key}: {locations}"
+            )
+        if locations:
+            weight_map[key] = locations[0]
+        else:
+            weight_map[key] = shard_name
+            supplemental[key] = value
+    if supplemental:
+        save_file(supplemental, output / shard_name, metadata={"format": "pt"})
+        metadata["total_size"] = int(metadata.get("total_size", 0)) + sum(
+            value.numel() * value.element_size() for value in supplemental.values()
+        )
     index_path.write_text(
         json.dumps({"metadata": metadata, "weight_map": weight_map}, indent=2, sort_keys=True)
         + "\n"
@@ -739,12 +764,199 @@ class AutoRoundModifier(UpstreamAutoRoundModifier):
                              storage=getattr(self, "_activation_store", None).telemetry)
 
 
+@Observer.register("audit_static_minmax")
+class AuditStaticMinMaxObserver(StaticMinMaxObserver):
+    """Accumulating min/max plus a bounded deterministic value reservoir."""
+
+    reservoir_per_observation = 4096
+    reservoir_limit = 262144
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.audit_observations = 0
+        self.audit_elements = 0
+        self.audit_nan = 0
+        self.audit_posinf = 0
+        self.audit_neginf = 0
+        self.audit_reservoir = []
+
+    def update_statistics_from_observed(self, observed: torch.Tensor) -> None:
+        super().update_statistics_from_observed(observed)
+        detached = observed.detach().reshape(-1)
+        self.audit_observations += 1
+        self.audit_elements += detached.numel()
+        self.audit_nan += torch.isnan(detached).sum().item()
+        self.audit_posinf += torch.isposinf(detached).sum().item()
+        self.audit_neginf += torch.isneginf(detached).sum().item()
+        remaining = self.reservoir_limit - sum(x.numel() for x in self.audit_reservoir)
+        if remaining <= 0 or detached.numel() == 0:
+            return
+        count = min(self.reservoir_per_observation, remaining, detached.numel())
+        indices = torch.linspace(
+            0, detached.numel() - 1, steps=count, device=detached.device
+        ).long()
+        self.audit_reservoir.append(detached.index_select(0, indices).float().cpu())
+
+
+def collect_kv_observer_audit(
+    model, *, observation_limit: int | None = None
+) -> tuple[dict, dict[str, torch.Tensor]]:
+    report = {}
+    reservoirs = {}
+    for module_name, module in model.named_modules():
+        for kind in ("k", "v"):
+            observer = getattr(module, f"{kind}_observer", None)
+            if not isinstance(observer, AuditStaticMinMaxObserver):
+                continue
+            if not observer.has_statistics or observer.audit_observations == 0:
+                continue
+            chunks = observer.audit_reservoir
+            if observation_limit is not None:
+                chunks = chunks[:observation_limit]
+            samples = torch.cat(chunks) if chunks else torch.empty(0)
+            finite = samples[torch.isfinite(samples)]
+            percentiles = None
+            if finite.numel():
+                values = torch.quantile(
+                    finite, torch.tensor([0.0, 0.001, 0.01, 0.5, 0.99, 0.999, 1.0])
+                ).tolist()
+                percentiles = dict(zip(("p0", "p0_1", "p1", "p50", "p99", "p99_9", "p100"), values))
+            key = f"{module_name}.{kind}"
+            reservoirs[key] = samples
+            report[key] = {
+                "observation_count": min(observer.audit_observations, observation_limit)
+                if observation_limit is not None else observer.audit_observations,
+                "raw_observation_count": observer.audit_observations,
+                "element_count": observer.audit_elements,
+                "min": observer.min_vals.detach().float().cpu().reshape(-1).tolist(),
+                "max": observer.max_vals.detach().float().cpu().reshape(-1).tolist(),
+                "nan": observer.audit_nan,
+                "posinf": observer.audit_posinf,
+                "neginf": observer.audit_neginf,
+                "reservoir_elements": samples.numel(),
+                "percentiles": percentiles,
+            }
+    return report, reservoirs
+
+
 class CalibratedKVModifier(QuantizationModifier):
-    """Capture final KV scales before llm-compressor lifecycle cleanup."""
+    """Capture post-RoPE K and cache-ready V despite sequential ``use_cache=False``.
+
+    llm-compressor's sequential pipeline intentionally removes the cache branch
+    from its traced graph.  Consequently its normal QuantizedKVCache hooks never
+    execute for this model.  Qwen3.5 projection hooks *do* remain in the graph, so
+    reconstruct the exact cache tensors there: K projection -> K norm -> text
+    RoPE, and V projection -> cache layout.  The hook feeds the ordinary K/V
+    observers, retaining the same quantization lifecycle and serialized schema.
+    Unsupported attention implementations fail closed instead of silently
+    producing empty calibration data.
+    """
+
+    capture_samples: int = 1
+    capture_batch_size: int = 1
+
+    def on_initialize(self, state, **kwargs):
+        result = super().on_initialize(state, **kwargs)
+        object.__setattr__(self, "_capture_enabled", False)
+        # These are declared Pydantic fields so the values survive recipe
+        # serialization/cloning performed by llm-compressor.
+        object.__setattr__(
+            self,
+            "_capture_observation_limit",
+            math.ceil(self.capture_samples / self.capture_batch_size),
+        )
+        handles = []
+        captured_modules = []
+
+        for module_name, module in state.model.named_modules():
+            if not (hasattr(module, "k_proj") and hasattr(module, "v_proj")):
+                continue
+            if not (hasattr(module, "k_norm") and hasattr(module, "head_dim")):
+                continue
+            config = getattr(module, "config", None)
+            rope = getattr(config, "rope_parameters", None)
+            num_kv_heads = getattr(config, "num_key_value_heads", None)
+            if not isinstance(rope, dict) or num_kv_heads is None:
+                continue
+            if rope.get("rope_type", "default") != "default":
+                raise RuntimeError(
+                    f"post-RoPE KV capture does not support rope_type={rope.get('rope_type')!r} "
+                    f"for {module_name}"
+                )
+
+            def capture_k(_projection, _inputs, output, *, parent=module):
+                if not self._capture_enabled:
+                    return
+                if not hasattr(parent, "k_observer"):
+                    raise RuntimeError("K observer disappeared during KV capture")
+                batch, sequence, _ = output.shape
+                head_dim = int(parent.head_dim)
+                heads = int(parent.config.num_key_value_heads)
+                key = parent.k_norm(output.view(batch, sequence, heads, head_dim)).transpose(1, 2)
+                rope_parameters = parent.config.rope_parameters
+                rotary_dim = int(head_dim * rope_parameters.get("partial_rotary_factor", 1.0))
+                base = float(rope_parameters["rope_theta"])
+                inv_freq = 1.0 / (
+                    base
+                    ** (
+                        torch.arange(0, rotary_dim, 2, device=key.device, dtype=torch.float32)
+                        / rotary_dim
+                    )
+                )
+                positions = torch.arange(sequence, device=key.device, dtype=torch.float32)
+                freqs = torch.outer(positions, inv_freq)
+                emb = torch.cat((freqs, freqs), dim=-1)
+                cos = emb.cos().to(key.dtype)[None, None, :, :]
+                sin = emb.sin().to(key.dtype)[None, None, :, :]
+                key_rot, key_pass = key[..., :rotary_dim], key[..., rotary_dim:]
+                half = rotary_dim // 2
+                rotated_half = torch.cat((-key_rot[..., half:], key_rot[..., :half]), dim=-1)
+                cache_key = torch.cat((key_rot * cos + rotated_half * sin, key_pass), dim=-1)
+                parent.k_observer(cache_key)
+
+            def capture_v(_projection, _inputs, output, *, parent=module):
+                if not self._capture_enabled:
+                    return
+                if not hasattr(parent, "v_observer"):
+                    raise RuntimeError("V observer disappeared during KV capture")
+                batch, sequence, _ = output.shape
+                value = output.view(
+                    batch,
+                    sequence,
+                    int(parent.config.num_key_value_heads),
+                    int(parent.head_dim),
+                ).transpose(1, 2)
+                parent.v_observer(value)
+
+            handles.append(module.k_proj.register_forward_hook(capture_k))
+            handles.append(module.v_proj.register_forward_hook(capture_v))
+            captured_modules.append(module_name)
+
+        if not captured_modules:
+            raise RuntimeError("no supported full-attention modules found for post-RoPE KV capture")
+        object.__setattr__(self, "_capture_hook_handles", handles)
+        object.__setattr__(self, "captured_modules", captured_modules)
+        return result
+
+    def on_calibration_start(self, state, event, **kwargs):
+        result = super().on_calibration_start(state, event, **kwargs)
+        object.__setattr__(self, "_capture_enabled", True)
+        return result
 
     def on_calibration_end(self, state, event, **kwargs):
-        object.__setattr__(self, "calibrated_scales", collect_kv_scales(state.model))
-        return super().on_calibration_end(state, event, **kwargs)
+        audit, reservoirs = collect_kv_observer_audit(
+            state.model, observation_limit=self._capture_observation_limit
+        )
+        object.__setattr__(self, "_capture_enabled", False)
+        result = super().on_calibration_end(state, event, **kwargs)
+        object.__setattr__(self, "calibration_audit", audit)
+        object.__setattr__(self, "calibration_reservoirs", reservoirs)
+        return result
+
+    def on_finalize(self, state, **kwargs):
+        for handle in getattr(self, "_capture_hook_handles", []):
+            handle.remove()
+        return super().on_finalize(state, **kwargs)
 
 
 def calibrated_kv_cache_scheme() -> dict:
@@ -758,7 +970,214 @@ def calibrated_kv_cache_scheme() -> dict:
         # compressed-tensors otherwise defaults static quantization to
         # memoryless_minmax, which replaces its range on every minibatch and
         # makes a 512-sample run depend only on the final batch.
-        "observer": "static_minmax",
+        "observer": "audit_static_minmax",
+    }
+
+
+def snapshot_weight_quantization(model: torch.nn.Module) -> dict[str, dict]:
+    """Capture the exact W4 modules before a KV-only calibration lifecycle.
+
+    QuantizationModifier defaults to a ``Linear`` config group even when it was
+    constructed only with ``kv_cache_scheme``.  Applying that empty group after
+    AutoRound replaces every Linear's W4 scheme, producing a deceptively valid
+    but almost entirely BF16 checkpoint.  Keep an explicit behavioral contract
+    for the modules which must remain weight-quantized.
+    """
+    snapshot = {}
+    for name, module in model.named_modules(remove_duplicate=True):
+        scheme = getattr(module, "quantization_scheme", None)
+        if scheme is None or scheme.weights is None:
+            continue
+        qparams = tuple(
+            attr
+            for attr in ("weight_scale", "weight_zero_point", "weight_g_idx")
+            if hasattr(module, attr)
+        )
+        snapshot[name] = {
+            "module": module,
+            "scheme": scheme,
+            "status": getattr(module, "quantization_status", None),
+            "qparams": qparams,
+        }
+    if not snapshot:
+        raise RuntimeError("AutoRound produced no weight-quantized modules")
+    return snapshot
+
+
+def restore_and_validate_weight_quantization(
+    model: torch.nn.Module, snapshot: dict[str, dict]
+) -> dict:
+    """Restore W4 metadata and prove every original target is still compressible."""
+    current = dict(model.named_modules(remove_duplicate=True))
+    missing_modules = sorted(set(snapshot) - set(current))
+    if missing_modules:
+        raise RuntimeError(
+            f"post-W4 KV pass removed weight modules: {missing_modules[:20]}"
+        )
+
+    repaired = []
+    missing_qparams = []
+    for name, saved in snapshot.items():
+        module = current[name]
+        scheme = getattr(module, "quantization_scheme", None)
+        if scheme is not saved["scheme"]:
+            repaired.append(name)
+        module.quantization_scheme = saved["scheme"]
+        if saved["status"] is not None:
+            module.quantization_status = saved["status"]
+        for attr in saved["qparams"]:
+            if not hasattr(module, attr):
+                missing_qparams.append(f"{name}.{attr}")
+
+    actual = {
+        name
+        for name, module in model.named_modules(remove_duplicate=True)
+        if (
+            (scheme := getattr(module, "quantization_scheme", None)) is not None
+            and scheme.weights is not None
+        )
+    }
+    expected = set(snapshot)
+    if missing_qparams or actual != expected:
+        raise RuntimeError(
+            "post-W4 KV pass damaged weight quantization: "
+            f"missing_qparams={missing_qparams[:20]} "
+            f"missing_modules={sorted(expected - actual)[:20]} "
+            f"unexpected_modules={sorted(actual - expected)[:20]}"
+        )
+    return {
+        "status": "pass",
+        "expected_weight_modules": len(expected),
+        "actual_weight_modules": len(actual),
+        "metadata_repaired_modules": repaired,
+        "module_names": sorted(expected),
+    }
+
+
+def validate_saved_weight_compression(
+    output: Path, expected_weight_modules: int
+) -> dict:
+    """Fail unless each in-memory W4 target became a packed checkpoint tensor."""
+    inventory = tensor_inventory(output)
+    suffix_counts = {
+        suffix: sum(name.endswith(f".{suffix}") for name in inventory)
+        for suffix in ("weight_packed", "weight_scale", "weight_shape")
+    }
+    config = read_json(output / "config.json").get("quantization_config", {})
+    groups = config.get("config_groups", {}) if isinstance(config, dict) else {}
+    w4_groups = [
+        group
+        for group in groups.values()
+        if isinstance(group, dict)
+        and isinstance(group.get("weights"), dict)
+        and group["weights"].get("num_bits") == 4
+        and group.get("format") == "pack-quantized"
+    ]
+    failures = []
+    for suffix, count in suffix_counts.items():
+        if count != expected_weight_modules:
+            failures.append(
+                f"{suffix}: expected {expected_weight_modules}, observed {count}"
+            )
+    if not w4_groups:
+        failures.append("saved quantization_config has no packed 4-bit weight group")
+    if failures:
+        raise RuntimeError("saved W4 compression coverage failed: " + "; ".join(failures))
+    return {
+        "status": "pass",
+        "expected_weight_modules": expected_weight_modules,
+        "packed_tensor_counts": suffix_counts,
+        "w4_config_group_count": len(w4_groups),
+        "checkpoint_bytes": sum(
+            path.stat().st_size for path in output.glob("*.safetensors")
+        ),
+    }
+
+
+def package_versions() -> dict:
+    versions = {}
+    for package in ("auto-round", "llmcompressor", "compressed-tensors", "transformers", "torch"):
+        try:
+            versions[package] = importlib.metadata.version(package)
+        except importlib.metadata.PackageNotFoundError:
+            versions[package] = "unknown"
+    return versions
+
+
+def reference_identity(args, dataset, tokenizer, resolved_ignores) -> dict:
+    tokenizer_state = {
+        "class": tokenizer.__class__.__qualname__,
+        "name_or_path": tokenizer.name_or_path,
+        "vocab_size": len(tokenizer),
+        "special_tokens": tokenizer.special_tokens_map,
+        "chat_template": getattr(tokenizer, "chat_template", None),
+    }
+    return {
+        "schema": 1,
+        "role": "bf16_kv_reference",
+        "source": {"repo": args.model, "revision": args.revision},
+        "corpus": {
+            "dataset": args.dataset,
+            "exact_inputs_sha256": hash_calibration_data(dataset),
+            "seed": args.seed,
+            "samples": args.samples,
+            "sequence_length": args.seqlen,
+            "shuffle_calibration_samples": False,
+            "collator": "truncation",
+        },
+        "tokenizer_sha256": hashlib.sha256(canonical_json(tokenizer_state)).hexdigest(),
+        "tokenizer": tokenizer_state,
+        "resolved_ignore": resolved_ignores,
+        "dtype": getattr(args, "model_dtype", "unknown"),
+        "capture": {"observer": "audit_static_minmax", "reservoir_limit": AuditStaticMinMaxObserver.reservoir_limit},
+        "packages": package_versions(),
+        "toolchain": {
+            "nix_closure": os.environ.get("QUANTIZE_TOOLCHAIN_ID", "unknown"),
+            "runner_sha256": sha256_file(Path(__file__)),
+            "workspace_lock_sha256": args.workspace_lock_sha256,
+        },
+    }
+
+
+def json_handle(handle) -> dict:
+    return {"root": str(handle.root), "generation": handle.generation, "identity": handle.identity}
+
+
+def fit_fp8_scale(samples: torch.Tensor) -> tuple[torch.Tensor, dict]:
+    """Choose a deterministic per-tensor E4M3 scale by reservoir MSE."""
+    finite = samples.detach().float().reshape(-1)
+    finite = finite[torch.isfinite(finite)]
+    if finite.numel() == 0:
+        raise RuntimeError("cannot fit FP8 scale without finite observations")
+    absolute = finite.abs()
+    bases = [absolute.max() / 448.0]
+    for quantile in (0.99, 0.999, 0.9999):
+        bases.append(torch.quantile(absolute, quantile) / 448.0)
+    candidates = sorted({max(torch.finfo(torch.float32).tiny, float(base) * multiplier)
+                         for base in bases for multiplier in (0.8, 0.9, 1.0, 1.1, 1.25)})
+    total_power = finite.square().sum().item()
+    evaluated = []
+    for candidate in candidates:
+        normalized = (finite / candidate).clamp(-448.0, 448.0)
+        restored = normalized.to(torch.float8_e4m3fn).float() * candidate
+        error = restored - finite
+        mse = error.square().mean().item()
+        signal = finite.square().mean().item()
+        evaluated.append({
+            "scale": candidate,
+            "mse": mse,
+            "mean_absolute_error": error.abs().mean().item(),
+            "mean_relative_error": (error.abs() / finite.abs().clamp_min(1e-12)).mean().item(),
+            "clipping_rate": (absolute > 448.0 * candidate).float().mean().item(),
+            "sqnr_db": 10.0 * __import__("math").log10(signal / mse) if mse > 0 and signal > 0 else None,
+        })
+    best = min(evaluated, key=lambda item: (item["mse"], item["clipping_rate"], item["scale"]))
+    return torch.tensor([best["scale"]], dtype=torch.float32), {
+        "objective": "w4_kv_reservoir_mse",
+        "elements": finite.numel(),
+        "selected": best,
+        "candidates": evaluated,
+        "total_power": total_power,
     }
 
 
@@ -775,6 +1194,10 @@ def main() -> None:
     parser.add_argument("--dataset", default="NeelNanda/pile-10k")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--kv-cache", choices=["none", "fp8"], default="none")
+    parser.add_argument("--phase", choices=["bf16-reference", "quantize"], default="quantize")
+    parser.add_argument("--reference-info-output")
+    parser.add_argument("--reference-root")
+    parser.add_argument("--bf16-reference")
     parser.add_argument("--enable-torch-compile", action="store_true")
     parser.add_argument("--no-save", action="store_true")
     parser.add_argument("--resolved-ignore-output")
@@ -839,6 +1262,7 @@ def main() -> None:
         dtype="auto",
         trust_remote_code=False,
     )
+    args.model_dtype = str(next(model.parameters()).dtype)
     resolved_ignores = {}
     for selector in ignore_fragments:
         matched = [name for name, _ in match_named_modules(model, [selector], [])]
@@ -894,22 +1318,52 @@ def main() -> None:
                       "dataset_sha256": hash_calibration_data(dataset), "seed": args.seed,
                       "samples": args.samples, "seqlen": args.seqlen}
     DiskIntermediatesCache.configure(activation_store, store_identity, telemetry)
+    reference_cache_path = None
+    current_reference_identity = None
+    bf16_reference = None
+    bf16_reservoirs = {}
+    if args.phase == "bf16-reference":
+        current_reference_identity = reference_identity(args, dataset, tokenizer, resolved_ignores)
+        reference_hash = hashlib.sha256(canonical_json(current_reference_identity)).hexdigest()
+        if args.reference_root:
+            reference_root = Path(args.reference_root)
+            reference_root.mkdir(parents=True, exist_ok=True)
+            reference_cache_path = reference_root / f"{reference_hash}.json"
+            if reference_cache_path.is_file():
+                cached = json.loads(reference_cache_path.read_text())
+                if cached.get("status") != "complete" or cached.get("identity_sha256") != reference_hash:
+                    raise RuntimeError("cached BF16 reference is incomplete or has the wrong identity")
+                from activation_store import CorpusHandle
+                handle_data = cached["corpus"]
+                cached_store = ActivationStore(Path(handle_data["root"]))
+                cached_store.open(CorpusHandle(Path(handle_data["root"]), handle_data["generation"], handle_data["identity"]), verify_all=True)
+                if args.reference_info_output:
+                    atomic_json(Path(args.reference_info_output), cached)
+                telemetry.emit("bf16_reference_reused", identity_sha256=reference_hash)
+                return
+    elif args.kv_cache == "fp8":
+        if not args.bf16_reference:
+            parser.error("post-W4 FP8 KV calibration requires --bf16-reference")
+        reference_path = Path(args.bf16_reference)
+        bf16_reference = json.loads(reference_path.read_text())
+        expected_identity = reference_identity(args, dataset, tokenizer, resolved_ignores)
+        expected_hash = hashlib.sha256(canonical_json(expected_identity)).hexdigest()
+        if bf16_reference.get("status") != "complete" or bf16_reference.get("identity_sha256") != expected_hash:
+            raise RuntimeError("BF16 reference identity does not match the exact current corpus/toolchain")
+        from activation_store import CorpusHandle
+        handle_data = bf16_reference["corpus"]
+        ref_store = ActivationStore(Path(handle_data["root"]))
+        ref_corpus = ref_store.open(
+            CorpusHandle(Path(handle_data["root"]), handle_data["generation"], handle_data["identity"]),
+            verify_all=True,
+        )
+        bf16_reservoirs = ref_corpus[0]
+        telemetry.emit("bf16_reference_verified", identity_sha256=expected_hash)
     dag = None
     if args.resume and not args.checkpoint_root:
         parser.error("--resume requires --checkpoint-root")
     if args.checkpoint_root:
-        packages = {}
-        for package in (
-            "auto-round",
-            "llmcompressor",
-            "compressed-tensors",
-            "transformers",
-            "torch",
-        ):
-            try:
-                packages[package] = importlib.metadata.version(package)
-            except importlib.metadata.PackageNotFoundError:
-                packages[package] = "unknown"
+        packages = package_versions()
         plan = {
             "schema": CheckpointDag.schema,
             "source": {"repo": args.model, "revision": args.revision},
@@ -959,60 +1413,127 @@ def main() -> None:
     )
     if dag is not None:
         autoround_modifier.attach_checkpoint_dag(dag)
-    recipe = []
     kv_modifier = None
     if args.kv_cache == "fp8":
-        # This is the ordering used by llm-compressor's combined AutoRound/KV
-        # example. Capture calibrated KV scales first, then let AutoRound remain
-        # the final modifier so compressed weight metadata drives serialization.
         kv_modifier = CalibratedKVModifier(
-                kv_cache_scheme=calibrated_kv_cache_scheme()
+                # A KV-only modifier must not synthesize the default empty
+                # Linear config group and overwrite AutoRound's W4 schemes.
+                targets=[],
+                kv_cache_scheme=calibrated_kv_cache_scheme(),
+                capture_samples=args.samples,
+                capture_batch_size=args.batch_size,
             )
-        recipe.append(kv_modifier)
-    recipe.append(autoround_modifier)
-    with patch.object(sequential_pipeline, "IntermediatesCache", DiskIntermediatesCache):
-        oneshot(
-         model=model,
-        tokenizer=tokenizer,
-        # Calibration is text-only. Passing the tokenizer as the processor
-        # prevents llm-compressor from auto-loading Qwen's vision/video
-        # processor (and an unnecessary Torchvision dependency). Its argument
-        # resolver promotes tokenizer to processor internally; providing both
-        # aliases is rejected.
-        dataset=dataset,
-        recipe=recipe,
-        max_seq_length=args.seqlen,
-        num_calibration_samples=args.samples,
-        shuffle_calibration_samples=False,
-        batch_size=args.batch_size,
-         data_collator="truncation",
+    if args.phase == "bf16-reference":
+        if kv_modifier is None:
+            parser.error("--phase bf16-reference requires --kv-cache fp8")
+
+    def run_oneshot(recipe):
+        with patch.object(sequential_pipeline, "IntermediatesCache", DiskIntermediatesCache):
+            oneshot(
+                model=model,
+                tokenizer=tokenizer,
+                # Calibration is text-only. Passing the tokenizer as the processor
+                # prevents llm-compressor from auto-loading Qwen's vision/video
+                # processor (and an unnecessary Torchvision dependency). Its argument
+                # resolver promotes tokenizer to processor internally; providing both
+                # aliases is rejected.
+                dataset=dataset,
+                recipe=recipe,
+                max_seq_length=args.seqlen,
+                num_calibration_samples=args.samples,
+                shuffle_calibration_samples=False,
+                batch_size=args.batch_size,
+                data_collator="truncation",
+            )
+
+    if args.phase == "bf16-reference":
+        run_oneshot([kv_modifier])
+    else:
+        # Use two explicit lifecycle runs.  llm-compressor may clone modifiers
+        # when composing heterogeneous pipelines, which makes diagnostics stored
+        # on the caller's KV modifier inaccessible after a combined run.  The
+        # first pass freezes the W4 model in memory; the second, observer-only
+        # pass is then identical to the proven BF16 capture path and measures
+        # the actual post-W4 cache tensors.
+        run_oneshot([autoround_modifier])
+        weight_snapshot = snapshot_weight_quantization(model)
+        if kv_modifier is not None:
+            run_oneshot([kv_modifier])
+        weight_compression = restore_and_validate_weight_quantization(
+            model, weight_snapshot
         )
+        atomic_json(diagnostics_dir / "weight-compression.json", weight_compression)
+    if args.phase == "bf16-reference":
+        audit = getattr(kv_modifier, "calibration_audit", {})
+        reservoirs = getattr(kv_modifier, "calibration_reservoirs", {})
+        if not audit or not reservoirs:
+            raise RuntimeError("BF16 KV reference capture produced no observations")
+        identity = current_reference_identity or reference_identity(args, dataset, tokenizer, resolved_ignores)
+        identity_hash = hashlib.sha256(canonical_json(identity)).hexdigest()
+        writer = activation_store.writer(f"bf16-kv-reference-{identity_hash[:16]}", identity=identity)
+        writer.append(reservoirs)
+        handle = writer.commit()
+        reference = {
+            "schema": 1,
+            "status": "complete",
+            "identity": identity,
+            "identity_sha256": identity_hash,
+            "corpus": json_handle(handle),
+            "layers": audit,
+            "completed_at": time.time(),
+        }
+        atomic_json(diagnostics_dir / "bf16-reference.json", reference)
+        if reference_cache_path is not None:
+            atomic_json(reference_cache_path, reference)
+        if args.reference_info_output:
+            atomic_json(Path(args.reference_info_output), reference)
+        telemetry.emit("bf16_reference_complete", identity_sha256=identity_hash, corpus=json_handle(handle))
+        return
     if not args.no_save:
         output = Path(args.output_dir)
         output.mkdir(parents=True, exist_ok=True)
-        kv_scales = getattr(kv_modifier, "calibrated_scales", {}) if kv_modifier else {}
+        kv_scales = {}
         if kv_modifier:
-            if not kv_scales:
-                raise RuntimeError("FP8 KV calibration produced no captured scales")
+            audit = getattr(kv_modifier, "calibration_audit", {})
+            reservoirs = getattr(kv_modifier, "calibration_reservoirs", {})
+            if not audit or not reservoirs:
+                raise RuntimeError("post-W4 FP8 KV calibration produced no observations")
+            fitted = {}
+            for key, samples in reservoirs.items():
+                scale, fit = fit_fp8_scale(samples)
+                scale_key = key.rsplit(".", 1)[0] + f".{key.rsplit('.', 1)[1]}_scale"
+                kv_scales[scale_key] = scale
+                fitted[key] = fit
+                reference_samples = bf16_reservoirs.get(key)
+                if reference_samples is not None and reference_samples.numel() == samples.numel():
+                    delta = samples.float() - reference_samples.float()
+                    fitted[key]["bf16_reference"] = {
+                        "mean_absolute_error": delta.abs().mean().item(),
+                        "root_mean_square_error": delta.square().mean().sqrt().item(),
+                        "max_absolute_error": delta.abs().max().item(),
+                    }
             restore_kv_scales(model, kv_scales)
             merged = {}
             for key, value in kv_scales.items():
                 layer, kind = key.rsplit(".", 1)
+                audit_key = f"{layer}.{kind.removesuffix('_scale')}"
                 merged.setdefault(layer, {})[kind] = {
                         "chosen_scale": value.detach().float().cpu().reshape(-1).tolist(),
-                        # Observer internals in llm-compressor 0.13 do not expose
-                        # samples after finalize; mark unavailable rather than
-                        # manufacturing misleading percentile/error values.
-                        "observation_count": None, "min": None, "max": None,
-                        "percentiles": None, "fp8_clipping_rate": None,
-                        "absolute_error": None, "relative_error": None,
-                        "sqnr_db": None, "error_by_token_position": None,
+                        **audit.get(audit_key, {}),
+                        "fit": fitted.get(audit_key),
+                        "error_by_token_position": None,
                     }
             atomic_json(diagnostics_dir / "kv-calibration.json", {
-                "status": "partial", "reason": "pinned observer exposes finalized scales only",
+                "status": "complete", "phase": "post_w4",
+                "reference": args.bf16_reference,
                 "layers": merged,
             })
         model.save_pretrained(output, save_compressed=True)
+        saved_weight_compression = validate_saved_weight_compression(
+            output, weight_compression["expected_weight_modules"]
+        )
+        weight_compression.update(saved_weight_compression)
+        atomic_json(diagnostics_dir / "weight-compression.json", weight_compression)
         checkpoint_scale_keys = (
             add_kv_scales_to_checkpoint(output, kv_scales) if kv_scales else []
         )

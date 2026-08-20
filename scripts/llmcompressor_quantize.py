@@ -11,6 +11,7 @@ from pathlib import Path
 import random
 import re
 import signal
+import sys
 import tempfile
 import time
 from unittest.mock import patch
@@ -18,12 +19,16 @@ from unittest.mock import patch
 import torch
 from auto_round.calib_dataset import get_dataset
 from compressed_tensors.utils import match_named_modules
+from huggingface_hub import snapshot_download
+from llmcompressor import oneshot
 from llmcompressor.modifiers.autoround import AutoRoundModifier as UpstreamAutoRoundModifier
 from llmcompressor.modifiers.autoround import base as autoround_base
 from llmcompressor.modifiers.quantization import QuantizationModifier
 from llmcompressor.pipelines.sequential import pipeline as sequential_pipeline
 from transformers import AutoModelForCausalLM, AutoTokenizer
-from llmcompressor import oneshot
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from graft_checkpoint_extras import graft_in_place, read_json
 from safetensors import safe_open
 from safetensors.torch import save_file
 
@@ -715,6 +720,14 @@ def main() -> None:
             add_kv_scales_to_checkpoint(output, kv_scales) if kv_scales else []
         )
         tokenizer.save_pretrained(output)
+        source_snapshot = Path(
+            snapshot_download(repo_id=args.model, revision=args.revision)
+        )
+        source_config = read_json(source_snapshot / "config.json")
+        if source_config.get("model_type") == "qwen3_5" and source_config.get(
+            "vision_config"
+        ):
+            graft_in_place(source_snapshot, output)
         saved_config = json.loads((output / "config.json").read_text())
         quant_config = saved_config.get("quantization_config")
         if not isinstance(quant_config, dict):

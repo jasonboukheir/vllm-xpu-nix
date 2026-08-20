@@ -37,6 +37,7 @@ in
       export CC="''${CC:-${stdenv.cc}/bin/cc}"
       export CXX="''${CXX:-${stdenv.cc}/bin/c++}"
       export PATH=${intel-compute-runtime}/bin:$PATH
+      export PYTHONPATH=${../scripts}''${PYTHONPATH:+:$PYTHONPATH}
       export QUANTIZE_LLMCOMPRESSOR_SCRIPT=${../scripts/llmcompressor_quantize.py}
       export QUANTIZE_TOOLCHAIN_ID=${autoRoundEnv}
       exec ${autoRoundEnv}/bin/python ${../scripts/quantize.py} "$@"

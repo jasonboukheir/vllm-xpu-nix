@@ -20,7 +20,8 @@
   torch-xpu,
   triton-xpu,
   vllmKernels,
-}: {
+}:
+{
   default = pkgs.mkShell {
     name = "vllm-xpu-nix-dev";
     packages = with pkgs; [
@@ -90,8 +91,9 @@
     # built *with* the same toolchain but has no prebuilt-lib deps, so this
     # gives the identical compiler/cutlass/oneDNN/torch-xpu env with the
     # whole closure already cached (a kernel dev rebuilds the libs in-tree).
-    inputsFrom = [kernelLibs.gdn-attn-kernels-xe-2];
-    packages = with pkgs;
+    inputsFrom = [ kernelLibs.gdn-attn-kernels-xe-2 ];
+    packages =
+      with pkgs;
       [
         cmake
         ninja
@@ -104,6 +106,10 @@
         llvmPackages_20.clang-tools # clang-format; matches CI's v20.1.3
         codespell
         pre-commit
+        # mem_info.cpp includes level_zero/ze_api.h directly. Keep this as a
+        # direct shell input so the header is present in compiler include
+        # paths, rather than relying on a transitive runtime-only dependency.
+        level-zero
         # `lint` mirrors the .pre-commit-config gate on changed files: ruff
         # over the tree + clang-format (--style=file) over changed C/C++.
         # A real command (not a shellHook function) so it works under
@@ -137,6 +143,7 @@
       ++ (with pkgs.python312Packages; [
         pip
         setuptools
+        setuptools-scm
         wheel
         packaging
         jinja2
@@ -145,46 +152,52 @@
         torch-xpu
         triton-xpu
       ]);
-    shellHook =
-      syclToolchainShellHook
-      + ''
+    shellHook = syclToolchainShellHook + ''
+      # pre-commit currently propagates a newer Python executable. Native
+        # extensions and all Python dependencies in this shell target 3.12,
+        # so make the matching interpreter authoritative.
+        export PATH="${pkgs.python312}/bin:$PATH"
+        # icx/icpx do not consume nixpkgs' compiler-wrapper include flags.
+        # Expose the direct Level Zero input through a compiler-native path.
+        export CPATH="${pkgs.level-zero}/include''${CPATH:+:$CPATH}"
         export VLLM_XPU_AOT_DEVICES="''${VLLM_XPU_AOT_DEVICES:-bmg}"
-        export VLLM_XPU_XE2_AOT_DEVICES="''${VLLM_XPU_XE2_AOT_DEVICES:-bmg}"
-        export MAX_JOBS="''${MAX_JOBS:-2}"
-        cat <<'EOF'
-        vllm-xpu-nix kernels-dev shell.
+      export VLLM_XPU_XE2_AOT_DEVICES="''${VLLM_XPU_XE2_AOT_DEVICES:-bmg}"
+      export MAX_JOBS="''${MAX_JOBS:-2}"
+      cat <<'EOF'
+      vllm-xpu-nix kernels-dev shell.
 
-        Toolchain + the full vllm-xpu-kernels (unstable fork) closure
-        (torch-xpu, triton-xpu, oneAPI MKL/SYCL, cutlass src) wired up.
-        MAX_JOBS=2 by default — each
-        SYCL-TLA template instantiation holds ~40 GiB during icpx, raise with
-        care.
+      Toolchain + the full vllm-xpu-kernels (unstable fork) closure
+      (torch-xpu, triton-xpu, oneAPI MKL/SYCL, cutlass src) wired up.
+      MAX_JOBS=2 by default — each
+      SYCL-TLA template instantiation holds ~40 GiB during icpx, raise with
+      care.
 
-        Quick start (against a local kernels checkout):
-          cd /path/to/vllm-xpu-kernels
-          git submodule update --init --recursive
-          pip install -e . --no-build-isolation
+      Quick start (against a local kernels checkout):
+        cd /path/to/vllm-xpu-kernels
+        git submodule update --init --recursive
+        pip install -e . --no-build-isolation
 
-        Incremental rebuild after editing a .cpp:
-          ninja -C build/temp.*/release install
+      Incremental rebuild after editing a .cpp:
+        ninja -C build/temp.*/release install
 
-        Tests:
-          pytest tests/
+      Tests:
+        pytest tests/
 
-        Lint (matches CI .pre-commit-config):
-          lint                        # ruff + clang-format on changed files
-          pre-commit run --all-files  # full gate (fetches hook envs, needs net)
+      Lint (matches CI .pre-commit-config):
+        lint                        # ruff + clang-format on changed files
+        pre-commit run --all-files  # full gate (fetches hook envs, needs net)
 
-        Tune feature flags via cmake -D… or env (BASIC_KERNELS_ENABLED,
-        FA2_KERNELS_ENABLED, MOE_KERNELS_ENABLED, GDN_KERNELS_ENABLED, etc.).
-        EOF
-      '';
+      Tune feature flags via cmake -D… or env (BASIC_KERNELS_ENABLED,
+      FA2_KERNELS_ENABLED, MOE_KERNELS_ENABLED, GDN_KERNELS_ENABLED, etc.).
+      EOF
+    '';
   };
 
   vllm-dev = pkgs.mkShell {
     name = "vllm-xpu-vllm-dev";
-    inputsFrom = [vllmPkg];
-    packages = with pkgs.python312Packages;
+    inputsFrom = [ vllmPkg ];
+    packages =
+      with pkgs.python312Packages;
       [
         pip
         setuptools
@@ -194,39 +207,37 @@
         torch-xpu
         triton-xpu
       ]
-      ++ [vllmKernels];
-    shellHook =
-      syclToolchainShellHook
-      + ''
-        export VLLM_TARGET_DEVICE=xpu
-        export VLLM_VERSION_OVERRIDE="''${VLLM_VERSION_OVERRIDE:-0.0.0.dev}"
+      ++ [ vllmKernels ];
+    shellHook = syclToolchainShellHook + ''
+      export VLLM_TARGET_DEVICE=xpu
+      export VLLM_VERSION_OVERRIDE="''${VLLM_VERSION_OVERRIDE:-0.0.0.dev}"
 
-        # BMG single-card oneCCL safe defaults — match what the systemd
-        # module bakes in. Override per-session to taste.
-        export CCL_PROCESS_LAUNCHER="''${CCL_PROCESS_LAUNCHER:-none}"
-        export CCL_ATL_TRANSPORT="''${CCL_ATL_TRANSPORT:-ofi}"
-        export CCL_ZE_IPC_EXCHANGE="''${CCL_ZE_IPC_EXCHANGE:-sockets}"
-        export CCL_LOG_LEVEL="''${CCL_LOG_LEVEL:-warn}"
+      # BMG single-card oneCCL safe defaults — match what the systemd
+      # module bakes in. Override per-session to taste.
+      export CCL_PROCESS_LAUNCHER="''${CCL_PROCESS_LAUNCHER:-none}"
+      export CCL_ATL_TRANSPORT="''${CCL_ATL_TRANSPORT:-ofi}"
+      export CCL_ZE_IPC_EXCHANGE="''${CCL_ZE_IPC_EXCHANGE:-sockets}"
+      export CCL_LOG_LEVEL="''${CCL_LOG_LEVEL:-warn}"
 
-        cat <<'EOF'
-        vllm-xpu-nix vllm-dev shell.
+      cat <<'EOF'
+      vllm-xpu-nix vllm-dev shell.
 
-        Toolchain + full vllm-xpu (unstable fork) closure (torch-xpu,
-        triton-xpu, vllm-xpu-kernels, runtime python deps) wired up.
-        VLLM_TARGET_DEVICE=xpu and
-        BMG single-card oneCCL env are pre-set.
+      Toolchain + full vllm-xpu (unstable fork) closure (torch-xpu,
+      triton-xpu, vllm-xpu-kernels, runtime python deps) wired up.
+      VLLM_TARGET_DEVICE=xpu and
+      BMG single-card oneCCL env are pre-set.
 
-        Editable install:
-          cd /path/to/vllm
-          pip install -e . --no-build-isolation --no-deps
-          python -c 'import vllm; print(vllm.__version__)'
+      Editable install:
+        cd /path/to/vllm
+        pip install -e . --no-build-isolation --no-deps
+        python -c 'import vllm; print(vllm.__version__)'
 
-        Run server:
-          vllm serve <model> --enforce-eager
+      Run server:
+        vllm serve <model> --enforce-eager
 
-        Tests:
-          pytest tests/
-        EOF
-      '';
+      Tests:
+        pytest tests/
+      EOF
+    '';
   };
 }

@@ -104,6 +104,7 @@ def plan_strategies(cache, roots):
             repo_cache = HFCacheInfo(
                 size_on_disk=repo.size_on_disk,
                 repos=frozenset({repo}),
+                incomplete_files=frozenset(),
                 warnings=[],
             )
             strategies.append(

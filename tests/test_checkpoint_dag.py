@@ -194,6 +194,57 @@ class CheckpointDagTests(unittest.TestCase):
                 self.assertTrue(torch.equal(value, expected[key]))
             resumed.close()
 
+    def test_disk_backed_commit_recovers_after_head_publication_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            checkpoint_root = root / "checkpoints"
+            store = module.ActivationStore(root / "activations")
+            plan = {"schema": 1, "source": {"revision": "a" * 40}}
+            original = torch.nn.Linear(3, 2)
+            expected = {
+                key: value.detach().clone()
+                for key, value in original.state_dict().items()
+            }
+            q_input = torch.arange(6, dtype=torch.float32).reshape(2, 3)
+
+            interrupted = module.CheckpointDag(
+                checkpoint_root, plan, resume=False, activation_store=store
+            )
+            atomic_json = interrupted._atomic_json
+
+            def fail_head_once(path, value):
+                if path.name == "head.json":
+                    raise RuntimeError("injected head publication failure")
+                return atomic_json(path, value)
+
+            with patch.object(interrupted, "_atomic_json", side_effect=fail_head_once):
+                with self.assertRaisesRegex(RuntimeError, "head publication failure"):
+                    interrupted.commit(0, "model.layers.0", original, q_input)
+            self.assertFalse((interrupted.root / "head.json").exists())
+            self.assertEqual(len(list(interrupted.nodes.glob("0000-*"))), 1)
+            interrupted.close()
+
+            retry = module.CheckpointDag(
+                checkpoint_root, plan, resume=True, activation_store=store
+            )
+            self.assertFalse(retry.completed_layer(0, "model.layers.0"))
+            retry.commit(0, "model.layers.0", original, q_input)
+            self.assertEqual(len(list(retry.nodes.glob("0000-*"))), 1)
+            head = json.loads((retry.root / "head.json").read_text())
+            self.assertIsInstance(head["q_corpus"]["root"], str)
+            self.assertIsInstance(head["q_corpus_history"][0]["root"], str)
+            retry.close()
+
+            restored = torch.nn.Linear(3, 2)
+            resumed = module.CheckpointDag(
+                checkpoint_root, plan, resume=True, activation_store=store
+            )
+            restored_q_input = resumed.restore(0, "model.layers.0", restored)
+            self.assertTrue(torch.equal(restored_q_input, q_input))
+            for key, value in restored.state_dict().items():
+                self.assertTrue(torch.equal(value, expected[key]))
+            resumed.close()
+
     def test_changed_plan_has_a_different_dag(self):
         with tempfile.TemporaryDirectory() as directory:
             first = module.CheckpointDag(Path(directory), {"iters": 5}, resume=False)

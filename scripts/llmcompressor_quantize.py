@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import random
 import re
+import shutil
 import signal
 import sys
 import tempfile
@@ -32,7 +33,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from graft_checkpoint_extras import graft_in_place, read_json
-from activation_store import ActivationStore, DiskBackedBlockIO
+from activation_store import ActivationStore, CorpusHandle, DiskBackedBlockIO
 from artifact_integrity import tensor_inventory, validate_inventory
 from quantization_resources import JsonlTelemetry, atomic_json, meminfo, solve_resources
 from safetensors import safe_open
@@ -83,6 +84,20 @@ def sha256_file(path: Path) -> str:
         for chunk in iter(lambda: stream.read(8 * 1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def corpus_handle_json(handle: CorpusHandle) -> dict[str, str]:
+    """Return the durable JSON representation of an activation corpus handle."""
+    return {
+        "root": str(handle.root),
+        "generation": handle.generation,
+        "identity": handle.identity,
+    }
+
+
+def corpus_handle_from_json(value: dict[str, str]) -> CorpusHandle:
+    """Restore a typed activation corpus handle from checkpoint metadata."""
+    return CorpusHandle(Path(value["root"]), value["generation"], value["identity"])
 
 
 def hash_calibration_data(value) -> str:
@@ -464,8 +479,9 @@ class CheckpointDag:
             if slot and sha256_file(self.root / slot) != digest:
                 raise RuntimeError(f"checkpoint {kind} snapshot hash mismatch")
         if self.head.get("q_corpus") and self.activation_store is not None:
-            from activation_store import CorpusHandle
-            self.activation_store.open(CorpusHandle(**self.head["q_corpus"]), verify_all=True)
+            self.activation_store.open(
+                corpus_handle_from_json(self.head["q_corpus"]), verify_all=True
+            )
 
     def completed_layer(self, index: int, layer_name: str) -> bool:
         completed = self.head["completed"]
@@ -486,8 +502,9 @@ class CheckpointDag:
         q_input = None
         if index == len(self.head["completed"]) - 1:
             if self.head.get("q_corpus") and self.activation_store is not None:
-                from activation_store import CorpusHandle
-                q_input = self.activation_store.open(CorpusHandle(**self.head["q_corpus"]), verify_all=True)[0]
+                q_input = self.activation_store.open(
+                    corpus_handle_from_json(self.head["q_corpus"]), verify_all=True
+                )[0]
             else:
                 q_input = torch.load(
                     self.root / self.head["q_input_slot"], map_location="cpu", weights_only=True
@@ -524,7 +541,23 @@ class CheckpointDag:
         self._atomic_json(temporary / "node.json", node)
         node_name = f"{index:04d}-{node_hash[:16]}"
         node_path = self.nodes / node_name
-        os.replace(temporary, node_path)
+        if node_path.exists():
+            existing_manifest = node_path / "node.json"
+            existing_state = node_path / "state.pt"
+            if (
+                not existing_manifest.is_file()
+                or not existing_state.is_file()
+                or json.loads(existing_manifest.read_text()) != node
+                or sha256_file(existing_state) != state_digest
+            ):
+                shutil.rmtree(temporary, ignore_errors=True)
+                raise RuntimeError(f"checkpoint node collision: {node_path}")
+            # A prior process may have made the immutable node durable and
+            # crashed before publishing head.json. Reuse only a byte-identical
+            # node; the new q-input/RNG snapshots and head still commit anew.
+            shutil.rmtree(temporary)
+        else:
+            os.replace(temporary, node_path)
         self._fsync_dir(self.nodes)
 
         slot_number = index % 2
@@ -538,7 +571,7 @@ class CheckpointDag:
                           "role": "propagated_q_input"},
             )
             writer.append(cpu_tree(q_input))
-            q_corpus = writer.commit()._asdict()
+            q_corpus = corpus_handle_json(writer.commit())
         else:
             self._atomic_torch(self.root / q_slot, cpu_tree(q_input))
         rng = {
@@ -576,7 +609,6 @@ class CheckpointDag:
                 raise RuntimeError("invalid q corpus generation in checkpoint head")
             path = self.activation_store.root / generation
             if path.is_dir():
-                import shutil
                 shutil.rmtree(path)
                 self._fsync_dir(path.parent)
         print(f"Committed checkpoint block {index}: {layer_name} ({node_hash[:16]})")
@@ -649,7 +681,7 @@ class AutoRoundModifier(UpstreamAutoRoundModifier):
                 handle = writer.commit()
                 corpus = store.open(handle)
                 self._all_module_input[name] = corpus
-                self._stored_corpora[name] = handle._asdict()
+                self._stored_corpora[name] = corpus_handle_json(handle)
                 self._diagnostics.emit(
                     "activation_corpus_committed", component="decoder", layer=name,
                     role="fp_input", samples=len(corpus), logical_bytes=corpus.manifest["logical_bytes"],
@@ -1139,10 +1171,6 @@ def reference_identity(args, dataset, tokenizer, resolved_ignores) -> dict:
     }
 
 
-def json_handle(handle) -> dict:
-    return {"root": str(handle.root), "generation": handle.generation, "identity": handle.identity}
-
-
 def fit_fp8_scale(samples: torch.Tensor) -> tuple[torch.Tensor, dict]:
     """Choose a deterministic per-tensor E4M3 scale by reservoir MSE."""
     finite = samples.detach().float().reshape(-1)
@@ -1478,7 +1506,7 @@ def main() -> None:
             "status": "complete",
             "identity": identity,
             "identity_sha256": identity_hash,
-            "corpus": json_handle(handle),
+            "corpus": corpus_handle_json(handle),
             "layers": audit,
             "completed_at": time.time(),
         }
@@ -1487,7 +1515,11 @@ def main() -> None:
             atomic_json(reference_cache_path, reference)
         if args.reference_info_output:
             atomic_json(Path(args.reference_info_output), reference)
-        telemetry.emit("bf16_reference_complete", identity_sha256=identity_hash, corpus=json_handle(handle))
+        telemetry.emit(
+            "bf16_reference_complete",
+            identity_sha256=identity_hash,
+            corpus=corpus_handle_json(handle),
+        )
         return
     if not args.no_save:
         output = Path(args.output_dir)

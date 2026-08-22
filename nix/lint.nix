@@ -33,8 +33,8 @@
     sha256 = "sha256-DK8yqww5m/ugjRixkNwarsjqRzaIZKS/Oz8RPjbo/Wg=";
   };
 in
-  # Lint local vllm / vllm-xpu-kernels checkouts with the pinned ruff
-  # (or pre-commit if available). Defaults to sibling checkouts
+  # Lint local vllm / vllm-xpu-kernels checkouts with the pinned ruff.
+  # Defaults to sibling checkouts
   # (../vllm, ../vllm-xpu-kernels relative to $PWD — the ~/Projects
   # layout); override with positional args: lint [VLLM_SRC] [KERNELS_SRC].
   pkgs.writeShellApplication {
@@ -52,20 +52,10 @@ in
         echo "=== $dir ==="
         (
           cd "$dir"
-          if [ -f .pre-commit-config.yaml ] && command -v pre-commit >/dev/null 2>&1; then
-            echo "[$dir] pre-commit run --all-files"
-            pre-commit run --all-files
-          else
-            if [ ! -f .pre-commit-config.yaml ]; then
-              echo "[$dir] no .pre-commit-config.yaml — running ruff only"
-            else
-              echo "[$dir] pre-commit not installed — falling back to ruff only"
-            fi
-            echo "[$dir] ruff check ."
-            "$ruff" check .
-            echo "[$dir] ruff format --check ."
-            "$ruff" format --check .
-          fi
+          echo "[$dir] ruff check ."
+          "$ruff" check .
+          echo "[$dir] ruff format --check ."
+          "$ruff" format --check .
         )
       }
       fail=0

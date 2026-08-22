@@ -45,6 +45,29 @@ def meminfo() -> dict[str, int]:
     return result
 
 
+def zfs_arc_reclaimable(path: Path = Path("/proc/spl/kstat/zfs/arcstats")) -> int:
+    """Return ARC bytes above ZFS' non-reclaimable configured minimum.
+
+    Linux does not include the out-of-tree ZFS ARC in ``MemAvailable`` even
+    though its shrinker will release ARC down to ``c_min`` under pressure.
+    Treating the whole ARC as resident application memory makes admission fail
+    on otherwise idle ZFS hosts.  The minimum remains excluded so admission
+    never relies on cache ZFS has promised to retain.
+    """
+    values: dict[str, int] = {}
+    try:
+        with path.open() as stream:
+            for line in stream:
+                fields = line.split()
+                if len(fields) == 3 and fields[0] in {"size", "c_min"}:
+                    values[fields[0]] = int(fields[2])
+    except (OSError, ValueError):
+        return 0
+    if values.keys() != {"size", "c_min"}:
+        return 0
+    return max(0, values["size"] - values["c_min"])
+
+
 def _cgroup_value(name: str) -> int | None:
     relative = Path(".")
     try:
@@ -66,6 +89,7 @@ def solve_resources(storage: dict, resources: dict, estimates: dict, *, path: Pa
     """Resolve aggregate memory/disk bounds or fail before model allocation."""
     memory = meminfo()
     available = memory.get("MemAvailable", 0)
+    arc_reclaimable = zfs_arc_reclaimable()
     reserve = int(resources.get("host_mem_available_floor_gib", 24) * GIB)
     user_cap = int(resources.get("memory_max_gib", 76) * GIB)
     cgroup_max = _cgroup_value("memory.max")
@@ -74,7 +98,11 @@ def solve_resources(storage: dict, resources: dict, estimates: dict, *, path: Pa
     # the total cgroup ceiling, and add already-accounted in-scope residency to
     # MemAvailable headroom so it is not subtracted twice.
     cgroup_budget = cgroup_max if cgroup_max else user_cap
-    usable = min(user_cap, cgroup_budget, max(0, available - reserve) + cgroup_current)
+    usable = min(
+        user_cap,
+        cgroup_budget,
+        max(0, available + arc_reclaimable - reserve) + cgroup_current,
+    )
     pinned = int(storage.get("pinned_staging_mib", 512) * MIB)
     queues = sum(int(storage.get(key, 512) * MIB) for key in (
         "read_queue_mib", "write_queue_mib", "reorder_queue_mib"
@@ -111,7 +139,8 @@ def solve_resources(storage: dict, resources: dict, estimates: dict, *, path: Pa
             f"reserved={free_reserve} ceiling={ceiling}"
         )
     return {
-        "memory": {"available": available, "reserve": reserve, "usable": usable,
+        "memory": {"available": available, "zfs_arc_reclaimable": arc_reclaimable,
+                   "reserve": reserve, "usable": usable,
                    "minimum": minimum, "pageable_lru": lru, "parts": required_parts},
         "disk": {"total": disk.total, "available": disk.free, "reserve": free_reserve,
                  "required_high_water": disk_required, "ceiling": ceiling},

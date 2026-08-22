@@ -65,6 +65,32 @@ class QuantizeTests(unittest.TestCase):
         args = quantize.parser().parse_args(["doctor"])
         self.assertIs(args.func, quantize.cmd_doctor)
 
+    def test_bf16_and_w4_commands_share_exact_workspace_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            run_dir = workspace / "runs" / "test"
+            eval_dir = run_dir / "eval"
+            eval_dir.mkdir(parents=True)
+            (workspace / "flake.lock").write_text("pinned toolchain\n")
+            base = ["python", "runner.py", "--diagnostics-dir", str(eval_dir)]
+
+            command, reference_command, _ = quantize.build_phase_commands(
+                base,
+                workspace=workspace,
+                run_dir=run_dir,
+                eval_dir=eval_dir,
+                kv_cache="fp8",
+                checkpoint_enabled=True,
+            )
+
+            self.assertIsNotNone(reference_command)
+            expected = quantize.sha256_path(workspace / "flake.lock")
+            for phase_command in (command, reference_command):
+                index = phase_command.index("--workspace-lock-sha256")
+                self.assertEqual(phase_command[index + 1], expected)
+            self.assertNotIn("--checkpoint-root", reference_command)
+            self.assertIn("--checkpoint-root", command)
+
 
 if __name__ == "__main__":
     unittest.main()

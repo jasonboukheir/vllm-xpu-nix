@@ -147,6 +147,44 @@ def sha256_path(path: Path) -> str:
     return digest.hexdigest()
 
 
+def build_phase_commands(
+    base_command: list[str],
+    *,
+    workspace: Path,
+    run_dir: Path,
+    eval_dir: Path,
+    kv_cache: str,
+    checkpoint_enabled: bool,
+) -> tuple[list[str], list[str] | None, Path]:
+    """Build phase commands with one shared, immutable workspace identity."""
+    command = base_command.copy()
+    lock_path = workspace / "flake.lock"
+    if lock_path.exists():
+        command.extend(["--workspace-lock-sha256", sha256_path(lock_path)])
+
+    reference_command = None
+    reference_info = eval_dir / "bf16-reference.json"
+    if kv_cache == "fp8":
+        reference_command = command.copy()
+        reference_command.extend([
+            "--phase", "bf16-reference",
+            "--reference-root", str(workspace / "references"),
+            "--reference-info-output", str(reference_info),
+            "--no-save",
+        ])
+        reference_command[reference_command.index("--diagnostics-dir") + 1] = str(
+            eval_dir / "bf16-reference-capture"
+        )
+        command.extend(["--phase", "quantize", "--bf16-reference", str(reference_info)])
+
+    if checkpoint_enabled:
+        command.extend([
+            "--checkpoint-root", str(workspace / "checkpoints"),
+            "--checkpoint-info-output", str(run_dir / "checkpoint.json"),
+        ])
+    return command, reference_command, reference_info
+
+
 def ensure_model_card(root: Path, repo: str, sha: str, fmt: str, recipe: str, kv_cache: str) -> None:
     card = root / "README.md"
     if card.exists():
@@ -366,28 +404,16 @@ def execute_run(args: argparse.Namespace, *, test_mode: bool = False) -> None:
                "--activation-store-config", json.dumps(storage),
                "--resource-config", json.dumps(resources),
                "--diagnostics-dir", str(eval_dir)]
-    reference_command = None
-    reference_info = eval_dir / "bf16-reference.json"
     if args.kv_cache == "fp8":
-        reference_eval = eval_dir / "bf16-reference-capture"
-        reference_eval.mkdir()
-        reference_command = command.copy()
-        reference_command.extend([
-            "--phase", "bf16-reference",
-            "--reference-root", str(workspace / "references"),
-            "--reference-info-output", str(reference_info),
-            "--no-save",
-        ])
-        reference_command[reference_command.index("--diagnostics-dir") + 1] = str(reference_eval)
-        command.extend(["--phase", "quantize", "--bf16-reference", str(reference_info)])
-    if checkpoint_enabled:
-        command.extend([
-            "--checkpoint-root", str(workspace / "checkpoints"),
-            "--checkpoint-info-output", str(run_dir / "checkpoint.json"),
-        ])
-        lock_path = workspace / "flake.lock"
-        if lock_path.exists():
-            command.extend(["--workspace-lock-sha256", sha256_path(lock_path)])
+        (eval_dir / "bf16-reference-capture").mkdir()
+    command, reference_command, reference_info = build_phase_commands(
+        command,
+        workspace=workspace,
+        run_dir=run_dir,
+        eval_dir=eval_dir,
+        kv_cache=args.kv_cache,
+        checkpoint_enabled=checkpoint_enabled,
+    )
     if args.resume:
         command.append("--resume")
     if args.torch_compile:

@@ -277,7 +277,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", required=True)
     parser.add_argument("--report-dir", required=True)
-    parser.add_argument("--vllm", default="vllm")
+    parser.add_argument("--vllm", required=True)
     parser.add_argument("--served-model-name", default="kv-kernel-ab")
     parser.add_argument("--plan-json")
     parser.add_argument("--prompts-json")

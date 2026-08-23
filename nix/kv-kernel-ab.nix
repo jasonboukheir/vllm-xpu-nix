@@ -1,7 +1,6 @@
 {
   writeShellApplication,
   python3,
-  vllm-xpu-chat,
 }:
 
 let
@@ -9,9 +8,8 @@ let
 in
 writeShellApplication {
   name = "kv-kernel-ab";
-  runtimeInputs = [ python3 vllm-xpu-chat ];
+  runtimeInputs = [ python3 ];
   text = ''
-    exec ${python3}/bin/python ${script} \
-      --vllm ${vllm-xpu-chat}/bin/vllm "$@"
+    exec ${python3}/bin/python ${script} "$@"
   '';
 }

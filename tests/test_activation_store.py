@@ -1,7 +1,9 @@
 import importlib.util
+import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import torch
 
@@ -39,6 +41,31 @@ class ActivationStoreTests(unittest.TestCase):
             extent.write_bytes(extent.read_bytes()[:-1])
             with self.assertRaisesRegex(ValueError, "truncated|checksum"):
                 store.open(handle, verify_all=True)
+
+    def test_reader_retries_short_preads_until_the_extent_is_complete(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = store_module.ActivationStore(Path(directory))
+            writer = store.writer("q-large-read", identity={"block": 0})
+            expected = torch.arange(257, dtype=torch.float32)
+            writer.append(expected)
+            handle = writer.commit()
+            real_pread = os.pread
+            offsets = []
+
+            def short_pread(fd, length, offset):
+                offsets.append(offset)
+                return real_pread(fd, min(length, 31), offset)
+
+            with patch.object(store_module.os, "pread", side_effect=short_pread):
+                corpus = store.open(handle, verify_all=True)
+
+            self.assertTrue(torch.equal(corpus[0], expected))
+            self.assertGreater(len(offsets), 1)
+            self.assertEqual(offsets, sorted(offsets))
+            self.assertEqual(
+                store.telemetry["physical_read_bytes"],
+                store.telemetry["logical_read_bytes"],
+            )
 
     def test_orphan_collection_only_removes_temporary_generations(self):
         with tempfile.TemporaryDirectory() as directory:

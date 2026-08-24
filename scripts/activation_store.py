@@ -27,6 +27,7 @@ import torch
 
 SCHEMA = 1
 _HEADER = struct.Struct("<Q")
+_PREAD_CHUNK_BYTES = 64 * 1024 * 1024
 
 
 def _canonical(value: Any) -> bytes:
@@ -231,14 +232,34 @@ class ActivationStore:
         path = handle.path / record["extent"]
         fd = os.open(path, os.O_RDONLY)
         try:
-            payload = os.pread(fd, record["length"], record.get("offset", 0))
+            length = record["length"]
+            offset = record.get("offset", 0)
+            if length < 0 or offset < 0 or offset + length > os.fstat(fd).st_size:
+                self.telemetry["checksum_failures"] += 1
+                raise ValueError(f"truncated activation extent: {path}")
+            payload = bytearray(length)
+            payload_view = memoryview(payload)
+            position = 0
+            try:
+                while position < length:
+                    chunk = os.pread(
+                        fd,
+                        min(_PREAD_CHUNK_BYTES, length - position),
+                        offset + position,
+                    )
+                    self.telemetry["pread_calls"] += 1
+                    self.telemetry["physical_read_bytes"] += len(chunk)
+                    if not chunk:
+                        break
+                    payload_view[position : position + len(chunk)] = chunk
+                    position += len(chunk)
+            finally:
+                payload_view.release()
         finally:
             os.close(fd)
-        self.telemetry["pread_calls"] += 1
         self.telemetry["logical_read_bytes"] += record["length"]
-        self.telemetry["physical_read_bytes"] += len(payload)
         self.telemetry["lru_miss_bytes"] += record["length"]
-        if len(payload) != record["length"]:
+        if position != record["length"]:
             self.telemetry["checksum_failures"] += 1
             raise ValueError(f"truncated activation extent: {path}")
         digest = hashlib.sha256(payload).hexdigest()

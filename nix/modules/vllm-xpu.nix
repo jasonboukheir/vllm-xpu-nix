@@ -570,8 +570,14 @@
     lib.nameValuePair "vllm-xpu-${name}" {
       description = "vLLM XPU serve (${inst.servedName})";
       wantedBy = ["multi-user.target"];
-      after = ["network-online.target"];
+      after =
+        ["network-online.target"]
+        ++ lib.optional (cfg.sharedHfCache != null) "hf-cache-prepare.service";
       wants = ["network-online.target"];
+      requires = lib.optional (cfg.sharedHfCache != null) "hf-cache-prepare.service";
+      unitConfig.RequiresMountsFor =
+        [inst.cacheDir]
+        ++ lib.optional (cfg.sharedHfCache != null) cfg.sharedHfCache;
 
       environment =
         {
@@ -676,13 +682,13 @@ in {
         and fall back to a per-instance `HF_HOME` rooted at
         `cacheDir`.
 
-        The module creates the directory mode `2775` (setgid +
-        group-writable) owned by `cfg.user`:`sharedHfCacheGroup` so
-        files written by the service user or by humans in the group
-        inherit group ownership and stay cross-readable, adds the
-        path to each unit's `ReadWritePaths`, adds the group to the
-        unit's `SupplementaryGroups`, and sets `UMask=0002` on the
-        unit so newly-written files keep the group-writable bit.
+        The shared cache manager creates the directory mode `2775` and
+        applies an inherited named-group ACL. Existing descendants are
+        repaired and new content stays group-writable even when an
+        interactive writer uses a restrictive umask. Each vLLM unit waits
+        for that mount-aware preparation step, adds the path to
+        `ReadWritePaths`, joins `sharedHfCacheGroup`, and retains
+        `UMask=0002` as defense in depth.
 
         Per-instance compiled artefacts stay in the per-instance
         `cacheDir` — only `HF_HOME` (Hub weights, datasets,
@@ -702,9 +708,9 @@ in {
       type = lib.types.str;
       default = "huggingface";
       description = ''
-        Group that owns `sharedHfCache`. The module creates the group
-        if it doesn't already exist and adds `cfg.user` to it. Add
-        interactive users to the same group via
+        Group granted inherited read/write access to `sharedHfCache`.
+        The shared cache manager creates the group and this module adds
+        `cfg.user` to it. Add interactive users to the same group via
         `users.users.<name>.extraGroups` so they can read and write
         the shared cache. Has no effect when `sharedHfCache = null`.
       '';
@@ -777,6 +783,7 @@ in {
       services.hf-cache = {
         enable = true;
         home = cfg.sharedHfCache;
+        group = cfg.sharedHfCacheGroup;
         roots =
           lib.mapAttrsToList (name: inst: {
             source = "vllm-xpu.${name}";
@@ -797,13 +804,7 @@ in {
           ["render" "video"]
           ++ lib.optional (cfg.sharedHfCache != null) cfg.sharedHfCacheGroup;
       };
-      users.groups =
-        {
-          ${cfg.group} = {};
-        }
-        // lib.optionalAttrs (cfg.sharedHfCache != null) {
-          ${cfg.sharedHfCacheGroup} = {};
-        };
+      users.groups.${cfg.group} = {};
 
       systemd.tmpfiles.rules =
         ["d /var/lib/vllm-xpu 0750 ${cfg.user} ${cfg.group} - -"]
@@ -813,9 +814,7 @@ in {
             "d ${inst.cacheDir}/build 0750 ${cfg.user} ${cfg.group} - -"
             "d ${buildCacheDirFor inst} 0750 ${cfg.user} ${cfg.group} - -"
           ])
-          enabledInstances)
-        ++ lib.optional (cfg.sharedHfCache != null)
-        "d ${cfg.sharedHfCache} 2775 ${cfg.user} ${cfg.sharedHfCacheGroup} - -";
+          enabledInstances);
 
       systemd.services = lib.mapAttrs' mkUnit enabledInstances;
     })

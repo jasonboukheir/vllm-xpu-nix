@@ -106,12 +106,12 @@
         "revCount": 335,
         "submodules": true,
         "type": "git",
-        "url": "https://git.sunnycareboo.com/jasonbk/vllm-xpu-kernels.git"
+        "url": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm-xpu-kernels.git"
       },
       "original": {
         "submodules": true,
         "type": "git",
-        "url": "https://git.sunnycareboo.com/jasonbk/vllm-xpu-kernels.git"
+        "url": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm-xpu-kernels.git"
       }
     },
     "vllm-xpu-src": {
@@ -140,11 +140,11 @@
         "rev": "f9296e9eea9cab0a19eef076fe8180c53fd2c656",
         "revCount": 19959,
         "type": "git",
-        "url": "https://git.sunnycareboo.com/jasonbk/vllm.git"
+        "url": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm.git"
       },
       "original": {
         "type": "git",
-        "url": "https://git.sunnycareboo.com/jasonbk/vllm.git"
+        "url": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm.git"
       }
     }
   },

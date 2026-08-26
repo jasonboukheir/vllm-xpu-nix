@@ -124,7 +124,7 @@
           };
 
           python312PackagesXpu = import ./nix/python-xpu.nix {
-            inherit pkgs torch-xpu torchvision-xpu;
+            inherit pkgs torch-xpu triton-xpu torchvision-xpu;
           };
 
           flash-linear-attention = pkgs.callPackage ./nix/flash-linear-attention.nix {

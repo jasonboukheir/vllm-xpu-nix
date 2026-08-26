@@ -48,17 +48,17 @@
     "sycl-tla-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1773801054,
-        "narHash": "sha256-F69uPgmeQ1fpkCMYZujq0JG2uhmIgf3L+BK29//gxig=",
+        "lastModified": 1786375367,
+        "narHash": "sha256-NAGK83CxSAK/FVZvyWRB6qOrmu4nYaemGr7wGxeIFcs=",
         "owner": "intel",
         "repo": "sycl-tla",
-        "rev": "cd763790ad2f74d7294435ecf77682bac0062c3a",
+        "rev": "87f6850680a580654b9ea2c80dbc01aeb36ad231",
         "type": "github"
       },
       "original": {
         "owner": "intel",
         "repo": "sycl-tla",
-        "rev": "cd763790ad2f74d7294435ecf77682bac0062c3a",
+        "rev": "87f6850680a580654b9ea2c80dbc01aeb36ad231",
         "type": "github"
       }
     },
@@ -99,16 +99,17 @@
     "vllm-xpu-kernels-unstable-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1786660838,
-        "narHash": "sha256-TUBBnhZWrHTVPJnMgeuFLSW+FkJOTOZuxFDU1sJxt10=",
+        "lastModified": 1787641708,
+        "narHash": "sha256-zE9A4eYatA5CZD3euzBlCLPlJMqABA9qaRVWoKSpOR0=",
         "ref": "refs/heads/main",
-        "rev": "c4a013b8ead9fb25004ef5dd9e674ee9885eeebb",
-        "revCount": 335,
+        "rev": "5802a414d47855b01b63121bce3655795ef8dfa8",
+        "revCount": 346,
         "submodules": true,
         "type": "git",
         "url": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm-xpu-kernels.git"
       },
       "original": {
+        "ref": "refs/heads/main",
         "submodules": true,
         "type": "git",
         "url": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm-xpu-kernels.git"
@@ -134,15 +135,16 @@
     "vllm-xpu-unstable-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1787635137,
-        "narHash": "sha256-dkNDQnhKVvMj3u/UzKzRN50khC8ePD08PHsXot9I+D4=",
+        "lastModified": 1787702296,
+        "narHash": "sha256-qSCaslDryvShrZIvy0xGu9rTMkvE43RGOWhtnUIlksk=",
         "ref": "refs/heads/main",
-        "rev": "f9296e9eea9cab0a19eef076fe8180c53fd2c656",
-        "revCount": 19959,
+        "rev": "72b34a0922894c48f1a1f0b4f261f39a1a85b843",
+        "revCount": 20406,
         "type": "git",
         "url": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm.git"
       },
       "original": {
+        "ref": "refs/heads/main",
         "type": "git",
         "url": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm.git"
       }

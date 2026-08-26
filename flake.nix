@@ -21,6 +21,7 @@
     vllm-xpu-kernels-unstable-src = {
       type = "git";
       url = "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm-xpu-kernels.git";
+      ref = "refs/heads/main";
       submodules = true;
       flake = false;
     };
@@ -35,11 +36,12 @@
     vllm-xpu-unstable-src = {
       type = "git";
       url = "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm.git";
+      ref = "refs/heads/main";
       flake = false;
     };
 
     sycl-tla-src = {
-      url = "github:intel/sycl-tla/cd763790ad2f74d7294435ecf77682bac0062c3a";
+      url = "github:intel/sycl-tla/87f6850680a580654b9ea2c80dbc01aeb36ad231";
       flake = false;
     };
   };
@@ -90,7 +92,10 @@
           vllmUnstableVersion = mkInputVersion {
             name = "vllm-xpu-unstable-src";
             input = vllm-xpu-unstable-src;
-            base = "0.26.0";
+            # vLLM cuts final releases on release branches, so the tag is not
+            # an ancestor of main. Track the latest final release line rather
+            # than leaving post-v0.28 main snapshots labelled as v0.26.
+            base = "0.28.0";
             unstable = true;
           };
 
@@ -101,15 +106,15 @@
             intel-oneapi-base = intel-oneapi;
           };
 
-          torch-xpu = pkgs.callPackage ./nix/torch-xpu.nix {
+          triton-xpu = pkgs.callPackage ./nix/triton-xpu.nix {
             intel-oneapi-base = intel-oneapi;
             inherit intel-pti;
             python3Packages = pkgs.python312Packages;
           };
 
-          triton-xpu = pkgs.callPackage ./nix/triton-xpu.nix {
+          torch-xpu = pkgs.callPackage ./nix/torch-xpu.nix {
             intel-oneapi-base = intel-oneapi;
-            inherit intel-pti;
+            inherit intel-pti triton-xpu;
             python3Packages = pkgs.python312Packages;
           };
 

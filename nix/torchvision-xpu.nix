@@ -10,17 +10,13 @@
 
 python3Packages.buildPythonPackage rec {
   pname = "torchvision";
-  # 2026-05-31 XPU nightly, intentionally paired with torch-xpu's
-  # 2026-05-24 nightly pin (nearest available torchvision XPU nightly to
-  # that date; the dates need not match exactly — torchvision only needs
-  # the same torch 2.13-dev ABI). See the pin rationale in
-  # nix/torch-xpu.nix.
-  version = "0.28.0.dev20260531+xpu";
+  # Stable XPU wheel paired with torch 2.13.0+xpu.
+  version = "0.28.0+xpu";
   format = "wheel";
 
   src = fetchurl {
-    url = "https://download.pytorch.org/whl/nightly/xpu/torchvision-0.28.0.dev20260531%2Bxpu-cp312-cp312-manylinux_2_28_x86_64.whl";
-    hash = "sha256-dar/x1j3PbvY3HXusOvn9OK7ytDft6OfzFd7VFyTp5E=";
+    url = "https://download-r2.pytorch.org/whl/xpu/torchvision-0.28.0%2Bxpu-cp312-cp312-manylinux_2_28_x86_64.whl";
+    hash = "sha256-qln/qRxELe65BBnSG/kMRtdQDADCYQ0WX0USO7E6GAc=";
   };
 
   nativeBuildInputs = [
@@ -35,7 +31,8 @@ python3Packages.buildPythonPackage rec {
 
   propagatedBuildInputs = [
     torch-xpu
-  ] ++ (with python3Packages; [
+  ]
+  ++ (with python3Packages; [
     numpy
     pillow
   ]);

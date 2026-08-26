@@ -44,80 +44,85 @@ let
   # driver init — e.g. importing `vllm.model_executor.layers.fla.ops` (any
   # GDN-attention model: Qwen3-Next, Qwen3.5/3.6).
 
-  pythonDeps = with python3Packages; [
-    # Core XPU stack
-    torch-xpu
-    triton-xpu
-    vllm-xpu-kernels
-    flash-linear-attention
+  pythonDeps =
+    with python3Packages;
+    [
+      # Core XPU stack
+      torch-xpu
+      triton-xpu
+      vllm-xpu-kernels
+      flash-linear-attention
 
-    # Runtime deps — common.txt + xpu.txt. torchvision is gated on
-    # `withTorchvision` (see argument comment). torchaudio is omitted: no
-    # torch-2.12-compatible +xpu audio wheel is published yet (stable caps
-    # at torchaudio 2.9.1+xpu, ABI-bound to torch 2.9).
-    aiohttp
-    anthropic
-    blake3
-    cachetools
-    cbor2
-    cloudpickle
-    compressed-tensors
-    datasets
-    depyf
-    diskcache
-    einops
-    fastapi
-    filelock
-    ijson
-    jinja2
-    jsonschema
-    lark
-    llguidance
-    lm-format-enforcer
-    mcp
-    mistral-common
-    model-hosting-container-standards
-    msgspec
-    numba
-    numpy
-    openai
-    openai-harmony
-    opencv-python-headless
-    opentelemetry-api
-    opentelemetry-exporter-otlp
-    opentelemetry-sdk
-    opentelemetry-semantic-conventions-ai
-    outlines-core
-    partial-json-parser
-    pillow
-    prometheus-client
-    prometheus-fastapi-instrumentator
-    protobuf
-    psutil
-    py-cpuinfo
-    pybase64
-    pydantic
-    python-json-logger
-    pyyaml
-    pyzmq
-    ray
-    regex
-    requests
-    safetensors
-    sentencepiece
-    setproctitle
-    six
-    tiktoken
-    tokenizers
-    tqdm
-    transformers
-    typing-extensions
-    watchfiles
-    xgrammar
-  ]
-  ++ lib.optional withTorchvision python3Packages.torchvision
-  ++ lib.optionals withAudio [ python3Packages.soundfile python3Packages.av ]
-  ++ python3Packages.fastapi.optional-dependencies.standard;
+      # Runtime deps — common.txt + xpu.txt. torchvision is gated on
+      # `withTorchvision` (see argument comment). torchaudio is omitted because
+      # the text-serving closure does not use it.
+      aiohttp
+      anthropic
+      blake3
+      cachetools
+      cbor2
+      cloudpickle
+      compressed-tensors
+      datasets
+      depyf
+      diskcache
+      einops
+      fastapi
+      filelock
+      huggingface-hub
+      ijson
+      jinja2
+      jsonschema
+      lark
+      llguidance
+      lm-format-enforcer
+      mcp
+      mistral-common
+      model-hosting-container-standards
+      msgspec
+      numba
+      numpy
+      openai
+      openai-harmony
+      opencv-python-headless
+      opentelemetry-api
+      opentelemetry-exporter-otlp
+      opentelemetry-sdk
+      opentelemetry-semantic-conventions-ai
+      outlines-core
+      partial-json-parser
+      pillow
+      prometheus-client
+      prometheus-fastapi-instrumentator
+      protobuf
+      psutil
+      py-cpuinfo
+      pybase64
+      pydantic
+      python-json-logger
+      pyyaml
+      pyzmq
+      ray
+      regex
+      requests
+      safetensors
+      sentencepiece
+      setproctitle
+      six
+      tiktoken
+      tokenizers
+      tqdm
+      transformers
+      typing-extensions
+      watchfiles
+      xgrammar
+    ]
+    ++ lib.optional withTorchvision python3Packages.torchvision
+    ++ lib.optionals withAudio [
+      python3Packages.soundfile
+      python3Packages.av
+    ]
+    ++ python3Packages.fastapi.optional-dependencies.standard;
 in
 python3Packages.buildPythonPackage {
   pname = "vllm-xpu";
@@ -158,12 +163,14 @@ python3Packages.buildPythonPackage {
   # at engine init. Match the sitedirs the inline block already injects: vllm
   # itself plus the propagated deps.
   makeWrapperArgs = [
-    "--prefix LD_LIBRARY_PATH : ${lib.makeLibraryPath [
-      level-zero
-      intel-graphics-compiler
-      intel-compute-runtime
-      intel-compute-runtime.drivers
-    ]}"
+    "--prefix LD_LIBRARY_PATH : ${
+      lib.makeLibraryPath [
+        level-zero
+        intel-graphics-compiler
+        intel-compute-runtime
+        intel-compute-runtime.drivers
+      ]
+    }"
     "--prefix PYTHONPATH : ${placeholder "out"}/${python3Packages.python.sitePackages}:${python3Packages.makePythonPath pythonDeps}"
     # Triton's Intel backend (triton/backends/intel/driver.py:find_sycl) needs
     # to locate libsycl.so + sycl headers at JIT-compile time. With no icpx on
@@ -225,27 +232,19 @@ python3Packages.buildPythonPackage {
   dontUseCmakeConfigure = true;
 
   postPatch = ''
-    # Drop the strict torch and setuptools pins from build-system.requires;
-    # nix provides them via build-system. Also drop setuptools-rust from
+    # Relax only the setuptools build bound. Stable torch 2.13.0+xpu satisfies
+    # upstream's torch 2.13 pin directly. Also drop setuptools-rust from
     # build-system since the Rust frontend (PR #40848) is stripped below.
-    # Version-agnostic torch substitution so an upstream pin bump (e.g.
-    # 2.12 -> 2.13) does not silently no-op and leave the strict pin in
-    # place.
-    sed -i -E 's/torch == [0-9.]+/torch/' pyproject.toml
     substituteInPlace pyproject.toml \
       --replace-fail 'setuptools>=77.0.3,<81.0.0' 'setuptools' \
       --replace-fail '"setuptools-rust>=1.9.0",' ""
 
-    # Strip the wheel-URL pin and the torch version pin from xpu.txt.
-    # vllm_xpu_kernels and torch are nix-provided. torchvision is gated on
+    # Strip the wheel-URL kernel pin from xpu.txt. Torch and Triton keep their
+    # exact upstream stable pins. torchvision is gated on
     # the `withTorchvision` toggle; torchaudio was dropped (no
     # torch-2.12-compatible +xpu wheel published) so strip it unconditionally.
-    # The `+xpu` local-version suffix is optional: upstream now pins plain
-    # `torch==2.12.0`, but keep matching the older `torch==X.Y.Z+xpu` form
-    # so a future re-suffix does not silently no-op.
-    sed -i -E 's/^torch==[0-9.]+(\+xpu)?/torch/' requirements/xpu.txt
     substituteInPlace requirements/xpu.txt \
-      --replace-fail 'torchaudio' '# torchaudio (no torch-2.12 +xpu wheel published)' \
+      --replace-fail 'torchaudio' '# torchaudio (not needed by this closure)' \
       --replace-fail 'torchvision' '# torchvision (opt-in via withTorchvision)'
     # These optional integrations are not part of the vLLM runtime closure:
     # torchcodec is only needed by its video-decoding backend, while AutoRound

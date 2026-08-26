@@ -10,53 +10,56 @@
   intel-compute-runtime,
   ocl-icd,
   zlib,
+  triton-xpu,
 }:
 
+let
+  # Stable torch 2.13.0+xpu declares pyzes==0.1.1 for fork-safe device
+  # discovery and XPU telemetry. Upstream pyzes hardcodes Debian's Level Zero
+  # loader path, so point the tiny pure-Python binding at the Nix package.
+  pyzes = python3Packages.buildPythonPackage rec {
+    pname = "pyzes";
+    version = "0.1.1";
+    format = "wheel";
+
+    src = fetchurl {
+      url = "https://files.pythonhosted.org/packages/51/18/2ad3193ae512d91541f8cf7c0eec076904e54a18ac0db141d5a243078602/pyzes-${version}-py3-none-any.whl";
+      hash = "sha256-SqkGfX8hGznlW082viy7DtF2RcqvqFKWKfhlRV/juLM=";
+    };
+
+    postInstall = ''
+      substituteInPlace "$out/${python3Packages.python.sitePackages}/pyzes.py" \
+        --replace-fail \
+          'libName = "/usr/lib/x86_64-linux-gnu/lib" + libName + ".so.1"' \
+          'libName = "${lib.getLib level-zero}/lib/libze_loader.so.1"'
+    '';
+
+    pythonImportsCheck = [ "pyzes" ];
+
+    meta = {
+      description = "Python bindings for the Level Zero Sysman API";
+      homepage = "https://pypi.org/project/pyzes/";
+      license = lib.licenses.mit;
+      platforms = [ "x86_64-linux" ];
+    };
+  };
+in
 python3Packages.buildPythonPackage rec {
   pname = "torch";
-  # 2026-05-24 XPU nightly: linked against the oneAPI 2026.0 ABI
-  # (libsycl.so.9, libmkl_*.so.3 / libmkl_sycl_*.so.6, oneccl 2022.0.0).
-  # Stable 2.11 / 2.12 GA wheels still link the 2025.x ABI (libsycl.so.8 +
-  # libmkl_*.so.2 / .so.5) so cannot be patchelfed against the unified
-  # 2026.0 toolkit. Tracks nightly until a 2.13+ GA wheel against oneAPI
-  # 2026.0 ships; revisit on each toolkit bump.
+  # Stable 2.13 XPU is the release paired with vLLM's torch 2.13 and
+  # triton-xpu 3.7.2 pins. Its wheel targets the oneAPI 2026.0 ABI
+  # (libsycl.so.9, oneCCL 2022.0.0). The v2.13 branch also contains the
+  # BMG-specific revert of device-wide synchronization (#187423).
   #
-  # Motivation for living on nightly: the 2026.0 SYCL runtime ships the
-  # work-group scratch-memory + SYCL Graph extension fixes that let vLLM
-  # capture FULL decode graphs (compilation_config.cudagraph_mode =
-  # FULL_AND_PIECEWISE). On 2025.3 + torch 2.12 stable the FA2 varlen
-  # kernel trips `sycl_ext_oneapi_work_group_scratch_memory feature is
-  # not yet available for use with the SYCL Graph extension` and forces
-  # cudagraphMode = "PIECEWISE" as a workaround.
-  #
-  # Pinned at 2026-05-24, the latest nightly that avoids BOTH known
-  # XPU-breaking regressions in this window:
-  #
-  #  1. pytorch#182630 / 2a81e91563 "Add device-wide synchronization"
-  #     (merged 2026-05-29, first in dev20260529). Makes
-  #     c10::xpu::syncStreamsOnDevice prefer
-  #     device.ext_oneapi_wait_and_throw() on SYCL >= 2026 when the device
-  #     exposes the ext_oneapi_device_wait aspect. Arc/BMG on libsycl.so.9
-  #     (oneAPI 2026.0.0.198) advertises the aspect but its device::wait()
-  #     UAFs urQueueRelease after any oneCCL all_reduce, segfaulting every
-  #     torch.xpu.synchronize() once xccl is initialised.  -> need <= 0528.
-  #
-  #  2. pytorch#184589/#184592 "Use PyTorch Min/Max in Inductor index
-  #     propagation" (entered dev20260526/0527). Changes inductor gather
-  #     index-bound propagation and drops a clamp, so a torch.compile
-  #     `expand_kernel` gathers out of bounds and the Level-Zero driver
-  #     aborts with `index out of bounds < 248320` (NEO AssertHandler) on
-  #     Xe2/BMG. No upstream fix on main as of 2026-06-03.  -> need <= 0525.
-  #
-  # 0524 satisfies both. Revisit when oneAPI 2026.1 (or a fixed 2026.0.x)
-  # ships a non-UAF ext_oneapi_device_wait AND the inductor Min/Max
-  # regression is fixed, then re-bump to the latest nightly.
-  version = "2.13.0.dev20260524+xpu";
+  # The earlier Inductor Min/Max gather regression has no identified source
+  # fix, so the release gate still exercises compiled Qwen3.8 graph capture
+  # and generation at vocabulary extent 248320 on Brutus.
+  version = "2.13.0+xpu";
   format = "wheel";
 
   src = fetchurl {
-    url = "https://download.pytorch.org/whl/nightly/xpu/torch-2.13.0.dev20260524%2Bxpu-cp312-cp312-manylinux_2_28_x86_64.whl";
-    hash = "sha256-V+Qsm8sHhFboaZrVGlKfXWOE0akGKU4oALH3uz0Viqk=";
+    url = "https://download-r2.pytorch.org/whl/xpu/torch-2.13.0%2Bxpu-cp312-cp312-manylinux_2_28_x86_64.whl";
+    hash = "sha256-njm89P85dNfX0fpOJOOuTkiV2pfYdkejDG8WG5E23fw=";
   };
 
   nativeBuildInputs = [
@@ -82,6 +85,8 @@ python3Packages.buildPythonPackage rec {
     fsspec
     setuptools
     numpy
+    pyzes
+    triton-xpu
   ];
 
   autoPatchelfIgnoreMissingDeps = [
@@ -95,19 +100,7 @@ python3Packages.buildPythonPackage rec {
   postInstall = ''
     metadata="$out/${python3Packages.python.sitePackages}/torch-${version}.dist-info/METADATA"
     if [ -f "$metadata" ]; then
-      sed -i -E '/^Requires-Dist: (intel-cmplr-lib-rt|intel-cmplr-lib-ur|intel-cmplr-lic-rt|intel-sycl-rt|oneccl|oneccl-devel|impi-rt|onemkl-license|onemkl-sycl-blas|onemkl-sycl-dft|onemkl-sycl-lapack|onemkl-sycl-rng|onemkl-sycl-sparse|intel-opencl-rt|intel-openmp|intel-pti|mkl|dpcpp-cpp-rt|tcmlib|umf|tbb|triton-xpu)([^A-Za-z]|$)/d' "$metadata"
-      # The wheel bounds `setuptools<82` (added preemptively for the
-      # pkg_resources removal in setuptools 82) but the pinned nixpkgs ships
-      # 82.x; pypa build's --no-isolation dependency check in downstream
-      # builds (vllm-xpu-kernels, vllm-xpu) validates transitive
-      # requirements and refuses the env over it. Upstream already removed
-      # the bound — torch.utils.cpp_extension never used pkg_resources
-      # (https://github.com/pytorch/pytorch/pull/187262) — the pinned
-      # nightly just predates that. Done via sed because
-      # pythonRelaxDepsHook mishandles the wheel's +xpu local version when
-      # locating the dist-info directory.
-      # TODO: drop when the pinned nightly moves past pytorch#187262
-      sed -i 's/^Requires-Dist: setuptools<82$/Requires-Dist: setuptools/' "$metadata"
+      sed -i -E '/^Requires-Dist: (intel-cmplr-lib-rt|intel-cmplr-lib-ur|intel-cmplr-lic-rt|intel-sycl-rt|oneccl|oneccl-devel|impi-rt|onemkl-license|onemkl-sycl-blas|onemkl-sycl-dft|onemkl-sycl-lapack|onemkl-sycl-rng|onemkl-sycl-sparse|intel-opencl-rt|intel-openmp|intel-pti|mkl|dpcpp-cpp-rt|tcmlib|umf|tbb)([^A-Za-z]|$)/d' "$metadata"
     fi
   '';
 

@@ -3,16 +3,17 @@
 {
   pkgs,
   torch-xpu,
+  triton-xpu,
   torchvision-xpu,
 }:
-# Recompute the scoped Python package set with the XPU Torch packages at
-# its fixed point. A shallow `python312Packages // { torch = ...; }` only
-# changes direct lookups: packages already instantiated by nixpkgs retain
-# stock CPU torch in their propagated dependencies, causing an unnecessary
-# multi-hour PyTorch source build and two Torch implementations in vLLM's
-# closure.
+# Recompute the scoped Python package set with the XPU Torch and Triton
+# packages at its fixed point. A shallow package-set merge only changes direct
+# lookups: packages already instantiated by nixpkgs retain stock accelerator
+# dependencies, causing unnecessary builds and duplicate implementations in
+# vLLM's closure.
 pkgs.python312Packages.overrideScope (_pyFinal: pyPrev: {
   torch = torch-xpu;
+  triton = triton-xpu;
   torchvision = torchvision-xpu;
 
   # vLLM's structural tool parser imports normalize_tool_choice, which was

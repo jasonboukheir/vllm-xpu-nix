@@ -510,10 +510,14 @@ tr '\0' '\n' < "/proc/$engine_pid/environ" \
       | from_entries
     ' > "$phase_dir/environment.json"
 
-candidate_package=$(dirname \
-  "$(dirname "$(readlink -f "$candidate_env/bin/vllm")")")
+process_package=$(jq -er '
+  .[]
+  | select(endswith("/bin/.vllm-wrapped"))
+  | split("/bin/")[0]
+' "$phase_dir/argv.json")
+nix-store -qR "$candidate_env" | rg -Fx "$process_package"
 jq -e \
-  --arg package_prefix "$candidate_package/" \
+  --arg package_prefix "$process_package/" \
   --arg model "$model" \
   --arg revision "$model_revision" \
   --arg served_model "$served_model" \

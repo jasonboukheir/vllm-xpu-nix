@@ -50,6 +50,27 @@ def test_long_generation_fixtures_cover_required_categories():
     assert all(len(prompt["prompt_sha256"]) == 64 for prompt in prompts)
 
 
+def test_environment_allowlist_covers_kvarn_behavior_overrides():
+    assert {
+        "KVARN_FAST_FLUSH",
+        "KVARN_FUSED_DECODE",
+        "KVARN_FUSED_VERIFY_MAXQ",
+        "KVARN_NATIVE_XPU_LAYER",
+        "KVARN_NUM_KV_SPLITS",
+        "KVARN_POOL_MEM_FRAC",
+        "KVARN_POOL_SLOTS",
+        "KVARN_QUANT_SLIDING",
+        "KVARN_RTN_QUANTILE",
+        "KVARN_SHARED_VERIFY",
+        "KVARN_SINK_TOKENS",
+        "KVARN_SPLIT_K",
+        "HF_HOME",
+        "HOME",
+        "VLLM_CACHE_ROOT",
+        "XDG_CACHE_HOME",
+    } <= set(MODULE.DEFAULT_ENV_ALLOWLIST)
+
+
 def test_durable_output_rejects_tmp_without_override():
     with pytest.raises(ValueError, match="outside /tmp"):
         MODULE.ensure_durable_output(Path("/tmp/kvarn-results"), allow_tmp=False)
@@ -123,3 +144,18 @@ def test_manifest_records_repositories_command_environment_and_artifacts(tmp_pat
         }
     ]
     assert manifest["collection"]["finished_at"] >= manifest["collection"]["started_at"]
+
+
+def test_artifact_record_rejects_a_file_changed_during_hash(tmp_path, monkeypatch):
+    artifact = tmp_path / "engine.log"
+    artifact.write_text("starting\n", encoding="utf-8")
+    original_sha256_file = MODULE.sha256_file
+
+    def mutate_while_hashing(path):
+        digest = original_sha256_file(path)
+        path.write_text("starting\nstill running\n", encoding="utf-8")
+        return digest
+
+    monkeypatch.setattr(MODULE, "sha256_file", mutate_while_hashing)
+    with pytest.raises(RuntimeError, match="changed while it was hashed"):
+        MODULE.artifact_record(artifact, tmp_path)

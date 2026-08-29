@@ -22,20 +22,36 @@ DEFAULT_ENV_ALLOWLIST = (
     "CCL_PROCESS_LAUNCHER",
     "CCL_ZE_IPC_EXCHANGE",
     "HF_HOME",
+    "HOME",
+    "KVARN_DBG_LAYERS",
+    "KVARN_DUMP_TILES",
+    "KVARN_FAST_FLUSH",
+    "KVARN_FUSED_DECODE",
     "KVARN_FUSED_VERIFY",
+    "KVARN_FUSED_VERIFY_MAXQ",
     "KVARN_FUSED_VERIFY_MIN_BLOCKS",
     "KVARN_NATIVE_XPU",
     "KVARN_NATIVE_XPU_CHUNK_PREFILL",
     "KVARN_NATIVE_XPU_DECODE",
     "KVARN_NATIVE_XPU_DPAS_LAYOUT",
     "KVARN_NATIVE_XPU_HADAMARD_SCATTER",
+    "KVARN_NATIVE_XPU_LAYER",
     "KVARN_NATIVE_XPU_MATERIALIZE",
     "KVARN_NATIVE_XPU_PERSISTENT_SCRATCH",
     "KVARN_NATIVE_XPU_SPLITS",
+    "KVARN_NUM_KV_SPLITS",
+    "KVARN_POOL_MEM_FRAC",
+    "KVARN_POOL_SLOTS",
+    "KVARN_QUANT_SLIDING",
+    "KVARN_RTN_QUANTILE",
+    "KVARN_SHARED_VERIFY",
     "KVARN_SINKHORN_ITERS",
+    "KVARN_SINK_TOKENS",
+    "KVARN_SPLIT_K",
     "VLLM_CACHE_ROOT",
     "VLLM_TARGET_DEVICE",
     "VLLM_XPU_ENABLE_XPU_GRAPH",
+    "XDG_CACHE_HOME",
 )
 
 
@@ -189,16 +205,27 @@ def artifact_paths(
 
 
 def artifact_record(path: Path, output_dir: Path) -> dict[str, Any]:
-    stat = path.stat()
+    before = path.stat()
+    digest = sha256_file(path)
+    after = path.stat()
+    stable_fields = (
+        "st_dev",
+        "st_ino",
+        "st_size",
+        "st_mtime_ns",
+        "st_ctime_ns",
+    )
+    if any(getattr(before, field) != getattr(after, field) for field in stable_fields):
+        raise RuntimeError(f"artifact changed while it was hashed: {path}")
     try:
         name = str(path.relative_to(output_dir))
     except ValueError:
         name = str(path)
     return {
         "path": name,
-        "size_bytes": stat.st_size,
-        "modified_at": utc_timestamp(stat.st_mtime),
-        "sha256": sha256_file(path),
+        "size_bytes": after.st_size,
+        "modified_at": utc_timestamp(after.st_mtime),
+        "sha256": digest,
     }
 
 

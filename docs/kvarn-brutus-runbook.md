@@ -32,6 +32,7 @@ nix shell \
 Run the remaining commands in that tooling shell:
 
 ```bash
+set -o pipefail
 packaging_repo=/home/jasonbk/Projects/vllm-xpu-nix
 vllm_repo=/home/jasonbk/Projects/vllm
 kernels_repo=/home/jasonbk/Projects/vllm-xpu-kernels
@@ -42,6 +43,39 @@ served_model=sunny-chat
 run_stamp=$(date -u +%Y%m%dT%H%M%SZ)
 run_root="$packaging_repo/benchmark-results/kvarn/$run_stamp"
 mkdir -p "$run_root"
+
+# Reuse one explicit warmed compilation cache across paired and restarted
+# phases, outside the immutable per-run evidence tree. Use the production
+# Hugging Face cache so the exact pinned model revision is available offline.
+runtime_cache_parent="$packaging_repo/benchmark-results/kvarn-runtime-cache"
+export HF_HOME=/var/cache/huggingface
+export CCL_ATL_TRANSPORT=ofi
+export CCL_LOG_LEVEL=warn
+export CCL_PROCESS_LAUNCHER=none
+export CCL_ZE_IPC_EXCHANGE=sockets
+export VLLM_TARGET_DEVICE=xpu
+mkdir -p "$runtime_cache_parent/vllm-xpu-brutus-kvarn"
+
+# Make the frozen profile independent of inherited tuning/debug overrides.
+# KVARN_NATIVE_XPU is the only Kvarn switch deliberately set for the first
+# candidate; the native A/B overrides it for that process later.
+unset KVARN_DBG_LAYERS KVARN_DUMP_TILES KVARN_FAST_FLUSH
+unset KVARN_FUSED_DECODE KVARN_FUSED_VERIFY KVARN_FUSED_VERIFY_MAXQ
+unset KVARN_FUSED_VERIFY_MIN_BLOCKS KVARN_NATIVE_XPU_CHUNK_PREFILL
+unset KVARN_NATIVE_XPU_DECODE KVARN_NATIVE_XPU_DPAS_LAYOUT
+unset KVARN_NATIVE_XPU_HADAMARD_SCATTER KVARN_NATIVE_XPU_LAYER
+unset KVARN_NATIVE_XPU_MATERIALIZE
+unset KVARN_NATIVE_XPU_PERSISTENT_SCRATCH KVARN_NATIVE_XPU_SPLITS
+unset KVARN_NUM_KV_SPLITS KVARN_POOL_MEM_FRAC KVARN_POOL_SLOTS
+unset KVARN_QUANT_SLIDING KVARN_RTN_QUANTILE KVARN_SHARED_VERIFY
+unset KVARN_SINKHORN_ITERS KVARN_SINK_TOKENS KVARN_SPLIT_K
+unset VLLM_XPU_ENABLE_XPU_GRAPH
+export KVARN_NATIVE_XPU=0
+
+# The candidate wrappers supply the stack's pinned XPU runtime. Do not let a
+# host driver path or an unrelated oneAPI shell take precedence.
+unset LD_LIBRARY_PATH LIBRARY_PATH ONEAPI_ROOT SYCL_HOME CMPLR_ROOT
+unset LEVEL_ZERO_V1_SDK_PATH CC CXX
 
 git -C "$config_repo" merge-base --is-ancestor \
   4d977ffe96dcaad147718c91770374afab20fa68 HEAD
@@ -76,17 +110,29 @@ nix build --impure \
   --expr '
     let
       stack = builtins.getFlake "path:/home/jasonbk/Projects/vllm-xpu-nix";
+      pkgs = stack.inputs.nixpkgs.legacyPackages.x86_64-linux;
       builders = stack.lib.x86_64-linux;
       localSource = name: path: builtins.path {
         inherit name path;
         filter = sourcePath: _sourceType:
-          let base = builtins.baseNameOf sourcePath;
-          in !(builtins.elem base [
-            ".git"
-            ".dev-bin"
-            ".venv"
-            "__pycache__"
-          ]);
+          let
+            root = toString path;
+            source = toString sourcePath;
+            base = builtins.baseNameOf sourcePath;
+            excludedRoots = map (entry: root + "/" + entry) [
+              ".deps"
+              ".dev-bin"
+              ".git"
+              ".pytest_cache"
+              ".ruff_cache"
+              ".venv"
+              "build"
+            ];
+          in !(builtins.elem source excludedRoots)
+            && base != "__pycache__"
+            && base != "_version.py"
+            && !(pkgs.lib.hasSuffix ".pyc" base)
+            && !(pkgs.lib.hasSuffix ".so" base);
       };
       kernels = builders.mkVllmXpuKernels {
         src = localSource "vllm-xpu-kernels-kvarn"
@@ -102,14 +148,78 @@ nix build --impure \
         /home/jasonbk/.config/nix/hosts/brutus/services/vllm-xpu/package.nix {
           vllm-xpu-unstable = vllm;
         };
-    in package.pythonModule.withPackages (_: [ package ])
+      pythonEnv = package.pythonModule.withPackages (_: [ package ]);
+      # The vLLM executable is wrapped with the pinned stack Level Zero,
+      # compute-runtime, IGC, oneAPI, compiler, and JIT-linker environment.
+      # A plain withPackages Python lacks that wrapper and can accidentally
+      # load /run/opengl-driver instead. Reuse every runtime argument except
+      # the package-local PYTHONPATH; pythonEnv already supplies its complete
+      # Python module closure.
+      runtimeWrapperArgs = builtins.filter
+        (arg: !(pkgs.lib.hasPrefix "--prefix PYTHONPATH " arg))
+        package.makeWrapperArgs;
+    in pkgs.symlinkJoin {
+      name = "vllm-kvarn-brutus-candidate-env";
+      paths = [ pythonEnv ];
+      nativeBuildInputs = [ pkgs.makeWrapper ];
+      postBuild =
+        "rm -f \"$out/bin/python\" \"$out/bin/python3\" "
+        + "\"$out/bin/python3.12\"\n"
+        + "makeWrapper ${pythonEnv}/bin/python \"$out/bin/python\" "
+        + builtins.concatStringsSep " " runtimeWrapperArgs
+        + "\nln -s python \"$out/bin/python3\""
+        + "\nln -s python \"$out/bin/python3.12\"";
+    }
   ' 2>&1 | tee "$run_root/build.log"
 
 candidate_env=$(readlink -f "$run_root/candidate-env")
 test -x "$candidate_env/bin/vllm"
 test -x "$candidate_env/bin/python"
+for variable in \
+  LD_LIBRARY_PATH ONEAPI_ROOT SYCL_HOME CMPLR_ROOT \
+  LEVEL_ZERO_V1_SDK_PATH LIBRARY_PATH CC CXX; do
+  rg -q "$variable" "$candidate_env/bin/python"
+done
+if rg -q '/run/opengl-driver' "$candidate_env/bin/python"; then
+  echo "candidate Python wrapper references the mutable host driver" >&2
+  false
+fi
+# The wrapper prefixes its pinned libraries rather than discarding an
+# inherited LD_LIBRARY_PATH. The explicit unset above keeps this run
+# hermetic; the wrapper ordering also keeps the pins first.
 printf '%s\n' "$candidate_env" > "$run_root/candidate-env.txt"
 nix path-info --json -S "$candidate_env" > "$run_root/candidate-env-path-info.json"
+
+export XDG_CACHE_HOME="$runtime_cache_parent"
+export HOME="$runtime_cache_parent/vllm-xpu-brutus-kvarn"
+export VLLM_CACHE_ROOT="$HOME"
+
+"$candidate_env/bin/python" - <<'PY' \
+  2>&1 | tee "$run_root/python-xpu-preflight.log"
+import json
+import os
+
+import torch
+
+runtime = {
+    name: os.environ.get(name)
+    for name in (
+        "LD_LIBRARY_PATH",
+        "ONEAPI_ROOT",
+        "SYCL_HOME",
+        "CMPLR_ROOT",
+        "LEVEL_ZERO_V1_SDK_PATH",
+        "LIBRARY_PATH",
+        "CC",
+        "CXX",
+    )
+}
+assert "/run/opengl-driver" not in (runtime["LD_LIBRARY_PATH"] or "")
+assert torch.xpu.is_available()
+runtime["xpu_device_count"] = torch.xpu.device_count()
+runtime["xpu_device_name"] = torch.xpu.get_device_name(0)
+print(json.dumps(runtime, indent=2, sort_keys=True))
+PY
 ```
 
 A cold build or first start can retain enough compiler/driver memory to make
@@ -144,109 +254,16 @@ IDs unchanged.
 ```bash
 logits_root="$run_root/logits"
 mkdir -p "$logits_root"
+set -o pipefail
 
 env -u VLLM_XPU_ENABLE_XPU_GRAPH KVARN_NATIVE_XPU=0 \
-  "$candidate_env/bin/python" - \
-  "$model" "$model_revision" \
-  "$packaging_repo/fixtures/kvarn-long-generation.json" \
-  "$logits_root" <<'PY' 2>&1 | tee "$logits_root/prepare.log"
-import hashlib
-import json
-import sys
-from pathlib import Path
-
-from vllm import LLM, SamplingParams, TokensPrompt
-
-model, revision, fixture_path, output = sys.argv[1:]
-output_dir = Path(output)
-fixtures = {
-    item["category"]: item
-    for item in json.loads(Path(fixture_path).read_text(encoding="utf-8"))
-}
-specs = [
-    ("dialogue-127", "dialogue", 127, 1024),
-    ("adversarial-128", "adversarial", 128, 768),
-    ("code-4095", "code", 4095, 768),
-    ("math-16383", "math", 16383, 768),
-    ("reasoning-32767", "reasoning", 32767, 768),
-]
-llm = LLM(
-    model=model,
-    revision=revision,
-    dtype="bfloat16",
-    quantization="compressed-tensors",
-    kv_cache_dtype="auto",
-    max_model_len=65536,
-    max_num_seqs=1,
-    gpu_memory_utilization=0.95,
-    enforce_eager=True,
-    enable_prefix_caching=False,
-    language_model_only=True,
-)
-tokenizer = llm.get_tokenizer()
-
-
-def exact_prompt_ids(category: str, target: int) -> list[int]:
-    ids = tokenizer.encode(fixtures[category]["prompt"])
-    counter = 0
-    while len(ids) < target:
-        digest = hashlib.sha256(f"{category}:{counter}".encode()).hexdigest()
-        record = (
-            f"\nCategory {category} evidence record {counter}; "
-            f"stable digest {digest}; retain its distinct facts and order."
-        )
-        ids.extend(tokenizer.encode(record, add_special_tokens=False))
-        counter += 1
-    return ids[:target]
-
-
-manifest = []
-for name, category, prompt_tokens, decode_steps in specs:
-    case_dir = output_dir / name
-    case_dir.mkdir(parents=True, exist_ok=True)
-    prompt_ids = exact_prompt_ids(category, prompt_tokens)
-    params = SamplingParams(
-        temperature=0.0,
-        max_tokens=decode_steps,
-        min_tokens=decode_steps,
-        ignore_eos=True,
-        detokenize=False,
-    )
-    request = llm.generate(
-        [TokensPrompt(prompt_token_ids=prompt_ids)], params, use_tqdm=False
-    )[0]
-    forced_ids = list(request.outputs[0].token_ids)
-    assert len(prompt_ids) == prompt_tokens
-    assert len(forced_ids) == decode_steps
-    prompt_json = json.dumps(prompt_ids, separators=(",", ":")) + "\n"
-    forced_json = json.dumps(forced_ids, separators=(",", ":")) + "\n"
-    (case_dir / "prompt-token-ids.json").write_text(
-        prompt_json, encoding="utf-8"
-    )
-    (case_dir / "forced-token-ids.json").write_text(
-        forced_json, encoding="utf-8"
-    )
-    manifest.append(
-        {
-            "name": name,
-            "category": category,
-            "prompt_tokens": prompt_tokens,
-            "decode_steps": decode_steps,
-            "prompt_token_ids_sha256": hashlib.sha256(
-                prompt_json.encode()
-            ).hexdigest(),
-            "forced_token_ids_sha256": hashlib.sha256(
-                forced_json.encode()
-            ).hexdigest(),
-        }
-    )
-
-assert sum(case["decode_steps"] for case in manifest) >= 4096
-(output_dir / "cases.json").write_text(
-    json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-)
-print(json.dumps(manifest, indent=2))
-PY
+  "$candidate_env/bin/python" \
+  "$packaging_repo/scripts/kvarn_prepare_forced_decode.py" \
+  --model "$model" \
+  --revision "$model_revision" \
+  --fixtures "$packaging_repo/fixtures/kvarn-long-generation.json" \
+  --output-dir "$logits_root" \
+  2>&1 | tee "$logits_root/prepare.log"
 
 jq -n --arg revision "$model_revision" '{
   revision: $revision,
@@ -324,7 +341,24 @@ with open(sys.argv[1], "w", encoding="utf-8") as stream:
     --forced-token-ids "$case_dir/forced-token-ids.json" \
     --engine-kwargs "$case_dir/kvarn-engine.json" \
     --top-k 50 --output "$case_dir/kvarn.npz"
-  jq -n '{KVARN_NATIVE_XPU: "0", VLLM_XPU_ENABLE_XPU_GRAPH: null}' \
+  jq -n \
+    --arg hf_home "$HF_HOME" \
+    --arg home "$HOME" \
+    --arg cache "$VLLM_CACHE_ROOT" \
+    --arg xdg "$XDG_CACHE_HOME" \
+    '{
+      CCL_ATL_TRANSPORT: "ofi",
+      CCL_LOG_LEVEL: "warn",
+      CCL_PROCESS_LAUNCHER: "none",
+      CCL_ZE_IPC_EXCHANGE: "sockets",
+      HF_HOME: $hf_home,
+      HOME: $home,
+      KVARN_NATIVE_XPU: "0",
+      VLLM_CACHE_ROOT: $cache,
+      VLLM_TARGET_DEVICE: "xpu",
+      VLLM_XPU_ENABLE_XPU_GRAPH: null,
+      XDG_CACHE_HOME: $xdg
+    }' \
     > "$case_dir/environment.json"
 
   cd "$packaging_repo"
@@ -385,7 +419,24 @@ with open(sys.argv[1], "w", encoding="utf-8") as stream:
     --forced-token-ids "$case_dir/forced-token-ids.json" \
     --engine-kwargs "$case_dir/kvarn-engine.json" \
     --top-k 50 --output "$case_dir/kvarn-native.npz"
-  jq -n '{KVARN_NATIVE_XPU: "1", VLLM_XPU_ENABLE_XPU_GRAPH: null}' \
+  jq -n \
+    --arg hf_home "$HF_HOME" \
+    --arg home "$HOME" \
+    --arg cache "$VLLM_CACHE_ROOT" \
+    --arg xdg "$XDG_CACHE_HOME" \
+    '{
+      CCL_ATL_TRANSPORT: "ofi",
+      CCL_LOG_LEVEL: "warn",
+      CCL_PROCESS_LAUNCHER: "none",
+      CCL_ZE_IPC_EXCHANGE: "sockets",
+      HF_HOME: $hf_home,
+      HOME: $home,
+      KVARN_NATIVE_XPU: "1",
+      VLLM_CACHE_ROOT: $cache,
+      VLLM_TARGET_DEVICE: "xpu",
+      VLLM_XPU_ENABLE_XPU_GRAPH: null,
+      XDG_CACHE_HOME: $xdg
+    }' \
     > "$case_dir/environment-native.json"
 
   cd "$packaging_repo"
@@ -413,6 +464,12 @@ phase_dir="$run_root/b1-first"
 mkdir -p "$phase_dir"
 cd "$config_repo"
 set -o pipefail
+unset LD_LIBRARY_PATH LIBRARY_PATH ONEAPI_ROOT SYCL_HOME CMPLR_ROOT
+unset LEVEL_ZERO_V1_SDK_PATH CC CXX
+runtime_cache_parent="$packaging_repo/benchmark-results/kvarn-runtime-cache"
+export XDG_CACHE_HOME="$runtime_cache_parent"
+export HOME=/home/jasonbk
+unset VLLM_CACHE_ROOT
 nix run .#vllm-xpu-brutus-kvarn-b1 -- "$candidate_env" \
   2>&1 | tee "$phase_dir/engine.log"
 ```
@@ -422,7 +479,10 @@ In terminal B, export the same `packaging_repo`, `model`, `model_revision`,
 the durable session file and run:
 
 ```bash
+set -o pipefail
 candidate_env=$(<"$run_root/candidate-env.txt")
+expected_max_num_seqs=1
+expected_native=0
 for _attempt in $(seq 1 900); do
   if curl -fsS http://127.0.0.1:8000/health >/dev/null; then
     break
@@ -441,7 +501,7 @@ tr '\0' '\n' < "/proc/$engine_pid/cmdline" \
   | jq -Rsc 'split("\n") | map(select(length > 0))' \
   > "$phase_dir/argv.json"
 tr '\0' '\n' < "/proc/$engine_pid/environ" \
-  | rg '^(CCL_ATL_TRANSPORT|CCL_LOG_LEVEL|CCL_PROCESS_LAUNCHER|CCL_ZE_IPC_EXCHANGE|HF_HOME|KVARN_[A-Z0-9_]+|VLLM_CACHE_ROOT|VLLM_TARGET_DEVICE|VLLM_XPU_ENABLE_XPU_GRAPH)=' \
+  | rg '^(CCL_ATL_TRANSPORT|CCL_LOG_LEVEL|CCL_PROCESS_LAUNCHER|CCL_ZE_IPC_EXCHANGE|HF_HOME|HOME|KVARN_[A-Z0-9_]+|VLLM_CACHE_ROOT|VLLM_TARGET_DEVICE|VLLM_XPU_ENABLE_XPU_GRAPH|XDG_CACHE_HOME)=' \
   | jq -Rsc '
       split("\n")
       | map(select(length > 0)
@@ -450,15 +510,52 @@ tr '\0' '\n' < "/proc/$engine_pid/environ" \
       | from_entries
     ' > "$phase_dir/environment.json"
 
-jq -e 'index("--kv-cache-dtype") as $i
-  | .[$i + 1] == "kvarn_k4v4_g128_compact"
-    and index("--enforce-eager") != null
-    and index("--language-model-only") != null
-    and index("--no-enable-prefix-caching") != null
-    and index("--speculative-config") == null
-    and index("--compilation-config") == null' "$phase_dir/argv.json"
-jq -e '.KVARN_NATIVE_XPU == "0"
-  and .VLLM_XPU_ENABLE_XPU_GRAPH == null' "$phase_dir/environment.json"
+candidate_package=$(dirname \
+  "$(dirname "$(readlink -f "$candidate_env/bin/vllm")")")
+jq -e \
+  --arg package_prefix "$candidate_package/" \
+  --arg model "$model" \
+  --arg revision "$model_revision" \
+  --arg served_model "$served_model" \
+  --arg max_num_seqs "$expected_max_num_seqs" \
+  '
+    def arg($name): index($name) as $i
+      | if $i == null then null else .[$i + 1] end;
+    index("serve") as $serve
+    | any(.[]; startswith($package_prefix))
+      and .[$serve + 1] == $model
+      and arg("--served-model-name") == $served_model
+      and arg("--revision") == $revision
+      and arg("--dtype") == "bfloat16"
+      and arg("--quantization") == "compressed-tensors"
+      and arg("--kv-cache-dtype") == "kvarn_k4v4_g128_compact"
+      and arg("--max-model-len") == "65536"
+      and arg("--max-num-seqs") == $max_num_seqs
+      and (arg("--gpu-memory-utilization") | tonumber) == 0.95
+      and index("--enforce-eager") != null
+      and index("--language-model-only") != null
+      and index("--no-enable-prefix-caching") != null
+      and index("--speculative-config") == null
+      and index("--compilation-config") == null
+  ' "$phase_dir/argv.json"
+expected_xdg="$packaging_repo/benchmark-results/kvarn-runtime-cache"
+expected_cache="$expected_xdg/vllm-xpu-brutus-kvarn"
+jq -e \
+  --arg cache "$expected_cache" \
+  --arg native "$expected_native" \
+  --arg xdg "$expected_xdg" \
+  '.CCL_ATL_TRANSPORT == "ofi"
+    and .CCL_LOG_LEVEL == "warn"
+    and .CCL_PROCESS_LAUNCHER == "none"
+    and .CCL_ZE_IPC_EXCHANGE == "sockets"
+    and .HF_HOME == "/var/cache/huggingface"
+    and .HOME == $cache
+    and .KVARN_NATIVE_XPU == $native
+    and .VLLM_CACHE_ROOT == $cache
+    and .VLLM_TARGET_DEVICE == "xpu"
+    and .VLLM_XPU_ENABLE_XPU_GRAPH == null
+    and .XDG_CACHE_HOME == $xdg' \
+  "$phase_dir/environment.json"
 
 curl -fsS http://127.0.0.1:8000/metrics > "$phase_dir/metrics-before.txt"
 cd "$packaging_repo"
@@ -479,6 +576,7 @@ with Ctrl-C only after the gate and final metrics finish. Then finalize the
 phase after the engine log stops changing:
 
 ```bash
+test ! -e "/proc/$engine_pid"
 rg -n -i \
   'GPU KV cache size|Maximum concurrency|KV cache|physical blocks|usable blocks|token capacity' \
   "$phase_dir/engine.log" > "$phase_dir/capacity-lines.txt" || true
@@ -500,9 +598,9 @@ cd "$packaging_repo"
 ```
 
 Restart the same non-native B1 app with the same `candidate_env` and runtime
-cache, but set `phase_dir="$run_root/b1-restart"`. Repeat every launch,
-capture, gate, stop, scan, and provenance command. Verify cross-process greedy
-identity:
+cache, but set `phase_dir="$run_root/b1-restart"` in both terminals. Repeat
+every launch, capture, gate, stop, scan, and provenance command. Verify
+cross-process greedy identity:
 
 ```bash
 phase_dir="$run_root/b1-restart"
@@ -523,7 +621,9 @@ jq -e -s '
 ```
 
 After both B1 starts pass, repeat with `phase_dir="$run_root/b4"`, the B4 app,
-and gate concurrency four:
+`expected_max_num_seqs=4` during process validation, and gate concurrency four:
+
+In terminal A:
 
 ```bash
 phase_dir="$run_root/b4"
@@ -531,7 +631,13 @@ mkdir -p "$phase_dir"
 cd "$config_repo"
 nix run .#vllm-xpu-brutus-kvarn-b4 -- "$candidate_env" \
   2>&1 | tee "$phase_dir/engine.log"
+```
 
+In terminal B, set `phase_dir="$run_root/b4"`,
+`expected_max_num_seqs=4`, and `expected_native=0`, then repeat the complete
+readiness, process capture, argv, and environment validation block. Run:
+
+```bash
 cd "$packaging_repo"
 ./scripts/kvarn_service_gate.py \
   --base-url http://127.0.0.1:8000 \
@@ -555,9 +661,9 @@ nix run .#vllm-xpu-brutus-kvarn-native-b1 -- "$candidate_env" \
 ```
 
 In terminal B, use the same readiness and process capture, then verify
-`jq -e '.KVARN_NATIVE_XPU == "1"' "$phase_dir/environment.json"`. Run the
-concurrency-one gate, stop, log scan, and provenance commands for the native
-phase.
+with `phase_dir="$run_root/native-b1"`, `expected_max_num_seqs=1`, and
+`expected_native=1`. Run the concurrency-one gate, stop, log scan, and
+provenance commands for the native phase.
 
 ## Seal artifacts and restore service
 

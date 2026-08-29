@@ -45,9 +45,15 @@ def parse_metrics(text: str) -> dict[str, float]:
         match = pattern.match(line.strip())
         if match:
             values[match.group(1)].append(float(match.group(2)))
+    missing = [name for name, found in values.items() if not found]
+    if missing:
+        raise ValueError(
+            "vLLM metrics response is missing required gauges: "
+            + ", ".join(missing)
+        )
     return {
         name: (
-            max(found, default=0.0)
+            max(found)
             if name.endswith("kv_cache_usage_perc")
             else sum(found)
         )

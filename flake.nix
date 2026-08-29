@@ -332,7 +332,10 @@
             unit-tests =
               pkgs.runCommand "vllm-xpu-nix-unit-tests"
                 {
-                  nativeBuildInputs = [ testPython ];
+                  nativeBuildInputs = [
+                    testPython
+                    pkgs.gitMinimal
+                  ];
                 }
                 ''
                   cd ${self}

@@ -20,6 +20,7 @@ container, no host-managed `~/.local/lib/python*/site-packages`, no
 - [Iterating against a local checkout](docs/iterate.md)
 - [Quantize / eval](docs/quantize.md)
 - [Stable vs unstable](docs/stable-vs-unstable.md)
+- [Run Kvarn acceptance on Brutus](docs/kvarn-brutus-runbook.md)
 
 The non-trivial roadmap lives in the
 [issue tracker](https://github.com/jasonboukheir/vllm-xpu-nix/issues).

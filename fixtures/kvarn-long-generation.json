@@ -1,0 +1,32 @@
+[
+  {
+    "id": "dialogue-longform",
+    "category": "dialogue",
+    "max_tokens": 2048,
+    "prompt": "Continue the following conversation as the assistant. Give a careful, coherent response of at least 2,500 words. Preserve facts introduced earlier, revisit them when relevant, and vary sentence structure rather than repeating stock phrases.\n\nUser: I am planning a five-year transition from city apartment living to a small rural workshop and garden. I work remotely, care for an older relative, and cannot move all at once.\nAssistant: Let us treat the transition as a sequence of reversible experiments rather than one irreversible leap.\nUser: Build that into a detailed conversation with me. Cover finances, accessibility, internet and power reliability, winter maintenance, community ties, tools, food growing, emergency planning, and ways to decide whether each experiment succeeded. Ask and answer plausible follow-up questions while keeping all constraints consistent."
+  },
+  {
+    "id": "code-longform",
+    "category": "code",
+    "max_tokens": 2048,
+    "prompt": "Write a complete, literate Python design for a bounded append-only event log used by one process. Include an explicit binary record format, checksums, crash recovery, atomic checkpoint publication, compaction, file locking assumptions, error handling, type annotations, and pytest tests. Explain invariants before each implementation section and analyze failure injection at every filesystem boundary. The answer must be at least 2,500 words, must not omit code needed to understand the design, and must avoid replacing difficult sections with placeholders or repeated boilerplate."
+  },
+  {
+    "id": "math-longform",
+    "category": "math",
+    "max_tokens": 2048,
+    "prompt": "Develop a rigorous tutorial proving the spectral theorem for real symmetric matrices from first principles. Begin with compactness and the Rayleigh quotient, prove existence of an eigenvector, establish invariance of the orthogonal complement, complete the induction, and derive orthogonal diagonalization. Then work two nontrivial numerical examples, discuss repeated eigenvalues, and connect the result to quadratic forms and principal-axis transformations. State every lemma and justify every step. Produce at least 2,500 words of connected exposition without recycling paragraphs."
+  },
+  {
+    "id": "reasoning-longform",
+    "category": "reasoning",
+    "max_tokens": 2048,
+    "prompt": "A regional library system must remain useful through a seven-day communications outage. It has twelve branches, two bookmobiles, limited diesel, rooftop solar at four branches, one central catalog database, paper borrower records, staff with uneven technical skills, and obligations to protect patron privacy. Construct a detailed decision analysis of at least 2,500 words. Identify assumptions, competing objectives, failure modes, staged preparations, day-by-day operating decisions, recovery and reconciliation procedures, adversarial cases, and measurable exercises. Explicitly examine tradeoffs and revise the plan when assumptions conflict. Keep the scenario internally consistent and do not repeat conclusions merely to extend the answer."
+  },
+  {
+    "id": "adversarial-repetition-longform",
+    "category": "adversarial",
+    "max_tokens": 2048,
+    "prompt": "The input below deliberately contains repetitive structure. Do not echo it, continue its pattern, or fall into a periodic response. Instead, write at least 2,500 words of varied diagnostic analysis explaining how a language system can detect accidental repetition, distinguish intentional refrain from degeneration, measure distinct n-grams and periodicity, and recover safely while preserving meaning. Use uniquely titled sections, fresh examples in every section, and a final checklist whose entries are not paraphrases of one another.\n\nred square blue circle red square blue circle red square blue circle\nstep one step two step one step two step one step two step one step two\nalpha beta beta alpha alpha beta beta alpha alpha beta beta alpha\nThe corridor had a door. The corridor had a door. The corridor had a door.\n0123456701234567012345670123456701234567012345670123456701234567"
+  }
+]

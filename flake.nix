@@ -124,7 +124,12 @@
           };
 
           python312PackagesXpu = import ./nix/python-xpu.nix {
-            inherit pkgs torch-xpu triton-xpu torchvision-xpu;
+            inherit
+              pkgs
+              torch-xpu
+              triton-xpu
+              torchvision-xpu
+              ;
           };
 
           flash-linear-attention = pkgs.callPackage ./nix/flash-linear-attention.nix {
@@ -224,6 +229,7 @@
           testPython = pkgs.python312.withPackages (_: [
             llm-compressor-xpu
             pkgs.python312Packages.huggingface-hub
+            pkgs.python312Packages.pytest
           ]);
         in
         {
@@ -331,11 +337,11 @@
                 ''
                   cd ${self}
                   export HOME=$TMPDIR
-                  # Several tests import registration-heavy quantization
-                  # modules. Isolate files so global plugin registries cannot
-                  # leak between otherwise independent test modules.
+                  # Run every file through pytest so pytest-style functions
+                  # are collected. Keep files in separate processes because
+                  # quantization modules use global plugin registries.
                   for test_file in tests/test_*.py; do
-                    python "$test_file" -v
+                    python -m pytest "$test_file" -v -p no:cacheprovider
                   done
                   touch $out
                 '';

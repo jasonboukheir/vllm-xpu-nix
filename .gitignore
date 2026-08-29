@@ -6,3 +6,4 @@ result-*
 .claude/*.lock
 .direnv
 __pycache__
+benchmark-results/

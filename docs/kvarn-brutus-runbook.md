@@ -17,6 +17,11 @@ no MTP, no prefix caching, no XPU graph, and `KVARN_NATIVE_XPU=0`. The first
 service is the non-native B1 app. Native B1 is a later A/B only. Temperature
 zero is enforced by each gate request rather than by a global server default.
 
+The mixed non-speculative GDN route adds one trailing operator argument in
+vLLM and vllm-xpu-kernels. Build and deploy those two revisions atomically;
+new vLLM must not be paired with an older kernels extension. The candidate
+expression below always realizes them together.
+
 ## Preflight and exact local build
 
 Stop the deployed workers before compiling or allocating the GPU. Preserve
@@ -82,9 +87,9 @@ git -C "$config_repo" merge-base --is-ancestor \
 git -C "$packaging_repo" merge-base --is-ancestor \
   6945377cf94dd71f427351c4e6cdec2b24ee7e86 HEAD
 git -C "$vllm_repo" merge-base --is-ancestor \
-  0d3db399a07f3a596f280b0a195b3e2133e7fffd HEAD
+  22b80100b64105c3c658980faddaa43c0a0df424 HEAD
 git -C "$kernels_repo" merge-base --is-ancestor \
-  cd7fc7a1561fe188c4f73da4dc5d837244aedd3f HEAD
+  8f52482baa7c23ae976c11b1c1c88e3db4a25867 HEAD
 git -C "$packaging_repo" status --short --branch
 git -C "$vllm_repo" status --short --branch
 git -C "$kernels_repo" status --short --branch

@@ -255,7 +255,11 @@ generates the forced sequence for each case. It also writes a compact
 `service-fixture.json` for token-ID service replay. The paired runners then
 consume those frozen IDs unchanged. `--case reasoning-65023` may be used to
 prepare only the near-maximum case when the original five cases already have
-frozen inputs.
+frozen inputs. After either a full or selected preparation, the fixture-only
+pass below deterministically writes `service-fixture.json` for every frozen
+case without loading the model. This backfills runs whose first five prompt
+files predate service replay support and fails here, before B4, if any frozen
+prompt is missing or malformed.
 
 ```bash
 logits_root="$run_root/logits"
@@ -270,6 +274,21 @@ env -u VLLM_XPU_ENABLE_XPU_GRAPH KVARN_NATIVE_XPU=0 \
   --fixtures "$packaging_repo/fixtures/kvarn-long-generation.json" \
   --output-dir "$logits_root" \
   2>&1 | tee "$logits_root/prepare.log"
+
+"$candidate_env/bin/python" \
+  "$packaging_repo/scripts/kvarn_prepare_forced_decode.py" \
+  --model "$model" \
+  --revision "$model_revision" \
+  --fixtures "$packaging_repo/fixtures/kvarn-long-generation.json" \
+  --output-dir "$logits_root" \
+  --service-fixtures-only \
+  > "$logits_root/service-fixtures.json"
+
+for case_name in \
+  dialogue-127 adversarial-128 code-4095 math-16383 reasoning-32767 \
+  reasoning-65023; do
+  test -r "$logits_root/$case_name/service-fixture.json"
+done
 
 jq -n --arg revision "$model_revision" '{
   revision: $revision,

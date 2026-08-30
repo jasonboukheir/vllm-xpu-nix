@@ -1,3 +1,4 @@
+import json
 import importlib.util
 from pathlib import Path
 
@@ -82,3 +83,30 @@ def test_exact_prompt_ids_rejects_trailing_prompt_larger_than_target():
             4,
             trailing_prompt=True,
         )
+
+
+def test_materialize_service_fixtures_writes_every_selected_case(tmp_path):
+    names = ("dialogue-127", "code-4095", "math-16383", "reasoning-65023")
+    selected = MODULE.select_case_specs(list(names))
+    for case in selected:
+        case_dir = tmp_path / case.name
+        case_dir.mkdir()
+        prompt_ids = [case.prompt_tokens] * case.prompt_tokens
+        (case_dir / "prompt-token-ids.json").write_text(
+            json.dumps(prompt_ids) + "\n", encoding="utf-8"
+        )
+
+    manifest = MODULE.materialize_service_fixtures(tmp_path, selected)
+
+    assert [item["name"] for item in manifest] == list(names)
+    for case in selected:
+        fixture_path = tmp_path / case.name / "service-fixture.json"
+        fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+        assert fixture == [
+            {
+                "id": case.name,
+                "category": case.category,
+                "max_tokens": case.decode_steps,
+                "prompt": [case.prompt_tokens] * case.prompt_tokens,
+            }
+        ]

@@ -55,6 +55,119 @@ def test_token_prompt_metadata_records_count_and_hash_without_embedding_ids():
     }
 
 
+def test_fixture_files_combine_in_command_line_order_and_preserve_single(tmp_path):
+    first_path = tmp_path / "first.json"
+    second_path = tmp_path / "second.json"
+    first = [
+        {"id": "dialogue-127", "prompt": [1], "max_tokens": 1024},
+        {"id": "code-4095", "prompt": [2], "max_tokens": 768},
+    ]
+    second = [{"id": "math-16383", "prompt": [3], "max_tokens": 768}]
+    first_path.write_text(json.dumps(first), encoding="utf-8")
+    second_path.write_text(json.dumps(second), encoding="utf-8")
+
+    assert MODULE.load_fixture_files(first_path) == first
+    assert MODULE.load_fixture_files([first_path, second_path]) == [*first, *second]
+
+
+def test_cli_collects_repeated_fixture_paths_in_order(tmp_path):
+    first_path = tmp_path / "first.json"
+    second_path = tmp_path / "second.json"
+
+    args = MODULE.parse_args(
+        [
+            "--model",
+            "model",
+            "--fixtures",
+            str(first_path),
+            "--fixtures",
+            str(second_path),
+            "--max-tokens",
+            "512",
+            "--override-max-tokens",
+            "--minimum-output-tokens",
+            "512",
+            "--output",
+            str(tmp_path / "output.json"),
+            "--allow-tmp",
+        ]
+    )
+
+    assert args.fixtures == [first_path, second_path]
+    assert args.max_tokens == 512
+    assert args.override_max_tokens is True
+
+
+def test_combined_fixture_files_reject_duplicate_ids(tmp_path):
+    first_path = tmp_path / "first.json"
+    second_path = tmp_path / "second.json"
+    first_path.write_text(
+        json.dumps([{"id": "duplicate", "prompt": "first"}]),
+        encoding="utf-8",
+    )
+    second_path.write_text(
+        json.dumps([{"id": "duplicate", "prompt": "second"}]),
+        encoding="utf-8",
+    )
+    fixtures = MODULE.load_fixture_files([first_path, second_path])
+
+    with pytest.raises(ValueError, match="duplicate fixture ID: duplicate"):
+        MODULE.validate_fixtures(
+            fixtures,
+            concurrency=1,
+            default_max_tokens=2048,
+            minimum_output_tokens=512,
+        )
+
+
+def test_max_tokens_override_forces_all_mixed_context_fixtures_to_512(tmp_path):
+    paths = []
+    for fixture_id, prompt_length, max_tokens in (
+        ("dialogue-127", 127, 1024),
+        ("code-4095", 4095, 768),
+        ("math-16383", 16383, 768),
+        ("reasoning-65023", 65023, 512),
+    ):
+        path = tmp_path / f"{fixture_id}.json"
+        path.write_text(
+            json.dumps(
+                [
+                    {
+                        "id": fixture_id,
+                        "prompt": [1] * prompt_length,
+                        "max_tokens": max_tokens,
+                    }
+                ]
+            ),
+            encoding="utf-8",
+        )
+        paths.append(path)
+
+    loaded = MODULE.load_fixture_files(paths)
+    overridden = MODULE.override_fixture_max_tokens(loaded, 512)
+    validated = MODULE.validate_fixtures(
+        overridden,
+        concurrency=4,
+        default_max_tokens=512,
+        minimum_output_tokens=512,
+    )
+
+    assert [fixture["id"] for fixture in validated] == [
+        "dialogue-127",
+        "code-4095",
+        "math-16383",
+        "reasoning-65023",
+    ]
+    assert [fixture["max_tokens"] for fixture in validated] == [512] * 4
+    assert [len(fixture["prompt"]) for fixture in validated] == [
+        127,
+        4095,
+        16383,
+        65023,
+    ]
+    assert [fixture["max_tokens"] for fixture in loaded] == [1024, 768, 768, 512]
+
+
 def test_replay_mismatch_reports_first_divergence_and_total():
     first = [
         {

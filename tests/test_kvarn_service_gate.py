@@ -2,6 +2,7 @@ import importlib.util
 import json
 import threading
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -43,6 +44,53 @@ def test_repeated_span_gate_detects_three_consecutive_copies():
 def test_short_period_gate_detects_128_token_collapse():
     assert MODULE.short_period_run([1, 2, 3, 4] * 32)
     assert not MODULE.short_period_run(list(range(128)))
+
+
+def test_completion_retains_raw_repetition_response_and_finding(monkeypatch):
+    span = list(range(16))
+    raw_response = {
+        "id": "completion-id",
+        "choices": [
+            {
+                "finish_reason": "length",
+                "text": "raw repeated output",
+                "token_ids": span * 3,
+            }
+        ],
+    }
+    monkeypatch.setattr(
+        MODULE, "http_request", lambda *_args, **_kwargs: json.dumps(raw_response)
+    )
+
+    result = MODULE.completion(
+        "http://service",
+        "model",
+        {"id": "repeated", "prompt": "prompt", "max_tokens": 48},
+        48,
+        30,
+    )
+
+    assert result["raw_response"] == raw_response
+    assert result["token_ids"] == span * 3
+    assert result["quality_findings"] == [
+        {
+            "kind": "repeated_span",
+            "span_tokens": 16,
+            "consecutive_copies": 3,
+        }
+    ]
+
+
+@pytest.mark.parametrize(
+    ("token_ids", "kind"),
+    [([], "empty_output"), ([1], "short_output"), ([1, 2, 3], "excess_output")],
+)
+def test_completion_quality_findings_classify_wrong_output_length(token_ids, kind):
+    assert MODULE.completion_quality_findings(token_ids, 2)[0] == {
+        "kind": kind,
+        "expected_tokens": 2,
+        "actual_tokens": len(token_ids),
+    }
 
 
 def test_token_prompt_metadata_records_count_and_hash_without_embedding_ids():
@@ -300,3 +348,132 @@ vllm:kv_cache_usage_perc 0.25
     assert evidence["peak_running"] == 2
     assert evidence["metrics_samples"] == 1
     assert evidence["required_overlap_observed"] is True
+    assert evidence["quality_failures"] == []
+
+
+def _gate_args(tmp_path, fixtures):
+    fixture_path = tmp_path / "fixtures.json"
+    fixture_path.write_text(json.dumps(fixtures), encoding="utf-8")
+    return SimpleNamespace(
+        base_url="http://service",
+        model="model",
+        fixtures=[fixture_path],
+        output=tmp_path / "output.json",
+        provenance=None,
+        max_tokens=48,
+        override_max_tokens=False,
+        minimum_output_tokens=48,
+        concurrency=len(fixtures),
+        cancel_after_events=0,
+        metrics_poll_interval=0.001,
+        timeout=30,
+        idle_timeout=30,
+    )
+
+
+def _completion_result(fixture_id, *, findings=None, raw_marker="isolated"):
+    token_ids = list(range(48))
+    return {
+        "id": fixture_id,
+        "prompt": "prompt",
+        "max_tokens": 48,
+        "elapsed_seconds": 0.1,
+        "finish_reason": "length",
+        "text": raw_marker,
+        "token_ids": token_ids,
+        "token_ids_sha256": f"sha-{fixture_id}",
+        "quality_findings": findings or [],
+        "raw_response": {"marker": raw_marker, "fixture_id": fixture_id},
+    }
+
+
+def test_concurrent_quality_failure_persists_all_peer_results_and_wave(
+    monkeypatch, tmp_path
+):
+    args = _gate_args(
+        tmp_path,
+        [
+            {"id": "good", "prompt": "prompt", "max_tokens": 48},
+            {"id": "repeated", "prompt": "prompt", "max_tokens": 48},
+        ],
+    )
+    monkeypatch.setattr(MODULE, "wait_for_idle", lambda *_args: {})
+    monkeypatch.setattr(
+        MODULE,
+        "completion",
+        lambda _base, _model, fixture, _max, _timeout: _completion_result(
+            fixture["id"]
+        ),
+    )
+    repeated_finding = {
+        "kind": "repeated_span",
+        "span_tokens": 16,
+        "consecutive_copies": 3,
+    }
+    peer_results = [
+        _completion_result("good", raw_marker="concurrent-good"),
+        _completion_result(
+            "repeated",
+            findings=[repeated_finding],
+            raw_marker="concurrent-repeated",
+        ),
+    ]
+    quality_failures = MODULE.result_quality_failures(peer_results)
+    wave_evidence = {
+        "fixture_ids": ["good", "repeated"],
+        "required_running": 2,
+        "peak_running": 2,
+        "peak_metrics": {"vllm:num_requests_running": 2},
+        "metrics_samples": 1,
+        "required_overlap_observed": True,
+        "elapsed_seconds": 0.2,
+        "quality_failures": quality_failures,
+    }
+    monkeypatch.setattr(
+        MODULE,
+        "run_concurrent_wave",
+        lambda *_args: (peer_results, wave_evidence),
+    )
+
+    with pytest.raises(AssertionError, match="concurrent.*repeated: repeated_span"):
+        MODULE.run(args)
+
+    document = json.loads(args.output.read_text(encoding="utf-8"))
+    assert document["status"] == "failed"
+    assert document["phase"] == "concurrent_quality"
+    assert document["concurrent"] == peer_results
+    assert document["concurrent_waves"] == [wave_evidence]
+    assert document["quality_failures"] == quality_failures
+    assert [result["raw_response"]["marker"] for result in document["concurrent"]] == [
+        "concurrent-good",
+        "concurrent-repeated",
+    ]
+
+
+def test_isolated_quality_failure_persists_offending_result(monkeypatch, tmp_path):
+    args = _gate_args(
+        tmp_path,
+        [{"id": "empty", "prompt": "prompt", "max_tokens": 48}],
+    )
+    empty_finding = {
+        "kind": "empty_output",
+        "expected_tokens": 48,
+        "actual_tokens": 0,
+    }
+    result = _completion_result(
+        "empty", findings=[empty_finding], raw_marker="isolated-empty"
+    )
+    result["token_ids"] = []
+    monkeypatch.setattr(MODULE, "wait_for_idle", lambda *_args: {})
+    monkeypatch.setattr(MODULE, "completion", lambda *_args: result)
+
+    with pytest.raises(AssertionError, match="isolated_first.*empty_output"):
+        MODULE.run(args)
+
+    document = json.loads(args.output.read_text(encoding="utf-8"))
+    assert document["status"] == "failed"
+    assert document["phase"] == "isolated_first_quality"
+    assert document["isolated_first"] == [result]
+    assert document["quality_failures"] == [
+        {"id": "empty", "findings": [empty_finding]}
+    ]

@@ -575,9 +575,12 @@ curl -fsS http://127.0.0.1:8000/metrics > "$phase_dir/metrics-after.txt"
 
 The gate performs two greedy generations per fixture in the same process,
 concurrent isolation at the selected width, cancellation followed by
-replacement, corruption checks, and final idle-metric checks. Stop terminal A
-with Ctrl-C only after the gate and final metrics finish. Then finalize the
-phase after the engine log stops changing:
+replacement, corruption checks, and final idle-metric checks. The cancellation
+request retains the fixture's full 2,048-token budget and closes after 257
+stream events, crossing both 128-token cache tiles while leaving substantial
+generation work outstanding. Stop terminal A with Ctrl-C only after the gate
+and final metrics finish. Then finalize the phase after the engine log stops
+changing:
 
 ```bash
 test ! -e "/proc/$engine_pid"
@@ -651,6 +654,14 @@ cd "$packaging_repo"
   --output "$phase_dir/service-gate.json" \
   > "$phase_dir/service-gate.stdout.json"
 ```
+
+At B4 the gate submits every fixture in width-four waves, including a final
+partial wave, rather than checking only the first four fixtures. It polls
+`/metrics` every 100 ms until each wave either completes or reaches its required
+overlap. Do not accept B4 unless every `concurrent_waves` entry records
+`required_overlap_observed: true` and `peak_running >= required_running`; this
+distinguishes four simultaneously resident requests from four clients that the
+engine silently serialized.
 
 Do not run native first. Once non-native B1, restarted B1, and B4 pass, use
 `phase_dir="$run_root/native-b1"` and the native app. Capture its process before

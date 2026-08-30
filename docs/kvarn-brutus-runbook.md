@@ -614,12 +614,9 @@ test ! -e "/proc/$engine_pid"
 rg -n -i \
   'GPU KV cache size|Maximum concurrency|KV cache|physical blocks|usable blocks|token capacity' \
   "$phase_dir/engine.log" > "$phase_dir/capacity-lines.txt" || true
-if rg -n -i \
-  '(^|[^[:alpha:]])nan([^[:alpha:]]|$)|device (lost|fault)|segmentation fault|traceback|out of memory' \
-  "$phase_dir/engine.log" > "$phase_dir/failure-lines.txt"; then
-  echo "fatal engine-log signature; do not accept this phase" >&2
-  false
-fi
+./scripts/kvarn_scan_engine_log.py \
+  "$phase_dir/engine.log" \
+  --output "$phase_dir/engine-log-scan.json"
 
 cd "$packaging_repo"
 ./scripts/kvarn_provenance.py \
@@ -630,6 +627,17 @@ cd "$packaging_repo"
   --argv-file "$phase_dir/argv.json" \
   --environment-file "$phase_dir/environment.json"
 ```
+
+The scanner keeps one narrow teardown exception visible but non-fatal. vLLM
+[issue #48745](https://github.com/vllm-project/vllm/issues/48745) documents a
+race in which intentional engine shutdown can reach the background output task
+before that task is cancelled; open PR #49000 proposes the upstream fix. The
+scanner recognizes it only when the API shutdown trigger and EngineCore's
+`request processing complete` line precede the `AsyncLLM output_handler`
+`EngineDeadError`, and application shutdown completes afterward. The same
+traceback before intentional shutdown remains fatal, as do non-finite values,
+device loss/fault, segmentation faults, memory exhaustion, and every other
+traceback.
 
 Restart the same non-native B1 app with the same `candidate_env` and runtime
 cache, but set `phase_dir="$run_root/b1-restart"` in both terminals. Repeat

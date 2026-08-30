@@ -32,9 +32,25 @@ def artifact_args(tmp_path, *, comparison_count=6):
 
     services = {}
     for role, _option in MODULE.SERVICE_GATE_ARGUMENTS:
+        document = {"status": "passed"}
+        if role == "b4":
+            document["duplicate_prompt_isolation"] = {
+                "required": True,
+                "status": "passed",
+                "within_wave_only": True,
+                "groups": [
+                    {
+                        "isolation_group": "a",
+                        "fixture_ids": ["a1", "a2"],
+                        "wave_index": 1,
+                        "bit_identical": True,
+                    }
+                ],
+                "failures": [],
+            }
         services[role] = write_json(
             tmp_path / f"service-{role}.json",
-            {"status": "passed"},
+            document,
         )
 
     scans = {}
@@ -173,3 +189,21 @@ def test_malformed_scan_schema_fails_closed(tmp_path, capsys):
     messages = [failure["message"] for failure in result["failures"]]
     assert "fatal_findings must be a list" in messages
     assert "known_teardown_findings must be a list" in messages
+
+
+def test_b4_requires_separate_duplicate_prompt_isolation_pass(tmp_path, capsys):
+    argv, _comparisons, services, _scans, _output = artifact_args(tmp_path)
+    write_json(services["b4"], {"status": "passed"})
+
+    assert MODULE.main(argv) == 1
+
+    result = json.loads(capsys.readouterr().out)
+    b4 = next(gate for gate in result["service_gates"] if gate["role"] == "b4")
+    assert b4["status"] == "passed"
+    assert b4["duplicate_prompt_isolation_status"] is None
+    assert b4["passed"] is False
+    assert any(
+        failure["message"]
+        == "B4 duplicate_prompt_isolation must be required and passed"
+        for failure in result["failures"]
+    )

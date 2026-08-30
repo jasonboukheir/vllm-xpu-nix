@@ -133,6 +133,7 @@ def test_cli_collects_repeated_fixture_paths_in_order(tmp_path):
             "--max-tokens",
             "512",
             "--override-max-tokens",
+            "--require-duplicate-prompt-isolation",
             "--minimum-output-tokens",
             "512",
             "--output",
@@ -144,6 +145,7 @@ def test_cli_collects_repeated_fixture_paths_in_order(tmp_path):
     assert args.fixtures == [first_path, second_path]
     assert args.max_tokens == 512
     assert args.override_max_tokens is True
+    assert args.require_duplicate_prompt_isolation is True
 
 
 def test_combined_fixture_files_reject_duplicate_ids(tmp_path):
@@ -214,6 +216,54 @@ def test_max_tokens_override_forces_all_mixed_context_fixtures_to_512(tmp_path):
         65023,
     ]
     assert [fixture["max_tokens"] for fixture in loaded] == [1024, 768, 768, 512]
+
+
+def test_duplicate_prompt_isolation_accepts_same_wave_abba_groups():
+    fixtures = [
+        {"id": "a1", "prompt": [1, 2], "isolation_group": "a"},
+        {"id": "b1", "prompt": [3, 4], "isolation_group": "b"},
+        {"id": "b2", "prompt": [3, 4], "isolation_group": "b"},
+        {"id": "a2", "prompt": [1, 2], "isolation_group": "a"},
+    ]
+
+    plan = MODULE.duplicate_prompt_isolation_plan(fixtures, 4, required=True)
+
+    assert plan == [
+        {"isolation_group": "a", "fixture_ids": ["a1", "a2"], "wave_index": 0},
+        {"isolation_group": "b", "fixture_ids": ["b1", "b2"], "wave_index": 0},
+    ]
+
+
+def test_duplicate_prompt_isolation_rejects_nonidentical_prompt_ids():
+    fixtures = [
+        {"id": "a1", "prompt": [1, 2], "isolation_group": "a"},
+        {"id": "a2", "prompt": [1, 3], "isolation_group": "a"},
+    ]
+
+    with pytest.raises(ValueError, match="identical prompt IDs"):
+        MODULE.duplicate_prompt_isolation_plan(fixtures, 2, required=True)
+
+
+def test_duplicate_prompt_isolation_requires_declarations_when_requested():
+    fixtures = [
+        {"id": "first", "prompt": [1, 2]},
+        {"id": "second", "prompt": [3, 4]},
+    ]
+
+    with pytest.raises(ValueError, match="needs declared isolation groups"):
+        MODULE.duplicate_prompt_isolation_plan(fixtures, 2, required=True)
+
+
+def test_duplicate_prompt_isolation_rejects_group_split_across_waves():
+    fixtures = [
+        {"id": "a1", "prompt": [1, 2], "isolation_group": "a"},
+        {"id": "unrelated", "prompt": [3, 4]},
+        {"id": "a2", "prompt": [1, 2], "isolation_group": "a"},
+        {"id": "another", "prompt": [5, 6]},
+    ]
+
+    with pytest.raises(ValueError, match="share one concurrent wave"):
+        MODULE.duplicate_prompt_isolation_plan(fixtures, 2, required=True)
 
 
 def test_replay_mismatch_reports_first_divergence_and_total():
@@ -477,3 +527,100 @@ def test_isolated_quality_failure_persists_offending_result(monkeypatch, tmp_pat
     assert document["quality_failures"] == [
         {"id": "empty", "findings": [empty_finding]}
     ]
+
+
+def test_duplicate_prompt_divergence_fails_separate_with_raw_wave_evidence(
+    monkeypatch, tmp_path
+):
+    fixtures = [
+        {
+            "id": "a1",
+            "prompt": [1, 2],
+            "max_tokens": 48,
+            "isolation_group": "a",
+        },
+        {
+            "id": "b1",
+            "prompt": [3, 4],
+            "max_tokens": 48,
+            "isolation_group": "b",
+        },
+        {
+            "id": "b2",
+            "prompt": [3, 4],
+            "max_tokens": 48,
+            "isolation_group": "b",
+        },
+        {
+            "id": "a2",
+            "prompt": [1, 2],
+            "max_tokens": 48,
+            "isolation_group": "a",
+        },
+    ]
+    args = _gate_args(tmp_path, fixtures)
+    args.require_duplicate_prompt_isolation = True
+    monkeypatch.setattr(MODULE, "wait_for_idle", lambda *_args: {})
+    monkeypatch.setattr(
+        MODULE,
+        "completion",
+        lambda _base, _model, fixture, _max, _timeout: _completion_result(
+            fixture["id"]
+        ),
+    )
+    peer_results = [
+        _completion_result("a1", raw_marker="wave-a1"),
+        _completion_result("b1", raw_marker="wave-b1"),
+        _completion_result("b2", raw_marker="wave-b2"),
+        _completion_result("a2", raw_marker="wave-a2"),
+    ]
+    peer_results[-1]["token_ids"] = [999, *list(range(1, 48))]
+    peer_results[-1]["token_ids_sha256"] = "sha-a2-diverged"
+    wave_evidence = {
+        "fixture_ids": ["a1", "b1", "b2", "a2"],
+        "required_running": 4,
+        "peak_running": 4,
+        "peak_metrics": {"vllm:num_requests_running": 4},
+        "metrics_samples": 1,
+        "required_overlap_observed": True,
+        "elapsed_seconds": 0.2,
+        "quality_failures": [],
+    }
+    monkeypatch.setattr(
+        MODULE,
+        "run_concurrent_wave",
+        lambda *_args: (peer_results, wave_evidence),
+    )
+
+    with pytest.raises(
+        AssertionError, match="within-wave duplicate-prompt isolation failed: a"
+    ):
+        MODULE.run(args)
+
+    document = json.loads(args.output.read_text(encoding="utf-8"))
+    isolation = document["duplicate_prompt_isolation"]
+    assert document["schema_version"] == 3
+    assert document["status"] == "failed"
+    assert document["phase"] == "duplicate_prompt_isolation"
+    assert isolation["status"] == "failed"
+    assert isolation["within_wave_only"] is True
+    assert [group["bit_identical"] for group in isolation["groups"]] == [
+        False,
+        True,
+    ]
+    assert isolation["failures"] == [
+        {
+            "kind": "duplicate_prompt_output_mismatch",
+            "isolation_group": "a",
+            "fixture_ids": ["a1", "a2"],
+            "wave_index": 0,
+        }
+    ]
+    assert document["concurrent"] == peer_results
+    assert [result["raw_response"]["marker"] for result in document["concurrent"]] == [
+        "wave-a1",
+        "wave-b1",
+        "wave-b2",
+        "wave-a2",
+    ]
+    assert all(not result["quality_findings"] for result in document["concurrent"])

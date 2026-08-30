@@ -754,43 +754,82 @@ readiness, process capture, argv, and environment validation block. Run:
 
 ```bash
 cd "$packaging_repo"
+jq -s '
+  .[0][0] as $dialogue
+  | .[1][0] as $code
+  | .[2][0] as $math
+  | .[3][0] as $reasoning
+  | [
+      $dialogue,
+      $code,
+      $math,
+      $reasoning,
+      ($dialogue + {
+        id: "dialogue-127-a1", isolation_group: "dialogue-127"
+      }),
+      ($reasoning + {
+        id: "reasoning-65023-b1", isolation_group: "reasoning-65023"
+      }),
+      ($reasoning + {
+        id: "reasoning-65023-b2", isolation_group: "reasoning-65023"
+      }),
+      ($dialogue + {
+        id: "dialogue-127-a2", isolation_group: "dialogue-127"
+      })
+    ]
+' \
+  "$logits_root/dialogue-127/service-fixture.json" \
+  "$logits_root/code-4095/service-fixture.json" \
+  "$logits_root/math-16383/service-fixture.json" \
+  "$logits_root/reasoning-65023/service-fixture.json" \
+  > "$phase_dir/b4-fixtures.json"
+
 ./scripts/kvarn_service_gate.py \
   --base-url http://127.0.0.1:8000 \
   --model "$served_model" \
-  --fixtures "$logits_root/dialogue-127/service-fixture.json" \
-  --fixtures "$logits_root/code-4095/service-fixture.json" \
-  --fixtures "$logits_root/math-16383/service-fixture.json" \
-  --fixtures "$logits_root/reasoning-65023/service-fixture.json" \
+  --fixtures "$phase_dir/b4-fixtures.json" \
   --max-tokens 512 \
   --override-max-tokens \
   --minimum-output-tokens 512 \
   --concurrency 4 \
+  --require-duplicate-prompt-isolation \
   --output "$phase_dir/service-gate.json" \
   > "$phase_dir/service-gate.stdout.json"
 
 jq -e '
   .status == "passed"
-  and ([.isolated_first[].id] == [
-    "dialogue-127", "code-4095", "math-16383", "reasoning-65023"
-  ])
-  and ([.isolated_first[].max_tokens] == [512, 512, 512, 512])
-  and (.concurrent_waves | length == 1)
+  and (all(.isolated_first[]; .max_tokens == 512))
+  and (.concurrent_waves | length == 2)
   and (.concurrent_waves[0].fixture_ids == [
     "dialogue-127", "code-4095", "math-16383", "reasoning-65023"
   ])
+  and (.concurrent_waves[1].fixture_ids == [
+    "dialogue-127-a1", "reasoning-65023-b1",
+    "reasoning-65023-b2", "dialogue-127-a2"
+  ])
+  and .duplicate_prompt_isolation.required
+  and .duplicate_prompt_isolation.within_wave_only
+  and .duplicate_prompt_isolation.status == "passed"
+  and (.duplicate_prompt_isolation.groups | length == 2)
+  and (all(.duplicate_prompt_isolation.groups[]; .bit_identical))
 ' "$phase_dir/service-gate.json"
 ```
 
-Repeated `--fixtures` inputs are combined in command-line order. This B4 gate
-uses frozen token-ID prompts at 127, 4,095, 16,383, and 65,023 tokens, producing
-one mixed-context width-four wave. The frozen files retain the forced-decode
-budgets used to create them, so `--override-max-tokens` deliberately replaces
-those per-fixture values with 512 without modifying the evidence files. The
-gate polls `/metrics` every 100 ms until the wave either completes or reaches
-its required overlap. Do not accept B4 unless its `concurrent_waves` entry
-records `required_overlap_observed: true` and `peak_running >= 4`; this
-distinguishes four simultaneously resident mixed-context requests from four
-clients that the engine silently serialized.
+The first B4 wave uses frozen token-ID prompts at 127, 4,095, 16,383, and 65,023
+tokens. The second is an ABBA wave: distinct fixture IDs share the frozen
+dialogue prompt in isolation group A and the near-limit reasoning prompt in
+group B. `--override-max-tokens` replaces the source fixtures' forced-decode
+budgets with 512 without modifying them. Each declared group must have
+identical token-ID prompts, reside wholly within one wave, and produce
+bit-identical token IDs. Raw responses and quality findings remain in the
+ordinary concurrent result records.
+
+This is a within-wave cross-request isolation invariant. It does not compare
+B1 outputs with B4 outputs and is not evidence of batch-size invariance. The
+gate polls `/metrics` every 100 ms until each wave completes or reaches its
+required overlap. Do not accept B4 unless both `concurrent_waves` entries record
+`required_overlap_observed: true` and `peak_running >= 4`, and
+`duplicate_prompt_isolation.status` is `passed`.
 
 After the B4 gate completes, capture final metrics, stop terminal A, and repeat
 the capacity, engine-log scan, and provenance finalization block above with
@@ -824,8 +863,9 @@ cmp -s "$run_root/acceptance.json" "$run_root/acceptance.stdout.json"
 ```
 
 The aggregate passes only with six distinct threshold-passing comparisons and
-at least 4,096 total scored positions, all five service gates passed, and all
-three phase log scans passed with empty fatal findings. Recognized teardown-only
+at least 4,096 total scored positions, all five service gates passed, the B4
+gate's required within-wave duplicate-prompt isolation passed, and all three
+phase log scans passed with empty fatal findings. Recognized teardown-only
 findings remain counted and visible but are not fatal.
 
 Do not run native first. Once non-native B1, restarted B1, and B4 pass, use

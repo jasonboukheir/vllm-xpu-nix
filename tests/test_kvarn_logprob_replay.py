@@ -2,6 +2,8 @@ import copy
 import json
 from types import SimpleNamespace
 
+import pytest
+
 from scripts import kvarn_logprob_replay as MODULE
 
 
@@ -122,6 +124,27 @@ def test_comparison_finds_float_divergence_before_token_ids_split():
     }
 
 
+def test_max_tokens_override_wins_and_omission_preserves_fixture(tmp_path):
+    fixtures_path = tmp_path / "fixtures.json"
+    fixtures_path.write_text(
+        json.dumps(
+            [
+                {"id": "fixture-default", "prompt": "a", "max_tokens": 17},
+                {"id": "script-default", "prompt": "b"},
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    unchanged = MODULE.load_fixtures(fixtures_path, None)
+    overridden = MODULE.load_fixtures(fixtures_path, 384)
+
+    assert [fixture["max_tokens"] for fixture in unchanged] == [17, 2048]
+    assert [fixture["max_tokens"] for fixture in overridden] == [384, 384]
+    with pytest.raises(ValueError, match="max_tokens override must be positive"):
+        MODULE.load_fixtures(fixtures_path, 0)
+
+
 def test_run_checkpoints_each_response_and_reports_divergence(monkeypatch, tmp_path):
     fixtures_path = tmp_path / "fixtures.json"
     fixtures_path.write_text(
@@ -144,7 +167,7 @@ def test_run_checkpoints_each_response_and_reports_divergence(monkeypatch, tmp_p
     monkeypatch.setattr(MODULE, "write_json_atomic", capture_checkpoint)
     args = SimpleNamespace(
         fixtures=fixtures_path,
-        max_tokens=2048,
+        max_tokens=None,
         fixture_id=None,
         base_url="http://service",
         model="served-model",

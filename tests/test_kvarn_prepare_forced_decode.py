@@ -56,3 +56,29 @@ def test_exact_prompt_ids_reaches_requested_length_deterministically(target):
     second = MODULE.exact_prompt_ids(tokenizer, "short", "dialogue", target)
     assert first == second
     assert len(first) == target
+
+
+def test_exact_prompt_ids_can_end_with_meaningful_prompt():
+    tokenizer = Tokenizer()
+    prompt = "Give a varied, internally consistent analysis."
+    suffix = "\n\nFinal task after reviewing the records:\n" + prompt
+    ids = MODULE.exact_prompt_ids(
+        tokenizer,
+        prompt,
+        "reasoning",
+        4096,
+        trailing_prompt=True,
+    )
+    assert len(ids) == 4096
+    assert ids[-len(suffix.encode()) :] == list(suffix.encode())
+
+
+def test_exact_prompt_ids_rejects_trailing_prompt_larger_than_target():
+    with pytest.raises(ValueError, match="too short"):
+        MODULE.exact_prompt_ids(
+            Tokenizer(),
+            "long prompt",
+            "reasoning",
+            4,
+            trailing_prompt=True,
+        )

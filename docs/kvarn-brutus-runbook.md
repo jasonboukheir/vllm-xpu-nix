@@ -248,11 +248,14 @@ decode positions without doing a long decode at any context length:
 
 The preparation process tokenizes the category fixture, extends it with
 deterministic nonperiodic category-tagged records, and truncates token IDs to
-the exact requested length. It loads BF16 once and greedily generates the
-forced sequence for each case. It also writes a compact `service-fixture.json`
-for token-ID service replay. The paired runners then consume those frozen IDs
-unchanged. `--case reasoning-65023` may be used to prepare only the near-maximum
-case when the original five cases already have frozen inputs.
+the exact requested length. The near-maximum case reserves the tail for a
+second copy of the original reasoning instruction, so truncation cannot leave
+the model continuing a partial filler record. It loads BF16 once and greedily
+generates the forced sequence for each case. It also writes a compact
+`service-fixture.json` for token-ID service replay. The paired runners then
+consume those frozen IDs unchanged. `--case reasoning-65023` may be used to
+prepare only the near-maximum case when the original five cases already have
+frozen inputs.
 
 ```bash
 logits_root="$run_root/logits"

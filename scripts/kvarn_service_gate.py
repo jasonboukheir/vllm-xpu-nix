@@ -155,6 +155,76 @@ def prompt_metadata(prompt: str | list[int]) -> dict[str, Any]:
     }
 
 
+def completion_quality_findings(
+    token_ids: Any, expected_tokens: int
+) -> list[dict[str, Any]]:
+    """Return structured corruption findings without discarding the response."""
+    if not isinstance(token_ids, list) or not all(
+        isinstance(token_id, int) for token_id in token_ids
+    ):
+        return [
+            {
+                "kind": "invalid_token_ids",
+                "message": "completion did not return integer token_ids",
+            }
+        ]
+
+    findings: list[dict[str, Any]] = []
+    actual_tokens = len(token_ids)
+    if actual_tokens != expected_tokens:
+        if actual_tokens == 0:
+            kind = "empty_output"
+        elif actual_tokens < expected_tokens:
+            kind = "short_output"
+        else:
+            kind = "excess_output"
+        findings.append(
+            {
+                "kind": kind,
+                "expected_tokens": expected_tokens,
+                "actual_tokens": actual_tokens,
+            }
+        )
+    if repeated_span_three_times(token_ids):
+        findings.append(
+            {
+                "kind": "repeated_span",
+                "span_tokens": 16,
+                "consecutive_copies": 3,
+            }
+        )
+    if short_period_run(token_ids):
+        findings.append(
+            {
+                "kind": "short_period_loop",
+                "max_period_tokens": 32,
+                "minimum_run_tokens": 128,
+            }
+        )
+    return findings
+
+
+def result_quality_failures(
+    results: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Summarize result findings while retaining fixture identity."""
+    return [
+        {"id": result.get("id"), "findings": findings}
+        for result in results
+        if (findings := result.get("quality_findings", []))
+    ]
+
+
+def quality_failure_message(phase: str, failures: list[dict[str, Any]]) -> str:
+    """Render a compact assertion message for structured quality failures."""
+    summary = "; ".join(
+        f"{failure['id']}: "
+        + ", ".join(finding["kind"] for finding in failure["findings"])
+        for failure in failures
+    )
+    return f"{phase} completion quality failed: {summary}"
+
+
 def completion(
     base_url: str,
     model: str,
@@ -178,19 +248,12 @@ def completion(
     elapsed = time.monotonic() - started
     choice = response["choices"][0]
     token_ids = choice.get("token_ids")
-    if not isinstance(token_ids, list) or not all(
-        isinstance(token_id, int) for token_id in token_ids
-    ):
-        raise AssertionError("completion did not return integer token_ids")
-    if len(token_ids) != max_tokens:
-        raise AssertionError(
-            f"{fixture['id']} returned {len(token_ids)} of {max_tokens} tokens"
-        )
-    if repeated_span_three_times(token_ids):
-        raise AssertionError(f"{fixture['id']} repeated a 16-token span three times")
-    if short_period_run(token_ids):
-        raise AssertionError(f"{fixture['id']} collapsed into a short-period loop")
-    rendered = json.dumps(token_ids, separators=(",", ":")).encode()
+    quality_findings = completion_quality_findings(token_ids, max_tokens)
+    rendered = (
+        json.dumps(token_ids, separators=(",", ":")).encode()
+        if isinstance(token_ids, list)
+        else None
+    )
     return {
         "id": fixture["id"],
         **prompt_metadata(fixture["prompt"]),
@@ -199,7 +262,11 @@ def completion(
         "finish_reason": choice.get("finish_reason"),
         "text": choice.get("text", ""),
         "token_ids": token_ids,
-        "token_ids_sha256": hashlib.sha256(rendered).hexdigest(),
+        "token_ids_sha256": (
+            hashlib.sha256(rendered).hexdigest() if rendered is not None else None
+        ),
+        "quality_findings": quality_findings,
+        "raw_response": response,
     }
 
 
@@ -304,6 +371,7 @@ def run_concurrent_wave(
             time.sleep(metrics_poll_interval)
         results = [future.result() for future in futures]
 
+    quality_failures = result_quality_failures(results)
     return results, {
         "fixture_ids": [fixture["id"] for fixture in fixtures],
         "required_running": required_running,
@@ -312,6 +380,7 @@ def run_concurrent_wave(
         "metrics_samples": samples,
         "required_overlap_observed": peak_running >= required_running,
         "elapsed_seconds": time.monotonic() - started,
+        "quality_failures": quality_failures,
     }
 
 
@@ -403,38 +472,59 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "concurrent": [],
         "concurrent_waves": [],
         "cancellation": None,
+        "quality_failures": [],
     }
     write_json_atomic(args.output, progress)
 
     first: list[dict[str, Any]] = []
     for fixture in fixtures:
-        first.append(
-            completion(
-                args.base_url,
-                args.model,
-                fixture,
-                args.max_tokens,
-                args.timeout,
-            )
+        result = completion(
+            args.base_url,
+            args.model,
+            fixture,
+            args.max_tokens,
+            args.timeout,
         )
+        first.append(result)
         progress["isolated_first"] = first
+        quality_failures = result_quality_failures([result])
+        if quality_failures:
+            progress.update(
+                status="failed",
+                phase="isolated_first_quality",
+                quality_failures=quality_failures,
+            )
         write_json_atomic(args.output, progress)
+        if quality_failures:
+            raise AssertionError(
+                quality_failure_message("isolated_first", quality_failures)
+            )
 
     progress["phase"] = "isolated_replay"
     write_json_atomic(args.output, progress)
     second: list[dict[str, Any]] = []
     for fixture in fixtures:
-        second.append(
-            completion(
-                args.base_url,
-                args.model,
-                fixture,
-                args.max_tokens,
-                args.timeout,
-            )
+        result = completion(
+            args.base_url,
+            args.model,
+            fixture,
+            args.max_tokens,
+            args.timeout,
         )
+        second.append(result)
         progress["isolated_replay"] = second
+        quality_failures = result_quality_failures([result])
+        if quality_failures:
+            progress.update(
+                status="failed",
+                phase="isolated_replay_quality",
+                quality_failures=quality_failures,
+            )
         write_json_atomic(args.output, progress)
+        if quality_failures:
+            raise AssertionError(
+                quality_failure_message("isolated_replay", quality_failures)
+            )
 
     mismatches = replay_mismatches(first, second)
     if mismatches:
@@ -467,7 +557,18 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         batch.extend(wave_results)
         waves.append(wave_evidence)
         progress.update(concurrent=batch, concurrent_waves=waves)
+        quality_failures = wave_evidence["quality_failures"]
+        if quality_failures:
+            progress.update(
+                status="failed",
+                phase="concurrent_quality",
+                quality_failures=quality_failures,
+            )
         write_json_atomic(args.output, progress)
+        if quality_failures:
+            raise AssertionError(
+                quality_failure_message("concurrent", quality_failures)
+            )
 
     expected = {item["id"]: item["token_ids"] for item in first}
     if any(item["token_ids"] != expected[item["id"]] for item in batch):
@@ -508,16 +609,27 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             args.max_tokens,
             args.timeout,
         )
-        if replacement["token_ids"] != expected[fixtures[0]["id"]]:
-            progress.update(status="failed", phase="cancellation_replacement")
-            write_json_atomic(args.output, progress)
-            raise AssertionError("replacement after cancellation was not isolated")
         cancellation = {
             "requested_max_tokens": int(fixtures[0].get("max_tokens", args.max_tokens)),
             "stream_events_before_close": events,
             "replacement": replacement,
         }
         progress["cancellation"] = cancellation
+        quality_failures = result_quality_failures([replacement])
+        if quality_failures:
+            progress.update(
+                status="failed",
+                phase="cancellation_replacement_quality",
+                quality_failures=quality_failures,
+            )
+            write_json_atomic(args.output, progress)
+            raise AssertionError(
+                quality_failure_message("cancellation_replacement", quality_failures)
+            )
+        if replacement["token_ids"] != expected[fixtures[0]["id"]]:
+            progress.update(status="failed", phase="cancellation_replacement")
+            write_json_atomic(args.output, progress)
+            raise AssertionError("replacement after cancellation was not isolated")
         write_json_atomic(args.output, progress)
 
     after = wait_for_idle(args.base_url, args.idle_timeout)
@@ -544,6 +656,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "concurrent": batch,
         "concurrent_waves": waves,
         "cancellation": cancellation,
+        "quality_failures": [],
         "provenance": provenance,
     }
 

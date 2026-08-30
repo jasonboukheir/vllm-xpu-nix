@@ -437,6 +437,11 @@ def validate_fixtures(
         if fixture_id in fixture_ids:
             raise ValueError(f"duplicate fixture ID: {fixture_id}")
         fixture_ids.add(fixture_id)
+        isolation_group = fixture.get("isolation_group")
+        if isolation_group is not None and (
+            not isinstance(isolation_group, str) or not isolation_group
+        ):
+            raise TypeError("fixture isolation_group must be a non-empty string")
         if int(fixture.get("max_tokens", default_max_tokens)) < minimum_output_tokens:
             raise ValueError(
                 "each fixture must request at least "
@@ -444,6 +449,112 @@ def validate_fixtures(
             )
         validated.append(fixture)
     return validated
+
+
+def duplicate_prompt_isolation_plan(
+    fixtures: list[dict[str, Any]],
+    concurrency: int,
+    *,
+    required: bool,
+) -> list[dict[str, Any]]:
+    """Validate and locate declared duplicate-prompt groups within waves."""
+    grouped: dict[str, list[tuple[int, dict[str, Any]]]] = {}
+    for index, fixture in enumerate(fixtures):
+        group = fixture.get("isolation_group")
+        if group is not None:
+            grouped.setdefault(group, []).append((index, fixture))
+    if required and not grouped:
+        raise ValueError(
+            "--require-duplicate-prompt-isolation needs declared isolation groups"
+        )
+
+    plan: list[dict[str, Any]] = []
+    for group, members in grouped.items():
+        if len(members) < 2:
+            raise ValueError(
+                f"isolation group {group!r} must contain at least two fixtures"
+            )
+        prompts = [fixture["prompt"] for _index, fixture in members]
+        if not all(isinstance(prompt, list) for prompt in prompts):
+            raise TypeError(f"isolation group {group!r} requires token-ID list prompts")
+        if any(prompt != prompts[0] for prompt in prompts[1:]):
+            raise ValueError(
+                f"isolation group {group!r} fixtures must have identical prompt IDs"
+            )
+        wave_indices = {index // concurrency for index, _fixture in members}
+        if len(wave_indices) != 1:
+            raise ValueError(
+                f"isolation group {group!r} fixtures must share one concurrent wave"
+            )
+        plan.append(
+            {
+                "isolation_group": group,
+                "fixture_ids": [fixture["id"] for _index, fixture in members],
+                "wave_index": wave_indices.pop(),
+            }
+        )
+    return plan
+
+
+def pending_duplicate_prompt_isolation(
+    plan: list[dict[str, Any]], *, required: bool
+) -> dict[str, Any]:
+    """Build the pre-run duplicate-prompt isolation checkpoint."""
+    return {
+        "required": required,
+        "status": "pending" if plan else "not_requested",
+        "within_wave_only": True,
+        "declared_groups": plan,
+        "groups": [],
+        "failures": [],
+    }
+
+
+def evaluate_duplicate_prompt_isolation(
+    plan: list[dict[str, Any]],
+    concurrent_results: list[dict[str, Any]],
+    *,
+    required: bool,
+) -> dict[str, Any]:
+    """Compare only same-wave outputs belonging to each declared group."""
+    if not plan:
+        return pending_duplicate_prompt_isolation(plan, required=required)
+
+    by_id = {result["id"]: result for result in concurrent_results}
+    groups: list[dict[str, Any]] = []
+    failures: list[dict[str, Any]] = []
+    for declaration in plan:
+        fixture_ids = declaration["fixture_ids"]
+        results = [by_id[fixture_id] for fixture_id in fixture_ids]
+        reference_ids = results[0]["token_ids"]
+        bit_identical = all(
+            result["token_ids"] == reference_ids for result in results[1:]
+        )
+        record = {
+            **declaration,
+            "bit_identical": bit_identical,
+            "token_ids_sha256": {
+                result["id"]: result["token_ids_sha256"] for result in results
+            },
+        }
+        groups.append(record)
+        if not bit_identical:
+            failures.append(
+                {
+                    "kind": "duplicate_prompt_output_mismatch",
+                    "isolation_group": declaration["isolation_group"],
+                    "fixture_ids": fixture_ids,
+                    "wave_index": declaration["wave_index"],
+                }
+            )
+    return {
+        "required": required,
+        "status": "failed" if failures else "passed",
+        "within_wave_only": True,
+        "declared_groups": plan,
+        "groups": groups,
+        "failures": failures,
+    }
 
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
@@ -456,10 +567,22 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         default_max_tokens=args.max_tokens,
         minimum_output_tokens=args.minimum_output_tokens,
     )
+    require_duplicate_prompt_isolation = getattr(
+        args, "require_duplicate_prompt_isolation", False
+    )
+    isolation_plan = duplicate_prompt_isolation_plan(
+        fixtures,
+        args.concurrency,
+        required=require_duplicate_prompt_isolation,
+    )
+    duplicate_prompt_isolation = pending_duplicate_prompt_isolation(
+        isolation_plan,
+        required=require_duplicate_prompt_isolation,
+    )
 
     before = wait_for_idle(args.base_url, args.idle_timeout)
     progress: dict[str, Any] = {
-        "schema_version": 2,
+        "schema_version": 3,
         "status": "running",
         "phase": "isolated_first",
         "created_unix_seconds": time.time(),
@@ -473,6 +596,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "concurrent_waves": [],
         "cancellation": None,
         "quality_failures": [],
+        "duplicate_prompt_isolation": duplicate_prompt_isolation,
     }
     write_json_atomic(args.output, progress)
 
@@ -570,6 +694,27 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 quality_failure_message("concurrent", quality_failures)
             )
 
+    duplicate_prompt_isolation = evaluate_duplicate_prompt_isolation(
+        isolation_plan,
+        batch,
+        required=require_duplicate_prompt_isolation,
+    )
+    progress.update(
+        phase="duplicate_prompt_isolation",
+        duplicate_prompt_isolation=duplicate_prompt_isolation,
+    )
+    if duplicate_prompt_isolation["status"] == "failed":
+        progress["status"] = "failed"
+    write_json_atomic(args.output, progress)
+    if duplicate_prompt_isolation["status"] == "failed":
+        failed_groups = ", ".join(
+            failure["isolation_group"]
+            for failure in duplicate_prompt_isolation["failures"]
+        )
+        raise AssertionError(
+            "within-wave duplicate-prompt isolation failed: " + failed_groups
+        )
+
     expected = {item["id"]: item["token_ids"] for item in first}
     if any(item["token_ids"] != expected[item["id"]] for item in batch):
         progress.update(status="failed", phase="concurrent_isolation_comparison")
@@ -639,7 +784,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         else {}
     )
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "status": "passed",
         "phase": "complete",
         "created_unix_seconds": time.time(),
@@ -657,6 +802,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "concurrent_waves": waves,
         "cancellation": cancellation,
         "quality_failures": [],
+        "duplicate_prompt_isolation": duplicate_prompt_isolation,
         "provenance": provenance,
     }
 
@@ -682,6 +828,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--minimum-output-tokens", type=int, default=2048)
     parser.add_argument("--concurrency", type=int, default=4)
+    parser.add_argument(
+        "--require-duplicate-prompt-isolation",
+        action="store_true",
+        help="require declared same-wave duplicate token-ID prompt groups",
+    )
     parser.add_argument("--cancel-after-events", type=int, default=257)
     parser.add_argument("--metrics-poll-interval", type=float, default=0.1)
     parser.add_argument("--timeout", type=float, default=1800)

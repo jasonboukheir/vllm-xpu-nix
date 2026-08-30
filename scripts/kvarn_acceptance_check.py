@@ -133,6 +133,8 @@ def service_gate_record(
         "role": role,
         "path": normalized_path,
         "status": None,
+        "duplicate_prompt_isolation_status": None,
+        "duplicate_prompt_isolation_groups": None,
         "passed": False,
     }
     try:
@@ -159,7 +161,45 @@ def service_gate_record(
         )
         return record
 
-    record["passed"] = True
+    passed = True
+    if role == "b4":
+        isolation = document.get("duplicate_prompt_isolation")
+        isolation_status = (
+            isolation.get("status") if isinstance(isolation, dict) else None
+        )
+        groups = isolation.get("groups") if isinstance(isolation, dict) else None
+        record.update(
+            duplicate_prompt_isolation_status=isolation_status,
+            duplicate_prompt_isolation_groups=(
+                len(groups) if isinstance(groups, list) else None
+            ),
+        )
+        valid_groups = (
+            isinstance(groups, list)
+            and bool(groups)
+            and all(
+                isinstance(group, dict) and group.get("bit_identical") is True
+                for group in groups
+            )
+        )
+        if (
+            not isinstance(isolation, dict)
+            or isolation.get("required") is not True
+            or isolation.get("within_wave_only") is not True
+            or isolation_status != "passed"
+            or isolation.get("failures") != []
+            or not valid_groups
+        ):
+            add_failure(
+                failures,
+                "service_gate",
+                "B4 duplicate_prompt_isolation must be required and passed",
+                role=role,
+                path=normalized_path,
+            )
+            passed = False
+
+    record["passed"] = passed
     return record
 
 

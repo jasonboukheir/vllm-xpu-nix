@@ -73,6 +73,9 @@ milestones. Do not add them to a failed first-profile run.
    tokens. Exercise teardown/reuse, a cancelled stream followed immediately by
    a replacement, B4 mixed context lengths, and cross-request isolation. After
    each phase, running/waiting requests and KV-cache usage must return to zero.
+   During each B4 wave, poll the live service metrics and require the running
+   gauge to reach the wave width; submitting concurrent clients is not by
+   itself evidence that requests were simultaneously resident.
 
 7. **Prefix caching only after uncached acceptance**
 

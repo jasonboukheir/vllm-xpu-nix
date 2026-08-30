@@ -9,6 +9,7 @@ import hashlib
 import json
 import math
 import re
+import threading
 import time
 import urllib.request
 from pathlib import Path
@@ -101,15 +102,10 @@ def parse_metrics(text: str) -> dict[str, float]:
     missing = [name for name, found in values.items() if not found]
     if missing:
         raise ValueError(
-            "vLLM metrics response is missing required gauges: "
-            + ", ".join(missing)
+            "vLLM metrics response is missing required gauges: " + ", ".join(missing)
         )
     return {
-        name: (
-            max(found)
-            if name.endswith("kv_cache_usage_perc")
-            else sum(found)
-        )
+        name: (max(found) if name.endswith("kv_cache_usage_perc") else sum(found))
         for name, found in values.items()
     }
 
@@ -201,13 +197,19 @@ def cancel_stream(
     base_url: str,
     model: str,
     fixture: dict[str, Any],
+    default_max_tokens: int,
     timeout: float,
     after_events: int,
 ) -> int:
+    max_tokens = int(fixture.get("max_tokens", default_max_tokens))
+    if after_events >= max_tokens:
+        raise ValueError(
+            "cancellation checkpoint must leave tokens remaining in the request"
+        )
     payload = {
         "model": model,
         "prompt": fixture["prompt"],
-        "max_tokens": max(256, after_events + 1),
+        "max_tokens": max_tokens,
         "temperature": 0,
         "ignore_eos": True,
         "stream": True,
@@ -231,6 +233,78 @@ def cancel_stream(
     return observed
 
 
+def concurrent_fixture_waves(
+    fixtures: list[dict[str, Any]], concurrency: int
+) -> list[list[dict[str, Any]]]:
+    """Return full-width B4 waves without making B1 repeat every fixture again."""
+    selected = fixtures if concurrency > 1 else fixtures[:1]
+    return [
+        selected[start : start + concurrency]
+        for start in range(0, len(selected), concurrency)
+    ]
+
+
+def run_concurrent_wave(
+    base_url: str,
+    model: str,
+    fixtures: list[dict[str, Any]],
+    default_max_tokens: int,
+    concurrency: int,
+    timeout: float,
+    metrics_poll_interval: float,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Run one wave and sample metrics until the required overlap is observed."""
+    required_running = min(concurrency, len(fixtures))
+    release = threading.Event()
+
+    def after_release(fixture: dict[str, Any]) -> dict[str, Any]:
+        release.wait()
+        return completion(
+            base_url,
+            model,
+            fixture,
+            default_max_tokens,
+            timeout,
+        )
+
+    started = time.monotonic()
+    peak_running = 0.0
+    peak_metrics: dict[str, float] | None = None
+    samples = 0
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(fixtures)) as executor:
+        futures = [executor.submit(after_release, fixture) for fixture in fixtures]
+        release.set()
+        deadline = started + timeout
+        while not all(future.done() for future in futures):
+            if time.monotonic() >= deadline:
+                break
+            metrics = parse_metrics(
+                http_request(
+                    f"{base_url}/metrics",
+                    timeout=min(timeout, 10.0),
+                )
+            )
+            samples += 1
+            running = metrics["vllm:num_requests_running"]
+            if peak_metrics is None or running > peak_running:
+                peak_running = running
+                peak_metrics = metrics
+            if peak_running >= required_running:
+                break
+            time.sleep(metrics_poll_interval)
+        results = [future.result() for future in futures]
+
+    return results, {
+        "fixture_ids": [fixture["id"] for fixture in fixtures],
+        "required_running": required_running,
+        "peak_running": peak_running,
+        "peak_metrics": peak_metrics,
+        "metrics_samples": samples,
+        "required_overlap_observed": peak_running >= required_running,
+        "elapsed_seconds": time.monotonic() - started,
+    }
+
+
 def run(args: argparse.Namespace) -> dict[str, Any]:
     fixtures = json.loads(args.fixtures.read_text(encoding="utf-8"))
     if not isinstance(fixtures, list) or len(fixtures) < args.concurrency:
@@ -247,7 +321,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
 
     before = wait_for_idle(args.base_url, args.idle_timeout)
     progress: dict[str, Any] = {
-        "schema_version": 1,
+        "schema_version": 2,
         "status": "running",
         "phase": "isolated_first",
         "created_unix_seconds": time.time(),
@@ -258,6 +332,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "isolated_first": [],
         "isolated_replay": [],
         "concurrent": [],
+        "concurrent_waves": [],
         "cancellation": None,
     }
     write_json_atomic(args.output, progress)
@@ -308,34 +383,42 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     )
     write_json_atomic(args.output, progress)
 
-    batch_fixtures = fixtures[: args.concurrency]
-    with concurrent.futures.ThreadPoolExecutor(
-        max_workers=args.concurrency
-    ) as executor:
-        batch = list(
-            executor.map(
-                lambda fixture: completion(
-                    args.base_url,
-                    args.model,
-                    fixture,
-                    args.max_tokens,
-                    args.timeout,
-                ),
-                batch_fixtures,
-            )
+    batch: list[dict[str, Any]] = []
+    waves: list[dict[str, Any]] = []
+    for wave_fixtures in concurrent_fixture_waves(fixtures, args.concurrency):
+        wave_results, wave_evidence = run_concurrent_wave(
+            args.base_url,
+            args.model,
+            wave_fixtures,
+            args.max_tokens,
+            args.concurrency,
+            args.timeout,
+            args.metrics_poll_interval,
         )
-    progress["concurrent"] = batch
-    write_json_atomic(args.output, progress)
+        batch.extend(wave_results)
+        waves.append(wave_evidence)
+        progress.update(concurrent=batch, concurrent_waves=waves)
+        write_json_atomic(args.output, progress)
 
     expected = {item["id"]: item["token_ids"] for item in first}
     if any(item["token_ids"] != expected[item["id"]] for item in batch):
         progress.update(status="failed", phase="concurrent_isolation_comparison")
         write_json_atomic(args.output, progress)
         raise AssertionError("concurrent output diverged from isolated output")
+    missed_overlap = [wave for wave in waves if not wave["required_overlap_observed"]]
+    if missed_overlap:
+        progress.update(
+            status="failed",
+            phase="concurrent_overlap",
+            missed_overlap=missed_overlap,
+        )
+        write_json_atomic(args.output, progress)
+        raise AssertionError("concurrent requests did not reach required overlap")
 
     progress.update(
         phase="cancellation",
         concurrent_isolation_identical=True,
+        concurrent_overlap_observed=True,
     )
     write_json_atomic(args.output, progress)
 
@@ -345,6 +428,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             args.base_url,
             args.model,
             fixtures[0],
+            args.max_tokens,
             args.timeout,
             args.cancel_after_events,
         )
@@ -360,6 +444,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             write_json_atomic(args.output, progress)
             raise AssertionError("replacement after cancellation was not isolated")
         cancellation = {
+            "requested_max_tokens": int(fixtures[0].get("max_tokens", args.max_tokens)),
             "stream_events_before_close": events,
             "replacement": replacement,
         }
@@ -373,7 +458,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         else {}
     )
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "status": "passed",
         "phase": "complete",
         "created_unix_seconds": time.time(),
@@ -384,9 +469,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "metrics_after": after,
         "same_process_replay_identical": True,
         "concurrent_isolation_identical": True,
+        "concurrent_overlap_observed": True,
         "isolated_first": first,
         "isolated_replay": second,
         "concurrent": batch,
+        "concurrent_waves": waves,
         "cancellation": cancellation,
         "provenance": provenance,
     }
@@ -401,7 +488,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--provenance", type=Path)
     parser.add_argument("--max-tokens", type=int, default=2048)
     parser.add_argument("--concurrency", type=int, default=4)
-    parser.add_argument("--cancel-after-events", type=int, default=2)
+    parser.add_argument("--cancel-after-events", type=int, default=257)
+    parser.add_argument("--metrics-poll-interval", type=float, default=0.1)
     parser.add_argument("--timeout", type=float, default=1800)
     parser.add_argument("--idle-timeout", type=float, default=120)
     parser.add_argument("--allow-tmp", action="store_true")
@@ -411,6 +499,12 @@ def parse_args() -> argparse.Namespace:
         parser.error("--max-tokens must be at least 2048")
     if args.concurrency < 1:
         parser.error("--concurrency must be positive")
+    if args.cancel_after_events < 0:
+        parser.error("--cancel-after-events must be non-negative")
+    if args.cancel_after_events >= args.max_tokens:
+        parser.error("--cancel-after-events must be less than --max-tokens")
+    if args.metrics_poll_interval <= 0:
+        parser.error("--metrics-poll-interval must be positive")
     output = args.output.resolve()
     if not args.allow_tmp and output.is_relative_to(Path("/tmp")):
         parser.error("--output must be durable (outside /tmp)")

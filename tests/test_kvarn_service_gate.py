@@ -1,4 +1,6 @@
 import importlib.util
+import json
+import threading
 from pathlib import Path
 
 import pytest
@@ -28,8 +30,7 @@ vllm:kv_cache_usage_perc{engine="1"} 0.5
 def test_metrics_reject_missing_idle_gauges():
     with pytest.raises(ValueError, match="kv_cache_usage_perc"):
         MODULE.parse_metrics(
-            "vllm:num_requests_running 0\n"
-            "vllm:num_requests_waiting 0\n"
+            "vllm:num_requests_running 0\nvllm:num_requests_waiting 0\n"
         )
 
 
@@ -72,3 +73,107 @@ def test_replay_mismatch_reports_first_divergence_and_total():
         }
     ]
     assert MODULE.replay_mismatches(first, first) == []
+
+
+class StreamingResponse:
+    def __init__(self, lines):
+        self.lines = lines
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return None
+
+    def __iter__(self):
+        return iter(self.lines)
+
+
+def test_cancellation_keeps_full_generation_budget(monkeypatch):
+    captured = {}
+
+    def urlopen(request, timeout):
+        captured["payload"] = json.loads(request.data)
+        captured["timeout"] = timeout
+        return StreamingResponse([b"data: {}\n"] * 257)
+
+    monkeypatch.setattr(MODULE.urllib.request, "urlopen", urlopen)
+
+    observed = MODULE.cancel_stream(
+        "http://service",
+        "model",
+        {"id": "fixture", "prompt": "prompt", "max_tokens": 2048},
+        2048,
+        30,
+        257,
+    )
+
+    assert observed == 257
+    assert captured["payload"]["max_tokens"] == 2048
+    assert captured["timeout"] == 30
+
+
+def test_cancellation_checkpoint_must_leave_generation_work():
+    with pytest.raises(ValueError, match="leave tokens remaining"):
+        MODULE.cancel_stream(
+            "http://service",
+            "model",
+            {"id": "fixture", "prompt": "prompt", "max_tokens": 2048},
+            2048,
+            30,
+            2048,
+        )
+
+
+def test_b4_waves_cover_every_fixture_but_b1_keeps_one_probe():
+    fixtures = [{"id": str(index)} for index in range(5)]
+
+    assert [
+        [fixture["id"] for fixture in wave]
+        for wave in MODULE.concurrent_fixture_waves(fixtures, 4)
+    ] == [["0", "1", "2", "3"], ["4"]]
+    assert MODULE.concurrent_fixture_waves(fixtures, 1) == [[fixtures[0]]]
+
+
+def test_concurrent_wave_records_observed_overlap(monkeypatch):
+    finish = threading.Event()
+
+    def completion(
+        _base_url,
+        _model,
+        fixture,
+        _default_max_tokens,
+        _timeout,
+    ):
+        assert finish.wait(timeout=1)
+        return {"id": fixture["id"], "token_ids": [int(fixture["id"])]}
+
+    def http_request(url, timeout):
+        assert url == "http://service/metrics"
+        assert timeout == 10.0
+        finish.set()
+        return """
+vllm:num_requests_running 2
+vllm:num_requests_waiting 0
+vllm:kv_cache_usage_perc 0.25
+"""
+
+    monkeypatch.setattr(MODULE, "completion", completion)
+    monkeypatch.setattr(MODULE, "http_request", http_request)
+
+    results, evidence = MODULE.run_concurrent_wave(
+        "http://service",
+        "model",
+        [{"id": "0"}, {"id": "1"}],
+        2048,
+        4,
+        30,
+        0.001,
+    )
+
+    assert [result["id"] for result in results] == ["0", "1"]
+    assert evidence["fixture_ids"] == ["0", "1"]
+    assert evidence["required_running"] == 2
+    assert evidence["peak_running"] == 2
+    assert evidence["metrics_samples"] == 1
+    assert evidence["required_overlap_observed"] is True

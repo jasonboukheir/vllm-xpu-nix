@@ -315,10 +315,39 @@ def run_concurrent_wave(
     }
 
 
-def run(args: argparse.Namespace) -> dict[str, Any]:
-    fixtures = json.loads(args.fixtures.read_text(encoding="utf-8"))
-    if not isinstance(fixtures, list) or len(fixtures) < args.concurrency:
+def load_fixture_files(paths: Path | list[Path]) -> list[Any]:
+    """Combine fixture lists in command-line order."""
+    fixture_paths = [paths] if isinstance(paths, Path) else paths
+    combined: list[Any] = []
+    for path in fixture_paths:
+        document = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(document, list):
+            raise TypeError(f"{path}: fixtures must contain a JSON list")
+        combined.extend(document)
+    return combined
+
+
+def override_fixture_max_tokens(fixtures: list[Any], max_tokens: int) -> list[Any]:
+    """Force a common output length without mutating loaded fixture objects."""
+    return [
+        {**fixture, "max_tokens": max_tokens} if isinstance(fixture, dict) else fixture
+        for fixture in fixtures
+    ]
+
+
+def validate_fixtures(
+    fixtures: list[Any],
+    *,
+    concurrency: int,
+    default_max_tokens: int,
+    minimum_output_tokens: int,
+) -> list[dict[str, Any]]:
+    """Validate combined fixtures and reject ambiguous duplicate IDs."""
+    if len(fixtures) < concurrency:
         raise ValueError("fixtures must contain at least --concurrency entries")
+
+    validated: list[dict[str, Any]] = []
+    fixture_ids: set[str] = set()
     for fixture in fixtures:
         prompt = fixture.get("prompt") if isinstance(fixture, dict) else None
         valid_prompt = isinstance(prompt, str) or (
@@ -335,11 +364,29 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 "each fixture requires a string id and either a string prompt "
                 "or a non-empty integer token-id prompt"
             )
-        if int(fixture.get("max_tokens", args.max_tokens)) < args.minimum_output_tokens:
+        fixture_id = fixture["id"]
+        if fixture_id in fixture_ids:
+            raise ValueError(f"duplicate fixture ID: {fixture_id}")
+        fixture_ids.add(fixture_id)
+        if int(fixture.get("max_tokens", default_max_tokens)) < minimum_output_tokens:
             raise ValueError(
                 "each fixture must request at least "
-                f"{args.minimum_output_tokens} output tokens"
+                f"{minimum_output_tokens} output tokens"
             )
+        validated.append(fixture)
+    return validated
+
+
+def run(args: argparse.Namespace) -> dict[str, Any]:
+    loaded_fixtures = load_fixture_files(args.fixtures)
+    if args.override_max_tokens:
+        loaded_fixtures = override_fixture_max_tokens(loaded_fixtures, args.max_tokens)
+    fixtures = validate_fixtures(
+        loaded_fixtures,
+        concurrency=args.concurrency,
+        default_max_tokens=args.max_tokens,
+        minimum_output_tokens=args.minimum_output_tokens,
+    )
 
     before = wait_for_idle(args.base_url, args.idle_timeout)
     progress: dict[str, Any] = {
@@ -501,14 +548,25 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-url", default="http://127.0.0.1:8000")
     parser.add_argument("--model", required=True)
-    parser.add_argument("--fixtures", type=Path, required=True)
+    parser.add_argument(
+        "--fixtures",
+        type=Path,
+        action="append",
+        required=True,
+        help="fixture JSON list; repeat to combine files in command-line order",
+    )
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--provenance", type=Path)
     parser.add_argument("--max-tokens", type=int, default=2048)
+    parser.add_argument(
+        "--override-max-tokens",
+        action="store_true",
+        help="force --max-tokens for every fixture, ignoring fixture values",
+    )
     parser.add_argument("--minimum-output-tokens", type=int, default=2048)
     parser.add_argument("--concurrency", type=int, default=4)
     parser.add_argument("--cancel-after-events", type=int, default=257)
@@ -516,7 +574,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--timeout", type=float, default=1800)
     parser.add_argument("--idle-timeout", type=float, default=120)
     parser.add_argument("--allow-tmp", action="store_true")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     args.base_url = args.base_url.rstrip("/")
     if args.minimum_output_tokens < 1:
         parser.error("--minimum-output-tokens must be positive")

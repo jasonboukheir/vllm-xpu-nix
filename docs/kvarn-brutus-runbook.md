@@ -738,19 +738,40 @@ cd "$packaging_repo"
 ./scripts/kvarn_service_gate.py \
   --base-url http://127.0.0.1:8000 \
   --model "$served_model" \
-  --fixtures fixtures/kvarn-long-generation.json \
+  --fixtures "$logits_root/dialogue-127/service-fixture.json" \
+  --fixtures "$logits_root/code-4095/service-fixture.json" \
+  --fixtures "$logits_root/math-16383/service-fixture.json" \
+  --fixtures "$logits_root/reasoning-65023/service-fixture.json" \
+  --max-tokens 512 \
+  --override-max-tokens \
+  --minimum-output-tokens 512 \
   --concurrency 4 \
   --output "$phase_dir/service-gate.json" \
   > "$phase_dir/service-gate.stdout.json"
+
+jq -e '
+  .status == "passed"
+  and ([.isolated_first[].id] == [
+    "dialogue-127", "code-4095", "math-16383", "reasoning-65023"
+  ])
+  and ([.isolated_first[].max_tokens] == [512, 512, 512, 512])
+  and (.concurrent_waves | length == 1)
+  and (.concurrent_waves[0].fixture_ids == [
+    "dialogue-127", "code-4095", "math-16383", "reasoning-65023"
+  ])
+' "$phase_dir/service-gate.json"
 ```
 
-At B4 the gate submits every fixture in width-four waves, including a final
-partial wave, rather than checking only the first four fixtures. It polls
-`/metrics` every 100 ms until each wave either completes or reaches its required
-overlap. Do not accept B4 unless every `concurrent_waves` entry records
-`required_overlap_observed: true` and `peak_running >= required_running`; this
-distinguishes four simultaneously resident requests from four clients that the
-engine silently serialized.
+Repeated `--fixtures` inputs are combined in command-line order. This B4 gate
+uses frozen token-ID prompts at 127, 4,095, 16,383, and 65,023 tokens, producing
+one mixed-context width-four wave. The frozen files retain the forced-decode
+budgets used to create them, so `--override-max-tokens` deliberately replaces
+those per-fixture values with 512 without modifying the evidence files. The
+gate polls `/metrics` every 100 ms until the wave either completes or reaches
+its required overlap. Do not accept B4 unless its `concurrent_waves` entry
+records `required_overlap_observed: true` and `peak_running >= 4`; this
+distinguishes four simultaneously resident mixed-context requests from four
+clients that the engine silently serialized.
 
 After the B4 gate completes, capture final metrics, stop terminal A, and repeat
 the capacity, engine-log scan, and provenance finalization block above with

@@ -375,6 +375,7 @@ with open(sys.argv[1], "w", encoding="utf-8") as stream:
     --output-dir "$case_dir" \
     --model "$model" \
     --model-revision "$model_revision" \
+    --config-repo "$config_repo" \
     --fixtures fixtures/kvarn-long-generation.json \
     --argv-file "$case_dir/argv.json" \
     --environment-file "$case_dir/environment.json"
@@ -457,6 +458,7 @@ with open(sys.argv[1], "w", encoding="utf-8") as stream:
     --manifest-name provenance-native.json \
     --model "$model" \
     --model-revision "$model_revision" \
+    --config-repo "$config_repo" \
     --fixtures fixtures/kvarn-long-generation.json \
     --argv-file "$case_dir/argv-native.json" \
     --environment-file "$case_dir/environment-native.json"
@@ -623,6 +625,7 @@ cd "$packaging_repo"
   --output-dir "$phase_dir" \
   --model "$model" \
   --model-revision "$model_revision" \
+  --config-repo "$config_repo" \
   --fixtures fixtures/kvarn-long-generation.json \
   --argv-file "$phase_dir/argv.json" \
   --environment-file "$phase_dir/environment.json"
@@ -723,9 +726,9 @@ provenance commands for the native phase.
 ## Seal artifacts and restore service
 
 Run checksums only after all writers stop and every phase manifest has been
-regenerated. The manifests record the three source revisions and dirty states,
-model revision, exact argv, allowlisted environment, prompt hashes, timestamps,
-and artifact hashes.
+regenerated. The manifests record the packaging, vLLM, XPU-kernels, and
+external Nix configuration revisions and dirty states, model revision, exact
+argv, allowlisted environment, prompt hashes, timestamps, and artifact hashes.
 
 ```bash
 find "$run_root" -type f ! -name SHA256SUMS -print0 \

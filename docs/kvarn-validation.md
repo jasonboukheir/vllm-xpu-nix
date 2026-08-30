@@ -86,9 +86,10 @@ milestones. Do not add them to a failed first-profile run.
 ## Durable evidence
 
 Write raw artifacts under `benchmark-results/kvarn/<UTC timestamp>/`, never
-only under `/tmp`. The manifest must contain the three source revisions, dirty
-state, model and tokenizer revision, rendered command/environment, prompt and
-token hashes, full outputs, metrics snapshots, engine log, timestamps, and
-checksums. Keep BF16 and Kvarn artifacts paired. The initial milestone passes
-only when the uncached Kvarn service completes every functional gate; an
-isolated kernel pass or a capacity estimate is not an end-to-end pass.
+only under `/tmp`. The manifest must contain the packaging, vLLM, XPU-kernels,
+and external Nix configuration revisions and dirty states, model and tokenizer
+revision, rendered command/environment, prompt and token hashes, full outputs,
+metrics snapshots, engine log, timestamps, and checksums. Keep BF16 and Kvarn
+artifacts paired. The initial milestone passes only when the uncached Kvarn
+service completes every functional gate; an isolated kernel pass or a capacity
+estimate is not an end-to-end pass.

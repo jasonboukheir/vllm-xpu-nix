@@ -3,6 +3,7 @@ import hashlib
 import importlib.util
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -80,11 +81,36 @@ def test_durable_output_rejects_tmp_without_override():
     ) == Path("/tmp/kvarn-results")
 
 
+def test_cli_defaults_config_repo_to_brutus_checkout(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            str(SCRIPT),
+            "--output-dir",
+            str(tmp_path),
+            "--model",
+            "owner/model",
+            "--model-revision",
+            "1" * 40,
+            "--fixtures",
+            str(FIXTURES),
+            "--argv-file",
+            str(tmp_path / "argv.json"),
+            "--allow-tmp",
+        ],
+    )
+
+    assert MODULE.parse_args().config_repo == Path("/home/jasonbk/.config/nix")
+
+
 def test_manifest_records_repositories_command_environment_and_artifacts(tmp_path):
     packaging = make_repo(tmp_path / "packaging", "packaging")
     vllm = make_repo(tmp_path / "vllm", "vllm")
     kernels = make_repo(tmp_path / "kernels", "kernels")
+    config = make_repo(tmp_path / "config", "config")
     (kernels / "dirty.txt").write_text("dirty", encoding="utf-8")
+    (config / "dirty.nix").write_text("dirty", encoding="utf-8")
 
     output = tmp_path / "durable-results"
     output.mkdir()
@@ -117,6 +143,7 @@ def test_manifest_records_repositories_command_environment_and_artifacts(tmp_pat
         vllm_xpu_nix=packaging,
         vllm=vllm,
         kernels=kernels,
+        config_repo=config,
         allow_tmp=True,
     )
 
@@ -124,10 +151,17 @@ def test_manifest_records_repositories_command_environment_and_artifacts(tmp_pat
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 
     repositories = {item["name"]: item for item in manifest["repositories"]}
-    assert set(repositories) == {"vllm-xpu-nix", "vllm", "vllm-xpu-kernels"}
+    assert set(repositories) == {
+        "nix-config",
+        "vllm-xpu-nix",
+        "vllm",
+        "vllm-xpu-kernels",
+    }
     assert not repositories["vllm"]["dirty"]
     assert repositories["vllm-xpu-kernels"]["dirty"]
     assert repositories["vllm-xpu-kernels"]["status_porcelain"] == ["?? dirty.txt"]
+    assert repositories["nix-config"]["dirty"]
+    assert repositories["nix-config"]["status_porcelain"] == ["?? dirty.nix"]
     assert all(len(item["head"]) == 40 for item in repositories.values())
     assert manifest["model"] == {"id": "owner/model", "revision": "1" * 40}
     assert manifest["command"]["argv"] == argv

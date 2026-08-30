@@ -87,6 +87,59 @@ def exact_prompt_ids(
     return ids[:fill_target] + suffix_ids
 
 
+def write_service_fixture(case_dir: Path, case: CaseSpec, prompt_ids: list[int]) -> str:
+    """Write one service fixture from frozen prompt token IDs."""
+    if len(prompt_ids) != case.prompt_tokens or not all(
+        isinstance(token_id, int) for token_id in prompt_ids
+    ):
+        raise ValueError(f"{case.name}: invalid frozen prompt token IDs")
+    service_fixture_json = (
+        json.dumps(
+            [
+                {
+                    "id": case.name,
+                    "category": case.category,
+                    "max_tokens": case.decode_steps,
+                    "prompt": prompt_ids,
+                }
+            ],
+            separators=(",", ":"),
+        )
+        + "\n"
+    )
+    case_dir.mkdir(parents=True, exist_ok=True)
+    (case_dir / "service-fixture.json").write_text(
+        service_fixture_json, encoding="utf-8"
+    )
+    return service_fixture_json
+
+
+def materialize_service_fixtures(
+    output_dir: Path, case_specs: tuple[CaseSpec, ...]
+) -> list[dict[str, Any]]:
+    """Backfill service fixtures without regenerating frozen model outputs."""
+    manifest: list[dict[str, Any]] = []
+    for case in case_specs:
+        case_dir = output_dir / case.name
+        prompt_path = case_dir / "prompt-token-ids.json"
+        prompt_ids = json.loads(prompt_path.read_text(encoding="utf-8"))
+        if not isinstance(prompt_ids, list):
+            raise TypeError(f"{prompt_path}: expected a JSON token-ID list")
+        service_fixture_json = write_service_fixture(case_dir, case, prompt_ids)
+        manifest.append(
+            {
+                "name": case.name,
+                "category": case.category,
+                "prompt_tokens": case.prompt_tokens,
+                "max_tokens": case.decode_steps,
+                "service_fixture_sha256": hashlib.sha256(
+                    service_fixture_json.encode()
+                ).hexdigest(),
+            }
+        )
+    return manifest
+
+
 def run(args: argparse.Namespace) -> list[dict[str, Any]]:
     # Import vLLM only in the guarded parent process. XPU uses multiprocessing
     # spawn, whose child imports this file as __mp_main__ during bootstrap.
@@ -143,23 +196,7 @@ def run(args: argparse.Namespace) -> list[dict[str, Any]]:
         forced_json = json.dumps(forced_ids, separators=(",", ":")) + "\n"
         (case_dir / "prompt-token-ids.json").write_text(prompt_json, encoding="utf-8")
         (case_dir / "forced-token-ids.json").write_text(forced_json, encoding="utf-8")
-        service_fixture_json = (
-            json.dumps(
-                [
-                    {
-                        "id": case.name,
-                        "category": case.category,
-                        "max_tokens": case.decode_steps,
-                        "prompt": prompt_ids,
-                    }
-                ],
-                separators=(",", ":"),
-            )
-            + "\n"
-        )
-        (case_dir / "service-fixture.json").write_text(
-            service_fixture_json, encoding="utf-8"
-        )
+        service_fixture_json = write_service_fixture(case_dir, case, prompt_ids)
         manifest.append(
             {
                 "name": case.name,
@@ -199,11 +236,23 @@ def parse_args() -> argparse.Namespace:
         choices=[case.name for case in CASE_SPECS],
         help="prepare only the selected case; may be repeated",
     )
+    parser.add_argument(
+        "--service-fixtures-only",
+        action="store_true",
+        help="write service fixtures from existing frozen prompt-token files",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
-    print(json.dumps(run(parse_args()), indent=2))
+    args = parse_args()
+    if args.service_fixtures_only:
+        result = materialize_service_fixtures(
+            args.output_dir, select_case_specs(args.case)
+        )
+    else:
+        result = run(args)
+    print(json.dumps(result, indent=2))
 
 
 if __name__ == "__main__":

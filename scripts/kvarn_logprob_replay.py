@@ -17,12 +17,17 @@ else:
     from kvarn_service_gate import http_request, write_json_atomic
 
 
+DEFAULT_MAX_TOKENS = 2048
+
+
 def load_fixtures(
     path: Path,
-    default_max_tokens: int,
+    max_tokens_override: int | None,
     fixture_ids: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     """Load and validate completion fixtures, optionally selecting IDs."""
+    if max_tokens_override is not None and max_tokens_override < 1:
+        raise ValueError("max_tokens override must be positive")
     fixtures = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(fixtures, list) or not fixtures:
         raise ValueError("fixtures must be a non-empty JSON list")
@@ -40,7 +45,12 @@ def load_fixtures(
         if fixture_id in seen:
             raise ValueError(f"duplicate fixture id: {fixture_id}")
         seen.add(fixture_id)
-        max_tokens = int(fixture.get("max_tokens", default_max_tokens))
+        fixture_max_tokens = int(fixture.get("max_tokens", DEFAULT_MAX_TOKENS))
+        max_tokens = (
+            max_tokens_override
+            if max_tokens_override is not None
+            else fixture_max_tokens
+        )
         if max_tokens < 1:
             raise ValueError(f"{fixture_id} must request at least one output token")
         validated.append(
@@ -281,6 +291,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "base_url": args.base_url,
         "model": args.model,
         "request_parameters": {
+            "max_tokens_override": args.max_tokens,
             "temperature": 0,
             "ignore_eos": True,
             "echo": False,
@@ -332,12 +343,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--fixtures", type=Path, required=True)
     parser.add_argument("--fixture-id", action="append")
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--max-tokens", type=int, default=2048)
+    parser.add_argument(
+        "--max-tokens",
+        type=int,
+        help="override max_tokens for every selected fixture",
+    )
     parser.add_argument("--timeout", type=float, default=1800)
     parser.add_argument("--allow-tmp", action="store_true")
     args = parser.parse_args()
     args.base_url = args.base_url.rstrip("/")
-    if args.max_tokens < 1:
+    if args.max_tokens is not None and args.max_tokens < 1:
         parser.error("--max-tokens must be positive")
     output = args.output.resolve()
     if not args.allow_tmp and output.is_relative_to(Path("/tmp")):

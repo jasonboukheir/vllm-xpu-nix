@@ -752,6 +752,42 @@ overlap. Do not accept B4 unless every `concurrent_waves` entry records
 distinguishes four simultaneously resident requests from four clients that the
 engine silently serialized.
 
+After the B4 gate completes, capture final metrics, stop terminal A, and repeat
+the capacity, engine-log scan, and provenance finalization block above with
+`phase_dir="$run_root/b4"`. Then aggregate the thresholded comparisons and all
+required non-native service phases. Every input path is explicit; the checker
+does not infer phase identity from directory names.
+
+```bash
+cd "$packaging_repo"
+./scripts/kvarn_acceptance_check.py \
+  --comparison "$logits_root/dialogue-127/comparison.json" \
+  --comparison "$logits_root/adversarial-128/comparison.json" \
+  --comparison "$logits_root/code-4095/comparison.json" \
+  --comparison "$logits_root/math-16383/comparison.json" \
+  --comparison "$logits_root/reasoning-32767/comparison.json" \
+  --comparison "$logits_root/reasoning-65023/comparison.json" \
+  --b1-first-service-gate "$run_root/b1-first/service-gate.json" \
+  --b1-restart-service-gate "$run_root/b1-restart/service-gate.json" \
+  --near-first-service-gate \
+    "$run_root/b1-first/near-65535-service-gate.json" \
+  --near-restart-service-gate \
+    "$run_root/b1-restart/near-65535-service-gate.json" \
+  --b4-service-gate "$run_root/b4/service-gate.json" \
+  --b1-first-engine-log-scan "$run_root/b1-first/engine-log-scan.json" \
+  --b1-restart-engine-log-scan "$run_root/b1-restart/engine-log-scan.json" \
+  --b4-engine-log-scan "$run_root/b4/engine-log-scan.json" \
+  --output "$run_root/acceptance.json" \
+  > "$run_root/acceptance.stdout.json" || exit 1
+
+cmp -s "$run_root/acceptance.json" "$run_root/acceptance.stdout.json"
+```
+
+The aggregate passes only with six distinct threshold-passing comparisons and
+at least 4,096 total scored positions, all five service gates passed, and all
+three phase log scans passed with empty fatal findings. Recognized teardown-only
+findings remain counted and visible but are not fatal.
+
 Do not run native first. Once non-native B1, restarted B1, and B4 pass, use
 `phase_dir="$run_root/native-b1"` and the native app. Capture its process before
 checking the environment:

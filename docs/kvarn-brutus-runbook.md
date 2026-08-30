@@ -82,7 +82,7 @@ git -C "$config_repo" merge-base --is-ancestor \
 git -C "$packaging_repo" merge-base --is-ancestor \
   6945377cf94dd71f427351c4e6cdec2b24ee7e86 HEAD
 git -C "$vllm_repo" merge-base --is-ancestor \
-  bc05215e85ffdd11a29b06abd2c5c81a8078b76c HEAD
+  0d3db399a07f3a596f280b0a195b3e2133e7fffd HEAD
 git -C "$kernels_repo" merge-base --is-ancestor \
   cd7fc7a1561fe188c4f73da4dc5d837244aedd3f HEAD
 git -C "$packaging_repo" status --short --branch
@@ -230,7 +230,7 @@ the warmed runtime cache before classifying a capacity failure.
 
 Run these offline with no service holding the GPU. Use vLLM
 `tools/kvarn_forced_decode.py` and `tools/kvarn_compare_logits.py` from a commit
-containing `5af80d7634`. Each pair must use identical prompt and forced-token
+containing `0d3db399a0`. Each pair must use identical prompt and forced-token
 JSON. Generate the forced sequence once with BF16 KV, retain the input files,
 and never regenerate them between reference and candidate.
 
@@ -291,7 +291,63 @@ The two forced-decode processes below are the pair. Native Kvarn stays off for
 the first candidate. `--top-k 50` bounds artifact size; use `--full-logits`
 only when the multi-gigabyte output is intentional.
 
+Every forced-decode comparison is an acceptance gate with the same inclusive
+per-case thresholds. Agreement and coverage rates must be at least their
+minimums; error statistics must be at most their maximums:
+
+| Metric | Inclusive threshold |
+| --- | ---: |
+| Top-1 agreement rate | `>= 0.98` |
+| Tie-aware top-1 agreement rate | `>= 0.98` |
+| Exact top-5 agreement rate | `>= 0.50` |
+| Mean top-5 Jaccard | `>= 0.80` |
+| Mean captured-logit intersection coverage | `>= 0.90` |
+| Selected-token MAE | `<= 0.50` |
+| Selected-token p99 absolute error | `<= 5.0` |
+| Matched-logit RMSE | `<= 0.75` |
+| Matched-logit p99 absolute error | `<= 3.0` |
+
+The agreement, mean, RMSE, and p99 checks catch broad or growing drift. The
+gate deliberately does not constrain maximum absolute error, so an isolated
+deterministic outlier can remain without masking population-level corruption.
+The comparator must exit successfully and both `status` and
+`acceptance.status` in its JSON output must be `passed`; report-only output is
+not acceptance evidence.
+
 ```bash
+comparison_thresholds=(
+  --min-top1-agreement-rate 0.98
+  --min-tie-aware-top1-agreement-rate 0.98
+  --min-top5-exact-agreement-rate 0.50
+  --min-top5-mean-jaccard 0.80
+  --min-mean-intersection-coverage 0.90
+  --max-selected-token-mae 0.50
+  --max-selected-token-p99-abs 5.0
+  --max-matched-logit-rmse 0.75
+  --max-matched-logit-p99-abs 3.0
+)
+
+compare_logits() {
+  local reference=$1
+  local candidate=$2
+  local output=$3
+  local stdout=$4
+
+  "$candidate_env/bin/python" "$vllm_repo/tools/kvarn_compare_logits.py" \
+    --reference "$reference" \
+    --candidate "$candidate" \
+    --context-boundary 128 \
+    --context-boundary 4096 \
+    --context-boundary 16384 \
+    --context-boundary 32768 \
+    --context-boundary 65536 \
+    "${comparison_thresholds[@]}" \
+    --output "$output" > "$stdout" || return 1
+
+  jq -e '.status == "passed" and .acceptance.status == "passed"' \
+    "$output" >/dev/null || return 1
+}
+
 for case_name in \
   dialogue-127 adversarial-128 code-4095 math-16383 reasoning-32767 \
   reasoning-65023; do
@@ -317,16 +373,11 @@ for case_name in \
     --top-k 50 --output "$case_dir/kvarn.npz" \
     2>&1 | tee "$case_dir/kvarn.log"
 
-  "$candidate_env/bin/python" "$vllm_repo/tools/kvarn_compare_logits.py" \
-    --reference "$case_dir/bf16.npz" \
-    --candidate "$case_dir/kvarn.npz" \
-    --context-boundary 128 \
-    --context-boundary 4096 \
-    --context-boundary 16384 \
-    --context-boundary 32768 \
-    --context-boundary 65536 \
-    --output "$case_dir/comparison.json" \
-    > "$case_dir/comparison.stdout.json"
+  compare_logits \
+    "$case_dir/bf16.npz" \
+    "$case_dir/kvarn.npz" \
+    "$case_dir/comparison.json" \
+    "$case_dir/comparison.stdout.json" || exit 1
 done
 ```
 
@@ -399,16 +450,11 @@ for case_name in \
     --top-k 50 --output "$case_dir/kvarn-native.npz" \
     2>&1 | tee "$case_dir/kvarn-native.log"
 
-  "$candidate_env/bin/python" "$vllm_repo/tools/kvarn_compare_logits.py" \
-    --reference "$case_dir/bf16.npz" \
-    --candidate "$case_dir/kvarn-native.npz" \
-    --context-boundary 128 \
-    --context-boundary 4096 \
-    --context-boundary 16384 \
-    --context-boundary 32768 \
-    --context-boundary 65536 \
-    --output "$case_dir/comparison-native.json" \
-    > "$case_dir/comparison-native.stdout.json"
+  compare_logits \
+    "$case_dir/bf16.npz" \
+    "$case_dir/kvarn-native.npz" \
+    "$case_dir/comparison-native.json" \
+    "$case_dir/comparison-native.stdout.json" || exit 1
 done
 ```
 

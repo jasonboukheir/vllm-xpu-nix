@@ -54,6 +54,11 @@ DEFAULT_ENV_ALLOWLIST = (
     "XDG_CACHE_HOME",
 )
 
+# The Brutus acceptance profile deliberately changes HOME while vLLM runs, so
+# deriving this default from Path.home() would point at the runtime cache rather
+# than the external Nix configuration checkout.
+DEFAULT_CONFIG_REPO = Path("/home/jasonbk/.config/nix")
+
 
 def utc_timestamp(timestamp: float | None = None) -> str:
     instant = dt.datetime.fromtimestamp(
@@ -244,6 +249,10 @@ def collect_manifest(args: argparse.Namespace) -> dict[str, Any]:
         repository_state("vllm", args.vllm),
         repository_state("vllm-xpu-kernels", args.kernels),
     ]
+    # Direct Python callers may still supply the pre-config-repo Namespace.
+    # parse_args() always provides this field for CLI-generated manifests.
+    if config_repo := getattr(args, "config_repo", None):
+        repositories.append(repository_state("nix-config", config_repo))
     artifacts = [
         artifact_record(path, output_dir)
         for path in artifact_paths(output_dir, manifest_path, args.artifact)
@@ -350,6 +359,12 @@ def parse_args() -> argparse.Namespace:
         "--kernels",
         type=Path,
         default=project.parent / "vllm-xpu-kernels",
+    )
+    parser.add_argument(
+        "--config-repo",
+        type=Path,
+        default=DEFAULT_CONFIG_REPO,
+        help=f"external Nix configuration repository (default: {DEFAULT_CONFIG_REPO})",
     )
     parser.add_argument("--allow-tmp", action="store_true")
     args = parser.parse_args()

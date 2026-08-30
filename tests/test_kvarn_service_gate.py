@@ -45,6 +45,16 @@ def test_short_period_gate_detects_128_token_collapse():
     assert not MODULE.short_period_run(list(range(128)))
 
 
+def test_token_prompt_metadata_records_count_and_hash_without_embedding_ids():
+    metadata = MODULE.prompt_metadata([10, 20, 30])
+    assert metadata == {
+        "prompt_token_count": 3,
+        "prompt_token_ids_sha256": (
+            "7784d2c72a24031b6f93509c2163a212b3d7388f1ac7513692bd69e742e8b976"
+        ),
+    }
+
+
 def test_replay_mismatch_reports_first_divergence_and_total():
     first = [
         {

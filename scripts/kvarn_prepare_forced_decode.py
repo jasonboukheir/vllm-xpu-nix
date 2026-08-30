@@ -23,7 +23,15 @@ CASE_SPECS = (
     CaseSpec("code-4095", "code", 4095, 768),
     CaseSpec("math-16383", "math", 16383, 768),
     CaseSpec("reasoning-32767", "reasoning", 32767, 768),
+    CaseSpec("reasoning-65023", "reasoning", 65023, 512),
 )
+
+
+def select_case_specs(names: list[str] | None) -> tuple[CaseSpec, ...]:
+    if not names:
+        return CASE_SPECS
+    by_name = {case.name: case for case in CASE_SPECS}
+    return tuple(by_name[name] for name in dict.fromkeys(names))
 
 
 def load_fixtures(path: Path) -> dict[str, dict[str, Any]]:
@@ -71,6 +79,7 @@ def run(args: argparse.Namespace) -> list[dict[str, Any]]:
     # spawn, whose child imports this file as __mp_main__ during bootstrap.
     from vllm import LLM, SamplingParams, TokensPrompt
 
+    case_specs = select_case_specs(args.case)
     fixtures = load_fixtures(args.fixtures)
     args.output_dir.mkdir(parents=True, exist_ok=True)
     llm = LLM(
@@ -89,7 +98,7 @@ def run(args: argparse.Namespace) -> list[dict[str, Any]]:
     tokenizer = llm.get_tokenizer()
 
     manifest: list[dict[str, Any]] = []
-    for case in CASE_SPECS:
+    for case in case_specs:
         case_dir = args.output_dir / case.name
         case_dir.mkdir(parents=True, exist_ok=True)
         prompt_ids = exact_prompt_ids(
@@ -118,11 +127,24 @@ def run(args: argparse.Namespace) -> list[dict[str, Any]]:
 
         prompt_json = json.dumps(prompt_ids, separators=(",", ":")) + "\n"
         forced_json = json.dumps(forced_ids, separators=(",", ":")) + "\n"
-        (case_dir / "prompt-token-ids.json").write_text(
-            prompt_json, encoding="utf-8"
+        (case_dir / "prompt-token-ids.json").write_text(prompt_json, encoding="utf-8")
+        (case_dir / "forced-token-ids.json").write_text(forced_json, encoding="utf-8")
+        service_fixture_json = (
+            json.dumps(
+                [
+                    {
+                        "id": case.name,
+                        "category": case.category,
+                        "max_tokens": case.decode_steps,
+                        "prompt": prompt_ids,
+                    }
+                ],
+                separators=(",", ":"),
+            )
+            + "\n"
         )
-        (case_dir / "forced-token-ids.json").write_text(
-            forced_json, encoding="utf-8"
+        (case_dir / "service-fixture.json").write_text(
+            service_fixture_json, encoding="utf-8"
         )
         manifest.append(
             {
@@ -136,11 +158,14 @@ def run(args: argparse.Namespace) -> list[dict[str, Any]]:
                 "forced_token_ids_sha256": hashlib.sha256(
                     forced_json.encode()
                 ).hexdigest(),
+                "service_fixture_sha256": hashlib.sha256(
+                    service_fixture_json.encode()
+                ).hexdigest(),
             }
         )
 
-    if sum(case["decode_steps"] for case in manifest) < 4096:
-        raise AssertionError("forced-decode cases cover fewer than 4096 positions")
+    if not args.case and sum(case["decode_steps"] for case in manifest) < 4608:
+        raise AssertionError("forced-decode cases cover fewer than 4608 positions")
     (args.output_dir / "cases.json").write_text(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -154,6 +179,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--revision", required=True)
     parser.add_argument("--fixtures", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument(
+        "--case",
+        action="append",
+        choices=[case.name for case in CASE_SPECS],
+        help="prepare only the selected case; may be repeated",
+    )
     return parser.parse_args()
 
 

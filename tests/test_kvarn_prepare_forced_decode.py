@@ -18,23 +18,35 @@ class Tokenizer:
         return list(text.encode())
 
 
-def test_case_specs_cover_boundaries_and_4096_decode_positions():
-    assert sum(case.decode_steps for case in MODULE.CASE_SPECS) == 4096
+def test_case_specs_cover_boundaries_and_near_maximum_context():
+    assert sum(case.decode_steps for case in MODULE.CASE_SPECS) == 4608
     assert {
-        (case.prompt_tokens, case.prompt_tokens + 1)
-        for case in MODULE.CASE_SPECS
+        (case.prompt_tokens, case.prompt_tokens + 1) for case in MODULE.CASE_SPECS
     } >= {
         (127, 128),
         (128, 129),
         (4095, 4096),
         (16383, 16384),
         (32767, 32768),
+        (65023, 65024),
     }
+    near_max = next(
+        case for case in MODULE.CASE_SPECS if case.name == "reasoning-65023"
+    )
+    assert near_max.prompt_tokens + near_max.decode_steps == 65535
 
 
 def test_load_fixtures_covers_every_case_category():
     fixtures = MODULE.load_fixtures(FIXTURES)
     assert {case.category for case in MODULE.CASE_SPECS} <= fixtures.keys()
+
+
+def test_select_case_specs_preserves_order_and_deduplicates():
+    selected = MODULE.select_case_specs(
+        ["reasoning-65023", "dialogue-127", "reasoning-65023"]
+    )
+    assert [case.name for case in selected] == ["reasoning-65023", "dialogue-127"]
+    assert MODULE.select_case_specs(None) == MODULE.CASE_SPECS
 
 
 @pytest.mark.parametrize("target", [127, 128, 4095])

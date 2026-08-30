@@ -234,8 +234,8 @@ containing `5af80d7634`. Each pair must use identical prompt and forced-token
 JSON. Generate the forced sequence once with BF16 KV, retain the input files,
 and never regenerate them between reference and candidate.
 
-The five cases below cover every fixture category and exactly 4,096 scored
-decode positions without doing a 32K decode:
+The six cases below cover every fixture category and exactly 4,608 scored
+decode positions without doing a long decode at any context length:
 
 | Case | Prompt tokens | Decode positions | Coverage |
 | --- | ---: | ---: | --- |
@@ -244,12 +244,15 @@ decode positions without doing a 32K decode:
 | `code-4095` | 4,095 | 768 | crosses 4K |
 | `math-16383` | 16,383 | 768 | crosses 16K |
 | `reasoning-32767` | 32,767 | 768 | crosses 32K |
+| `reasoning-65023` | 65,023 | 512 | ends at 65,535, one below max |
 
 The preparation process tokenizes the category fixture, extends it with
 deterministic nonperiodic category-tagged records, and truncates token IDs to
 the exact requested length. It loads BF16 once and greedily generates the
-forced sequence for each case. The paired runners then consume those frozen
-IDs unchanged.
+forced sequence for each case. It also writes a compact `service-fixture.json`
+for token-ID service replay. The paired runners then consume those frozen IDs
+unchanged. `--case reasoning-65023` may be used to prepare only the near-maximum
+case when the original five cases already have frozen inputs.
 
 ```bash
 logits_root="$run_root/logits"
@@ -287,7 +290,8 @@ only when the multi-gigabyte output is intentional.
 
 ```bash
 for case_name in \
-  dialogue-127 adversarial-128 code-4095 math-16383 reasoning-32767; do
+  dialogue-127 adversarial-128 code-4095 math-16383 reasoning-32767 \
+  reasoning-65023; do
   case_dir="$logits_root/$case_name"
   cp "$logits_root/bf16-engine.json" "$case_dir/bf16-engine.json"
   cp "$logits_root/kvarn-engine.json" "$case_dir/kvarn-engine.json"
@@ -317,6 +321,7 @@ for case_name in \
     --context-boundary 4096 \
     --context-boundary 16384 \
     --context-boundary 32768 \
+    --context-boundary 65536 \
     --output "$case_dir/comparison.json" \
     > "$case_dir/comparison.stdout.json"
 done
@@ -327,7 +332,8 @@ then hash the complete logit phase:
 
 ```bash
 for case_name in \
-  dialogue-127 adversarial-128 code-4095 math-16383 reasoning-32767; do
+  dialogue-127 adversarial-128 code-4095 math-16383 reasoning-32767 \
+  reasoning-65023; do
   case_dir="$logits_root/$case_name"
   "$candidate_env/bin/python" -c '
 import json, sys
@@ -377,7 +383,8 @@ uses the same token files and Kvarn engine JSON:
 
 ```bash
 for case_name in \
-  dialogue-127 adversarial-128 code-4095 math-16383 reasoning-32767; do
+  dialogue-127 adversarial-128 code-4095 math-16383 reasoning-32767 \
+  reasoning-65023; do
   case_dir="$logits_root/$case_name"
   env -u VLLM_XPU_ENABLE_XPU_GRAPH KVARN_NATIVE_XPU=1 \
     "$candidate_env/bin/python" "$vllm_repo/tools/kvarn_forced_decode.py" \
@@ -395,6 +402,7 @@ for case_name in \
     --context-boundary 4096 \
     --context-boundary 16384 \
     --context-boundary 32768 \
+    --context-boundary 65536 \
     --output "$case_dir/comparison-native.json" \
     > "$case_dir/comparison-native.stdout.json"
 done
@@ -405,7 +413,8 @@ add a native manifest that hashes the new artifacts:
 
 ```bash
 for case_name in \
-  dialogue-127 adversarial-128 code-4095 math-16383 reasoning-32767; do
+  dialogue-127 adversarial-128 code-4095 math-16383 reasoning-32767 \
+  reasoning-65023; do
   case_dir="$logits_root/$case_name"
   "$candidate_env/bin/python" -c '
 import json, sys
@@ -570,6 +579,20 @@ cd "$packaging_repo"
   --concurrency 1 \
   --output "$phase_dir/service-gate.json" \
   > "$phase_dir/service-gate.stdout.json"
+
+# Exercise the same lifecycle one token below the configured context maximum.
+near_fixture="$logits_root/reasoning-65023/service-fixture.json"
+test -r "$near_fixture"
+./scripts/kvarn_service_gate.py \
+  --base-url http://127.0.0.1:8000 \
+  --model "$served_model" \
+  --fixtures "$near_fixture" \
+  --max-tokens 512 \
+  --minimum-output-tokens 512 \
+  --concurrency 1 \
+  --cancel-after-events 257 \
+  --output "$phase_dir/near-65535-service-gate.json" \
+  > "$phase_dir/near-65535-service-gate.stdout.json"
 curl -fsS http://127.0.0.1:8000/metrics > "$phase_dir/metrics-after.txt"
 ```
 
@@ -578,9 +601,10 @@ concurrent isolation at the selected width, cancellation followed by
 replacement, corruption checks, and final idle-metric checks. The cancellation
 request retains the fixture's full 2,048-token budget and closes after 257
 stream events, crossing both 128-token cache tiles while leaving substantial
-generation work outstanding. Stop terminal A with Ctrl-C only after the gate
-and final metrics finish. Then finalize the phase after the engine log stops
-changing:
+generation work outstanding. The token-ID gate separately starts at 65,023
+tokens and generates 512 positions, ending at 65,535. Stop terminal A with
+Ctrl-C only after both gates and final metrics finish. Then finalize the phase
+after the engine log stops changing:
 
 ```bash
 test ! -e "/proc/$engine_pid"
@@ -606,8 +630,8 @@ cd "$packaging_repo"
 
 Restart the same non-native B1 app with the same `candidate_env` and runtime
 cache, but set `phase_dir="$run_root/b1-restart"` in both terminals. Repeat
-every launch, capture, gate, stop, scan, and provenance command. Verify
-cross-process greedy identity:
+every launch, capture, standard gate, near-65K gate, stop, scan, and provenance
+command. Verify cross-process greedy identity:
 
 ```bash
 phase_dir="$run_root/b1-restart"
@@ -625,6 +649,11 @@ jq -e -s '
   == (.[1].isolated_first | map(.token_ids))
 ' "$run_root/b1-first/service-gate.json" \
   "$run_root/b1-restart/service-gate.json"
+
+jq -e -s '
+  .[0].isolated_first[0].token_ids == .[1].isolated_first[0].token_ids
+' "$run_root/b1-first/near-65535-service-gate.json" \
+  "$run_root/b1-restart/near-65535-service-gate.json"
 ```
 
 After both B1 starts pass, repeat with `phase_dir="$run_root/b4"`, the B4 app,

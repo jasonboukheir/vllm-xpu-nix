@@ -60,10 +60,23 @@ def exact_prompt_ids(
     prompt: str,
     category: str,
     target: int,
+    *,
+    trailing_prompt: bool = False,
 ) -> list[int]:
+    suffix_ids: list[int] = []
+    fill_target = target
+    if trailing_prompt:
+        suffix_ids = tokenizer.encode(
+            "\n\nFinal task after reviewing the records:\n" + prompt,
+            add_special_tokens=False,
+        )
+        fill_target -= len(suffix_ids)
+        if fill_target < 1:
+            raise ValueError("target is too short for the trailing prompt")
+
     ids = tokenizer.encode(prompt)
     counter = 0
-    while len(ids) < target:
+    while len(ids) < fill_target:
         digest = hashlib.sha256(f"{category}:{counter}".encode()).hexdigest()
         record = (
             f"\nCategory {category} evidence record {counter}; "
@@ -71,7 +84,7 @@ def exact_prompt_ids(
         )
         ids.extend(tokenizer.encode(record, add_special_tokens=False))
         counter += 1
-    return ids[:target]
+    return ids[:fill_target] + suffix_ids
 
 
 def run(args: argparse.Namespace) -> list[dict[str, Any]]:
@@ -106,6 +119,7 @@ def run(args: argparse.Namespace) -> list[dict[str, Any]]:
             fixtures[case.category]["prompt"],
             case.category,
             case.prompt_tokens,
+            trailing_prompt=case.name == "reasoning-65023",
         )
         params = SamplingParams(
             temperature=0.0,

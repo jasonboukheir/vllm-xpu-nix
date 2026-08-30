@@ -42,3 +42,33 @@ def test_repeated_span_gate_detects_three_consecutive_copies():
 def test_short_period_gate_detects_128_token_collapse():
     assert MODULE.short_period_run([1, 2, 3, 4] * 32)
     assert not MODULE.short_period_run(list(range(128)))
+
+
+def test_replay_mismatch_reports_first_divergence_and_total():
+    first = [
+        {
+            "id": "dialogue",
+            "token_ids": [10, 20, 30, 40],
+            "token_ids_sha256": "expected",
+        }
+    ]
+    replay = [
+        {
+            "id": "dialogue",
+            "token_ids": [10, 20, 31, 41],
+            "token_ids_sha256": "actual",
+        }
+    ]
+
+    assert MODULE.replay_mismatches(first, replay) == [
+        {
+            "id": "dialogue",
+            "expected_sha256": "expected",
+            "actual_sha256": "actual",
+            "common_prefix_tokens": 2,
+            "expected_token_at_divergence": 30,
+            "actual_token_at_divergence": 31,
+            "differing_positions": 2,
+        }
+    ]
+    assert MODULE.replay_mismatches(first, first) == []

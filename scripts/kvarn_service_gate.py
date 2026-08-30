@@ -21,6 +21,59 @@ METRIC_NAMES = (
 )
 
 
+def write_json_atomic(path: Path, document: dict[str, Any]) -> None:
+    """Persist a checkpoint without exposing a partially written JSON file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.tmp")
+    temporary.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+    temporary.replace(path)
+
+
+def replay_mismatches(
+    first: list[dict[str, Any]], replay: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    mismatches: list[dict[str, Any]] = []
+    for expected, actual in zip(first, replay, strict=True):
+        expected_ids = expected["token_ids"]
+        actual_ids = actual["token_ids"]
+        if expected_ids == actual_ids:
+            continue
+        common_prefix = next(
+            (
+                index
+                for index, (left, right) in enumerate(
+                    zip(expected_ids, actual_ids, strict=False)
+                )
+                if left != right
+            ),
+            min(len(expected_ids), len(actual_ids)),
+        )
+        mismatches.append(
+            {
+                "id": expected["id"],
+                "expected_sha256": expected["token_ids_sha256"],
+                "actual_sha256": actual["token_ids_sha256"],
+                "common_prefix_tokens": common_prefix,
+                "expected_token_at_divergence": (
+                    expected_ids[common_prefix]
+                    if common_prefix < len(expected_ids)
+                    else None
+                ),
+                "actual_token_at_divergence": (
+                    actual_ids[common_prefix]
+                    if common_prefix < len(actual_ids)
+                    else None
+                ),
+                "differing_positions": sum(
+                    left != right
+                    for left, right in zip(expected_ids, actual_ids, strict=False)
+                )
+                + abs(len(expected_ids) - len(actual_ids)),
+            }
+        )
+    return mismatches
+
+
 def http_request(
     url: str, payload: dict[str, Any] | None = None, timeout: float = 600
 ) -> str:
@@ -193,28 +246,67 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             raise ValueError("each fixture must request at least 2048 output tokens")
 
     before = wait_for_idle(args.base_url, args.idle_timeout)
-    first = [
-        completion(
-            args.base_url,
-            args.model,
-            fixture,
-            args.max_tokens,
-            args.timeout,
+    progress: dict[str, Any] = {
+        "schema_version": 1,
+        "status": "running",
+        "phase": "isolated_first",
+        "created_unix_seconds": time.time(),
+        "base_url": args.base_url,
+        "model": args.model,
+        "concurrency": args.concurrency,
+        "metrics_before": before,
+        "isolated_first": [],
+        "isolated_replay": [],
+        "concurrent": [],
+        "cancellation": None,
+    }
+    write_json_atomic(args.output, progress)
+
+    first: list[dict[str, Any]] = []
+    for fixture in fixtures:
+        first.append(
+            completion(
+                args.base_url,
+                args.model,
+                fixture,
+                args.max_tokens,
+                args.timeout,
+            )
         )
-        for fixture in fixtures
-    ]
-    second = [
-        completion(
-            args.base_url,
-            args.model,
-            fixture,
-            args.max_tokens,
-            args.timeout,
+        progress["isolated_first"] = first
+        write_json_atomic(args.output, progress)
+
+    progress["phase"] = "isolated_replay"
+    write_json_atomic(args.output, progress)
+    second: list[dict[str, Any]] = []
+    for fixture in fixtures:
+        second.append(
+            completion(
+                args.base_url,
+                args.model,
+                fixture,
+                args.max_tokens,
+                args.timeout,
+            )
         )
-        for fixture in fixtures
-    ]
-    if [item["token_ids"] for item in first] != [item["token_ids"] for item in second]:
+        progress["isolated_replay"] = second
+        write_json_atomic(args.output, progress)
+
+    mismatches = replay_mismatches(first, second)
+    if mismatches:
+        progress.update(
+            status="failed",
+            phase="same_process_replay_comparison",
+            replay_mismatches=mismatches,
+        )
+        write_json_atomic(args.output, progress)
         raise AssertionError("same-process replay produced different token IDs")
+
+    progress.update(
+        phase="concurrent_isolation",
+        same_process_replay_identical=True,
+    )
+    write_json_atomic(args.output, progress)
 
     batch_fixtures = fixtures[: args.concurrency]
     with concurrent.futures.ThreadPoolExecutor(
@@ -232,9 +324,20 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 batch_fixtures,
             )
         )
+    progress["concurrent"] = batch
+    write_json_atomic(args.output, progress)
+
     expected = {item["id"]: item["token_ids"] for item in first}
     if any(item["token_ids"] != expected[item["id"]] for item in batch):
+        progress.update(status="failed", phase="concurrent_isolation_comparison")
+        write_json_atomic(args.output, progress)
         raise AssertionError("concurrent output diverged from isolated output")
+
+    progress.update(
+        phase="cancellation",
+        concurrent_isolation_identical=True,
+    )
+    write_json_atomic(args.output, progress)
 
     cancellation: dict[str, Any] | None = None
     if args.cancel_after_events:
@@ -253,11 +356,15 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             args.timeout,
         )
         if replacement["token_ids"] != expected[fixtures[0]["id"]]:
+            progress.update(status="failed", phase="cancellation_replacement")
+            write_json_atomic(args.output, progress)
             raise AssertionError("replacement after cancellation was not isolated")
         cancellation = {
             "stream_events_before_close": events,
             "replacement": replacement,
         }
+        progress["cancellation"] = cancellation
+        write_json_atomic(args.output, progress)
 
     after = wait_for_idle(args.base_url, args.idle_timeout)
     provenance = (
@@ -267,6 +374,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     )
     return {
         "schema_version": 1,
+        "status": "passed",
+        "phase": "complete",
         "created_unix_seconds": time.time(),
         "base_url": args.base_url,
         "model": args.model,
@@ -310,10 +419,21 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    document = run(args)
-    args.output.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        document = run(args)
+    except Exception as error:
+        if args.output.exists():
+            document = json.loads(args.output.read_text(encoding="utf-8"))
+            document.update(
+                status="failed",
+                error_type=type(error).__name__,
+                error=str(error),
+                failed_unix_seconds=time.time(),
+            )
+            write_json_atomic(args.output, document)
+        raise
+    write_json_atomic(args.output, document)
     rendered = json.dumps(document, indent=2) + "\n"
-    args.output.write_text(rendered, encoding="utf-8")
     print(rendered, end="")
 
 

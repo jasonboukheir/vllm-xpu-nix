@@ -145,6 +145,16 @@ def short_period_run(
     return False
 
 
+def prompt_metadata(prompt: str | list[int]) -> dict[str, Any]:
+    if isinstance(prompt, str):
+        return {"prompt": prompt}
+    rendered = json.dumps(prompt, separators=(",", ":")).encode()
+    return {
+        "prompt_token_count": len(prompt),
+        "prompt_token_ids_sha256": hashlib.sha256(rendered).hexdigest(),
+    }
+
+
 def completion(
     base_url: str,
     model: str,
@@ -183,7 +193,7 @@ def completion(
     rendered = json.dumps(token_ids, separators=(",", ":")).encode()
     return {
         "id": fixture["id"],
-        "prompt": fixture["prompt"],
+        **prompt_metadata(fixture["prompt"]),
         "max_tokens": max_tokens,
         "elapsed_seconds": elapsed,
         "finish_reason": choice.get("finish_reason"),
@@ -310,14 +320,26 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     if not isinstance(fixtures, list) or len(fixtures) < args.concurrency:
         raise ValueError("fixtures must contain at least --concurrency entries")
     for fixture in fixtures:
+        prompt = fixture.get("prompt") if isinstance(fixture, dict) else None
+        valid_prompt = isinstance(prompt, str) or (
+            isinstance(prompt, list)
+            and bool(prompt)
+            and all(isinstance(token_id, int) for token_id in prompt)
+        )
         if (
             not isinstance(fixture, dict)
             or not isinstance(fixture.get("id"), str)
-            or not isinstance(fixture.get("prompt"), str)
+            or not valid_prompt
         ):
-            raise TypeError("each fixture requires string id and prompt fields")
-        if int(fixture.get("max_tokens", args.max_tokens)) < 2048:
-            raise ValueError("each fixture must request at least 2048 output tokens")
+            raise TypeError(
+                "each fixture requires a string id and either a string prompt "
+                "or a non-empty integer token-id prompt"
+            )
+        if int(fixture.get("max_tokens", args.max_tokens)) < args.minimum_output_tokens:
+            raise ValueError(
+                "each fixture must request at least "
+                f"{args.minimum_output_tokens} output tokens"
+            )
 
     before = wait_for_idle(args.base_url, args.idle_timeout)
     progress: dict[str, Any] = {
@@ -487,6 +509,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--provenance", type=Path)
     parser.add_argument("--max-tokens", type=int, default=2048)
+    parser.add_argument("--minimum-output-tokens", type=int, default=2048)
     parser.add_argument("--concurrency", type=int, default=4)
     parser.add_argument("--cancel-after-events", type=int, default=257)
     parser.add_argument("--metrics-poll-interval", type=float, default=0.1)
@@ -495,8 +518,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--allow-tmp", action="store_true")
     args = parser.parse_args()
     args.base_url = args.base_url.rstrip("/")
-    if args.max_tokens < 2048:
-        parser.error("--max-tokens must be at least 2048")
+    if args.minimum_output_tokens < 1:
+        parser.error("--minimum-output-tokens must be positive")
+    if args.max_tokens < args.minimum_output_tokens:
+        parser.error("--max-tokens must be at least --minimum-output-tokens")
     if args.concurrency < 1:
         parser.error("--concurrency must be positive")
     if args.cancel_after_events < 0:

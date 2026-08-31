@@ -11,8 +11,6 @@ from scripts.kvarn_perf_gate import GateError, compare
 
 def _correctness(path: Path, candidate_id: str = "candidate-store-path") -> Path:
     gate_names = (
-        "gdn_allocator_pressure",
-        "gdn_allocator_counterfactual",
         "native_decode_short",
         "native_decode_262k",
         "b1_replay",

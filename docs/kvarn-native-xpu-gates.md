@@ -19,8 +19,8 @@ native-reader switch may differ in an A/B.
 ## Gate order
 
 1. Build the narrowed BMG kernel package. Run the native primitive suite,
-   including the GDN allocator-pressure regression and the 262K ragged B4
-   decoder oracle at split counts 1 and 16.
+   including packed K-column-scale coverage across every token subgroup and
+   the 262K ragged B4 decoder oracle at split counts 1 and 16.
 2. Start native Kvarn at 65,536/B1 with split count 1. Require the native Xe2
    dispatch log and reject any fallback, exception, non-finite value, or device
    assertion. Replay the short and boundary fixtures twice and require exact
@@ -134,10 +134,11 @@ positive native-dispatch evidence in every candidate log.
 The correctness artifact is not a boolean checklist. Every required gate is
 an object containing `status: passed`, a durable evidence path, and that
 file's SHA-256. The performance gate re-reads and hashes all evidence,
-including the current-build GDN allocator-pressure pass, its no-fix mutation
-failure, short and 262K native decoder primitives, B1/restart/cancel/B4
-service results, the non-native/native near-262K equivalence, and the restarted
-near-262K result.
+including short and 262K native decoder primitives, B1/restart/cancel/B4
+service results, the non-native/native near-262K equivalence, and the
+restarted near-262K result. GDN allocator-pressure and no-fix mutation
+artifacts are diagnostics, not release evidence: the retained-scratch
+hypothesis did not explain the observed failure.
 
 Do not promote based on a single aggregate tok/s number. Retain p99 TTFT, p99
 ITL, median per-request decode tok/s, request throughput, output throughput,

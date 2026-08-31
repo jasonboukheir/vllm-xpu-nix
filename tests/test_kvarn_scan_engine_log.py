@@ -49,7 +49,8 @@ def test_engine_dead_traceback_before_shutdown_fails():
         ]
     )
     assert result["status"] == "failed"
-    assert [item["kind"] for item in result["fatal_findings"]] == ["traceback"]
+    kinds = {item["kind"] for item in result["fatal_findings"]}
+    assert {"traceback", "engine_dead_error", "error_level"} <= kinds
 
 
 def test_numerical_and_runtime_failures_fail():
@@ -59,6 +60,9 @@ def test_numerical_and_runtime_failures_fail():
             "ERROR device lost",
             "Fatal Python error: Aborted",
             "RuntimeError: out of memory",
+            "ERROR non-finite decoder result",
+            "AssertionError: wrong token",
+            "EngineDeadError without a traceback",
         ]
     )
     assert result["status"] == "failed"
@@ -67,4 +71,9 @@ def test_numerical_and_runtime_failures_fail():
         "device_failure",
         "fatal_python",
         "out_of_memory",
+        "runtime_error",
+        "error_level",
+        "explicit_non_finite",
+        "assertion_error",
+        "engine_dead_error",
     }

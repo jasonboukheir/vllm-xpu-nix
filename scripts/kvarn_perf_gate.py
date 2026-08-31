@@ -1,0 +1,708 @@
+#!/usr/bin/env python3
+"""Gate repeated, provenance-matched Kvarn serving benchmarks."""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import hashlib
+import json
+import math
+import os
+import re
+import statistics
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+try:
+    from scripts.kvarn_scan_engine_log import scan
+except ModuleNotFoundError:  # Direct execution from the scripts directory.
+    from kvarn_scan_engine_log import scan
+
+NATIVE_DISPATCH = "Using the native Xe2 KVarN qlen=1 decoder"
+FALLBACK_PATTERN = re.compile(r"(?i)(?:kvarn.{0,80}fallback|falling back)")
+COMPACT_DTYPE = "kvarn_k4v4_g128_compact"
+REQUIRED_GATES = (
+    "gdn_allocator_pressure",
+    "gdn_allocator_counterfactual",
+    "native_decode_short",
+    "native_decode_262k",
+    "b1_replay",
+    "b1_restart",
+    "cancel_reuse",
+    "b4_isolation",
+    "near_262k_reference_equivalence",
+    "near_262k_restart",
+)
+COMMON_PROVENANCE_FIELDS = (
+    "backend",
+    "model_id",
+    "tokenizer_id",
+    "num_prompts",
+    "request_rate",
+    "max_concurrency",
+    "kvarn_candidate_id",
+    "kvarn_model_revision",
+    "kvarn_service_profile",
+    "kvarn_workload_id",
+    "kvarn_seed",
+    "kvarn_max_model_len",
+    "kvarn_max_num_seqs",
+    "kvarn_enforce_eager",
+    "kvarn_prefix_caching",
+    "kvarn_mtp",
+    "kvarn_xpu_graph",
+    "kvarn_scheduler_peak_running",
+    "kvarn_correctness_sha256",
+)
+ARM_PROVENANCE_FIELDS = (
+    "kvarn_arm",
+    "kvarn_kv_cache_dtype",
+    "kvarn_native_xpu",
+    "kvarn_native_splits",
+)
+
+
+class GateError(ValueError):
+    """Raised when inputs do not form a valid matched comparison."""
+
+
+@dataclass(frozen=True)
+class Run:
+    path: str
+    completed: int
+    output_throughput: float
+    request_throughput: float
+    total_token_throughput: float
+    request_decode_throughputs: tuple[float, ...]
+    ttft_ms: tuple[float, ...]
+    itl_ms: tuple[float, ...]
+    input_lens: tuple[int, ...]
+    output_lens: tuple[int, ...]
+    max_concurrent_requests: int
+    provenance: dict[str, Any]
+    run_order: int
+    run_uuid: str
+    run_started_at: dt.datetime
+    engine_log_sha256: str
+
+    def metrics(self) -> dict[str, float]:
+        request_rates = list(self.request_decode_throughputs)
+        ttft = list(self.ttft_ms)
+        itl = list(self.itl_ms)
+        return {
+            "output_throughput": self.output_throughput,
+            "request_throughput": self.request_throughput,
+            "total_token_throughput": self.total_token_throughput,
+            "min_request_decode_throughput": min(request_rates),
+            "p10_request_decode_throughput": _percentile(request_rates, 10),
+            "median_request_decode_throughput": statistics.median(request_rates),
+            "p50_ttft_ms": _percentile(ttft, 50),
+            "p90_ttft_ms": _percentile(ttft, 90),
+            "p99_ttft_ms": _percentile(ttft, 99),
+            "p50_itl_ms": _percentile(itl, 50),
+            "p90_itl_ms": _percentile(itl, 90),
+            "p99_itl_ms": _percentile(itl, 99),
+        }
+
+
+def _positive_number(value: Any, *, name: str, path: Path) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise GateError(f"{path}: {name} must be numeric")
+    result = float(value)
+    if not math.isfinite(result) or result <= 0:
+        raise GateError(f"{path}: {name} must be finite and positive")
+    return result
+
+
+def _positive_integer(value: Any, *, name: str, path: Path) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise GateError(f"{path}: {name} must be a positive integer")
+    return value
+
+
+def _integer_list(value: Any, *, name: str, path: Path) -> tuple[int, ...]:
+    if not isinstance(value, list) or not value:
+        raise GateError(f"{path}: {name} must be a non-empty list")
+    if any(
+        isinstance(item, bool) or not isinstance(item, int) or item <= 0
+        for item in value
+    ):
+        raise GateError(f"{path}: {name} must contain positive integers")
+    return tuple(value)
+
+
+def _required_text(document: dict[str, Any], name: str, path: Path) -> str:
+    value = document.get(name)
+    if not isinstance(value, str) or not value.strip():
+        raise GateError(f"{path}: {name} must be a non-empty metadata string")
+    return value.strip()
+
+
+def _percentile(values: list[float], percentile: float) -> float:
+    if not values:
+        raise GateError("cannot compute a percentile from an empty sample")
+    ordered = sorted(values)
+    rank = (len(ordered) - 1) * percentile / 100.0
+    lower = math.floor(rank)
+    upper = math.ceil(rank)
+    if lower == upper:
+        return ordered[lower]
+    weight = rank - lower
+    return ordered[lower] * (1.0 - weight) + ordered[upper] * weight
+
+
+def _load_run(path: Path) -> Run:
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise GateError(f"{path}: cannot read benchmark JSON: {exc}") from exc
+    if not isinstance(document, dict):
+        raise GateError(f"{path}: benchmark JSON must be an object")
+
+    completed = _positive_integer(
+        document.get("completed"), name="completed", path=path
+    )
+    num_prompts = _positive_integer(
+        document.get("num_prompts"), name="num_prompts", path=path
+    )
+    failed = document.get("failed")
+    if failed != 0:
+        raise GateError(f"{path}: failed must be zero, got {failed!r}")
+    if completed != num_prompts:
+        raise GateError(
+            f"{path}: completed={completed} must equal num_prompts={num_prompts}"
+        )
+
+    duration = _positive_number(document.get("duration"), name="duration", path=path)
+
+    max_concurrency = _positive_integer(
+        document.get("max_concurrency"), name="max_concurrency", path=path
+    )
+    max_concurrent_requests = _positive_integer(
+        document.get("max_concurrent_requests"),
+        name="max_concurrent_requests",
+        path=path,
+    )
+    if max_concurrent_requests < max_concurrency:
+        raise GateError(
+            f"{path}: observed concurrency {max_concurrent_requests} is below "
+            f"configured max_concurrency={max_concurrency}"
+        )
+
+    input_lens = _integer_list(document.get("input_lens"), name="input_lens", path=path)
+    output_lens = _integer_list(
+        document.get("output_lens"), name="output_lens", path=path
+    )
+    ttfts = document.get("ttfts")
+    itls = document.get("itls")
+    if not isinstance(ttfts, list) or not isinstance(itls, list):
+        raise GateError(f"{path}: --save-detailed ttfts and itls are required")
+    lengths = (len(input_lens), len(output_lens), len(ttfts), len(itls))
+    if any(length != completed for length in lengths):
+        raise GateError(
+            f"{path}: detailed arrays {lengths} must all match completed={completed}"
+        )
+    total_input = _positive_integer(
+        document.get("total_input_tokens"), name="total_input_tokens", path=path
+    )
+    total_output = _positive_integer(
+        document.get("total_output_tokens"), name="total_output_tokens", path=path
+    )
+    if total_input != sum(input_lens) or total_output != sum(output_lens):
+        raise GateError(f"{path}: aggregate token counts differ from detailed lengths")
+
+    claimed_metrics = {
+        "output_throughput": _positive_number(
+            document.get("output_throughput"), name="output_throughput", path=path
+        ),
+        "request_throughput": _positive_number(
+            document.get("request_throughput"), name="request_throughput", path=path
+        ),
+        "total_token_throughput": _positive_number(
+            document.get("total_token_throughput"),
+            name="total_token_throughput",
+            path=path,
+        ),
+    }
+    recomputed_metrics = {
+        "output_throughput": total_output / duration,
+        "request_throughput": completed / duration,
+        "total_token_throughput": (total_input + total_output) / duration,
+    }
+    for name, claimed in claimed_metrics.items():
+        if not math.isclose(claimed, recomputed_metrics[name], rel_tol=1e-6):
+            raise GateError(f"{path}: {name} is inconsistent with duration and counts")
+
+    ttft_values = [
+        _positive_number(value, name="ttft", path=path) * 1000.0 for value in ttfts
+    ]
+    flat_itls: list[float] = []
+    request_rates: list[float] = []
+    for request, (intervals, output_len) in enumerate(zip(itls, output_lens)):
+        if not isinstance(intervals, list):
+            raise GateError(f"{path}: itls[{request}] must be a list")
+        parsed = [
+            _positive_number(value, name=f"itls[{request}]", path=path)
+            for value in intervals
+        ]
+        expected_intervals = output_len - 1
+        if len(parsed) != expected_intervals:
+            raise GateError(
+                f"{path}: itls[{request}] has {len(parsed)} values, expected "
+                f"{expected_intervals} for output_len={output_len}"
+            )
+        if parsed:
+            flat_itls.extend(value * 1000.0 for value in parsed)
+            request_rates.append(expected_intervals / sum(parsed))
+    if not flat_itls or len(request_rates) != completed:
+        raise GateError(f"{path}: every completion must contain multiple tokens")
+
+    provenance: dict[str, Any] = {}
+    for name in COMMON_PROVENANCE_FIELDS:
+        if name in {"num_prompts", "max_concurrency"}:
+            provenance[name] = document[name]
+        elif name == "request_rate":
+            value = document.get(name)
+            if value != "inf" and (
+                isinstance(value, bool) or not isinstance(value, (int, float))
+            ):
+                raise GateError(f"{path}: request_rate must be numeric or 'inf'")
+            provenance[name] = value
+        else:
+            provenance[name] = _required_text(document, name, path)
+    for name in ARM_PROVENANCE_FIELDS:
+        provenance[name] = _required_text(document, name, path)
+
+    try:
+        run_order = int(_required_text(document, "kvarn_run_order", path))
+    except ValueError as exc:
+        raise GateError(f"{path}: kvarn_run_order must be an integer") from exc
+    if run_order < 1:
+        raise GateError(f"{path}: kvarn_run_order must be positive")
+    run_uuid = _required_text(document, "kvarn_run_uuid", path)
+    engine_log_sha256 = _required_text(document, "kvarn_engine_log_sha256", path)
+    if not re.fullmatch(r"[0-9a-f]{64}", engine_log_sha256):
+        raise GateError(f"{path}: kvarn_engine_log_sha256 must be lowercase SHA-256")
+    started_text = _required_text(document, "kvarn_run_started_at", path)
+    try:
+        run_started_at = dt.datetime.fromisoformat(started_text.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise GateError(f"{path}: kvarn_run_started_at must be ISO-8601") from exc
+    if run_started_at.tzinfo is None:
+        raise GateError(f"{path}: kvarn_run_started_at must include a timezone")
+
+    return Run(
+        path=str(path),
+        completed=completed,
+        output_throughput=claimed_metrics["output_throughput"],
+        request_throughput=claimed_metrics["request_throughput"],
+        total_token_throughput=claimed_metrics["total_token_throughput"],
+        request_decode_throughputs=tuple(request_rates),
+        ttft_ms=tuple(ttft_values),
+        itl_ms=tuple(flat_itls),
+        input_lens=input_lens,
+        output_lens=output_lens,
+        max_concurrent_requests=max_concurrent_requests,
+        provenance=provenance,
+        run_order=run_order,
+        run_uuid=run_uuid,
+        run_started_at=run_started_at,
+        engine_log_sha256=engine_log_sha256,
+    )
+
+
+def _load_arm(paths: list[Path], name: str) -> list[Run]:
+    if len(paths) < 4:
+        raise GateError(f"at least four {name} repeats are required")
+    resolved = [path.resolve() for path in paths]
+    if len(set(resolved)) != len(resolved):
+        raise GateError(f"{name} result paths must be unique")
+    runs = [_load_run(path) for path in paths]
+    first = runs[0]
+    for run in runs[1:]:
+        if (run.input_lens, run.output_lens) != (
+            first.input_lens,
+            first.output_lens,
+        ):
+            raise GateError(f"{run.path}: {name} workload shape differs across repeats")
+        for field in (*COMMON_PROVENANCE_FIELDS, *ARM_PROVENANCE_FIELDS):
+            if run.provenance[field] != first.provenance[field]:
+                raise GateError(f"{run.path}: {name} provenance field {field} differs")
+    if first.provenance["kvarn_arm"] != name:
+        raise GateError(
+            f"{first.path}: kvarn_arm must be {name!r}, got "
+            f"{first.provenance['kvarn_arm']!r}"
+        )
+    return runs
+
+
+def _load_correctness(path: Path) -> tuple[dict[str, Any], str]:
+    try:
+        raw = path.read_bytes()
+        document = json.loads(raw)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise GateError(f"{path}: cannot read correctness artifact: {exc}") from exc
+    if not isinstance(document, dict) or document.get("status") != "passed":
+        raise GateError(f"{path}: correctness status must be passed")
+    if document.get("native_dispatch_verified") is not True:
+        raise GateError(f"{path}: native_dispatch_verified must be true")
+    candidate_id = document.get("candidate_id")
+    if not isinstance(candidate_id, str) or not candidate_id:
+        raise GateError(f"{path}: candidate_id must be a non-empty string")
+    gates = document.get("gates")
+    if not isinstance(gates, dict):
+        raise GateError(f"{path}: gates must be an object")
+    for name in REQUIRED_GATES:
+        gate = gates.get(name)
+        if not isinstance(gate, dict) or gate.get("status") != "passed":
+            raise GateError(f"{path}: correctness gate {name} is not passed")
+        artifact_path = gate.get("path")
+        artifact_sha256 = gate.get("sha256")
+        if not isinstance(artifact_path, str) or not artifact_path:
+            raise GateError(f"{path}: correctness gate {name} has no artifact path")
+        if not isinstance(artifact_sha256, str) or not re.fullmatch(
+            r"[0-9a-f]{64}", artifact_sha256
+        ):
+            raise GateError(f"{path}: correctness gate {name} has invalid SHA-256")
+        evidence = Path(artifact_path).expanduser().resolve()
+        try:
+            actual_sha256 = hashlib.sha256(evidence.read_bytes()).hexdigest()
+        except OSError as exc:
+            raise GateError(
+                f"{path}: cannot read correctness evidence for {name}: {exc}"
+            ) from exc
+        if actual_sha256 != artifact_sha256:
+            raise GateError(f"{path}: correctness evidence SHA differs for {name}")
+    return document, hashlib.sha256(raw).hexdigest()
+
+
+def _validate_logs(paths: list[Path], arm: str, *, expect_native: bool) -> list[str]:
+    resolved = [path.resolve() for path in paths]
+    if len(set(resolved)) != len(resolved):
+        raise GateError(f"{arm} engine-log paths must be unique")
+    digests: list[str] = []
+    for path in paths:
+        try:
+            raw = path.read_bytes()
+        except OSError as exc:
+            raise GateError(f"{path}: cannot read engine log: {exc}") from exc
+        text = raw.decode("utf-8", errors="replace")
+        if scan(text.splitlines())["status"] != "passed":
+            raise GateError(f"{path}: engine log contains fatal findings")
+        dispatched = NATIVE_DISPATCH in text
+        if dispatched != expect_native:
+            expectation = "contain" if expect_native else "not contain"
+            raise GateError(f"{path}: {arm} log must {expectation} native dispatch")
+        if expect_native and FALLBACK_PATTERN.search(text):
+            raise GateError(f"{path}: native candidate log reports fallback")
+        digests.append(hashlib.sha256(raw).hexdigest())
+    return digests
+
+
+def _aggregate(runs: list[Run]) -> dict[str, float]:
+    return {
+        metric: statistics.median(run.metrics()[metric] for run in runs)
+        for metric in runs[0].metrics()
+    }
+
+
+def _validate_balanced_order(reference: list[Run], candidate: list[Run]) -> None:
+    repeats = len(reference)
+    if repeats != len(candidate):
+        raise GateError("reference and candidate must have the same number of repeats")
+    if repeats % 2:
+        raise GateError("repeat count per arm must be even for balanced ABBA order")
+    ordered = sorted(
+        [(run.run_order, "reference") for run in reference]
+        + [(run.run_order, "candidate") for run in candidate]
+    )
+    if [order for order, _ in ordered] != list(range(1, 2 * repeats + 1)):
+        raise GateError(
+            "kvarn_run_order must be unique and contiguous across both arms"
+        )
+    expected = ["reference", "candidate", "candidate", "reference"] * (repeats // 2)
+    if [arm for _, arm in ordered] != expected:
+        raise GateError(
+            "runs must use repeated reference/candidate/candidate/reference order"
+        )
+    all_runs = reference + candidate
+    if len({run.run_uuid for run in all_runs}) != len(all_runs):
+        raise GateError("kvarn_run_uuid must be unique across both arms")
+    chronological = sorted(all_runs, key=lambda run: run.run_started_at)
+    if [run.run_order for run in chronological] != list(range(1, 2 * repeats + 1)):
+        raise GateError("chronological run timestamps must match kvarn_run_order")
+
+
+def _validate_ratio(value: float, *, name: str, lower: float, upper: float) -> None:
+    if not math.isfinite(value) or not lower <= value <= upper:
+        raise GateError(f"{name} must be finite and in [{lower}, {upper}]")
+
+
+def compare(
+    reference_paths: list[Path],
+    candidate_paths: list[Path],
+    *,
+    reference_logs: list[Path],
+    candidate_logs: list[Path],
+    correctness_path: Path,
+    comparison_kind: str,
+    mode: str,
+    min_throughput_ratio: float,
+    min_request_decode_ratio: float,
+    max_latency_ratio: float,
+) -> dict[str, Any]:
+    if mode not in {"match", "win"}:
+        raise GateError(f"unsupported mode {mode!r}")
+    _validate_ratio(
+        min_throughput_ratio, name="min_throughput_ratio", lower=0.5, upper=1.0
+    )
+    _validate_ratio(
+        min_request_decode_ratio,
+        name="min_request_decode_ratio",
+        lower=0.5,
+        upper=1.0,
+    )
+    _validate_ratio(max_latency_ratio, name="max_latency_ratio", lower=1.0, upper=2.0)
+    reference = _load_arm(reference_paths, "reference")
+    candidate = _load_arm(candidate_paths, "candidate")
+    _validate_balanced_order(reference, candidate)
+    if len(reference_logs) != len(reference) or len(candidate_logs) != len(candidate):
+        raise GateError("each result must have one engine log in the same arm order")
+
+    first_ref = reference[0]
+    first_cand = candidate[0]
+    if (first_ref.input_lens, first_ref.output_lens) != (
+        first_cand.input_lens,
+        first_cand.output_lens,
+    ):
+        raise GateError("reference and candidate workload shapes differ")
+    for field in COMMON_PROVENANCE_FIELDS:
+        if first_ref.provenance[field] != first_cand.provenance[field]:
+            raise GateError(f"reference and candidate provenance field {field} differs")
+
+    expected_profile = {
+        "backend": "openai",
+        "model_id": "sunny-chat",
+        "request_rate": "inf",
+        "kvarn_model_revision": "6b0622f4354481d5d04577d48ba0db844efc1330",
+        "kvarn_max_model_len": "65536",
+        "kvarn_enforce_eager": "1",
+        "kvarn_prefix_caching": "0",
+        "kvarn_mtp": "0",
+        "kvarn_xpu_graph": "0",
+    }
+    for field, expected_value in expected_profile.items():
+        if first_ref.provenance[field] != expected_value:
+            raise GateError(
+                f"performance profile requires {field}={expected_value!r}, got "
+                f"{first_ref.provenance[field]!r}"
+            )
+    concurrency = first_ref.provenance["max_concurrency"]
+    if concurrency not in {1, 4}:
+        raise GateError("performance max_concurrency must be 1 or 4")
+    try:
+        max_num_seqs = int(first_ref.provenance["kvarn_max_num_seqs"])
+        scheduler_peak = int(first_ref.provenance["kvarn_scheduler_peak_running"])
+    except ValueError as exc:
+        raise GateError(
+            "kvarn_max_num_seqs and kvarn_scheduler_peak_running must be integers"
+        ) from exc
+    if max_num_seqs != concurrency:
+        raise GateError("kvarn_max_num_seqs must equal benchmark max_concurrency")
+    if scheduler_peak < concurrency:
+        raise GateError("scheduler evidence did not reach the requested concurrency")
+
+    correctness, correctness_sha256 = _load_correctness(correctness_path)
+    candidate_id = first_cand.provenance["kvarn_candidate_id"]
+    if correctness["candidate_id"] != candidate_id:
+        raise GateError(
+            "correctness artifact candidate_id differs from benchmark candidate"
+        )
+    if first_cand.provenance["kvarn_correctness_sha256"] != correctness_sha256:
+        raise GateError(
+            "benchmark correctness SHA-256 does not match the supplied artifact"
+        )
+
+    ref_dtype = first_ref.provenance["kvarn_kv_cache_dtype"]
+    cand_dtype = first_cand.provenance["kvarn_kv_cache_dtype"]
+    ref_native = first_ref.provenance["kvarn_native_xpu"]
+    cand_native = first_cand.provenance["kvarn_native_xpu"]
+    if (ref_native, cand_native) != ("0", "1"):
+        raise GateError("reference must disable and candidate must enable native XPU")
+    try:
+        ref_splits = int(first_ref.provenance["kvarn_native_splits"])
+        cand_splits = int(first_cand.provenance["kvarn_native_splits"])
+    except ValueError as exc:
+        raise GateError("kvarn_native_splits must be an integer") from exc
+    if ref_splits != cand_splits or ref_splits not in {1, 2, 4, 8, 16, 17, 24, 32}:
+        raise GateError("both arms must declare the same supported native split count")
+    if comparison_kind == "kernel":
+        if (ref_dtype, cand_dtype) != (COMPACT_DTYPE, COMPACT_DTYPE):
+            raise GateError("kernel comparison requires compact Kvarn in both arms")
+    elif comparison_kind == "end-to-end":
+        if (ref_dtype, cand_dtype) != ("auto", COMPACT_DTYPE):
+            raise GateError("end-to-end comparison requires auto versus compact Kvarn")
+    else:
+        raise GateError(f"unsupported comparison kind {comparison_kind!r}")
+
+    reference_log_sha256 = _validate_logs(
+        reference_logs, "reference", expect_native=False
+    )
+    candidate_log_sha256 = _validate_logs(
+        candidate_logs, "candidate", expect_native=True
+    )
+    for run, digest in zip(reference, reference_log_sha256):
+        if run.engine_log_sha256 != digest:
+            raise GateError(f"{run.path}: reference engine-log SHA-256 differs")
+    for run, digest in zip(candidate, candidate_log_sha256):
+        if run.engine_log_sha256 != digest:
+            raise GateError(f"{run.path}: candidate engine-log SHA-256 differs")
+
+    ref = _aggregate(reference)
+    cand = _aggregate(candidate)
+    ratios = {metric: cand[metric] / ref[metric] for metric in ref}
+    effective_throughput = 1.0 if mode == "win" else min_throughput_ratio
+    effective_request = 1.0 if mode == "win" else min_request_decode_ratio
+    effective_latency = 1.0 if mode == "win" else max_latency_ratio
+
+    checks = {
+        "output_throughput": ratios["output_throughput"] >= effective_throughput,
+        "request_throughput": ratios["request_throughput"] >= effective_throughput,
+        "total_token_throughput": (
+            ratios["total_token_throughput"] >= effective_throughput
+        ),
+        "median_request_decode_throughput": (
+            ratios["median_request_decode_throughput"] >= effective_request
+        ),
+        "p10_request_decode_throughput": (
+            ratios["p10_request_decode_throughput"] >= effective_request
+        ),
+        "p99_ttft": ratios["p99_ttft_ms"] <= effective_latency,
+        "p99_itl": ratios["p99_itl_ms"] <= effective_latency,
+    }
+    if mode == "win":
+        checks["meaningful_throughput_gain"] = (
+            max(
+                ratios["output_throughput"],
+                ratios["median_request_decode_throughput"],
+            )
+            >= 1.05
+        )
+
+    return {
+        "status": "passed" if all(checks.values()) else "failed",
+        "mode": mode,
+        "comparison_kind": comparison_kind,
+        "thresholds": {
+            "min_throughput_ratio": effective_throughput,
+            "min_request_decode_ratio": effective_request,
+            "max_latency_ratio": effective_latency,
+            "meaningful_win_ratio": 1.05 if mode == "win" else None,
+        },
+        "workload": {
+            "input_lens": list(first_ref.input_lens),
+            "output_lens": list(first_ref.output_lens),
+            "max_concurrency": first_ref.provenance["max_concurrency"],
+            "num_prompts": first_ref.provenance["num_prompts"],
+        },
+        "provenance": {
+            field: first_ref.provenance[field] for field in COMMON_PROVENANCE_FIELDS
+        },
+        "correctness_artifact": {
+            "path": str(correctness_path),
+            "sha256": correctness_sha256,
+        },
+        "reference": {
+            "runs": [run.path for run in reference],
+            "engine_log_sha256": reference_log_sha256,
+            "arm": {
+                field: first_ref.provenance[field] for field in ARM_PROVENANCE_FIELDS
+            },
+            "median": ref,
+        },
+        "candidate": {
+            "runs": [run.path for run in candidate],
+            "engine_log_sha256": candidate_log_sha256,
+            "arm": {
+                field: first_cand.provenance[field] for field in ARM_PROVENANCE_FIELDS
+            },
+            "median": cand,
+        },
+        "candidate_over_reference": ratios,
+        "checks": checks,
+    }
+
+
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--reference", action="append", type=Path, required=True)
+    parser.add_argument("--candidate", action="append", type=Path, required=True)
+    parser.add_argument("--reference-log", action="append", type=Path, required=True)
+    parser.add_argument("--candidate-log", action="append", type=Path, required=True)
+    parser.add_argument("--correctness", type=Path, required=True)
+    parser.add_argument(
+        "--comparison-kind", choices=("kernel", "end-to-end"), required=True
+    )
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--allow-tmp", action="store_true")
+    parser.add_argument("--mode", choices=("match", "win"), default="match")
+    parser.add_argument("--min-throughput-ratio", type=float, default=0.95)
+    parser.add_argument("--min-request-decode-ratio", type=float, default=0.95)
+    parser.add_argument("--max-latency-ratio", type=float, default=1.10)
+    args = parser.parse_args()
+    output = args.output.expanduser().resolve()
+    inputs = {
+        path.expanduser().resolve()
+        for path in (
+            args.reference
+            + args.candidate
+            + args.reference_log
+            + args.candidate_log
+            + [args.correctness]
+        )
+    }
+    if output in inputs:
+        parser.error("--output must not overwrite an input artifact")
+    if not args.allow_tmp and output.is_relative_to(Path("/tmp")):
+        parser.error("--output must be durable (outside /tmp)")
+    args.output = output
+    return args
+
+
+def _write_json_atomic(path: Path, document: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.parent / f".{path.name}.{os.getpid()}.tmp"
+    temporary.write_text(
+        json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    temporary.replace(path)
+
+
+def main() -> int:
+    args = _parse_args()
+    try:
+        result = compare(
+            args.reference,
+            args.candidate,
+            reference_logs=args.reference_log,
+            candidate_logs=args.candidate_log,
+            correctness_path=args.correctness,
+            comparison_kind=args.comparison_kind,
+            mode=args.mode,
+            min_throughput_ratio=args.min_throughput_ratio,
+            min_request_decode_ratio=args.min_request_decode_ratio,
+            max_latency_ratio=args.max_latency_ratio,
+        )
+    except GateError as exc:
+        result = {"status": "invalid", "error": str(exc)}
+    _write_json_atomic(args.output, result)
+    json.dump(result, sys.stdout, indent=2, sort_keys=True)
+    sys.stdout.write("\n")
+    return 0 if result["status"] == "passed" else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

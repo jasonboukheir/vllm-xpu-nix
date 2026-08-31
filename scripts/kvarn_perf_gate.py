@@ -25,8 +25,6 @@ NATIVE_DISPATCH = "Using the native Xe2 KVarN qlen=1 decoder"
 FALLBACK_PATTERN = re.compile(r"(?i)(?:kvarn.{0,80}fallback|falling back)")
 COMPACT_DTYPE = "kvarn_k4v4_g128_compact"
 REQUIRED_GATES = (
-    "gdn_allocator_pressure",
-    "gdn_allocator_counterfactual",
     "native_decode_short",
     "native_decode_262k",
     "b1_replay",

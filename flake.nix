@@ -21,7 +21,7 @@
     vllm-xpu-kernels-unstable-src = {
       type = "git";
       url = "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm-xpu-kernels.git";
-      ref = "refs/heads/releases/xpu-v1.4-kvarn";
+      ref = "refs/heads/feature/kvarn-native-xpu";
       submodules = true;
       flake = false;
     };

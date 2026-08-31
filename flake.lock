@@ -99,17 +99,17 @@
     "vllm-xpu-kernels-unstable-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1788125752,
-        "narHash": "sha256-dV+ZYHSKo7Yj5o3Vb7L3ZLIRi8mlf94yy03pm13q9mo=",
-        "ref": "refs/heads/releases/xpu-v1.4-kvarn",
-        "rev": "8f52482baa7c23ae976c11b1c1c88e3db4a25867",
-        "revCount": 361,
+        "lastModified": 1788192812,
+        "narHash": "sha256-upxskAzHjWkh0qXZiyMIEI2O6J/XkTpolLQrHyF9M2w=",
+        "ref": "refs/heads/feature/kvarn-native-xpu",
+        "rev": "ef455a1de1420a2456bb0fee3ceb82477f625b47",
+        "revCount": 363,
         "submodules": true,
         "type": "git",
         "url": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm-xpu-kernels.git"
       },
       "original": {
-        "ref": "refs/heads/releases/xpu-v1.4-kvarn",
+        "ref": "refs/heads/feature/kvarn-native-xpu",
         "submodules": true,
         "type": "git",
         "url": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm-xpu-kernels.git"

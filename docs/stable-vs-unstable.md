@@ -2,9 +2,10 @@
 
 The `vllm-xpu` and `vllm-xpu-kernels` outputs both come in stable and
 `-unstable` variants. The unstable variants pin
-`jasonboukheir/{vllm,vllm-xpu-kernels}` `main`, where in-flight patches
-land before they make it upstream — they will rebase, may break, and
-should be considered consumer-side opt-in.
+`jasonboukheir/{vllm,vllm-xpu-kernels}`. On this experimental release
+branch, both inputs follow the coordinated `releases/xpu-v1.4-kvarn`
+branches so the validated Kvarn source pair cannot drift independently.
+They remain consumer-side opt-in.
 
 Bumping a fork pin:
 

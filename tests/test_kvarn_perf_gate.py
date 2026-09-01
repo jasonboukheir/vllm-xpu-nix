@@ -51,6 +51,7 @@ def _result(
     ttft: float,
     itl: float,
     kv_cache_dtype: str | None = None,
+    native_splits: int | None = None,
 ) -> Path:
     output_lens = [4, 4, 4, 4]
     input_lens = [127, 4095, 127, 4095]
@@ -92,7 +93,11 @@ def _result(
         "kvarn_kv_cache_dtype": kv_cache_dtype
         or ("auto" if arm == "reference" else "kvarn_k4v4_g128_compact"),
         "kvarn_native_xpu": "0" if arm == "reference" else "1",
-        "kvarn_native_splits": "1",
+        "kvarn_native_splits": str(
+            native_splits
+            if native_splits is not None
+            else (1 if arm == "reference" else 16)
+        ),
         "kvarn_run_order": str(run_order),
         "kvarn_run_uuid": f"run-{run_order}",
         "kvarn_run_started_at": f"2026-08-31T00:00:{run_order:02d}Z",
@@ -269,6 +274,29 @@ def test_kernel_comparison_passes_with_compact_kvarn_reference(tmp_path: Path) -
         path.write_text(json.dumps(document), encoding="utf-8")
 
     assert _compare(arms, comparison_kind="kernel")["status"] == "passed"
+
+
+def test_gate_requires_neutral_reference_and_supported_candidate_splits(
+    tmp_path: Path,
+) -> None:
+    arms = _arms(tmp_path)
+    for path in arms[0]:
+        document = json.loads(path.read_text(encoding="utf-8"))
+        document["kvarn_native_splits"] = "16"
+        path.write_text(json.dumps(document), encoding="utf-8")
+    with pytest.raises(GateError, match="neutral split count 1"):
+        _compare(arms)
+
+    for path in arms[0]:
+        document = json.loads(path.read_text(encoding="utf-8"))
+        document["kvarn_native_splits"] = "1"
+        path.write_text(json.dumps(document), encoding="utf-8")
+    for path in arms[1]:
+        document = json.loads(path.read_text(encoding="utf-8"))
+        document["kvarn_native_splits"] = "3"
+        path.write_text(json.dumps(document), encoding="utf-8")
+    with pytest.raises(GateError, match="supported native split count"):
+        _compare(arms)
 
 
 def test_gate_rejects_missing_native_dispatch(tmp_path: Path) -> None:

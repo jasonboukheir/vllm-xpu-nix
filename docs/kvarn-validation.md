@@ -1,5 +1,8 @@
 # Kvarn K4V4 correctness and service gate
 
+> This is the historical correctness-first gate. The current opt-in beta
+> contract and known limitations are summarized in [KVarN XPU beta](kvarn-beta.md).
+
 This branch brings `kvarn_k4v4_g128_compact` back against the exact Brutus
 chat model. Correctness and cache lifecycle are release gates; speed is only a
 diagnostic until the cache is trustworthy at long context.
@@ -15,7 +18,8 @@ diagnostic until the cache is trustworthy at long context.
 - Start with `max_num_seqs=1`, then repeat at 4
 - Eager, text-only, temperature 0
 - No speculative decoding, prefix caching, or XPU graphs
-- `KVARN_NATIVE_XPU=0` for the first service acceptance
+- Native Xe2 decode is automatic in the beta; set `KVARN_NATIVE_XPU=0` only
+  for a diagnostic rollback comparison
 
 K4V2, MTP, multimodal requests, graphs, and performance promotion are separate
 milestones. Do not add them to a failed first-profile run.

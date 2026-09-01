@@ -535,8 +535,10 @@ def compare(
         cand_splits = int(first_cand.provenance["kvarn_native_splits"])
     except ValueError as exc:
         raise GateError("kvarn_native_splits must be an integer") from exc
-    if ref_splits != cand_splits or ref_splits not in {1, 2, 4, 8, 16, 17, 24, 32}:
-        raise GateError("both arms must declare the same supported native split count")
+    if ref_splits != 1:
+        raise GateError("non-native reference must declare the neutral split count 1")
+    if cand_splits not in {1, 2, 4, 8, 16, 17, 24, 32}:
+        raise GateError("candidate must declare a supported native split count")
     if comparison_kind == "kernel":
         if (ref_dtype, cand_dtype) != (COMPACT_DTYPE, COMPACT_DTYPE):
             raise GateError("kernel comparison requires compact Kvarn in both arms")

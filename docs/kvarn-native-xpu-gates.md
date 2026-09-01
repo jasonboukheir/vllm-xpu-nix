@@ -13,8 +13,13 @@ used to attribute a speedup to the native kernel alone.
 The candidate keeps the accepted service shape fixed: the pinned
 `jasonboukheir/Qwen3.8-27B-AEON-Ultimate-Uncensored-BF16-W4A16-AutoRound`
 revision, compressed-tensors weights, eager execution, text only, no MTP, no
-prefix cache, no XPU graph, and at most four sequences. Only the KV dtype and
-native-reader switch may differ in an A/B.
+prefix cache, no XPU graph, a 2,048-token scheduler budget, and at most four
+sequences. The runner passes `--max-num-batched-tokens 2048` to every launcher,
+verifies the live service argv, and seals the value into each result. Only the
+KV dtype, native-reader identity switches, and the native-only decoder split
+count may differ in an A/B. Use the runner's `--max-num-batched-tokens` option
+only when deliberately creating a new matched workload; its value still applies
+identically to both arms.
 
 ## Gate order
 
@@ -66,12 +71,15 @@ silently change one arm.
 
 ## Matched performance trials
 
-Run at least four recorded repeats per arm in repeated balanced order
+Run at least eight recorded repeats per arm in repeated balanced order
 `reference, native, native, reference`, restarting the service between arms.
-Four repeats per arm therefore use two complete ABBA cycles. Use the same
+Eight repeats per arm provide four complete ABBA blocks, the minimum used for
+the one-sided paired confidence result. Four repeats per arm remain useful for
+an exploratory floor check, but the harness reports `insufficient_evidence`
+rather than claiming statistical parity from only two blocks. Use the same
 candidate closure and warmed compilation cache. Preserve the detailed
-benchmark JSON, engine log, command line, source revisions, and store path for
-every run.
+benchmark JSON, engine log, redacted command line, source revisions, actual
+process package, and order-independent Nix closure digest for every run.
 
 Use two primary workloads:
 
@@ -112,9 +120,23 @@ scripts/kvarn_perf_gate.py \
 ```
 
 Use `--comparison-kind kernel` with a compact non-native reference, and
-`--comparison-kind end-to-end` with a BF16-auto reference. `match` requires at
-least 95% of the reference's output, total-token, request, median-request, and
-p10-request decode throughput, with p99 TTFT and p99 ITL no worse than 110%.
+`--comparison-kind end-to-end` with a BF16-auto reference. `match` is the hard
+floor: it requires at least 95% of the reference's output, total-token,
+request, median-request, and p10-request decode throughput, with p99 TTFT and
+p99 ITL no worse than 110%. The automated runner replaces the legacy
+median-of-per-run p99 comparison with p99 computed from all detailed TTFT or
+ITL samples pooled within each arm. A separate target result uses each
+four-run ABBA block as one paired observation. It passes only when the
+one-sided 95% lower confidence bound of the candidate/reference geometric
+mean is at least 0.98 for both output throughput and median per-request decode
+throughput. This is a non-inferiority test with no upper bound: a candidate
+that is significantly faster than auto passes rather than being rejected as
+"not equivalent."
+
+The gate JSON records `hard_floor.status` and `statistical_parity.status`
+separately. A floor pass does not establish the 1:1 performance goal, and an
+insufficient parity sample is not silently treated as a pass.
+
 `--mode win` requires no regression on any of those axes plus at least a 5%
 gain in output or median per-request decode throughput. It therefore cannot
 declare a win by trading latency for throughput, or throughput for latency.
@@ -125,6 +147,27 @@ seed, model length, sequence limit, eager/prefix/MTP/graph settings, cache
 dtype, native switch, split count, arm, scheduler peak-running evidence,
 unique run UUID, timezone-qualified start time, global ABBA run order, the
 engine-log SHA-256, and the SHA-256 of the passed correctness artifact.
+It also seals the executable and package observed in `/proc`, the actual
+process-package closure digest, the candidate closure digest, and the
+canonical matched-profile digest. Closure paths are sorted and deduplicated
+before hashing, so Nix query order cannot alter the identity.
+
+The canonical profile comes from the actual service argv and effective
+allowlisted environment. The only normalized arm differences are
+`--kv-cache-dtype`, the five native identity switches (`KVARN_NATIVE_XPU`,
+decode, DPAS layout, materialize, and persistent scratch), and exactly
+`KVARN_NATIVE_XPU_SPLITS`. Any other argument or effective
+performance-environment difference invalidates the cell. Secret-looking
+argument values are redacted before argv or profile evidence is written.
+
+The auto reference must keep natural layout and the neutral split value `1`;
+the native candidate uses the DPAS-swizzled layout and the empirically selected
+value `24` for B1 and `16` for B4. The split
+variable is unreachable when the native reader is disabled, so copying the
+candidate's tuning value into auto would add misleading provenance without
+making the execution more closely matched. The gate instead permits only this
+one named native-only difference and verifies both values exactly.
+
 Built-in model, tokenizer, backend, request-rate, prompt-count, duration,
 token totals, and concurrency fields must also match. The gate requires four
 unique results and logs per arm, full completion, observed B1 or B4
@@ -140,10 +183,79 @@ restarted near-262K result. GDN allocator-pressure and no-fix mutation
 artifacts are diagnostics, not release evidence: the retained-scratch
 hypothesis did not explain the observed failure.
 
-Do not promote based on a single aggregate tok/s number. Retain p99 TTFT, p99
-ITL, median per-request decode tok/s, request throughput, output throughput,
-and total-token throughput. A failed request, workload-shape mismatch, missing
-detailed timing, or unequal repeat count invalidates the comparison.
+Do not promote based on a single aggregate tok/s number. Retain pooled p99
+TTFT, pooled p99 ITL, median per-request decode tok/s, request throughput,
+output throughput, and total-token throughput. A failed request,
+workload-shape mismatch, missing detailed timing, or unequal repeat count
+invalidates the comparison.
+
+### Automated auto/native matrix
+
+`kvarn_perf_run.py` owns the foreground process lifecycle for the end-system
+comparison. It refuses to start while the loopback service port is occupied,
+uses the fixed-seed random workload, and restarts the service for every entry
+in each repeated ABBA sequence. The defaults cover B1 and B4 at prompt lengths
+4,096, 16,384, 32,768, and 65,023 with 512 output tokens and eight repeats per
+arm. Each service start gets one separate full-width warmup wave and two
+measured waves; all of those values are configurable without changing the
+matched service profile. The scheduler sampler starts only after the warmup
+process finishes and the engine returns to idle, so its peak is evidence from
+the measured requests.
+
+Launcher realization and evaluation explicitly use the daemon store. On
+Determinate Nix installations, raw app metadata can retain a contextual logical
+path rooted at `/`; the runner therefore joins the app's executable basename to
+the physical output reported by `nix build --json`. It also requires the app
+string context and built package to name the same derivation and output, so a
+same-named executable from an unrelated package cannot satisfy resolution.
+Benchmark manifests always retain that verified physical immutable program
+path.
+
+```bash
+run_stamp=$(date -u +%Y%m%dT%H%M%SZ)
+scripts/kvarn_perf_run.py \
+  --candidate-env "$(readlink -f benchmark-results/kvarn/CANDIDATE/candidate-env)" \
+  --correctness benchmark-results/kvarn/CANDIDATE/native-correctness.json \
+  --output-dir "benchmark-results/kvarn-perf/$run_stamp"
+```
+
+Those defaults expect B1 split 24 and B4 split 16. To state them explicitly,
+use `--native-splits 1=24 --native-splits 4=16`; one unqualified value applies
+to every selected batch. This option declares what the immutable native
+launcher must export—it does not override the launcher. Auto must still export
+the neutral value `1`, and a mismatch in either arm aborts the trial before a
+measurement is accepted.
+
+Use `--plan-only` to realize immutable launcher programs and materialize and
+inspect `session.json` without starting a service. `--context` and `--batch`
+are repeatable and also accept comma-separated values, for example
+`--context 4096,16384 --batch 1`.
+
+For every recorded trial the runner:
+
+1. resolves each mutable flake app once to an immutable Nix store program;
+2. verifies the actual API-process argv and allowlisted environment, including
+   KV dtype, native switches, eager mode, graph/MTP/prefix-cache exclusions,
+   model revision, model length, and sequence limit;
+3. validates and retains the detailed result and digest for the separate
+   warmup wave, then waits for scheduler idle;
+4. polls `vllm:num_requests_running` only until the requested B1/B4 overlap is
+   observed, avoiding continuous metrics traffic during the measurement;
+5. stops the complete foreground process group and waits for every log writer;
+6. scans the final engine log and then hashes it; and
+7. leaves vLLM's `benchmark.raw.json` unchanged while atomically writing the
+   provenance-augmented `benchmark.json` consumed by `kvarn_perf_gate.py`.
+
+Each context directory receives its gate result after all eight repeats per
+arm finish. `session.json` distinguishes execution completion, the 95% hard
+floor, and the 98% paired parity target; `SHA256SUMS` seals the entire completed
+matrix. A floor or parity miss exits one after retaining every measurement; an
+invalid or interrupted run exits two and retains its last durable run manifest.
+SIGINT, SIGTERM, and SIGHUP are forwarded to the independent service, warmup,
+and measured-benchmark process groups before failure is recorded. The runner
+never starts, stops, or reconfigures a systemd service. Safe evidence-preserving
+resume is not yet supported: after an interruption, use a fresh output
+directory rather than editing or appending to the sealed partial session.
 
 If a native gate fails, stop the foreground process, start
 `vllm-xpu-brutus-kvarn-b1` or `vllm-xpu-brutus-kvarn-b4` from the last accepted

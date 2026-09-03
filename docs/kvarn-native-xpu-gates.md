@@ -160,9 +160,9 @@ decode, DPAS layout, materialize, and persistent scratch), and exactly
 performance-environment difference invalidates the cell. Secret-looking
 argument values are redacted before argv or profile evidence is written.
 
-The auto reference must keep natural layout and the neutral split value `1`;
-the native candidate uses the DPAS-swizzled layout and the empirically selected
-value `24` for B1 and `16` for B4. The split
+Both arms must keep the beta's validated natural layout. The auto reference
+uses the neutral split value `1`; the native candidate uses the empirically
+selected value `24` for B1 and `16` for B4. The split
 variable is unreachable when the native reader is disabled, so copying the
 candidate's tuning value into auto would add misleading provenance without
 making the execution more closely matched. The gate instead permits only this
@@ -218,6 +218,35 @@ scripts/kvarn_perf_run.py \
   --correctness benchmark-results/kvarn/CANDIDATE/native-correctness.json \
   --output-dir "benchmark-results/kvarn-perf/$run_stamp"
 ```
+
+Before a current-build eight-gate correctness manifest exists, use the
+explicitly non-promotable exploratory mode rather than weakening or fabricating
+formal evidence:
+
+```bash
+run_stamp=$(date -u +%Y%m%dT%H%M%SZ)
+scripts/kvarn_perf_run.py \
+  --exploratory \
+  --candidate-env /nix/store/CURRENT-BETA-CANDIDATE \
+  --context 4096 \
+  --batch 1 \
+  --batch 4 \
+  --repeats 2 \
+  --output-dir "benchmark-results/kvarn-perf/${run_stamp}-exploratory-4k"
+```
+
+Only exploratory mode permits omitting `--correctness`, and two repeats per
+arm are its minimum: one complete ABBA block. It retains the same immutable
+launchers, warmups, raw and detailed results, engine-log checks, actual-process
+identity, closure digests, scheduler-overlap evidence, and strict matched
+service profile. Each sealed benchmark says `kvarn_evidence_mode: exploratory`
+and `kvarn_promotable: false`, while the session carries the corresponding
+unprefixed fields; no correctness digest, hard-floor status, or
+statistical-parity status is invented. The descriptive
+per-cell summary records throughput ratios and pooled tail latency without a
+pass/fail claim. A completed exploratory collection exits zero regardless of
+the ratios; infrastructure, result-shape, native-dispatch, or provenance
+failures still exit two.
 
 Those defaults expect B1 split 24 and B4 split 16. To state them explicitly,
 use `--native-splits 1=24 --native-splits 4=16`; one unqualified value applies

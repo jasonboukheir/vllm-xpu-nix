@@ -261,9 +261,11 @@ def ensure_durable(path: Path, *, allow_tmp: bool) -> Path:
     return resolved
 
 
-def abba_arms(repeats: int) -> tuple[str, ...]:
-    if repeats < 4 or repeats % 2:
-        raise RunnerError("--repeats must be an even integer of at least four")
+def abba_arms(repeats: int, *, minimum_repeats: int = 4) -> tuple[str, ...]:
+    if repeats < minimum_repeats or repeats % 2:
+        raise RunnerError(
+            f"--repeats must be an even integer of at least {minimum_repeats}"
+        )
     return ARM_ORDER * (repeats // 2)
 
 
@@ -276,6 +278,7 @@ def build_plan(
     repeats: int,
     seed: int,
     max_model_len: int,
+    minimum_repeats: int = 4,
 ) -> list[PlannedRun]:
     if not contexts or not batches:
         raise RunnerError("at least one context and batch size are required")
@@ -291,7 +294,7 @@ def build_plan(
                 f"max model length {max_model_len}"
             )
 
-    arms = abba_arms(repeats)
+    arms = abba_arms(repeats, minimum_repeats=minimum_repeats)
     plan: list[PlannedRun] = []
     for batch in batches:
         for context in contexts:
@@ -806,7 +809,7 @@ def verify_service_profile(
         "HOME": str(args.runtime_cache / "vllm-xpu-brutus-kvarn"),
         "KVARN_NATIVE_XPU": native,
         "KVARN_NATIVE_XPU_DECODE": native,
-        "KVARN_NATIVE_XPU_DPAS_LAYOUT": "1" if native == "1" else "0",
+        "KVARN_NATIVE_XPU_DPAS_LAYOUT": "0",
         "KVARN_NATIVE_XPU_MATERIALIZE": native,
         "KVARN_NATIVE_XPU_PERSISTENT_SCRATCH": native,
         "KVARN_NATIVE_XPU_SPLITS": str(native_splits_for_run(run, args)),
@@ -1171,8 +1174,8 @@ def seal_benchmark_result(
     engine_log: Path,
     run: PlannedRun,
     args: argparse.Namespace,
-    candidate_id: str,
-    correctness_sha256: str,
+    candidate_id: str | None,
+    correctness_sha256: str | None,
     scheduler: Mapping[str, Any],
     run_uuid: str,
     started_at: str,
@@ -1191,8 +1194,9 @@ def seal_benchmark_result(
             f"expected {args.max_num_batched_tokens}, got {max_num_batched_tokens!r}"
         )
 
-    metadata = {
-        "kvarn_candidate_id": candidate_id,
+    metadata: dict[str, Any] = {
+        "kvarn_evidence_mode": "exploratory" if args.exploratory else "formal",
+        "kvarn_promotable": not args.exploratory,
         "kvarn_model_revision": args.model_revision,
         "kvarn_service_profile": workload.service_profile,
         "kvarn_workload_id": workload.workload_id,
@@ -1205,7 +1209,6 @@ def seal_benchmark_result(
         "kvarn_mtp": "0",
         "kvarn_xpu_graph": "0",
         "kvarn_scheduler_peak_running": str(int(peak)),
-        "kvarn_correctness_sha256": correctness_sha256,
         "kvarn_arm": run.arm,
         "kvarn_kv_cache_dtype": ARM_SETTINGS[run.arm]["kv_cache_dtype"],
         "kvarn_native_xpu": ARM_SETTINGS[run.arm]["native_xpu"],
@@ -1220,6 +1223,10 @@ def seal_benchmark_result(
         "kvarn_candidate_closure_sha256": identity["candidate_closure_sha256"],
         "kvarn_matched_profile_sha256": profile["canonical_matched_profile_sha256"],
     }
+    if candidate_id is not None:
+        metadata["kvarn_candidate_id"] = candidate_id
+    if correctness_sha256 is not None:
+        metadata["kvarn_correctness_sha256"] = correctness_sha256
     collisions = sorted(key for key in metadata if key in document)
     if collisions:
         raise RunnerError(f"raw result already contains sealed metadata: {collisions}")
@@ -1241,8 +1248,8 @@ def run_one(
     run: PlannedRun,
     *,
     args: argparse.Namespace,
-    candidate_id: str,
-    correctness_sha256: str,
+    candidate_id: str | None,
+    correctness_sha256: str | None,
 ) -> dict[str, Any]:
     run_uuid = str(uuid.uuid4())
     started_at = utc_timestamp()
@@ -1428,7 +1435,12 @@ def _request_decode_rates(document: Mapping[str, Any]) -> list[float]:
     for intervals in document.get("itls", []):
         if not isinstance(intervals, list) or not intervals:
             raise RunnerError("sealed benchmark has incomplete ITL evidence")
-        values = [float(value) for value in intervals]
+        try:
+            values = [float(value) for value in intervals]
+        except (TypeError, ValueError) as exc:
+            raise RunnerError("sealed benchmark has non-numeric ITL evidence") from exc
+        if any(not math.isfinite(value) or value <= 0 for value in values):
+            raise RunnerError("sealed benchmark has non-positive ITL evidence")
         rates.append(len(values) / sum(values))
     if not rates:
         raise RunnerError("sealed benchmark has no request decode evidence")
@@ -1436,12 +1448,21 @@ def _request_decode_rates(document: Mapping[str, Any]) -> list[float]:
 
 
 def _run_parity_metrics(document: Mapping[str, Any]) -> dict[str, float]:
-    return {
-        "output_throughput": float(document["output_throughput"]),
+    try:
+        output_throughput = float(document["output_throughput"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise RunnerError("sealed benchmark has invalid output throughput") from exc
+    if not math.isfinite(output_throughput) or output_throughput <= 0:
+        raise RunnerError("sealed benchmark has non-positive output throughput")
+    result = {
+        "output_throughput": output_throughput,
         "median_request_decode_throughput": statistics.median(
             _request_decode_rates(document)
         ),
     }
+    if any(not math.isfinite(value) or value <= 0 for value in result.values()):
+        raise RunnerError("sealed benchmark has non-positive descriptive metrics")
+    return result
 
 
 def _t_critical_95(sample_count: int) -> float:
@@ -1566,6 +1587,60 @@ def validate_matched_results(documents: Sequence[Mapping[str, Any]]) -> None:
             )
 
 
+def summarize_exploratory_workload(
+    records: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Validate and describe one non-promotable matched ABBA collection."""
+    ordered_records = sorted(records, key=lambda record: int(record["order"]))
+    documents = [
+        _load_detailed_result(Path(str(record["result"]))) for record in ordered_records
+    ]
+    arms = [str(document.get("kvarn_arm")) for document in documents]
+    if not documents or len(documents) % len(ARM_ORDER):
+        raise RunnerError("exploratory collection requires complete ABBA blocks")
+    if arms != list(ARM_ORDER) * (len(documents) // len(ARM_ORDER)):
+        raise RunnerError(f"invalid exploratory ABBA order: {arms}")
+    if any(
+        document.get("kvarn_evidence_mode") != "exploratory" for document in documents
+    ):
+        raise RunnerError("exploratory collection contains non-exploratory evidence")
+    if any(document.get("kvarn_promotable") is not False for document in documents):
+        raise RunnerError("exploratory collection contains promotable evidence")
+    validate_matched_results(documents)
+
+    references = [
+        document for document in documents if document["kvarn_arm"] == "reference"
+    ]
+    candidates = [
+        document for document in documents if document["kvarn_arm"] == "candidate"
+    ]
+    descriptive_metrics: dict[str, dict[str, float]] = {}
+    for metric in PARITY_METRICS:
+        reference = statistics.median(
+            _run_parity_metrics(document)[metric] for document in references
+        )
+        candidate = statistics.median(
+            _run_parity_metrics(document)[metric] for document in candidates
+        )
+        descriptive_metrics[metric] = {
+            "reference_median": reference,
+            "candidate_median": candidate,
+            "candidate_over_reference": candidate / reference,
+        }
+    return {
+        "schema_version": 1,
+        "evidence_mode": "exploratory",
+        "promotable": False,
+        "formal_performance_gate_run": False,
+        "formal_statistical_parity_run": False,
+        "collection": "complete",
+        "repeats_per_arm": len(references),
+        "abba_blocks": len(documents) // len(ARM_ORDER),
+        "descriptive_metrics": descriptive_metrics,
+        "pooled_tail_latency": pooled_tail_latency(references, candidates),
+    }
+
+
 def gate_workload(
     records: Sequence[Mapping[str, Any]], args: argparse.Namespace
 ) -> dict[str, Any]:
@@ -1640,9 +1715,12 @@ def write_checksums(root: Path) -> None:
 
 
 def execute(args: argparse.Namespace) -> dict[str, Any]:
-    candidate_id, correctness_sha256 = load_correctness(
-        args.correctness, args.candidate_id
-    )
+    candidate_id = args.candidate_id
+    correctness_sha256: str | None = None
+    if args.correctness is not None:
+        candidate_id, correctness_sha256 = load_correctness(
+            args.correctness, args.candidate_id
+        )
     plan = build_plan(
         contexts=args.context,
         batches=args.batch,
@@ -1651,6 +1729,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         repeats=args.repeats,
         seed=args.seed,
         max_model_len=args.max_model_len,
+        minimum_repeats=2 if args.exploratory else 4,
     )
     args.resolved_launchers = resolve_launchers(plan, args)
     repositories = [
@@ -1662,23 +1741,10 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
     session: dict[str, Any] = {
         "schema_version": 1,
         "status": "planned" if args.plan_only else "running",
+        "evidence_mode": "exploratory" if args.exploratory else "formal",
+        "promotable": not args.exploratory,
         "created_at": utc_timestamp(),
-        "candidate_id": candidate_id,
         "candidate_env": str(args.candidate_env),
-        "correctness_artifact": str(args.correctness),
-        "correctness_sha256": correctness_sha256,
-        "acceptance": {
-            "hard_floor": {
-                "min_throughput_ratio": args.min_throughput_ratio,
-                "min_request_decode_ratio": args.min_request_decode_ratio,
-                "max_pooled_p99_latency_ratio": args.max_latency_ratio,
-            },
-            "statistical_parity_target": {
-                "paired_ratio": args.parity_ratio,
-                "minimum_abba_pairs": args.min_parity_pairs,
-                "confidence": "one-sided 95%",
-            },
-        },
         "candidate_native_splits_by_batch": {
             str(batch): splits for batch, splits in sorted(args.native_splits.items())
         },
@@ -1694,6 +1760,26 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             for run in plan
         ],
     }
+    if candidate_id is not None:
+        session["candidate_id"] = candidate_id
+    if args.correctness is not None:
+        session["correctness_artifact"] = str(args.correctness)
+        session["correctness_sha256"] = correctness_sha256
+    if args.exploratory:
+        session["formal_gates_skipped"] = True
+    else:
+        session["acceptance"] = {
+            "hard_floor": {
+                "min_throughput_ratio": args.min_throughput_ratio,
+                "min_request_decode_ratio": args.min_request_decode_ratio,
+                "max_pooled_p99_latency_ratio": args.max_latency_ratio,
+            },
+            "statistical_parity_target": {
+                "paired_ratio": args.parity_ratio,
+                "minimum_abba_pairs": args.min_parity_pairs,
+                "confidence": "one-sided 95%",
+            },
+        }
     write_json_atomic(args.output_dir / "session.json", session)
     if args.plan_only:
         return session
@@ -1718,6 +1804,41 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         )
         write_json_atomic(args.output_dir / "session.json", session)
         raise
+
+    if args.exploratory:
+        summaries: dict[str, Any] = {}
+        try:
+            for workload_id in dict.fromkeys(
+                record["workload_id"] for record in records
+            ):
+                selected = [
+                    record for record in records if record["workload_id"] == workload_id
+                ]
+                summary = summarize_exploratory_workload(selected)
+                summary_path = (
+                    Path(str(selected[0]["result"])).parents[1]
+                    / "exploratory-summary.json"
+                )
+                write_json_atomic(summary_path, summary)
+                summaries[workload_id] = {"path": str(summary_path)}
+        except BaseException as exc:
+            session.update(
+                status="failed",
+                finished_at=utc_timestamp(),
+                completed_runs=records,
+                error=f"{type(exc).__name__}: {exc}",
+            )
+            write_json_atomic(args.output_dir / "session.json", session)
+            raise
+        session.update(
+            status="completed",
+            finished_at=utc_timestamp(),
+            completed_runs=records,
+            exploratory_summaries=summaries,
+        )
+        write_json_atomic(args.output_dir / "session.json", session)
+        write_checksums(args.output_dir)
+        return session
 
     gate_results: dict[str, Any] = {}
     for workload_id in dict.fromkeys(record["workload_id"] for record in records):
@@ -1851,7 +1972,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--candidate-env", type=Path, required=True)
     parser.add_argument("--candidate-id")
-    parser.add_argument("--correctness", type=Path, required=True)
+    parser.add_argument("--correctness", type=Path)
+    parser.add_argument(
+        "--exploratory",
+        action="store_true",
+        help=(
+            "collect non-promotable matched measurements without requiring or "
+            "running the formal correctness/performance gates"
+        ),
+    )
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--context", action="append")
     parser.add_argument("--batch", action="append")
@@ -1861,7 +1990,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--repeats",
         type=int,
         default=8,
-        help="recorded repeats per arm; eight provide four ABBA confidence pairs",
+        help=(
+            "recorded repeats per arm; eight provide four ABBA confidence pairs; "
+            "exploratory mode permits two for one non-promotable ABBA block"
+        ),
     )
     parser.add_argument("--seed", type=int, default=17)
     parser.add_argument("--num-warmups", type=int)
@@ -1934,7 +2066,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         args.native_splits = _parse_native_splits(args.native_splits, args.batch)
         args.output_dir = ensure_durable(args.output_dir, allow_tmp=args.allow_tmp)
         args.candidate_env = args.candidate_env.expanduser().resolve()
-        args.correctness = args.correctness.expanduser().resolve()
+        if args.correctness is not None:
+            args.correctness = args.correctness.expanduser().resolve()
         args.runtime_cache = args.runtime_cache.expanduser().resolve()
         args.hf_home = args.hf_home.expanduser().resolve()
         args.packaging_repo = args.packaging_repo.expanduser().resolve()
@@ -1943,7 +2076,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         args.config_repo = args.config_repo.expanduser().resolve()
         if not (args.candidate_env / "bin" / "vllm").is_file():
             raise RunnerError("--candidate-env must contain bin/vllm")
-        if not args.correctness.is_file():
+        if not args.exploratory and args.correctness is None:
+            raise RunnerError("--correctness is required unless --exploratory is set")
+        if args.correctness is not None and not args.correctness.is_file():
             raise RunnerError("--correctness must be a readable file")
         if args.max_model_len != 65536:
             raise RunnerError("the current auto/native foreground launchers are 65,536")
@@ -1980,12 +2115,23 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             repeats=args.repeats,
             seed=args.seed,
             max_model_len=args.max_model_len,
+            minimum_repeats=2 if args.exploratory else 4,
         )
     except (RunnerError, argparse.ArgumentTypeError) as exc:
         parser.error(str(exc))
     args.output_dir.mkdir(parents=True, exist_ok=False)
     args.runtime_cache.mkdir(parents=True, exist_ok=True)
     return args
+
+
+def result_exit_code(result: Mapping[str, Any]) -> int:
+    if result.get("evidence_mode") == "exploratory":
+        return 0
+    if result.get("performance_status") == "failed":
+        return 1
+    if result.get("statistical_parity_status") != "passed":
+        return 1
+    return 0
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -2003,11 +2149,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         args.supervisor.restore_signal_handlers()
     json.dump(result, sys.stdout, indent=2, sort_keys=True)
     sys.stdout.write("\n")
-    if result.get("performance_status") == "failed":
-        return 1
-    if result.get("statistical_parity_status") != "passed":
-        return 1
-    return 0
+    return result_exit_code(result)
 
 
 if __name__ == "__main__":

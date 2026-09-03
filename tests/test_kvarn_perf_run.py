@@ -27,11 +27,13 @@ from scripts.kvarn_perf_run import (
     persist_warmup_result,
     pooled_tail_latency,
     resolve_launchers,
+    result_exit_code,
     run_managed_process,
     seal_benchmark_result,
     service_command,
     service_profile_evidence,
     statistical_parity,
+    summarize_exploratory_workload,
     validate_matched_results,
     verify_candidate_identity,
     verify_service_profile,
@@ -61,6 +63,7 @@ def _args(tmp_path: Path) -> argparse.Namespace:
         candidate_env=candidate,
         config_ref="path:/config",
         config_repo=tmp_path / "config",
+        exploratory=False,
         max_model_len=65536,
         max_num_batched_tokens=2048,
         model=MODEL,
@@ -176,6 +179,106 @@ def test_plan_rejects_odd_repeats_and_context_overflow() -> None:
             seed=17,
             max_model_len=65536,
         )
+
+
+def test_exploratory_plan_allows_one_abba_block_but_formal_does_not() -> None:
+    with pytest.raises(RunnerError, match="at least 4"):
+        abba_arms(2)
+    assert abba_arms(2, minimum_repeats=2) == ARM_ORDER
+    plan = build_plan(
+        contexts=[4096],
+        batches=[1],
+        output_tokens=512,
+        waves_per_run=2,
+        repeats=2,
+        seed=17,
+        max_model_len=65536,
+        minimum_repeats=2,
+    )
+    assert [run.arm for run in plan] == list(ARM_ORDER)
+
+
+def test_correctness_is_optional_only_for_exploratory_cli(tmp_path: Path) -> None:
+    candidate = tmp_path / "candidate"
+    (candidate / "bin").mkdir(parents=True)
+    (candidate / "bin" / "vllm").write_text("", encoding="utf-8")
+    common = [
+        "--candidate-env",
+        str(candidate),
+        "--allow-tmp",
+        "--plan-only",
+        "--context",
+        "4096",
+        "--batch",
+        "1",
+        "--repeats",
+        "2",
+    ]
+
+    exploratory = runner.parse_args(
+        [
+            *common,
+            "--exploratory",
+            "--output-dir",
+            str(tmp_path / "exploratory-output"),
+        ]
+    )
+    assert exploratory.exploratory is True
+    assert exploratory.correctness is None
+    assert exploratory.repeats == 2
+
+    with pytest.raises(SystemExit):
+        runner.parse_args([*common, "--output-dir", str(tmp_path / "formal-output")])
+
+
+def test_exploratory_plan_session_has_no_formal_claims(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    candidate = tmp_path / "candidate"
+    (candidate / "bin").mkdir(parents=True)
+    (candidate / "bin" / "vllm").write_text("", encoding="utf-8")
+    args = runner.parse_args(
+        [
+            "--candidate-env",
+            str(candidate),
+            "--exploratory",
+            "--plan-only",
+            "--context",
+            "4096",
+            "--batch",
+            "1",
+            "--repeats",
+            "2",
+            "--allow-tmp",
+            "--output-dir",
+            str(tmp_path / "plan-output"),
+        ]
+    )
+    monkeypatch.setattr(
+        runner,
+        "resolve_launchers",
+        lambda _plan, _args: {
+            "vllm-xpu-brutus-auto-b1": "/nix/store/auto/bin/auto",
+            "vllm-xpu-brutus-kvarn-native-b1": "/nix/store/native/bin/native",
+        },
+    )
+    monkeypatch.setattr(
+        runner,
+        "repository_state",
+        lambda name, path: {"name": name, "path": str(path)},
+    )
+
+    session = runner.execute(args)
+
+    assert session["evidence_mode"] == "exploratory"
+    assert session["promotable"] is False
+    assert session["formal_gates_skipped"] is True
+    assert len(session["plan"]) == 4
+    assert "correctness_artifact" not in session
+    assert "correctness_sha256" not in session
+    assert "acceptance" not in session
+    assert "performance_status" not in session
+    assert "statistical_parity_status" not in session
 
 
 def test_commands_pin_launcher_and_deterministic_workload(tmp_path: Path) -> None:
@@ -322,7 +425,7 @@ def test_profile_verification_uses_actual_argv_and_environment(tmp_path: Path) -
         "HOME": str(args.runtime_cache / "vllm-xpu-brutus-kvarn"),
         "KVARN_NATIVE_XPU": "1",
         "KVARN_NATIVE_XPU_DECODE": "1",
-        "KVARN_NATIVE_XPU_DPAS_LAYOUT": "1",
+        "KVARN_NATIVE_XPU_DPAS_LAYOUT": "0",
         "KVARN_NATIVE_XPU_MATERIALIZE": "1",
         "KVARN_NATIVE_XPU_PERSISTENT_SCRATCH": "1",
         "KVARN_NATIVE_XPU_SPLITS": "16",
@@ -334,6 +437,10 @@ def test_profile_verification_uses_actual_argv_and_environment(tmp_path: Path) -
 
     verify_service_profile(argv, environment, run, args)
     assert native_splits_for_run(run, args) == 16
+    environment["KVARN_NATIVE_XPU_DPAS_LAYOUT"] = "1"
+    with pytest.raises(RunnerError, match="profile mismatch"):
+        verify_service_profile(argv, environment, run, args)
+    environment["KVARN_NATIVE_XPU_DPAS_LAYOUT"] = "0"
     argv[argv.index("--max-num-batched-tokens") + 1] = "8192"
     with pytest.raises(RunnerError, match="profile mismatch"):
         verify_service_profile(argv, environment, run, args)
@@ -411,6 +518,7 @@ def test_sealed_results_are_directly_perf_gate_compatible(tmp_path: Path) -> Non
             == hashlib.sha256(engine_log.read_bytes()).hexdigest()
         )
         assert sealed["kvarn_max_num_batched_tokens"] == "2048"
+        assert sealed["kvarn_evidence_mode"] == "formal"
         if native:
             candidates.append(output)
             candidate_logs.append(engine_log)
@@ -452,6 +560,84 @@ def test_sealed_results_are_directly_perf_gate_compatible(tmp_path: Path) -> Non
     hardened = gate_workload(records, args)
     assert hardened["hard_floor"]["status"] == "passed"
     assert hardened["statistical_parity"]["status"] == "insufficient_evidence"
+
+
+def test_exploratory_seal_omits_formal_correctness_provenance(
+    tmp_path: Path,
+) -> None:
+    args = _args(tmp_path)
+    args.exploratory = True
+    workload = Workload(4096, 1, 4, 1, 17)
+    raw = _raw_result(
+        tmp_path / "benchmark.raw.json", throughput=100.0, workload=workload
+    )
+    engine_log = tmp_path / "engine.log"
+    engine_log.write_text("INFO engine ready\n", encoding="utf-8")
+
+    sealed = seal_benchmark_result(
+        raw_result=raw,
+        output=tmp_path / "benchmark.json",
+        engine_log=engine_log,
+        run=PlannedRun(workload, "reference", 1),
+        args=args,
+        candidate_id=None,
+        correctness_sha256=None,
+        scheduler={"peak_running": 1},
+        run_uuid="exploratory-run",
+        started_at="2026-09-03T00:00:00Z",
+        identity=IDENTITY,
+        profile=PROFILE,
+    )
+
+    assert sealed["kvarn_evidence_mode"] == "exploratory"
+    assert sealed["kvarn_promotable"] is False
+    assert "kvarn_candidate_id" not in sealed
+    assert "kvarn_correctness_sha256" not in sealed
+
+
+def test_exploratory_summary_is_descriptive_and_non_promotable(
+    tmp_path: Path,
+) -> None:
+    records: list[dict[str, object]] = []
+    for order, arm in enumerate(ARM_ORDER, start=1):
+        document = _parity_document(arm, 90.0 if arm == "candidate" else 100.0)
+        document["kvarn_evidence_mode"] = "exploratory"
+        document["kvarn_promotable"] = False
+        path = tmp_path / f"{order}.json"
+        path.write_text(json.dumps(document), encoding="utf-8")
+        records.append({"arm": arm, "order": order, "result": str(path)})
+
+    summary = summarize_exploratory_workload(records)
+
+    assert summary["evidence_mode"] == "exploratory"
+    assert summary["promotable"] is False
+    assert summary["formal_performance_gate_run"] is False
+    assert summary["formal_statistical_parity_run"] is False
+    assert summary["repeats_per_arm"] == 2
+    assert summary["abba_blocks"] == 1
+    assert summary["descriptive_metrics"]["output_throughput"][
+        "candidate_over_reference"
+    ] == pytest.approx(0.9)
+    assert (
+        result_exit_code(
+            {
+                "evidence_mode": "exploratory",
+                "performance_status": "failed",
+                "statistical_parity_status": "failed",
+            }
+        )
+        == 0
+    )
+    assert (
+        result_exit_code(
+            {
+                "evidence_mode": "formal",
+                "performance_status": "failed",
+                "statistical_parity_status": "failed",
+            }
+        )
+        == 1
+    )
 
 
 def _parity_document(
@@ -550,7 +736,7 @@ def test_matched_profile_normalizes_only_declared_arm_differences(
     reference = service_profile_evidence(argv, environment)
     argv[argv.index("--kv-cache-dtype") + 1] = "kvarn_k4v4_g128_compact"
     environment["KVARN_NATIVE_XPU"] = "1"
-    environment["KVARN_NATIVE_XPU_DPAS_LAYOUT"] = "1"
+    environment["KVARN_NATIVE_XPU_DPAS_LAYOUT"] = "0"
     environment["KVARN_NATIVE_XPU_SPLITS"] = "24"
     candidate = service_profile_evidence(argv, environment)
 

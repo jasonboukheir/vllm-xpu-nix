@@ -408,6 +408,97 @@ def test_interleaved_order_is_rotating_and_palindromic() -> None:
     assert three == tuple(reversed(three))
 
 
+def test_service_layer_order_rotates_without_dropping_or_repeating_layers() -> None:
+    assert factory.service_layer_order(1, 999) == (0,)
+    first = factory.service_layer_order(16, 0)
+    seventh = factory.service_layer_order(16, 7)
+    wrapped = factory.service_layer_order(16, 23)
+    assert first == tuple(range(16))
+    assert seventh == (*range(7, 16), *range(7))
+    assert wrapped == seventh
+    assert set(seventh) == set(range(16))
+    with pytest.raises(factory.FactoryError, match="service layer count"):
+        factory.service_layer_order(4, 0)
+    with pytest.raises(factory.FactoryError, match="non-negative"):
+        factory.service_layer_order(16, -1)
+
+
+def test_service_sweep_normalization_preserves_raw_and_divides_every_sample() -> None:
+    raw = {
+        "order_policy": "test",
+        "arms": {
+            "candidate": factory.timing_summary(
+                [160.0, 320.0], [176.0, 352.0]
+            ),
+            "auto": factory.timing_summary([80.0, 160.0], [96.0, 192.0]),
+        },
+    }
+    normalized = factory.normalize_service_sweep_timing(raw, layer_count=16)
+    assert normalized["raw_sweep"] is raw
+    assert normalized["service_parity_eligible"] is False
+    assert normalized["per_layer"]["arms"]["candidate"]["device_us"] == [
+        10.0,
+        20.0,
+    ]
+    assert normalized["per_layer"]["arms"]["candidate"][
+        "device_median_us"
+    ] == 15.0
+    assert raw["arms"]["candidate"]["device_us"] == [160.0, 320.0]
+
+
+def test_service_storage_pointer_guard_rejects_cross_group_aliases() -> None:
+    evidence = factory.require_unique_storage_pointers(
+        {"auto": [11, 12], "candidate": [21, 22], "tails": [31, 32]}
+    )
+    assert evidence["all_service_owned_storages_distinct"] is True
+    assert evidence["storage_count"] == 6
+    with pytest.raises(factory.FactoryError, match="storages alias"):
+        factory.require_unique_storage_pointers(
+            {"auto": [11, 12], "candidate": [21, 11]}
+        )
+    with pytest.raises(factory.FactoryError, match="invalid data pointer"):
+        factory.require_unique_storage_pointers({"auto": [0]})
+
+
+def test_service_allocation_estimator_and_budget_are_fail_closed() -> None:
+    estimate = factory.estimate_service_layer_allocation(
+        batch=4,
+        context=65_023,
+        auto_block_size=64,
+        num_kv_splits=8,
+        layer_count=16,
+    )
+    assert estimate["auto_pages_per_request"] == 1016
+    assert estimate["native_pages_per_request"] == 508
+    assert estimate["tail_slots"] == 8
+    assert estimate["service_layer_count"] == 16
+    assert estimate["estimated_new_device_bytes"] == sum(
+        estimate["components"].values()
+    )
+    assert estimate["components"]["auto_cache_replicas"] > estimate[
+        "components"
+    ]["candidate_cache_replicas"]
+
+    total = 32 << 30
+    fits = factory.assess_service_memory_budget(
+        estimated_bytes=20 << 30,
+        free_bytes=30 << 30,
+        total_bytes=total,
+    )
+    assert fits["required_headroom_bytes"] == pytest.approx(3.2 * (1 << 30))
+    assert fits["fits"] is True
+    rejected = factory.assess_service_memory_budget(
+        estimated_bytes=28 << 30,
+        free_bytes=30 << 30,
+        total_bytes=total,
+    )
+    assert rejected["fits"] is False
+    with pytest.raises(factory.FactoryError, match="totals are invalid"):
+        factory.assess_service_memory_budget(
+            estimated_bytes=1, free_bytes=33 << 30, total_bytes=total
+        )
+
+
 def _leaderboard_result(
     variant_name: str,
     *,
@@ -1250,6 +1341,7 @@ def test_matched_fixture_is_default_and_unmatched_is_explicit_diagnostic(
     assert matched.output_dtype_values == ["bf16"]
     assert matched.warmup_rounds == 16
     assert matched.sample_rounds == 20
+    assert matched.service_layer_count == 1
     assert matched.native_attention_build["closure_sha256"] == "3" * 64
     assert matched.native_attention_build["source_contract"] == (
         _attention_source_contract(
@@ -1276,6 +1368,10 @@ def test_matched_fixture_is_default_and_unmatched_is_explicit_diagnostic(
     )
     assert diagnostic.fixture_mode == factory.UNMATCHED_FIXTURE_MODE
     assert diagnostic.auto_block_size == 832
+    sixteen_layers = factory.parse_args([*common, "--service-layer-count", "16"])
+    assert sixteen_layers.service_layer_count == 16
+    with pytest.raises(SystemExit):
+        factory.parse_args([*common, "--service-layer-count", "4"])
 
 
 def test_fixture_and_fusion_results_label_diagnostic_mode_clearly() -> None:

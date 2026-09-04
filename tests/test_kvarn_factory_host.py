@@ -443,6 +443,7 @@ def test_runner_command_forwards_matrix_and_exact_attestations(tmp_path: Path) -
         output_dtypes="fp16,bf16",
         warmup_rounds=12,
         sample_rounds=24,
+        service_layer_count=16,
         expected_project_revision=PROJECT_REVISION,
         expected_vllm_revision=VLLM_REVISION,
         expected_kernels_revision=KERNELS_REVISION,
@@ -484,6 +485,7 @@ def test_runner_command_forwards_matrix_and_exact_attestations(tmp_path: Path) -
     assert command[command.index("--output-dtypes") + 1] == "fp16,bf16"
     assert command[command.index("--warmup-rounds") + 1] == "12"
     assert command[command.index("--sample-rounds") + 1] == "24"
+    assert command[command.index("--service-layer-count") + 1] == "16"
     assert (
         command[command.index("--expected-vllm-xpu-nix-revision") + 1]
         == PROJECT_REVISION
@@ -521,6 +523,7 @@ def test_default_cli_is_the_matched_b70_factory_matrix() -> None:
     assert args.output_dtypes == host.DEFAULT_OUTPUT_DTYPES
     assert args.warmup_rounds == host.DEFAULT_WARMUP_ROUNDS
     assert args.sample_rounds == host.DEFAULT_SAMPLE_ROUNDS
+    assert args.service_layer_count == host.DEFAULT_SERVICE_LAYER_COUNT
 
     selected = host.parse_args(
         [
@@ -529,10 +532,13 @@ def test_default_cli_is_the_matched_b70_factory_matrix() -> None:
             "native_xe2",
             "--prefill-store",
             "hadamard_scatter",
+            "--service-layer-count",
+            "16",
         ]
     )
     assert selected.flush_writer == "native_xe2"
     assert selected.prefill_store == "hadamard_scatter"
+    assert selected.service_layer_count == 16
 
 
 @pytest.mark.parametrize(
@@ -540,6 +546,7 @@ def test_default_cli_is_the_matched_b70_factory_matrix() -> None:
     [
         ("--flush-writer", "native"),
         ("--prefill-store", "scatter"),
+        ("--service-layer-count", "4"),
     ],
 )
 def test_cli_rejects_unknown_writer_selectors(option: str, value: str) -> None:
@@ -661,6 +668,7 @@ def test_launch_executes_once_with_resolved_provenance(
         output_dtypes=host.DEFAULT_OUTPUT_DTYPES,
         warmup_rounds=host.DEFAULT_WARMUP_ROUNDS,
         sample_rounds=host.DEFAULT_SAMPLE_ROUNDS,
+        service_layer_count=host.DEFAULT_SERVICE_LAYER_COUNT,
         expected_project_revision=PROJECT_REVISION,
         expected_vllm_revision=VLLM_REVISION,
         expected_kernels_revision=KERNELS_REVISION,

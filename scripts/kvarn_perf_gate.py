@@ -126,6 +126,18 @@ VARIANT_FIELDS = (
     "scheduling_variant",
     "variant_id",
 )
+PRIMITIVE_SERVICE_ONLY_FIELDS = (
+    "native_frontend",
+    "kvarn_native_frontend",
+    "native_frontend_active_verified",
+    "native_frontend_log_marker",
+    "native_frontend_inline_active_verified",
+    "native_frontend_inline_log_marker",
+    "forward_pool_ensure",
+    "kvarn_forward_pool_ensure",
+    "forward_pool_ensure_active_verified",
+    "forward_pool_ensure_log_marker",
+)
 EXPECTED_XPU_DEVICE_NAME = "Intel(R) Arc(TM) Pro B70 Graphics"
 FORMAL_CONTEXTS = frozenset({4096, 16384, 32768, 65023})
 FACTORY_QUALIFICATION_CONTEXTS = (4096, 16384, 65023)
@@ -1304,8 +1316,7 @@ def validate_correctness_gate_evidence(
                     "native_nominal_splits_by_batch",
                     "native_split_policy",
                     "native_scratch_max_splits",
-                    "forward_pool_ensure",
-                    "kvarn_forward_pool_ensure",
+                    *PRIMITIVE_SERVICE_ONLY_FIELDS,
                     *VARIANT_FIELDS,
                 )
             )

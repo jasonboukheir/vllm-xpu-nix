@@ -1571,15 +1571,27 @@ def test_correctness_gate_rejects_qkv_marker_in_natural_reference(
         _load_correctness(correctness_path)
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("native_frontend", "reference"),
+        ("kvarn_native_frontend", "reference"),
+        ("native_frontend_active_verified", False),
+        ("native_frontend_inline_active_verified", False),
+        ("forward_pool_ensure", "always"),
+        ("kvarn_forward_pool_ensure", "always"),
+        ("forward_pool_ensure_active_verified", False),
+    ],
+)
 def test_correctness_gate_rejects_service_axis_claim_in_primitive_result(
-    tmp_path: Path,
+    tmp_path: Path, field: str, value: object
 ) -> None:
     correctness_path = _correctness(tmp_path / "correctness.json")
     correctness = json.loads(correctness_path.read_text(encoding="utf-8"))
     gate_reference = correctness["gates"]["native_decode_short"]
     gate_path = Path(gate_reference["path"])
     evidence = json.loads(gate_path.read_text(encoding="utf-8"))
-    evidence["forward_pool_ensure"] = "always"
+    evidence[field] = value
     gate_path.write_text(json.dumps(evidence), encoding="utf-8")
     gate_reference["sha256"] = hashlib.sha256(gate_path.read_bytes()).hexdigest()
     correctness_path.write_text(json.dumps(correctness), encoding="utf-8")

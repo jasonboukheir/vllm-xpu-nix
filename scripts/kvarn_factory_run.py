@@ -37,6 +37,8 @@ KVARN_RECORD_STRIDE = 35_072
 SOFTMAX_SCALE = 1.0 / 16.0
 VALID_SPLITS = (1, 2, 4, 8, 16, 17, 24, 32)
 VALID_OUTPUT_DTYPES = ("fp16", "bf16")
+FLUSH_WRITER_VARIANTS = ("reference", "native_xe2")
+PREFILL_STORE_VARIANTS = ("reference", "hadamard_scatter")
 MATCHED_FIXTURE_MODE = "matched-production"
 UNMATCHED_FIXTURE_MODE = "unmatched-diagnostic"
 CORPUS_SEED = 20_260_903
@@ -371,6 +373,19 @@ FOCUSED_XPU_MULTISPLIT_TESTS = {
 FOCUSED_XPU_ID15_TEST = (
     f"{_XPU_DECODE_TEST}::"
     "test_q6_block_output_store_matches_scalar_across_reducers"
+)
+FOCUSED_XPU_NATIVE_WRITER_TESTS = (
+    "tests/flash_attn/test_kvarn_hadamard_scatter_xpu.py::test_kvarn_balanced_writer_matches_dpas_record_bytes",
+    "tests/flash_attn/test_kvarn_hadamard_scatter_xpu.py::test_kvarn_balanced_writer_skips_invalid_ragged_block_ids",
+    "tests/flash_attn/test_kvarn_hadamard_scatter_xpu.py::test_kvarn_balanced_writer_matches_nontrivial_rounding",
+    "tests/flash_attn/test_kvarn_hadamard_scatter_xpu.py::test_kvarn_balanced_writer_rejects_non_abi_record_stride",
+)
+FOCUSED_XPU_PREFILL_STORE_TESTS = (
+    "tests/flash_attn/test_kvarn_hadamard_scatter_xpu.py::test_kvarn_hadamard_scatter_matches_fp32",
+    "tests/flash_attn/test_kvarn_hadamard_scatter_xpu.py::test_kvarn_hadamard_scatter_structured_and_invalid_rows",
+    "tests/flash_attn/test_kvarn_hadamard_scatter_xpu.py::test_kvarn_hadamard_scatter_repeated_is_deterministic",
+    "tests/flash_attn/test_kvarn_hadamard_scatter_xpu.py::test_kvarn_hadamard_scatter_survives_input_allocator_reuse",
+    "tests/flash_attn/test_kvarn_hadamard_scatter_xpu.py::test_kvarn_hadamard_scatter_matches_backend_strides_and_appends",
 )
 UNMATCHED_FIXTURE_WARNING = (
     "The auto BF16 cache and Kvarn packed cache have identical model shapes, "
@@ -1345,7 +1360,12 @@ def preflight_xpu(torch_module: Any) -> dict[str, Any]:
     }
 
 
-def focused_xpu_tests(variants: Sequence[VariantSpec]) -> tuple[str, ...]:
+def focused_xpu_tests(
+    variants: Sequence[VariantSpec],
+    *,
+    flush_writer: str = "reference",
+    prefill_store: str = "reference",
+) -> tuple[str, ...]:
     """Select invariant tests and direct gates for only requested variants."""
     if not variants:
         raise FactoryError("focused XPU kill suite requires at least one variant")
@@ -1364,15 +1384,29 @@ def focused_xpu_tests(variants: Sequence[VariantSpec]) -> tuple[str, ...]:
         selected.append(FOCUSED_XPU_262K_TESTS[variant.variant_id])
     if 15 in selected_ids:
         selected.append(FOCUSED_XPU_ID15_TEST)
+    if flush_writer == "native_xe2":
+        selected.extend(FOCUSED_XPU_NATIVE_WRITER_TESTS)
+    elif flush_writer != "reference":
+        raise FactoryError(f"unsupported flush writer {flush_writer!r}")
+    if prefill_store == "hadamard_scatter":
+        selected.extend(FOCUSED_XPU_PREFILL_STORE_TESTS)
+    elif prefill_store != "reference":
+        raise FactoryError(f"unsupported prefill store {prefill_store!r}")
     return tuple(dict.fromkeys(selected))
 
 
 def focused_xpu_test_command(
-    kernels_repo: Path, variants: Sequence[VariantSpec]
+    kernels_repo: Path,
+    variants: Sequence[VariantSpec],
+    *,
+    flush_writer: str = "reference",
+    prefill_store: str = "reference",
 ) -> list[str]:
     resolved = kernels_repo.expanduser().resolve(strict=True)
     node_ids: list[str] = []
-    for selection in focused_xpu_tests(variants):
+    for selection in focused_xpu_tests(
+        variants, flush_writer=flush_writer, prefill_store=prefill_store
+    ):
         relative, separator, test_name = selection.partition("::")
         if not separator:
             raise FactoryError(f"invalid focused XPU test selection: {selection}")
@@ -1397,11 +1431,20 @@ def run_focused_xpu_kill_suite(
     kernels_repo: Path,
     flash_library: Path,
     variants: Sequence[VariantSpec],
+    flush_writer: str = "reference",
+    prefill_store: str = "reference",
 ) -> dict[str, Any]:
     resolved_repo = kernels_repo.expanduser().resolve(strict=True)
     resolved_library = flash_library.expanduser().resolve(strict=True)
-    selections = focused_xpu_tests(variants)
-    command = focused_xpu_test_command(resolved_repo, variants)
+    selections = focused_xpu_tests(
+        variants, flush_writer=flush_writer, prefill_store=prefill_store
+    )
+    command = focused_xpu_test_command(
+        resolved_repo,
+        variants,
+        flush_writer=flush_writer,
+        prefill_store=prefill_store,
+    )
     selected_variants = [
         {"variant_id": variant.variant_id, "name": variant.name}
         for variant in dict.fromkeys(variants)
@@ -1432,6 +1475,8 @@ def run_focused_xpu_kill_suite(
             "cwd": str(resolved_repo),
             "library": str(resolved_library),
             "selected_variants": selected_variants,
+            "flush_writer": flush_writer,
+            "prefill_store": prefill_store,
             "test_selections": list(selections),
             "minimum_passed_required": minimum_passed,
             "error": str(error),
@@ -1457,6 +1502,8 @@ def run_focused_xpu_kill_suite(
         "library": str(resolved_library),
         "library_environment": "VLLM_XPU_KERNELS_LIBRARY",
         "selected_variants": selected_variants,
+        "flush_writer": flush_writer,
+        "prefill_store": prefill_store,
         "test_selections": list(selections),
         "minimum_passed_required": minimum_passed,
         "passed_count": passed_count,
@@ -3072,6 +3119,18 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--expected-vllm-revision", required=True)
     parser.add_argument("--expected-kernels-revision", required=True)
     parser.add_argument("--variants", default="all")
+    parser.add_argument(
+        "--flush-writer",
+        choices=FLUSH_WRITER_VARIANTS,
+        default="reference",
+        help="full-page writer whose direct-op kill suite must pass",
+    )
+    parser.add_argument(
+        "--prefill-store",
+        choices=PREFILL_STORE_VARIANTS,
+        default="reference",
+        help="multi-token prefill store whose direct-op kill suite must pass",
+    )
     parser.add_argument("--splits", default="auto")
     parser.add_argument("--contexts", default="4096,16384,65023")
     parser.add_argument("--batches", default="1,4")
@@ -3221,6 +3280,8 @@ def initial_document(args: argparse.Namespace) -> dict[str, Any]:
         "runtime_environment": runtime_environment_contract(),
         "requested_settings": {
             "variants": [dataclasses.asdict(item) for item in args.variant_specs],
+            "flush_writer": args.flush_writer,
+            "prefill_store": args.prefill_store,
             "splits": args.splits,
             "contexts": args.context_values,
             "batches": args.batch_values,
@@ -3322,6 +3383,8 @@ def execute(args: argparse.Namespace) -> int:
             kernels_repo=args.kernels_repo,
             flash_library=Path(flash_record["path"]),
             variants=args.variant_specs,
+            flush_writer=args.flush_writer,
+            prefill_store=args.prefill_store,
         )
         write_json_atomic(args.output, document)
         require_focused_xpu_kill_suite(document["kernel_kill_suite"])

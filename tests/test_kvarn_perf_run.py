@@ -68,6 +68,8 @@ PROFILE = {
     "request_stable_projection_rows_environment": None,
     "request_stable_rmsnorm_environment": None,
     "flush_index_materialization_environment": "per_layer",
+    "flush_writer_environment": "reference",
+    "prefill_store_environment": "reference",
     "native_frontend_environment": "reference",
     "vllm_use_v2_model_runner_environment": "0",
     "variant_provenance": {
@@ -370,6 +372,8 @@ def test_exploratory_plan_session_has_no_formal_claims(
     assert session["formal_gates_skipped"] is True
     assert session["service_controls"] == {
         "kvarn_flush_index_materialization": "per_layer",
+        "kvarn_flush_writer": "reference",
+        "kvarn_prefill_store": "reference",
         "kvarn_native_frontend": "reference",
         "kvarn_onednn_deterministic": "1",
         "kvarn_request_stable_projection_rows": "1",
@@ -435,12 +439,14 @@ def test_commands_pin_launcher_and_deterministic_workload(tmp_path: Path) -> Non
         "kernel_strategy": "native_xe2_qlen1_q6_scalar",
         "split_policy": "fixed_b1s24_b4s16",
         "fusion_strategy": (
-            "native_materializer_persistent_scratch_per_layer_flush_reference_frontend"
+            "native_materializer_persistent_scratch_per_layer_indices_"
+            "reference_writer_reference_prefill_store_reference_frontend"
         ),
         "scheduling_variant": "eager_mnbt2048",
         "variant_id": (
             "native-xe2-xe2_dpas-q6_scalar-fixed_b1s24_b4s16-"
-            "per_layer-flush-reference-frontend-eager_mnbt2048"
+            "per_layer-indices-reference-writer-reference-prefill-store-"
+            "reference-frontend-eager_mnbt2048"
         ),
     }
     assert reference_variant["variant_id"] == "auto-control-eager_mnbt2048"
@@ -449,9 +455,13 @@ def test_commands_pin_launcher_and_deterministic_workload(tmp_path: Path) -> Non
     shared_variant = variant_provenance_for_run(run, args)
     assert shared_variant["variant_id"] != candidate_variant["variant_id"]
     assert shared_variant["fusion_strategy"] == (
-        "native_materializer_persistent_scratch_shared_flush_reference_frontend"
+        "native_materializer_persistent_scratch_shared_indices_reference_writer_"
+        "reference_prefill_store_reference_frontend"
     )
-    assert "-shared-flush-reference-frontend-" in shared_variant["variant_id"]
+    assert (
+        "-shared-indices-reference-writer-reference-prefill-store-"
+        "reference-frontend-" in shared_variant["variant_id"]
+    )
     assert variant_provenance_for_run(reference, args) == reference_variant
 
 
@@ -864,7 +874,9 @@ def test_profile_verification_uses_actual_argv_and_environment(tmp_path: Path) -
         "KVARN_NATIVE_XPU_CACHE_LAYOUT": "natural",
         "KVARN_NATIVE_XPU_DECODE": "1",
         "KVARN_NATIVE_XPU_DPAS_LAYOUT": "0",
-        "KVARN_FLUSH_INDEX_MATERIALIZATION": "per_layer",
+            "KVARN_FLUSH_INDEX_MATERIALIZATION": "per_layer",
+            "KVARN_FLUSH_WRITER": "reference",
+            "KVARN_NATIVE_XPU_PREFILL_STORE": "reference",
         "KVARN_NATIVE_XPU_FRONTEND": "reference",
         "KVARN_NATIVE_XPU_KERNEL_VARIANT": "baseline",
         "KVARN_NATIVE_XPU_MATERIALIZE": "1",
@@ -1046,6 +1058,8 @@ def test_runtime_factory_environment_carries_exact_per_process_axes(
     args.request_stable_projection_rows = False
     args.request_stable_rmsnorm = True
     args.flush_index_materialization = "shared"
+    args.flush_writer = "native_xe2"
+    args.prefill_store = "hadamard_scatter"
     args.native_frontend = "qkv_scatter"
     candidate = PlannedRun(Workload(65023, 4, 32, 4, 17), "candidate", 1)
     reference = PlannedRun(candidate.workload, "reference", 2)
@@ -1054,27 +1068,37 @@ def test_runtime_factory_environment_carries_exact_per_process_axes(
     assert candidate_axes == {
         "KVARN_FACTORY_CACHE_LAYOUT": "xe2_dpas",
         "KVARN_FACTORY_FLUSH_INDEX_MATERIALIZATION": "shared",
+        "KVARN_FACTORY_FLUSH_WRITER": "native_xe2",
         "KVARN_FACTORY_KERNEL_VARIANT": "q6_next_page_prefetch",
         "KVARN_FACTORY_KV_CACHE_DTYPE": runner.COMPACT_DTYPE,
         "KVARN_FACTORY_MAX_MODEL_LEN": "65536",
         "KVARN_FACTORY_MAX_NUM_SEQS": "4",
         "KVARN_FACTORY_NATIVE_XPU_FRONTEND": "qkv_scatter",
         "KVARN_FACTORY_ONEDNN_DETERMINISTIC": "0",
+        "KVARN_FACTORY_PREFILL_STORE": "hadamard_scatter",
         "KVARN_FACTORY_REQUEST_STABLE_PROJECTION_ROWS": "0",
         "KVARN_FACTORY_REQUEST_STABLE_RMSNORM": "1",
         "KVARN_FACTORY_SPLITS": None,
         "KVARN_FACTORY_SPLIT_POLICY": "b70_q6",
     }
-    assert "KVARN_FACTORY_SPLITS" not in runner.service_environment(candidate, args)
+    candidate_environment = runner.service_environment(candidate, args)
+    assert "KVARN_FACTORY_SPLITS" not in candidate_environment
+    assert candidate_environment["KVARN_FACTORY_FLUSH_WRITER"] == "native_xe2"
+    assert (
+        candidate_environment["KVARN_FACTORY_PREFILL_STORE"]
+        == "hadamard_scatter"
+    )
     assert runner.runtime_factory_axes_for_run(reference, args) == {
         "KVARN_FACTORY_CACHE_LAYOUT": "natural",
         "KVARN_FACTORY_FLUSH_INDEX_MATERIALIZATION": "per_layer",
+        "KVARN_FACTORY_FLUSH_WRITER": "reference",
         "KVARN_FACTORY_KERNEL_VARIANT": "baseline",
         "KVARN_FACTORY_KV_CACHE_DTYPE": "auto",
         "KVARN_FACTORY_MAX_MODEL_LEN": "65536",
         "KVARN_FACTORY_MAX_NUM_SEQS": "4",
         "KVARN_FACTORY_NATIVE_XPU_FRONTEND": "reference",
         "KVARN_FACTORY_ONEDNN_DETERMINISTIC": "0",
+        "KVARN_FACTORY_PREFILL_STORE": "reference",
         "KVARN_FACTORY_REQUEST_STABLE_PROJECTION_ROWS": "0",
         "KVARN_FACTORY_REQUEST_STABLE_RMSNORM": "1",
         "KVARN_FACTORY_SPLITS": "1",
@@ -1653,6 +1677,8 @@ def test_matched_profile_normalizes_only_declared_arm_differences(
     ]
     environment = {
         "KVARN_FLUSH_INDEX_MATERIALIZATION": "per_layer",
+        "KVARN_FLUSH_WRITER": "reference",
+        "KVARN_NATIVE_XPU_PREFILL_STORE": "reference",
         "KVARN_NATIVE_XPU": "0",
         "KVARN_NATIVE_XPU_CACHE_LAYOUT": "natural",
         "KVARN_NATIVE_XPU_DPAS_LAYOUT": "0",

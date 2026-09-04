@@ -57,6 +57,8 @@ NATIVE_KERNEL_VARIANTS = {
 }
 NATIVE_SPLIT_POLICIES = split_policy.NATIVE_SPLIT_POLICIES
 FLUSH_INDEX_MATERIALIZATION_VARIANTS = ("per_layer", "shared")
+FLUSH_WRITER_VARIANTS = ("reference", "native_xe2")
+PREFILL_STORE_VARIANTS = ("reference", "hadamard_scatter")
 NATIVE_FRONTEND_VARIANTS = ("reference", "qkv_scatter")
 NATIVE_FRONTEND_ACTIVE_MARKER = "[KVARN_FRONTEND] active=qkv_scatter;"
 FILTERED_SOURCE_SCHEME = "nix-filtered-source-store-hash-v1"
@@ -188,6 +190,8 @@ def _candidate_variant_provenance(
     native_kernel_variant: str = "baseline",
     native_split_policy: str = "fixed",
     native_splits: Mapping[int, int] | None = None,
+    flush_writer: str = "reference",
+    prefill_store: str = "reference",
 ) -> dict[str, str]:
     selected_splits = DEFAULT_NATIVE_SPLITS if native_splits is None else native_splits
     split_policy = native_split_policy
@@ -201,12 +205,14 @@ def _candidate_variant_provenance(
         "split_policy": split_policy,
         "fusion_strategy": (
             "native_materializer_persistent_scratch_"
-            f"{flush_index_materialization}_flush_{native_frontend}_frontend"
+            f"{flush_index_materialization}_indices_{flush_writer}_writer_"
+            f"{prefill_store}_prefill_store_{native_frontend}_frontend"
         ),
         "scheduling_variant": scheduling,
         "variant_id": (
             f"native-xe2-{native_layout}-{native_kernel_variant}-"
-            f"{split_policy}-{flush_index_materialization}-flush-"
+            f"{split_policy}-{flush_index_materialization}-indices-"
+            f"{flush_writer}-writer-{prefill_store}-prefill-store-"
             f"{native_frontend}-frontend-{scheduling}"
         ),
     }
@@ -242,11 +248,15 @@ def _correctness_phase_spec(
     native_splits: Mapping[int, int] | None = None,
     request_stable_projection_rows: str = "1",
     request_stable_rmsnorm: str = "1",
+    flush_writer: str = "reference",
+    prefill_store: str = "reference",
 ) -> dict[str, Any]:
     spec = dict(CORRECTNESS_PHASE_SPECS[phase_name])
     selected_splits = DEFAULT_NATIVE_SPLITS if native_splits is None else native_splits
     effective_layout = native_layout if spec["native"] else "natural"
     effective_frontend = native_frontend if spec["native"] else "reference"
+    effective_flush_writer = flush_writer if spec["native"] else "reference"
+    effective_prefill_store = prefill_store if spec["native"] else "reference"
     effective_projection_rows = (
         request_stable_projection_rows if spec["native"] else "1"
     )
@@ -287,6 +297,8 @@ def _correctness_phase_spec(
         native_kernel_variant=selected_kernel,
         native_kernel_variant_id=NATIVE_KERNEL_VARIANTS[selected_kernel],
         native_frontend=effective_frontend,
+        flush_writer=effective_flush_writer,
+        prefill_store=effective_prefill_store,
         native_split_policy=selected_policy,
         native_split_policy_contract=policy_contract,
         max_decode_splits=max_splits,
@@ -302,6 +314,8 @@ def _correctness_phase_spec(
             native_kernel_variant,
             native_split_policy,
             selected_splits,
+            flush_writer,
+            prefill_store,
         )
         if spec["native"]
         else _correctness_reference_variant_provenance()
@@ -395,6 +409,8 @@ ARM_PROVENANCE_FIELDS = (
     "kvarn_native_nominal_splits",
     "kvarn_native_split_policy",
     "kvarn_flush_index_materialization",
+    "kvarn_flush_writer",
+    "kvarn_prefill_store",
     "kvarn_native_frontend",
     "kvarn_native_layout_log_marker",
     "kvarn_native_layout_evidence",
@@ -427,6 +443,8 @@ def validate_factory_qualification(
     expected_package: str,
     expected_native_library: str | None = None,
     expected_native_library_sha256: str | None = None,
+    flush_writer: str = "reference",
+    prefill_store: str = "reference",
 ) -> dict[str, Any]:
     """Validate and bind the selected per-ID primitive factory matrix."""
     path = factory_path.expanduser().resolve()
@@ -456,6 +474,12 @@ def validate_factory_qualification(
         raise GateError(f"{path}: selected factory split policy is unsupported")
     if output_dtype not in {"fp16", "bf16"}:
         raise GateError(f"{path}: selected factory output dtype is unsupported")
+    if flush_writer not in FLUSH_WRITER_VARIANTS:
+        raise GateError(f"{path}: selected factory flush writer is unsupported")
+    if flush_writer == "native_xe2" and native_layout != "xe2_dpas":
+        raise GateError(f"{path}: native_xe2 writer requires xe2_dpas")
+    if prefill_store not in PREFILL_STORE_VARIANTS:
+        raise GateError(f"{path}: selected factory prefill store is unsupported")
     if native_split_policy == "b70_q6_v2":
         if native_splits:
             raise GateError(
@@ -522,6 +546,8 @@ def validate_factory_qualification(
         or kill_suite.get("passed") is not True
         or kill_suite.get("returncode") != 0
         or kill_suite.get("skipped_count") != 0
+        or kill_suite.get("flush_writer") != flush_writer
+        or kill_suite.get("prefill_store") != prefill_store
     ):
         raise GateError(f"{path}: factory XPU correctness preconditions are invalid")
 
@@ -670,6 +696,8 @@ def validate_factory_qualification(
         or not isinstance(settings.get("matrix"), list)
         or len(settings["matrix"]) != len(results)
         or settings.get("fixture_mode") != "matched-production"
+        or settings.get("flush_writer") != flush_writer
+        or settings.get("prefill_store") != prefill_store
         or not isinstance(settings.get("output_dtypes"), list)
         or output_dtype not in settings["output_dtypes"]
     ):
@@ -852,6 +880,8 @@ def validate_factory_qualification(
                 for context in FACTORY_QUALIFICATION_CONTEXTS
             },
             "output_dtype": output_dtype,
+            "flush_writer": flush_writer,
+            "prefill_store": prefill_store,
         },
         "cases": cases,
     }
@@ -958,6 +988,8 @@ def _validate_correctness_phase(
     native_splits: Mapping[int, int],
     native_output_dtype: str,
     flush_index_materialization: str,
+    flush_writer: str,
+    prefill_store: str,
     native_frontend: str,
     request_stable_projection_rows: str,
     request_stable_rmsnorm: str,
@@ -975,6 +1007,8 @@ def _validate_correctness_phase(
         native_splits,
         request_stable_projection_rows,
         request_stable_rmsnorm,
+        flush_writer,
+        prefill_store,
     )
     expected_layout = expected_spec["native_layout"]
     expected_kernel = expected_spec["native_kernel_variant"]
@@ -1004,6 +1038,8 @@ def _validate_correctness_phase(
         NATIVE_DIRECT_BF16_MARKER if expected_spec["native"] else "not_applicable"
     )
     effective_frontend = expected_spec["native_frontend"]
+    effective_flush_writer = expected_spec["flush_writer"]
+    effective_prefill_store = expected_spec["prefill_store"]
     expected_frontend_active = (
         expected_spec["native"] and effective_frontend == "qkv_scatter"
     )
@@ -1030,6 +1066,8 @@ def _validate_correctness_phase(
         or phase.get("native_layout_log_marker") != expected_marker
         or phase.get("native_layout_evidence") != expected_layout_evidence
         or phase.get("flush_index_materialization") != flush_index_materialization
+        or phase.get("flush_writer") != effective_flush_writer
+        or phase.get("prefill_store") != effective_prefill_store
         or phase.get("native_frontend") != effective_frontend
         or phase.get("request_stable_projection_rows")
         != expected_spec["request_stable_projection_rows"]
@@ -1061,6 +1099,8 @@ def _validate_correctness_phase(
         or profile.get("native_split_policy_environment") != expected_policy
         or profile.get("flush_index_materialization_environment")
         != flush_index_materialization
+        or profile.get("flush_writer_environment") != effective_flush_writer
+        or profile.get("prefill_store_environment") != effective_prefill_store
         or profile.get("native_frontend_environment") != effective_frontend
         or profile.get("request_stable_projection_rows_environment")
         not in (
@@ -1085,6 +1125,9 @@ def _validate_correctness_phase(
         or captured_environment.get("KVARN_NATIVE_XPU_SPLIT_POLICY") != expected_policy
         or captured_environment.get("KVARN_FLUSH_INDEX_MATERIALIZATION")
         != flush_index_materialization
+        or captured_environment.get("KVARN_FLUSH_WRITER") != effective_flush_writer
+        or captured_environment.get("KVARN_NATIVE_XPU_PREFILL_STORE")
+        != effective_prefill_store
         or captured_environment.get("KVARN_NATIVE_XPU_FRONTEND") != effective_frontend
         or captured_environment.get("KVARN_ONEDNN_DETERMINISTIC") != "1"
         or captured_environment.get("KVARN_REQUEST_STABLE_PROJECTION_ROWS")
@@ -1159,12 +1202,20 @@ def validate_correctness_gate_evidence(
     native_splits: Mapping[int, int] | None = None,
     native_output_dtype: str = "bf16",
     flush_index_materialization: str = "per_layer",
+    flush_writer: str = "reference",
+    prefill_store: str = "reference",
     native_frontend: str = "reference",
     request_stable_projection_rows: str = "1",
     request_stable_rmsnorm: str = "1",
 ) -> None:
     """Validate the meaning of one hashed correctness-gate artifact."""
     selected_splits = DEFAULT_NATIVE_SPLITS if native_splits is None else native_splits
+    if flush_writer not in FLUSH_WRITER_VARIANTS:
+        raise GateError(f"{path}: flush writer is unsupported")
+    if flush_writer == "native_xe2" and native_layout != "xe2_dpas":
+        raise GateError(f"{path}: native_xe2 writer requires xe2_dpas layout")
+    if prefill_store not in PREFILL_STORE_VARIANTS:
+        raise GateError(f"{path}: prefill store is unsupported")
     if request_stable_projection_rows not in {"0", "1"}:
         raise GateError(f"{path}: projection-row selector is unsupported")
     if request_stable_rmsnorm not in {"0", "1"}:
@@ -1276,6 +1327,8 @@ def validate_correctness_gate_evidence(
             selected_splits,
             native_output_dtype,
             flush_index_materialization,
+            flush_writer,
+            prefill_store,
             native_frontend,
             request_stable_projection_rows,
             request_stable_rmsnorm,
@@ -2058,6 +2111,14 @@ def _load_correctness(path: Path) -> tuple[dict[str, Any], str]:
     flush_index_materialization = document.get("flush_index_materialization")
     if flush_index_materialization not in FLUSH_INDEX_MATERIALIZATION_VARIANTS:
         raise GateError(f"{path}: flush-index materialization is unsupported")
+    flush_writer = document.get("flush_writer")
+    if flush_writer not in FLUSH_WRITER_VARIANTS:
+        raise GateError(f"{path}: flush writer is unsupported")
+    if flush_writer == "native_xe2" and native_layout != "xe2_dpas":
+        raise GateError(f"{path}: native_xe2 writer requires xe2_dpas layout")
+    prefill_store = document.get("prefill_store")
+    if prefill_store not in PREFILL_STORE_VARIANTS:
+        raise GateError(f"{path}: prefill store is unsupported")
     native_frontend = document.get("native_frontend")
     if native_frontend not in NATIVE_FRONTEND_VARIANTS:
         raise GateError(f"{path}: native frontend is unsupported")
@@ -2085,6 +2146,8 @@ def _load_correctness(path: Path) -> tuple[dict[str, Any], str]:
         raise GateError(f"{path}: correctness RMSNorm selector is unsupported")
     expected_service_controls = {
         "kvarn_flush_index_materialization": flush_index_materialization,
+        "kvarn_flush_writer": flush_writer,
+        "kvarn_prefill_store": prefill_store,
         "kvarn_native_frontend": native_frontend,
         "kvarn_onednn_deterministic": correctness_onednn,
         "kvarn_request_stable_projection_rows": correctness_projection_rows,
@@ -2152,6 +2215,8 @@ def _load_correctness(path: Path) -> tuple[dict[str, Any], str]:
             native_splits,
             correctness_projection_rows,
             correctness_rmsnorm,
+            flush_writer,
+            prefill_store,
         )
         for phase_name in CORRECTNESS_PHASE_SPECS
     ]
@@ -2164,6 +2229,8 @@ def _load_correctness(path: Path) -> tuple[dict[str, Any], str]:
         native_kernel_variant,
         native_split_policy,
         native_splits,
+        flush_writer,
+        prefill_store,
     )
     if any(document.get(field) != value for field, value in expected_variant.items()):
         raise GateError(f"{path}: correctness variant provenance is inconsistent")
@@ -2186,6 +2253,8 @@ def _load_correctness(path: Path) -> tuple[dict[str, Any], str]:
         native_split_policy=native_split_policy,
         native_splits=native_splits,
         output_dtype=native_output_dtype,
+        flush_writer=flush_writer,
+        prefill_store=prefill_store,
         expected_revisions={
             "vllm-xpu-nix": source_revisions["vllm-xpu-release"],
             "vllm": source_revisions["vllm-xpu-unstable-src"],
@@ -2237,6 +2306,8 @@ def _load_correctness(path: Path) -> tuple[dict[str, Any], str]:
             native_splits=native_splits,
             native_output_dtype=native_output_dtype,
             flush_index_materialization=flush_index_materialization,
+            flush_writer=flush_writer,
+            prefill_store=prefill_store,
             native_frontend=native_frontend,
             request_stable_projection_rows=correctness_projection_rows,
             request_stable_rmsnorm=correctness_rmsnorm,
@@ -2559,6 +2630,8 @@ def compare(
         "kvarn_flush_index_materialization": first_cand.provenance[
             "kvarn_flush_index_materialization"
         ],
+        "kvarn_flush_writer": first_cand.provenance["kvarn_flush_writer"],
+        "kvarn_prefill_store": first_cand.provenance["kvarn_prefill_store"],
         "kvarn_native_frontend": first_cand.provenance["kvarn_native_frontend"],
         "kvarn_onednn_deterministic": first_cand.provenance[
             "kvarn_onednn_deterministic"
@@ -2623,8 +2696,16 @@ def compare(
         raise GateError("reference must disable and candidate must enable native XPU")
     if first_ref.provenance["kvarn_native_frontend"] != "reference":
         raise GateError("reference must use the unfused reference frontend")
+    if first_ref.provenance["kvarn_flush_writer"] != "reference":
+        raise GateError("reference must use the reference flush writer")
+    if first_ref.provenance["kvarn_prefill_store"] != "reference":
+        raise GateError("reference must use the reference prefill store")
     if first_cand.provenance["kvarn_native_frontend"] != correctness["native_frontend"]:
         raise GateError("candidate frontend must match correctness")
+    if first_cand.provenance["kvarn_flush_writer"] != correctness["flush_writer"]:
+        raise GateError("candidate flush writer must match correctness")
+    if first_cand.provenance["kvarn_prefill_store"] != correctness["prefill_store"]:
+        raise GateError("candidate prefill store must match correctness")
     ref_layout = first_ref.provenance["kvarn_native_layout"]
     cand_layout = first_cand.provenance["kvarn_native_layout"]
     if ref_layout != "natural" or cand_layout != correctness_layout:

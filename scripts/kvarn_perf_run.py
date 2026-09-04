@@ -76,6 +76,8 @@ NATIVE_KERNEL_VARIANTS = {
 REFERENCE_NATIVE_KERNEL_VARIANT = "baseline"
 NATIVE_SPLIT_POLICIES = split_policy.NATIVE_SPLIT_POLICIES
 FLUSH_INDEX_MATERIALIZATION_VARIANTS = ("per_layer", "shared")
+FLUSH_WRITER_VARIANTS = ("reference", "native_xe2")
+PREFILL_STORE_VARIANTS = ("reference", "hadamard_scatter")
 NATIVE_FRONTEND_VARIANTS = ("reference", "qkv_scatter")
 NATIVE_FRONTEND_ACTIVE_MARKER = "[KVARN_FRONTEND] active=qkv_scatter;"
 B70_Q6_SPLITS = split_policy.B70_Q6_SPLITS
@@ -123,12 +125,14 @@ RUNTIME_FACTORY_OWNED_ARGUMENTS = frozenset(
 RUNTIME_FACTORY_SELECTORS = (
     "KVARN_FACTORY_CACHE_LAYOUT",
     "KVARN_FACTORY_FLUSH_INDEX_MATERIALIZATION",
+    "KVARN_FACTORY_FLUSH_WRITER",
     "KVARN_FACTORY_KERNEL_VARIANT",
     "KVARN_FACTORY_KV_CACHE_DTYPE",
     "KVARN_FACTORY_MAX_MODEL_LEN",
     "KVARN_FACTORY_MAX_NUM_SEQS",
     "KVARN_FACTORY_NATIVE_XPU_FRONTEND",
     "KVARN_FACTORY_ONEDNN_DETERMINISTIC",
+    "KVARN_FACTORY_PREFILL_STORE",
     "KVARN_FACTORY_REQUEST_STABLE_PROJECTION_ROWS",
     "KVARN_FACTORY_REQUEST_STABLE_RMSNORM",
     "KVARN_FACTORY_SPLITS",
@@ -166,6 +170,8 @@ CAPTURED_ENVIRONMENT = (
     "KVARN_NATIVE_XPU_DECODE",
     "KVARN_NATIVE_XPU_DPAS_LAYOUT",
     "KVARN_FLUSH_INDEX_MATERIALIZATION",
+    "KVARN_FLUSH_WRITER",
+    "KVARN_NATIVE_XPU_PREFILL_STORE",
     "KVARN_NATIVE_XPU_FRONTEND",
     "KVARN_NATIVE_XPU_KERNEL_VARIANT",
     "KVARN_NATIVE_XPU_MATERIALIZE",
@@ -212,6 +218,8 @@ PARITY_METRICS = (
 ARM_ARGUMENTS = {"--kv-cache-dtype"}
 ARM_ENVIRONMENT = {
     "KVARN_FLUSH_INDEX_MATERIALIZATION",
+    "KVARN_FLUSH_WRITER",
+    "KVARN_NATIVE_XPU_PREFILL_STORE",
     "KVARN_NATIVE_XPU",
     "KVARN_NATIVE_XPU_CACHE_LAYOUT",
     "KVARN_NATIVE_XPU_DECODE",
@@ -591,6 +599,32 @@ def flush_index_materialization_for_run(
     return flush_index_materialization_environment(args)
 
 
+def flush_writer_environment(args: argparse.Namespace) -> str:
+    """Return the selected engine-lifetime full-page writer."""
+    writer = getattr(args, "flush_writer", "reference")
+    if writer not in FLUSH_WRITER_VARIANTS:
+        raise RunnerError(f"unsupported flush writer {writer!r}")
+    return writer
+
+
+def flush_writer_for_run(run: PlannedRun, args: argparse.Namespace) -> str:
+    """Keep auto on the canonical no-op reference-writer selector."""
+    return flush_writer_environment(args) if run.arm == "candidate" else "reference"
+
+
+def prefill_store_environment(args: argparse.Namespace) -> str:
+    """Return the selected engine-lifetime multi-token prefill writer."""
+    variant = getattr(args, "prefill_store", "reference")
+    if variant not in PREFILL_STORE_VARIANTS:
+        raise RunnerError(f"unsupported prefill store {variant!r}")
+    return variant
+
+
+def prefill_store_for_run(run: PlannedRun, args: argparse.Namespace) -> str:
+    """Keep auto on the canonical no-op reference prefill-store selector."""
+    return prefill_store_environment(args) if run.arm == "candidate" else "reference"
+
+
 def native_frontend_environment(args: argparse.Namespace) -> str:
     """Return the engine-lifetime Q/K/V frontend strategy for this run."""
     variant = args.native_frontend
@@ -621,17 +655,22 @@ def variant_provenance_for_run(
     split_policy = native_split_policy_for_run(run, args)
     native_frontend = native_frontend_for_run(run, args)
     flush_indices = flush_index_materialization_environment(args)
+    flush_writer = flush_writer_environment(args)
+    prefill_store = prefill_store_environment(args)
     return {
         "kernel_strategy": f"native_xe2_qlen1_{kernel_variant}",
         "split_policy": split_policy,
         "fusion_strategy": (
             "native_materializer_persistent_scratch_"
-            f"{flush_indices}_flush_{native_frontend}_frontend"
+            f"{flush_indices}_indices_{flush_writer}_writer_"
+            f"{prefill_store}_prefill_store_"
+            f"{native_frontend}_frontend"
         ),
         "scheduling_variant": scheduling,
         "variant_id": (
             f"native-xe2-{args.native_layout}-{kernel_variant}-"
-            f"{split_policy}-{flush_indices}-flush-"
+            f"{split_policy}-{flush_indices}-indices-{flush_writer}-writer-"
+            f"{prefill_store}-prefill-store-"
             f"{native_frontend}-frontend-{scheduling}"
         ),
     }
@@ -705,6 +744,16 @@ def load_correctness(
         raise RunnerError(
             "correctness artifact flush-index materialization is unsupported"
         )
+    flush_writer = document.get("flush_writer")
+    if flush_writer not in FLUSH_WRITER_VARIANTS:
+        raise RunnerError("correctness artifact flush writer is unsupported")
+    if flush_writer == "native_xe2" and native_layout != "xe2_dpas":
+        raise RunnerError(
+            "correctness artifact native_xe2 writer requires xe2_dpas layout"
+        )
+    prefill_store = document.get("prefill_store")
+    if prefill_store not in PREFILL_STORE_VARIANTS:
+        raise RunnerError("correctness artifact prefill store is unsupported")
     native_frontend = document.get("native_frontend")
     if native_frontend not in NATIVE_FRONTEND_VARIANTS:
         raise RunnerError("correctness artifact native frontend is unsupported")
@@ -726,6 +775,8 @@ def load_correctness(
     )
     if service_controls != {
         "kvarn_flush_index_materialization": flush_index_materialization,
+        "kvarn_flush_writer": flush_writer,
+        "kvarn_prefill_store": prefill_store,
         "kvarn_native_frontend": native_frontend,
         "kvarn_onednn_deterministic": correctness_onednn,
         "kvarn_request_stable_projection_rows": correctness_projection_rows,
@@ -798,6 +849,8 @@ def load_correctness(
                 "kernel_variant_id",
                 "split_policy",
                 "output_dtype",
+                "flush_writer",
+                "prefill_store",
             )
         }
         != {
@@ -806,6 +859,8 @@ def load_correctness(
             "kernel_variant_id": NATIVE_KERNEL_VARIANTS[native_kernel_variant],
             "split_policy": native_split_policy,
             "output_dtype": native_output_dtype,
+            "flush_writer": flush_writer,
+            "prefill_store": prefill_store,
         }
         or factory["selection"].get("split_policy_contract") != expected_contract
         or factory["selection"].get("nominal_splits_by_batch")
@@ -848,6 +903,8 @@ def load_correctness(
             "native_scratch_max_splits": expected_scratch_max,
             "native_output_dtype": native_output_dtype,
             "flush_index_materialization": flush_index_materialization,
+            "flush_writer": flush_writer,
+            "prefill_store": prefill_store,
             "native_frontend": native_frontend,
             "onednn_deterministic": correctness_onednn,
             "request_stable_projection_rows": correctness_projection_rows,
@@ -919,12 +976,14 @@ def runtime_factory_axes_for_run(
         "KVARN_FACTORY_FLUSH_INDEX_MATERIALIZATION": (
             flush_index_materialization_for_run(run, args)
         ),
+        "KVARN_FACTORY_FLUSH_WRITER": flush_writer_for_run(run, args),
         "KVARN_FACTORY_KERNEL_VARIANT": native_kernel_variant_for_run(run, args),
         "KVARN_FACTORY_KV_CACHE_DTYPE": ARM_SETTINGS[run.arm]["kv_cache_dtype"],
         "KVARN_FACTORY_MAX_MODEL_LEN": str(args.max_model_len),
         "KVARN_FACTORY_MAX_NUM_SEQS": str(run.workload.batch),
         "KVARN_FACTORY_NATIVE_XPU_FRONTEND": native_frontend_for_run(run, args),
         "KVARN_FACTORY_ONEDNN_DETERMINISTIC": (onednn_deterministic_environment(args)),
+        "KVARN_FACTORY_PREFILL_STORE": prefill_store_for_run(run, args),
         "KVARN_FACTORY_REQUEST_STABLE_PROJECTION_ROWS": (
             request_stable_projection_rows_environment(args)
         ),
@@ -943,12 +1002,14 @@ def runtime_factory_axes_for_run(
     if reference and axes != {
         "KVARN_FACTORY_CACHE_LAYOUT": "natural",
         "KVARN_FACTORY_FLUSH_INDEX_MATERIALIZATION": "per_layer",
+        "KVARN_FACTORY_FLUSH_WRITER": "reference",
         "KVARN_FACTORY_KERNEL_VARIANT": "baseline",
         "KVARN_FACTORY_KV_CACHE_DTYPE": "auto",
         "KVARN_FACTORY_MAX_MODEL_LEN": str(args.max_model_len),
         "KVARN_FACTORY_MAX_NUM_SEQS": str(run.workload.batch),
         "KVARN_FACTORY_NATIVE_XPU_FRONTEND": "reference",
         "KVARN_FACTORY_ONEDNN_DETERMINISTIC": (onednn_deterministic_environment(args)),
+        "KVARN_FACTORY_PREFILL_STORE": "reference",
         "KVARN_FACTORY_REQUEST_STABLE_PROJECTION_ROWS": (
             request_stable_projection_rows_environment(args)
         ),
@@ -980,6 +1041,8 @@ def service_environment(run: PlannedRun, args: argparse.Namespace) -> dict[str, 
         environment["KVARN_FACTORY_FLUSH_INDEX_MATERIALIZATION"] = (
             flush_index_materialization_environment(args)
         )
+        environment["KVARN_FACTORY_FLUSH_WRITER"] = flush_writer_for_run(run, args)
+        environment["KVARN_FACTORY_PREFILL_STORE"] = prefill_store_for_run(run, args)
         environment["KVARN_FACTORY_NATIVE_XPU_FRONTEND"] = native_frontend_for_run(
             run, args
         )
@@ -1498,6 +1561,8 @@ def service_profile_evidence(
         "flush_index_materialization_environment": environment.get(
             "KVARN_FLUSH_INDEX_MATERIALIZATION"
         ),
+        "flush_writer_environment": environment.get("KVARN_FLUSH_WRITER"),
+        "prefill_store_environment": environment.get("KVARN_NATIVE_XPU_PREFILL_STORE"),
         "native_frontend_environment": environment.get("KVARN_NATIVE_XPU_FRONTEND"),
         "vllm_use_v2_model_runner_environment": environment.get(
             "VLLM_USE_V2_MODEL_RUNNER"
@@ -1593,6 +1658,8 @@ def verify_service_profile(
         "KVARN_FLUSH_INDEX_MATERIALIZATION": (
             flush_index_materialization_for_run(run, args)
         ),
+        "KVARN_FLUSH_WRITER": flush_writer_for_run(run, args),
+        "KVARN_NATIVE_XPU_PREFILL_STORE": prefill_store_for_run(run, args),
         "KVARN_NATIVE_XPU_FRONTEND": native_frontend_for_run(run, args),
         "KVARN_NATIVE_XPU_KERNEL_VARIANT": native_kernel_variant_for_run(run, args),
         "KVARN_NATIVE_XPU_MATERIALIZE": native,
@@ -2211,6 +2278,10 @@ def seal_benchmark_result(
         )
         or profile.get("flush_index_materialization_environment")
         != flush_index_materialization_for_run(run, args)
+        or profile.get("flush_writer_environment")
+        != flush_writer_for_run(run, args)
+        or profile.get("prefill_store_environment")
+        != prefill_store_for_run(run, args)
         or profile.get("native_frontend_environment")
         != native_frontend_for_run(run, args)
         or profile.get("vllm_use_v2_model_runner_environment")
@@ -2300,6 +2371,8 @@ def seal_benchmark_result(
         "kvarn_flush_index_materialization": (
             flush_index_materialization_for_run(run, args)
         ),
+        "kvarn_flush_writer": flush_writer_for_run(run, args),
+        "kvarn_prefill_store": prefill_store_for_run(run, args),
         "kvarn_native_frontend": native_frontend_for_run(run, args),
         "kvarn_vllm_use_v2_model_runner": VLLM_USE_V2_MODEL_RUNNER,
         "kvarn_native_layout_log_marker": (
@@ -2903,6 +2976,9 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             )
             or correctness_factory["flush_index_materialization"]
             != flush_index_materialization_environment(args)
+            or correctness_factory["flush_writer"] != flush_writer_environment(args)
+            or correctness_factory["prefill_store"]
+            != prefill_store_environment(args)
             or correctness_factory["native_frontend"]
             != native_frontend_environment(args)
             or correctness_factory["onednn_deterministic"]
@@ -2975,6 +3051,8 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             "kvarn_flush_index_materialization": (
                 flush_index_materialization_environment(args)
             ),
+            "kvarn_flush_writer": flush_writer_environment(args),
+            "kvarn_prefill_store": prefill_store_environment(args),
             "kvarn_native_frontend": native_frontend_environment(args),
             "vllm_use_v2_model_runner": VLLM_USE_V2_MODEL_RUNNER,
         },
@@ -2996,6 +3074,8 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
                     run, args
                 ),
                 "expected_native_frontend": native_frontend_for_run(run, args),
+                "expected_flush_writer": flush_writer_for_run(run, args),
+                "expected_prefill_store": prefill_store_for_run(run, args),
                 "launcher_binding": launcher_binding_for_run(run, args),
                 "service_command": service_command(run, args),
             }
@@ -3327,6 +3407,24 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--flush-writer",
+        choices=FLUSH_WRITER_VARIANTS,
+        default="reference",
+        help=(
+            "engine-lifetime full-page Kvarn writer selected at launcher "
+            "runtime without rebuilding the shared candidate (default: reference)"
+        ),
+    )
+    parser.add_argument(
+        "--prefill-store",
+        choices=PREFILL_STORE_VARIANTS,
+        default="reference",
+        help=(
+            "engine-lifetime multi-token Kvarn store selected at launcher "
+            "runtime without rebuilding the shared candidate (default: reference)"
+        ),
+    )
+    parser.add_argument(
         "--native-frontend",
         choices=NATIVE_FRONTEND_VARIANTS,
         default="reference",
@@ -3414,6 +3512,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ):
             raise RunnerError(
                 "non-baseline native kernel variants require --native-layout xe2_dpas"
+            )
+        if args.flush_writer == "native_xe2" and args.native_layout != "xe2_dpas":
+            raise RunnerError(
+                "--flush-writer native_xe2 requires --native-layout xe2_dpas"
             )
         args.context = _parse_int_list(args.context, DEFAULT_CONTEXTS)
         args.batch = _parse_int_list(args.batch, DEFAULT_BATCHES)

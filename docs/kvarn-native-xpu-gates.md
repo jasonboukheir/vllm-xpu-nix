@@ -312,7 +312,9 @@ canonical matched-profile digest. Closure paths are sorted and deduplicated
 before hashing, so Nix query order cannot alter the identity.
 
 Optimization evidence also carries explicit `kernel_strategy`, `split_policy`,
-`fusion_strategy`, `scheduling_variant`, and `variant_id` fields. These values
+`fusion_strategy`, `scheduling_variant`, and `variant_id` fields. It separately
+binds `kvarn_flush_writer` and `kvarn_prefill_store` to the captured
+`KVARN_FLUSH_WRITER` and `KVARN_NATIVE_XPU_PREFILL_STORE` process values. These values
 are derived from the selected harness settings rather than accepted as free-form
 labels. The current native identity records the Xe2 qlen=1 reader, fixed
 B1=24/B4=16 split policy, native materializer with persistent scratch, and the
@@ -330,7 +332,9 @@ The canonical profile comes from the actual service argv and effective
 allowlisted environment. The only normalized arm differences are
 `--kv-cache-dtype`, the five native identity switches (`KVARN_NATIVE_XPU`,
 decode, DPAS layout, materialize, and persistent scratch), and exactly
-`KVARN_NATIVE_XPU_SPLITS`. Any other argument or effective
+`KVARN_NATIVE_XPU_SPLITS`, `KVARN_FLUSH_WRITER`, and
+`KVARN_NATIVE_XPU_PREFILL_STORE`. Auto is forced to `reference` for the latter
+two. Any other argument or effective
 performance-environment difference invalidates the cell. Secret-looking
 argument values are redacted before argv or profile evidence is written.
 The runner pins `KVARN_PREFILL_FP16_WINDOW_BLOCKS=16` identically in both

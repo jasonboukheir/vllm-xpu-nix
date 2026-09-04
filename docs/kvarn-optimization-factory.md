@@ -63,6 +63,16 @@ extension:
 | `KVARN_NATIVE_XPU_KERNEL_VARIANT` | `baseline`, `qk_i8u4`, `q6_scalar`, `q8_vector`, `q6_vector`, `q6_cached_weights`, `q6_exact_rows`, `q6_cached_weights_exact_rows`, `q6_page_pair`, `q6_main_grf128`, `q6_split_reducer_specialized`, `q6_next_page_prefetch`, `q6_next_page_prefetch_split_reducer`, `q6_simd_unpack`, `q6_block_output_store`, `q6_current_half_v_prefetch`, `q6_page_record_cursor`, `q6_prefetch_record_cursor` | startup selector; every listed specialization is in the same library |
 | `KVARN_NATIVE_XPU_SPLIT_POLICY` | `fixed`, `b70_q6`, `b70_q6_v2` | startup policy; named policies select the effective count per decode call |
 | `KVARN_NATIVE_XPU_SPLITS` | `1`, `2`, `4`, `8`, `16`, `17`, `24`, `32` | scratch-allocation maximum; effective count may be selected per call |
+| `KVARN_FLUSH_WRITER` | `reference`, `native_xe2` | startup writer; `native_xe2` requires the `xe2_dpas` D256/G128/K4V4/Hkv4 cache ABI |
+| `KVARN_NATIVE_XPU_PREFILL_STORE` | `reference`, `hadamard_scatter` | startup multi-token store; unsupported calls fall back to the reference path |
+
+The writer/store selectors are orthogonal to the reader ID. `reference` remains
+the public-beta default for both. `native_xe2` replaces the completed-page
+Sinkhorn/RTN packer with the native Xe2 balanced-record writer, while
+`hadamard_scatter` replaces eligible pure multi-token prefill scatters. Neither
+selector permits changing the cache layout after allocation. The factory
+harness records both selectors independently so a winning reader is not
+mistaken for a writer or prefill-store gain.
 
 `b70_q6` allocates for 32 and selects B1=32, B2=16, B3--4=8,
 B5--8=4, and B9--12=2. It is valid only with a Q6 DPAS reader. The named
@@ -125,12 +135,15 @@ scripts/kvarn_perf_run.py \
   --native-layout xe2_dpas \
   --native-kernel-variant q6_next_page_prefetch \
   --native-split-policy b70_q6_v2 \
+  --flush-writer native_xe2 \
+  --prefill-store hadamard_scatter \
   ...
 ```
 
 The same `--launcher-mode runtime-factory` switch is supported by
 `kvarn_correctness_run.py` and `kvarn_xpu_profile.py`. It makes cache dtype,
-layout, kernel, split policy/count, frontend, flush strategy, oneDNN mode,
+layout, kernel, split policy/count, frontend, flush-index strategy, full-page
+writer, multi-token prefill store, oneDNN mode,
 request-stable projections/RMSNorm, 65K/262K model length, and B1/B4 width
 process-start choices. The launcher is
 resolved to one immutable Nix-store program once per harness run, while every
@@ -205,18 +218,21 @@ vLLM service has been stopped:
 nix run .#kvarn-factory -- \
   --vllm-xpu-nix-repo "$PWD" \
   --vllm-repo /tmp/vllm-kvarn-upstream-sync \
-  --kernels-repo /tmp/vllm-xpu-kernels-upstream-sync
+  --kernels-repo /tmp/vllm-xpu-kernels-upstream-sync \
+  --flush-writer native_xe2 \
+  --prefill-store hadamard_scatter
 ```
 
 This realizes one BMG-AOT package, then tests every selected kernel variant and
 the configured split sweep in one pinned Python/Torch/XPU process. The default
 `--variants all` is literal: it runs every compiled, runnable ID (`0`--`4` and
-`6`--`12`) at split 8 and 32 with direct BF16 output. Use an explicit named
+`6`--`18`) at split 8 and 32 with direct BF16 output. Use an explicit named
 comma-separated shortlist when a smaller sweep is intended. Sixteen warmup
 rounds precede twenty
 measured rounds per arm because the first B70 sweep showed material
 short-context clock settling after four warmups. Override `--variants`,
-`--splits`, `--output-dtypes`, `--warmup-rounds`, or `--sample-rounds` to change
+`--splits`, `--output-dtypes`, `--flush-writer`, `--prefill-store`,
+`--warmup-rounds`, or `--sample-rounds` to change
 the runtime matrix without rebuilding the native library. Pytest is included
 for the mandatory native kill suite, and inherited Python, loader, service,
 and Kvarn-selector variables are scrubbed before launch. The launcher
@@ -224,6 +240,13 @@ refuses to run beside a vLLM service, against dirty or source-mismatched
 repositories, with ambiguous shared libraries, or without exact Nix
 derivation and closure attestations. Evidence is written atomically under
 `benchmark-results/kvarn/`; `/tmp` and overwrites are rejected.
+
+The mandatory B70 kill suite is selector-scoped. A `native_xe2` writer run
+adds compact/padded byte-exact packing, ragged block IDs, arbitrary values,
+ties-to-even, constant rows, and invalid-stride rejection. A
+`hadamard_scatter` prefill run adds FP16/BF16, structured rows, deterministic
+repeat, allocator reuse, and B1/B4 backend-stride append cases. Incorrect
+writers therefore fail before the slower service correctness matrix.
 
 ## Evidence entering round 1
 

@@ -243,11 +243,14 @@ def _correctness_phase_spec(
     )
     effective_rmsnorm = request_stable_rmsnorm if spec["native"] else "1"
     if spec["native"] and native_layout == "xe2_dpas":
-        suffix = "-262k" if spec["max_model_len"] == 262144 else ""
-        spec["launcher"] = (
-            "vllm-xpu-brutus-kvarn-native-dpas-"
-            f"{native_kernel_variant}{suffix}-b{spec['batch']}"
-        )
+        if native_split_policy == "b70_q6_v2":
+            spec["launcher"] = "vllm-xpu-brutus-kvarn-factory-runtime"
+        else:
+            suffix = "-262k" if spec["max_model_len"] == 262144 else ""
+            spec["launcher"] = (
+                "vllm-xpu-brutus-kvarn-native-dpas-"
+                f"{native_kernel_variant}{suffix}-b{spec['batch']}"
+            )
     spec["native_layout"] = effective_layout
     selected_kernel = native_kernel_variant if spec["native"] else "baseline"
     selected_policy = native_split_policy if spec["native"] else "fixed"

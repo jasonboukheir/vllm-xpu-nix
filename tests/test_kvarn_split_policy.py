@@ -256,6 +256,7 @@ def test_correctness_and_formal_gate_phase_schema_do_not_invent_nominal_map() ->
         args.native_splits,
     )
 
+    assert runtime_spec == gate_spec
     assert runtime_spec["nominal_decode_splits"] is None
     assert gate_spec["nominal_decode_splits"] is None
     assert runtime_spec["native_split_policy_contract"] == gate_spec[

@@ -71,6 +71,7 @@ PROFILE = {
     "flush_writer_environment": "reference",
     "prefill_store_environment": "reference",
     "native_frontend_environment": "reference",
+    "forward_pool_ensure_environment": "always",
     "vllm_use_v2_model_runner_environment": "0",
     "variant_provenance": {
         "kernel_strategy": "vllm_auto",
@@ -113,6 +114,7 @@ def _args(tmp_path: Path) -> argparse.Namespace:
         onednn_deterministic=True,
         flush_index_materialization="per_layer",
         native_frontend="reference",
+        forward_pool_ensure="always",
         model=MODEL,
         model_revision=REVISION,
         native_splits={1: 24, 4: 16},
@@ -375,6 +377,7 @@ def test_exploratory_plan_session_has_no_formal_claims(
         "kvarn_flush_writer": "reference",
         "kvarn_prefill_store": "reference",
         "kvarn_native_frontend": "reference",
+        "kvarn_forward_pool_ensure": "always",
         "kvarn_onednn_deterministic": "1",
         "kvarn_request_stable_projection_rows": "1",
         "kvarn_request_stable_rmsnorm": "1",
@@ -441,12 +444,13 @@ def test_commands_pin_launcher_and_deterministic_workload(tmp_path: Path) -> Non
         "fusion_strategy": (
             "native_materializer_persistent_scratch_per_layer_indices_"
             "reference_writer_reference_prefill_store_reference_frontend"
+            "_always_forward_pool_ensure"
         ),
         "scheduling_variant": "eager_mnbt2048",
         "variant_id": (
             "native-xe2-xe2_dpas-q6_scalar-fixed_b1s24_b4s16-"
             "per_layer-indices-reference-writer-reference-prefill-store-"
-            "reference-frontend-eager_mnbt2048"
+            "reference-frontend-always-forward-pool-ensure-eager_mnbt2048"
         ),
     }
     assert reference_variant["variant_id"] == "auto-control-eager_mnbt2048"
@@ -456,11 +460,12 @@ def test_commands_pin_launcher_and_deterministic_workload(tmp_path: Path) -> Non
     assert shared_variant["variant_id"] != candidate_variant["variant_id"]
     assert shared_variant["fusion_strategy"] == (
         "native_materializer_persistent_scratch_shared_indices_reference_writer_"
-        "reference_prefill_store_reference_frontend"
+        "reference_prefill_store_reference_frontend_always_forward_pool_ensure"
     )
     assert (
         "-shared-indices-reference-writer-reference-prefill-store-"
-        "reference-frontend-" in shared_variant["variant_id"]
+        "reference-frontend-always-forward-pool-ensure-"
+        in shared_variant["variant_id"]
     )
     assert variant_provenance_for_run(reference, args) == reference_variant
 
@@ -622,6 +627,10 @@ def test_scheduler_budget_cli_defaults_overrides_and_rejects_zero(
             "0",
             "--request-stable-rmsnorm",
             "1",
+            "--native-frontend",
+            "qkv_scatter_inline",
+            "--forward-pool-ensure",
+            "fused_qkv_proof",
         ]
     )
 
@@ -629,10 +638,14 @@ def test_scheduler_budget_cli_defaults_overrides_and_rejects_zero(
     assert default.onednn_deterministic is True
     assert default.request_stable_projection_rows is True
     assert default.request_stable_rmsnorm is True
+    assert default.native_frontend == "reference"
+    assert default.forward_pool_ensure == "always"
     assert explicit.max_num_batched_tokens == 4096
     assert nondeterministic.onednn_deterministic is False
     assert diagnostic.request_stable_projection_rows is False
     assert diagnostic.request_stable_rmsnorm is True
+    assert diagnostic.native_frontend == "qkv_scatter_inline"
+    assert diagnostic.forward_pool_ensure == "fused_qkv_proof"
     for variant in sorted(runner.RUNTIME_FACTORY_ONLY_KERNEL_VARIANTS):
         for split_selector, split_arguments in (
             ("b70_q6", ["--native-split-policy", "b70_q6"]),
@@ -946,6 +959,7 @@ def test_profile_verification_uses_actual_argv_and_environment(tmp_path: Path) -
             "KVARN_FLUSH_WRITER": "reference",
             "KVARN_NATIVE_XPU_PREFILL_STORE": "reference",
         "KVARN_NATIVE_XPU_FRONTEND": "reference",
+        "KVARN_FORWARD_POOL_ENSURE": "always",
         "KVARN_NATIVE_XPU_KERNEL_VARIANT": "baseline",
         "KVARN_NATIVE_XPU_MATERIALIZE": "1",
         "KVARN_NATIVE_XPU_PERSISTENT_SCRATCH": "1",
@@ -1101,15 +1115,24 @@ def test_service_environment_pins_window_and_scrubs_full_defer(
     )
     assert environment["PYTHONNOUSERSITE"] == "1"
 
-    args.native_frontend = "qkv_scatter"
+    args.native_frontend = "qkv_scatter_inline"
+    args.forward_pool_ensure = "fused_qkv_proof"
     assert (
         runner.service_environment(run, args)["KVARN_FACTORY_NATIVE_XPU_FRONTEND"]
-        == "qkv_scatter"
+        == "qkv_scatter_inline"
     )
     reference = PlannedRun(run.workload, "reference", 2)
     assert (
         runner.service_environment(reference, args)["KVARN_FACTORY_NATIVE_XPU_FRONTEND"]
         == "reference"
+    )
+    assert (
+        runner.service_environment(run, args)["KVARN_FORWARD_POOL_ENSURE"]
+        == "fused_qkv_proof"
+    )
+    assert (
+        runner.service_environment(reference, args)["KVARN_FORWARD_POOL_ENSURE"]
+        == "always"
     )
 
 
@@ -1128,7 +1151,8 @@ def test_runtime_factory_environment_carries_exact_per_process_axes(
     args.flush_index_materialization = "shared"
     args.flush_writer = "sinkhorn_pack_xe2"
     args.prefill_store = "hadamard_scatter"
-    args.native_frontend = "qkv_scatter"
+    args.native_frontend = "qkv_scatter_inline"
+    args.forward_pool_ensure = "fused_qkv_proof"
     candidate = PlannedRun(Workload(65023, 4, 32, 4, 17), "candidate", 1)
     reference = PlannedRun(candidate.workload, "reference", 2)
 
@@ -1141,7 +1165,7 @@ def test_runtime_factory_environment_carries_exact_per_process_axes(
         "KVARN_FACTORY_KV_CACHE_DTYPE": runner.COMPACT_DTYPE,
         "KVARN_FACTORY_MAX_MODEL_LEN": "65536",
         "KVARN_FACTORY_MAX_NUM_SEQS": "4",
-        "KVARN_FACTORY_NATIVE_XPU_FRONTEND": "qkv_scatter",
+        "KVARN_FACTORY_NATIVE_XPU_FRONTEND": "qkv_scatter_inline",
         "KVARN_FACTORY_ONEDNN_DETERMINISTIC": "0",
         "KVARN_FACTORY_PREFILL_STORE": "hadamard_scatter",
         "KVARN_FACTORY_REQUEST_STABLE_PROJECTION_ROWS": "0",
@@ -1151,6 +1175,7 @@ def test_runtime_factory_environment_carries_exact_per_process_axes(
     }
     candidate_environment = runner.service_environment(candidate, args)
     assert "KVARN_FACTORY_SPLITS" not in candidate_environment
+    assert candidate_environment["KVARN_FORWARD_POOL_ENSURE"] == "fused_qkv_proof"
     assert (
         candidate_environment["KVARN_FACTORY_FLUSH_WRITER"]
         == "sinkhorn_pack_xe2"
@@ -1332,6 +1357,41 @@ def test_native_log_attests_selected_frontend(tmp_path: Path) -> None:
         engine_log, native=True, expected_frontend="qkv_scatter"
     )
     assert scan["native_frontend_active_verified"] is True
+    assert scan["native_frontend_inline_active_verified"] is False
+
+    inline_markers = (
+        f"INFO {runner.NATIVE_FRONTEND_ACTIVE_MARKER} layer=0\n"
+        f"INFO {runner.NATIVE_FRONTEND_INLINE_ACTIVE_MARKER} layer=0 "
+        "route=single_attention_context\n"
+    )
+    engine_log.write_text(base + inline_markers, encoding="utf-8")
+    scan = runner.validate_engine_log(
+        engine_log, native=True, expected_frontend="qkv_scatter_inline"
+    )
+    assert scan["native_frontend_active_verified"] is True
+    assert scan["native_frontend_inline_active_verified"] is True
+    assert (
+        scan["native_frontend_inline_log_marker"]
+        == runner.NATIVE_FRONTEND_INLINE_ACTIVE_MARKER
+    )
+
+    engine_log.write_text(
+        base + f"INFO {runner.NATIVE_FRONTEND_ACTIVE_MARKER} layer=0\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(RunnerError, match="inline fused QKV frontend"):
+        runner.validate_engine_log(
+            engine_log, native=True, expected_frontend="qkv_scatter_inline"
+        )
+
+    engine_log.write_text(
+        base + f"INFO {runner.NATIVE_FRONTEND_INLINE_ACTIVE_MARKER} layer=0\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(RunnerError, match="fused QKV frontend"):
+        runner.validate_engine_log(
+            engine_log, native=True, expected_frontend="qkv_scatter_inline"
+        )
 
     engine_log.write_text(base, encoding="utf-8")
     with pytest.raises(RunnerError, match="must execute the fused QKV frontend"):
@@ -1754,6 +1814,7 @@ def test_matched_profile_normalizes_only_declared_arm_differences(
         "KVARN_NATIVE_XPU_CACHE_LAYOUT": "natural",
         "KVARN_NATIVE_XPU_DPAS_LAYOUT": "0",
         "KVARN_NATIVE_XPU_FRONTEND": "reference",
+        "KVARN_FORWARD_POOL_ENSURE": "always",
         "KVARN_NATIVE_XPU_KERNEL_VARIANT": "baseline",
         "KVARN_ONEDNN_DETERMINISTIC": "1",
         "KVARN_NATIVE_XPU_SPLITS": "1",
@@ -1791,6 +1852,10 @@ def test_matched_profile_normalizes_only_declared_arm_differences(
     )
     assert (
         "KVARN_NATIVE_XPU_FRONTEND"
+        in reference["allowed_arm_environment_differences"]
+    )
+    assert (
+        "KVARN_FORWARD_POOL_ENSURE"
         in reference["allowed_arm_environment_differences"]
     )
 

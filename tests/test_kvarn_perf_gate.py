@@ -345,6 +345,7 @@ def _correctness(
     flush_writer: str = "reference",
     prefill_store: str = "reference",
     native_frontend: str = "reference",
+    forward_pool_ensure: str = "always",
     request_stable_projection_rows: str = "1",
     request_stable_rmsnorm: str = "1",
 ) -> Path:
@@ -417,6 +418,7 @@ def _correctness(
             request_stable_rmsnorm,
             flush_writer,
             prefill_store,
+            forward_pool_ensure,
         )
         effective_layout = spec["native_layout"]
         effective_kernel = spec["native_kernel_variant"]
@@ -424,6 +426,7 @@ def _correctness(
         effective_frontend = spec["native_frontend"]
         effective_flush_writer = spec["flush_writer"]
         effective_prefill_store = spec["prefill_store"]
+        effective_forward_pool_ensure = spec["forward_pool_ensure"]
         max_splits = spec["max_decode_splits"]
         splits_environment = (
             None
@@ -455,6 +458,9 @@ def _correctness(
                     "flush_writer_environment": effective_flush_writer,
                     "prefill_store_environment": effective_prefill_store,
                     "native_frontend_environment": effective_frontend,
+                    "forward_pool_ensure_environment": (
+                        effective_forward_pool_ensure
+                    ),
                     "request_stable_projection_rows_environment": (
                         spec["request_stable_projection_rows"]
                     ),
@@ -468,6 +474,9 @@ def _correctness(
                         "KVARN_FLUSH_WRITER": effective_flush_writer,
                         "KVARN_NATIVE_XPU_PREFILL_STORE": effective_prefill_store,
                         "KVARN_NATIVE_XPU_FRONTEND": effective_frontend,
+                        "KVARN_FORWARD_POOL_ENSURE": (
+                            effective_forward_pool_ensure
+                        ),
                         "KVARN_NATIVE_XPU_DPAS_LAYOUT": gate_module.NATIVE_LAYOUT_ENV[
                             effective_layout
                         ],
@@ -509,7 +518,14 @@ def _correctness(
             )
             + (
                 f"INFO {gate_module.NATIVE_FRONTEND_ACTIVE_MARKER} layer=test\n"
-                if spec["native"] and effective_frontend == "qkv_scatter"
+                if spec["native"]
+                and effective_frontend in {"qkv_scatter", "qkv_scatter_inline"}
+                else ""
+            )
+            + (
+                f"INFO {gate_module.NATIVE_FRONTEND_INLINE_ACTIVE_MARKER} "
+                "layer=test\n"
+                if spec["native"] and effective_frontend == "qkv_scatter_inline"
                 else ""
             ),
             encoding="utf-8",
@@ -528,11 +544,24 @@ def _correctness(
                     ),
                     "native_frontend_expected": effective_frontend,
                     "native_frontend_active_verified": (
-                        spec["native"] and effective_frontend == "qkv_scatter"
+                        spec["native"]
+                        and effective_frontend
+                        in {"qkv_scatter", "qkv_scatter_inline"}
                     ),
                     "native_frontend_log_marker": (
                         gate_module.NATIVE_FRONTEND_ACTIVE_MARKER
-                        if spec["native"] and effective_frontend == "qkv_scatter"
+                        if spec["native"]
+                        and effective_frontend
+                        in {"qkv_scatter", "qkv_scatter_inline"}
+                        else "not_applicable"
+                    ),
+                    "native_frontend_inline_active_verified": (
+                        spec["native"] and effective_frontend == "qkv_scatter_inline"
+                    ),
+                    "native_frontend_inline_log_marker": (
+                        gate_module.NATIVE_FRONTEND_INLINE_ACTIVE_MARKER
+                        if spec["native"]
+                        and effective_frontend == "qkv_scatter_inline"
                         else "not_applicable"
                     ),
                 }
@@ -579,16 +608,30 @@ def _correctness(
                     "flush_writer": effective_flush_writer,
                     "prefill_store": effective_prefill_store,
                     "native_frontend": effective_frontend,
+                    "forward_pool_ensure": effective_forward_pool_ensure,
                     "request_stable_projection_rows": spec[
                         "request_stable_projection_rows"
                     ],
                     "request_stable_rmsnorm": spec["request_stable_rmsnorm"],
                     "native_frontend_active_verified": (
-                        spec["native"] and effective_frontend == "qkv_scatter"
+                        spec["native"]
+                        and effective_frontend
+                        in {"qkv_scatter", "qkv_scatter_inline"}
                     ),
                     "native_frontend_log_marker": (
                         gate_module.NATIVE_FRONTEND_ACTIVE_MARKER
-                        if spec["native"] and effective_frontend == "qkv_scatter"
+                        if spec["native"]
+                        and effective_frontend
+                        in {"qkv_scatter", "qkv_scatter_inline"}
+                        else "not_applicable"
+                    ),
+                    "native_frontend_inline_active_verified": (
+                        spec["native"] and effective_frontend == "qkv_scatter_inline"
+                    ),
+                    "native_frontend_inline_log_marker": (
+                        gate_module.NATIVE_FRONTEND_INLINE_ACTIVE_MARKER
+                        if spec["native"]
+                        and effective_frontend == "qkv_scatter_inline"
                         else "not_applicable"
                     ),
                     "profile": _artifact(profile),
@@ -783,6 +826,7 @@ def _correctness(
         "flush_writer": flush_writer,
         "prefill_store": prefill_store,
         "native_frontend": native_frontend,
+        "forward_pool_ensure": forward_pool_ensure,
         "request_stability_qualification": (
             "qualified-default"
             if request_stable_projection_rows == "1"
@@ -794,6 +838,7 @@ def _correctness(
             "kvarn_flush_writer": flush_writer,
             "kvarn_prefill_store": prefill_store,
             "kvarn_native_frontend": native_frontend,
+            "kvarn_forward_pool_ensure": forward_pool_ensure,
             "kvarn_onednn_deterministic": "1",
             "kvarn_request_stable_projection_rows": (
                 request_stable_projection_rows
@@ -813,6 +858,7 @@ def _correctness(
             selected_splits,
             flush_writer,
             prefill_store,
+            forward_pool_ensure,
         ),
         "native_dispatch_verified": True,
         "native_direct_bf16_verified": True,
@@ -831,6 +877,7 @@ def _correctness(
                 request_stable_rmsnorm,
                 flush_writer,
                 prefill_store,
+                forward_pool_ensure,
             )
             for name in gate_module.CORRECTNESS_PHASE_SPECS
         ],
@@ -881,6 +928,7 @@ def _result(
     flush_writer: str = "reference",
     prefill_store: str = "reference",
     native_frontend: str = "reference",
+    forward_pool_ensure: str = "always",
     request_stable_projection_rows: str = "1",
     request_stable_rmsnorm: str = "1",
 ) -> Path:
@@ -983,6 +1031,7 @@ def _result(
                         ),
                         flush_writer,
                         prefill_store,
+                        forward_pool_ensure,
                     )
                 ),
             }
@@ -1073,6 +1122,9 @@ def _result(
         "kvarn_native_frontend": (
             "reference" if arm == "reference" else native_frontend
         ),
+        "kvarn_forward_pool_ensure": (
+            "always" if arm == "reference" else forward_pool_ensure
+        ),
         "kvarn_onednn_deterministic": "1",
         "kvarn_request_stable_projection_rows": request_stable_projection_rows,
         "kvarn_request_stable_rmsnorm": request_stable_rmsnorm,
@@ -1142,6 +1194,7 @@ def _result(
                     selected_split_map,
                     flush_writer,
                     prefill_store,
+                    forward_pool_ensure,
                 )
             ).items()
         },
@@ -1184,8 +1237,12 @@ def _log(
         lines.append(
             "INFO Using the native Xe2 KVarN qlen=1 decoder (direct bf16 output=True)"
         )
-        if native_frontend == "qkv_scatter":
+        if native_frontend in {"qkv_scatter", "qkv_scatter_inline"}:
             lines.append(f"INFO {gate_module.NATIVE_FRONTEND_ACTIVE_MARKER} layer=test")
+        if native_frontend == "qkv_scatter_inline":
+            lines.append(
+                f"INFO {gate_module.NATIVE_FRONTEND_INLINE_ACTIVE_MARKER} layer=test"
+            )
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return path
 
@@ -1207,6 +1264,7 @@ def _arms(
     flush_index_materialization: str = "per_layer",
     flush_writer: str = "reference",
     prefill_store: str = "reference",
+    forward_pool_ensure: str = "always",
     request_stable_projection_rows: str = "1",
     request_stable_rmsnorm: str = "1",
 ) -> tuple[list[Path], list[Path], list[Path], list[Path], Path]:
@@ -1223,6 +1281,7 @@ def _arms(
         flush_index_materialization=flush_index_materialization,
         flush_writer=flush_writer,
         prefill_store=prefill_store,
+        forward_pool_ensure=forward_pool_ensure,
         request_stable_projection_rows=request_stable_projection_rows,
         request_stable_rmsnorm=request_stable_rmsnorm,
     )
@@ -1269,6 +1328,7 @@ def _arms(
             flush_index_materialization=flush_index_materialization,
             flush_writer=flush_writer,
             prefill_store=prefill_store,
+            forward_pool_ensure=forward_pool_ensure,
             request_stable_projection_rows=request_stable_projection_rows,
             request_stable_rmsnorm=request_stable_rmsnorm,
         )
@@ -1295,6 +1355,7 @@ def _arms(
             flush_index_materialization=flush_index_materialization,
             flush_writer=flush_writer,
             prefill_store=prefill_store,
+            forward_pool_ensure=forward_pool_ensure,
             request_stable_projection_rows=request_stable_projection_rows,
             request_stable_rmsnorm=request_stable_rmsnorm,
         )
@@ -1370,14 +1431,59 @@ def test_match_gate_accepts_qkv_candidate_with_unfused_reference(
     assert result["reference"]["arm"]["kvarn_native_frontend"] == "reference"
     assert result["candidate"]["arm"]["kvarn_native_frontend"] == "qkv_scatter"
     assert result["candidate"]["arm"]["kvarn_fusion_strategy"] == (
-            "native_materializer_persistent_scratch_shared_indices_"
-            "reference_writer_reference_prefill_store_qkv_scatter_frontend"
+        "native_materializer_persistent_scratch_shared_indices_"
+        "reference_writer_reference_prefill_store_qkv_scatter_frontend_"
+        "always_forward_pool_ensure"
     )
     assert (
         "-shared-indices-reference-writer-reference-prefill-store-"
-        "qkv_scatter-frontend-"
+        "qkv_scatter-frontend-always-forward-pool-ensure-"
         in result["candidate"]["arm"]["kvarn_variant_id"]
     )
+
+
+def test_match_gate_accepts_inline_frontend_and_fused_pool_proof(
+    tmp_path: Path,
+) -> None:
+    result = _compare(
+        _arms(
+            tmp_path,
+            native_frontend="qkv_scatter_inline",
+            forward_pool_ensure="fused_qkv_proof",
+        )
+    )
+
+    assert result["status"] == "passed"
+    assert result["reference"]["arm"]["kvarn_native_frontend"] == "reference"
+    assert result["reference"]["arm"]["kvarn_forward_pool_ensure"] == "always"
+    assert (
+        result["candidate"]["arm"]["kvarn_native_frontend"]
+        == "qkv_scatter_inline"
+    )
+    assert (
+        result["candidate"]["arm"]["kvarn_forward_pool_ensure"]
+        == "fused_qkv_proof"
+    )
+
+
+def test_match_gate_requires_inline_marker_in_addition_to_active_qkv(
+    tmp_path: Path,
+) -> None:
+    arms = _arms(tmp_path, native_frontend="qkv_scatter_inline")
+    candidate_log = arms[3][0]
+    text = candidate_log.read_text(encoding="utf-8")
+    candidate_log.write_text(
+        "\n".join(
+            line
+            for line in text.splitlines()
+            if gate_module.NATIVE_FRONTEND_INLINE_ACTIVE_MARKER not in line
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(GateError, match="inline frontend runtime proof differs"):
+        _compare(arms)
 
 
 @pytest.mark.parametrize("flush_writer", ["native_xe2", "sinkhorn_pack_xe2"])
@@ -1462,6 +1568,23 @@ def test_correctness_gate_rejects_qkv_marker_in_natural_reference(
     correctness_path.write_text(json.dumps(correctness), encoding="utf-8")
 
     with pytest.raises(GateError, match="reference-262k-b1 frontend runtime proof"):
+        _load_correctness(correctness_path)
+
+
+def test_correctness_gate_rejects_service_axis_claim_in_primitive_result(
+    tmp_path: Path,
+) -> None:
+    correctness_path = _correctness(tmp_path / "correctness.json")
+    correctness = json.loads(correctness_path.read_text(encoding="utf-8"))
+    gate_reference = correctness["gates"]["native_decode_short"]
+    gate_path = Path(gate_reference["path"])
+    evidence = json.loads(gate_path.read_text(encoding="utf-8"))
+    evidence["forward_pool_ensure"] = "always"
+    gate_path.write_text(json.dumps(evidence), encoding="utf-8")
+    gate_reference["sha256"] = hashlib.sha256(gate_path.read_bytes()).hexdigest()
+    correctness_path.write_text(json.dumps(correctness), encoding="utf-8")
+
+    with pytest.raises(GateError, match="primitive gate lacks valid matrix evidence"):
         _load_correctness(correctness_path)
 
 

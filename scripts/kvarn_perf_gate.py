@@ -61,8 +61,12 @@ NATIVE_SPLIT_POLICIES = split_policy.NATIVE_SPLIT_POLICIES
 FLUSH_INDEX_MATERIALIZATION_VARIANTS = ("per_layer", "shared")
 FLUSH_WRITER_VARIANTS = ("reference", "native_xe2", "sinkhorn_pack_xe2")
 PREFILL_STORE_VARIANTS = ("reference", "hadamard_scatter")
-NATIVE_FRONTEND_VARIANTS = ("reference", "qkv_scatter")
+NATIVE_FRONTEND_VARIANTS = ("reference", "qkv_scatter", "qkv_scatter_inline")
 NATIVE_FRONTEND_ACTIVE_MARKER = "[KVARN_FRONTEND] active=qkv_scatter;"
+NATIVE_FRONTEND_INLINE_ACTIVE_MARKER = (
+    "[KVARN_FRONTEND_INLINE] configured=qkv_scatter_inline;"
+)
+FORWARD_POOL_ENSURE_VARIANTS = ("always", "fused_qkv_proof")
 FILTERED_SOURCE_SCHEME = "nix-filtered-source-store-hash-v1"
 NIX_STORE_HASH = re.compile(r"^[0-9abcdfghijklmnpqrsvwxyz]{32}$")
 DEFAULT_NATIVE_SPLITS = {1: 24, 4: 16}
@@ -198,6 +202,7 @@ def _candidate_variant_provenance(
     native_splits: Mapping[int, int] | None = None,
     flush_writer: str = "reference",
     prefill_store: str = "reference",
+    forward_pool_ensure: str = "always",
 ) -> dict[str, str]:
     selected_splits = DEFAULT_NATIVE_SPLITS if native_splits is None else native_splits
     split_policy = native_split_policy
@@ -212,14 +217,16 @@ def _candidate_variant_provenance(
         "fusion_strategy": (
             "native_materializer_persistent_scratch_"
             f"{flush_index_materialization}_indices_{flush_writer}_writer_"
-            f"{prefill_store}_prefill_store_{native_frontend}_frontend"
+            f"{prefill_store}_prefill_store_{native_frontend}_frontend_"
+            f"{forward_pool_ensure}_forward_pool_ensure"
         ),
         "scheduling_variant": scheduling,
         "variant_id": (
             f"native-xe2-{native_layout}-{native_kernel_variant}-"
             f"{split_policy}-{flush_index_materialization}-indices-"
             f"{flush_writer}-writer-{prefill_store}-prefill-store-"
-            f"{native_frontend}-frontend-{scheduling}"
+            f"{native_frontend}-frontend-"
+            f"{forward_pool_ensure}-forward-pool-ensure-{scheduling}"
         ),
     }
 
@@ -256,6 +263,7 @@ def _correctness_phase_spec(
     request_stable_rmsnorm: str = "1",
     flush_writer: str = "reference",
     prefill_store: str = "reference",
+    forward_pool_ensure: str = "always",
 ) -> dict[str, Any]:
     spec = dict(CORRECTNESS_PHASE_SPECS[phase_name])
     selected_splits = DEFAULT_NATIVE_SPLITS if native_splits is None else native_splits
@@ -263,6 +271,7 @@ def _correctness_phase_spec(
     effective_frontend = native_frontend if spec["native"] else "reference"
     effective_flush_writer = flush_writer if spec["native"] else "reference"
     effective_prefill_store = prefill_store if spec["native"] else "reference"
+    effective_forward_pool_ensure = forward_pool_ensure if spec["native"] else "always"
     effective_projection_rows = (
         request_stable_projection_rows if spec["native"] else "1"
     )
@@ -305,6 +314,7 @@ def _correctness_phase_spec(
         native_frontend=effective_frontend,
         flush_writer=effective_flush_writer,
         prefill_store=effective_prefill_store,
+        forward_pool_ensure=effective_forward_pool_ensure,
         native_split_policy=selected_policy,
         native_split_policy_contract=policy_contract,
         max_decode_splits=max_splits,
@@ -322,6 +332,7 @@ def _correctness_phase_spec(
             selected_splits,
             flush_writer,
             prefill_store,
+            forward_pool_ensure,
         )
         if spec["native"]
         else _correctness_reference_variant_provenance()
@@ -418,6 +429,7 @@ ARM_PROVENANCE_FIELDS = (
     "kvarn_flush_writer",
     "kvarn_prefill_store",
     "kvarn_native_frontend",
+    "kvarn_forward_pool_ensure",
     "kvarn_native_layout_log_marker",
     "kvarn_native_layout_evidence",
     "kvarn_kernel_strategy",
@@ -997,6 +1009,7 @@ def _validate_correctness_phase(
     flush_writer: str,
     prefill_store: str,
     native_frontend: str,
+    forward_pool_ensure: str,
     request_stable_projection_rows: str,
     request_stable_rmsnorm: str,
     *,
@@ -1015,6 +1028,7 @@ def _validate_correctness_phase(
         request_stable_rmsnorm,
         flush_writer,
         prefill_store,
+        forward_pool_ensure,
     )
     expected_layout = expected_spec["native_layout"]
     expected_kernel = expected_spec["native_kernel_variant"]
@@ -1046,8 +1060,13 @@ def _validate_correctness_phase(
     effective_frontend = expected_spec["native_frontend"]
     effective_flush_writer = expected_spec["flush_writer"]
     effective_prefill_store = expected_spec["prefill_store"]
+    effective_forward_pool_ensure = expected_spec["forward_pool_ensure"]
     expected_frontend_active = (
-        expected_spec["native"] and effective_frontend == "qkv_scatter"
+        expected_spec["native"]
+        and effective_frontend in {"qkv_scatter", "qkv_scatter_inline"}
+    )
+    expected_frontend_inline_active = (
+        expected_spec["native"] and effective_frontend == "qkv_scatter_inline"
     )
     if (
         phase.get("status") != "passed"
@@ -1075,6 +1094,7 @@ def _validate_correctness_phase(
         or phase.get("flush_writer") != effective_flush_writer
         or phase.get("prefill_store") != effective_prefill_store
         or phase.get("native_frontend") != effective_frontend
+        or phase.get("forward_pool_ensure") != effective_forward_pool_ensure
         or phase.get("request_stable_projection_rows")
         != expected_spec["request_stable_projection_rows"]
         or phase.get("request_stable_rmsnorm")
@@ -1084,6 +1104,14 @@ def _validate_correctness_phase(
         != (
             NATIVE_FRONTEND_ACTIVE_MARKER
             if expected_frontend_active
+            else "not_applicable"
+        )
+        or phase.get("native_frontend_inline_active_verified")
+        is not expected_frontend_inline_active
+        or phase.get("native_frontend_inline_log_marker")
+        != (
+            NATIVE_FRONTEND_INLINE_ACTIVE_MARKER
+            if expected_frontend_inline_active
             else "not_applicable"
         )
         or not isinstance(phase.get("workload"), dict)
@@ -1108,6 +1136,8 @@ def _validate_correctness_phase(
         or profile.get("flush_writer_environment") != effective_flush_writer
         or profile.get("prefill_store_environment") != effective_prefill_store
         or profile.get("native_frontend_environment") != effective_frontend
+        or profile.get("forward_pool_ensure_environment")
+        != effective_forward_pool_ensure
         or profile.get("request_stable_projection_rows_environment")
         not in (
             {"1", None}
@@ -1135,6 +1165,8 @@ def _validate_correctness_phase(
         or captured_environment.get("KVARN_NATIVE_XPU_PREFILL_STORE")
         != effective_prefill_store
         or captured_environment.get("KVARN_NATIVE_XPU_FRONTEND") != effective_frontend
+        or captured_environment.get("KVARN_FORWARD_POOL_ENSURE")
+        != effective_forward_pool_ensure
         or captured_environment.get("KVARN_ONEDNN_DETERMINISTIC") != "1"
         or captured_environment.get("KVARN_REQUEST_STABLE_PROJECTION_ROWS")
         != profile.get("request_stable_projection_rows_environment")
@@ -1171,6 +1203,9 @@ def _validate_correctness_phase(
     frontend_active = NATIVE_FRONTEND_ACTIVE_MARKER in log_text
     if frontend_active != expected_frontend_active:
         raise GateError(f"{owner}: {phase_name} frontend runtime proof differs")
+    frontend_inline_active = NATIVE_FRONTEND_INLINE_ACTIVE_MARKER in log_text
+    if frontend_inline_active != expected_frontend_inline_active:
+        raise GateError(f"{owner}: {phase_name} inline frontend runtime proof differs")
     if expected_marker not in log_text:
         raise GateError(f"{owner}: {phase_name} lacks the exact factory marker")
     _scan_path, log_scan = _json_artifact(
@@ -1188,6 +1223,14 @@ def _validate_correctness_phase(
         != (
             NATIVE_FRONTEND_ACTIVE_MARKER
             if expected_frontend_active
+            else "not_applicable"
+        )
+        or log_scan.get("native_frontend_inline_active_verified")
+        is not expected_frontend_inline_active
+        or log_scan.get("native_frontend_inline_log_marker")
+        != (
+            NATIVE_FRONTEND_INLINE_ACTIVE_MARKER
+            if expected_frontend_inline_active
             else "not_applicable"
         )
     ):
@@ -1211,6 +1254,7 @@ def validate_correctness_gate_evidence(
     flush_writer: str = "reference",
     prefill_store: str = "reference",
     native_frontend: str = "reference",
+    forward_pool_ensure: str = "always",
     request_stable_projection_rows: str = "1",
     request_stable_rmsnorm: str = "1",
 ) -> None:
@@ -1222,6 +1266,8 @@ def validate_correctness_gate_evidence(
         raise GateError(f"{path}: native Kvarn writer requires xe2_dpas layout")
     if prefill_store not in PREFILL_STORE_VARIANTS:
         raise GateError(f"{path}: prefill store is unsupported")
+    if forward_pool_ensure not in FORWARD_POOL_ENSURE_VARIANTS:
+        raise GateError(f"{path}: forward pool ensure is unsupported")
     if request_stable_projection_rows not in {"0", "1"}:
         raise GateError(f"{path}: projection-row selector is unsupported")
     if request_stable_rmsnorm not in {"0", "1"}:
@@ -1258,6 +1304,8 @@ def validate_correctness_gate_evidence(
                     "native_nominal_splits_by_batch",
                     "native_split_policy",
                     "native_scratch_max_splits",
+                    "forward_pool_ensure",
+                    "kvarn_forward_pool_ensure",
                     *VARIANT_FIELDS,
                 )
             )
@@ -1336,6 +1384,7 @@ def validate_correctness_gate_evidence(
             flush_writer,
             prefill_store,
             native_frontend,
+            forward_pool_ensure,
             request_stable_projection_rows,
             request_stable_rmsnorm,
             owner=path,
@@ -2128,6 +2177,9 @@ def _load_correctness(path: Path) -> tuple[dict[str, Any], str]:
     native_frontend = document.get("native_frontend")
     if native_frontend not in NATIVE_FRONTEND_VARIANTS:
         raise GateError(f"{path}: native frontend is unsupported")
+    forward_pool_ensure = document.get("forward_pool_ensure")
+    if forward_pool_ensure not in FORWARD_POOL_ENSURE_VARIANTS:
+        raise GateError(f"{path}: forward pool ensure is unsupported")
     service_controls = document.get("service_controls")
     correctness_onednn = (
         service_controls.get("kvarn_onednn_deterministic")
@@ -2144,17 +2196,25 @@ def _load_correctness(path: Path) -> tuple[dict[str, Any], str]:
         if isinstance(service_controls, dict)
         else None
     )
+    correctness_forward_pool_ensure = (
+        service_controls.get("kvarn_forward_pool_ensure")
+        if isinstance(service_controls, dict)
+        else None
+    )
     if correctness_onednn not in {"0", "1"}:
         raise GateError(f"{path}: correctness oneDNN selector is unsupported")
     if correctness_projection_rows not in {"0", "1"}:
         raise GateError(f"{path}: correctness projection-row selector is unsupported")
     if correctness_rmsnorm not in {"0", "1"}:
         raise GateError(f"{path}: correctness RMSNorm selector is unsupported")
+    if correctness_forward_pool_ensure != forward_pool_ensure:
+        raise GateError(f"{path}: correctness forward-pool selector is inconsistent")
     expected_service_controls = {
         "kvarn_flush_index_materialization": flush_index_materialization,
         "kvarn_flush_writer": flush_writer,
         "kvarn_prefill_store": prefill_store,
         "kvarn_native_frontend": native_frontend,
+        "kvarn_forward_pool_ensure": forward_pool_ensure,
         "kvarn_onednn_deterministic": correctness_onednn,
         "kvarn_request_stable_projection_rows": correctness_projection_rows,
         "kvarn_request_stable_rmsnorm": correctness_rmsnorm,
@@ -2223,6 +2283,7 @@ def _load_correctness(path: Path) -> tuple[dict[str, Any], str]:
             correctness_rmsnorm,
             flush_writer,
             prefill_store,
+            forward_pool_ensure,
         )
         for phase_name in CORRECTNESS_PHASE_SPECS
     ]
@@ -2237,6 +2298,7 @@ def _load_correctness(path: Path) -> tuple[dict[str, Any], str]:
         native_splits,
         flush_writer,
         prefill_store,
+        forward_pool_ensure,
     )
     if any(document.get(field) != value for field, value in expected_variant.items()):
         raise GateError(f"{path}: correctness variant provenance is inconsistent")
@@ -2315,6 +2377,7 @@ def _load_correctness(path: Path) -> tuple[dict[str, Any], str]:
             flush_writer=flush_writer,
             prefill_store=prefill_store,
             native_frontend=native_frontend,
+            forward_pool_ensure=forward_pool_ensure,
             request_stable_projection_rows=correctness_projection_rows,
             request_stable_rmsnorm=correctness_rmsnorm,
         )
@@ -2409,7 +2472,13 @@ def _validate_logs(
     )
     if expected_frontend not in NATIVE_FRONTEND_VARIANTS:
         raise GateError(f"{arm} has an invalid native-frontend log expectation")
-    expected_frontend_active = expect_native and expected_frontend == "qkv_scatter"
+    expected_frontend_active = expect_native and expected_frontend in {
+        "qkv_scatter",
+        "qkv_scatter_inline",
+    }
+    expected_frontend_inline_active = (
+        expect_native and expected_frontend == "qkv_scatter_inline"
+    )
     resolved = [path.resolve() for path in paths]
     if len(set(resolved)) != len(resolved):
         raise GateError(f"{arm} engine-log paths must be unique")
@@ -2449,6 +2518,9 @@ def _validate_logs(
         frontend_active = NATIVE_FRONTEND_ACTIVE_MARKER in text
         if frontend_active != expected_frontend_active:
             raise GateError(f"{path}: {arm} frontend runtime proof differs")
+        frontend_inline_active = NATIVE_FRONTEND_INLINE_ACTIVE_MARKER in text
+        if frontend_inline_active != expected_frontend_inline_active:
+            raise GateError(f"{path}: {arm} inline frontend runtime proof differs")
         evidence.append(
             {
                 "sha256": hashlib.sha256(raw).hexdigest(),
@@ -2462,6 +2534,17 @@ def _validate_logs(
                 ),
                 "native_frontend_expected": expected_frontend,
                 "native_frontend_active_verified": frontend_active,
+                "native_frontend_log_marker": (
+                    NATIVE_FRONTEND_ACTIVE_MARKER
+                    if expected_frontend_active
+                    else "not_applicable"
+                ),
+                "native_frontend_inline_active_verified": frontend_inline_active,
+                "native_frontend_inline_log_marker": (
+                    NATIVE_FRONTEND_INLINE_ACTIVE_MARKER
+                    if expected_frontend_inline_active
+                    else "not_applicable"
+                ),
                 **xpu,
             }
         )
@@ -2639,6 +2722,9 @@ def compare(
         "kvarn_flush_writer": first_cand.provenance["kvarn_flush_writer"],
         "kvarn_prefill_store": first_cand.provenance["kvarn_prefill_store"],
         "kvarn_native_frontend": first_cand.provenance["kvarn_native_frontend"],
+        "kvarn_forward_pool_ensure": first_cand.provenance[
+            "kvarn_forward_pool_ensure"
+        ],
         "kvarn_onednn_deterministic": first_cand.provenance[
             "kvarn_onednn_deterministic"
         ],
@@ -2702,12 +2788,19 @@ def compare(
         raise GateError("reference must disable and candidate must enable native XPU")
     if first_ref.provenance["kvarn_native_frontend"] != "reference":
         raise GateError("reference must use the unfused reference frontend")
+    if first_ref.provenance["kvarn_forward_pool_ensure"] != "always":
+        raise GateError("reference must use the conservative forward pool guard")
     if first_ref.provenance["kvarn_flush_writer"] != "reference":
         raise GateError("reference must use the reference flush writer")
     if first_ref.provenance["kvarn_prefill_store"] != "reference":
         raise GateError("reference must use the reference prefill store")
     if first_cand.provenance["kvarn_native_frontend"] != correctness["native_frontend"]:
         raise GateError("candidate frontend must match correctness")
+    if (
+        first_cand.provenance["kvarn_forward_pool_ensure"]
+        != correctness["forward_pool_ensure"]
+    ):
+        raise GateError("candidate forward pool guard must match correctness")
     if first_cand.provenance["kvarn_flush_writer"] != correctness["flush_writer"]:
         raise GateError("candidate flush writer must match correctness")
     if first_cand.provenance["kvarn_prefill_store"] != correctness["prefill_store"]:

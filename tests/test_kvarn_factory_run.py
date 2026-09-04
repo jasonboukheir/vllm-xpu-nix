@@ -328,6 +328,11 @@ def test_matrix_expands_auto_and_explicit_split_sweeps() -> None:
     ]
     assert all(case.effective_splits == case.requested_splits for case in cases)
     assert all(case.output_dtype == "fp16" for case in cases)
+    assert all(
+        {"forward_pool_ensure", "kvarn_forward_pool_ensure"}
+        .isdisjoint(case.as_dict())
+        for case in cases
+    )
     assert [case.requested_split_policy for case in cases] == [
         "factory_auto_b1s24_b4s16",
         "factory_auto_b1s24_b4s16",

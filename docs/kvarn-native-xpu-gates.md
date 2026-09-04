@@ -313,10 +313,10 @@ before hashing, so Nix query order cannot alter the identity.
 
 Optimization evidence also carries explicit `kernel_strategy`, `split_policy`,
 `fusion_strategy`, `scheduling_variant`, and `variant_id` fields. It separately
-binds `kvarn_flush_writer` and `kvarn_prefill_store` to the captured
-`KVARN_FLUSH_WRITER` and `KVARN_NATIVE_XPU_PREFILL_STORE` process values. These values
-are derived from the selected harness settings rather than accepted as free-form
-labels. The current native identity records the Xe2 qlen=1 reader, fixed
+binds `kvarn_flush_writer`, `kvarn_prefill_store`, `kvarn_native_frontend`, and
+`kvarn_forward_pool_ensure` to the corresponding captured process values. These
+values are derived from the selected harness settings rather than accepted as
+free-form labels. The current native identity records the Xe2 qlen=1 reader, fixed
 B1=24/B4=16 split policy, native materializer with persistent scratch, and the
 eager MNBT=2048 schedule; the auto arm is labeled separately as the performance
 control. This is deliberately a small provenance record, not a generalized
@@ -331,10 +331,10 @@ control.
 The canonical profile comes from the actual service argv and effective
 allowlisted environment. The only normalized arm differences are
 `--kv-cache-dtype`, the five native identity switches (`KVARN_NATIVE_XPU`,
-decode, DPAS layout, materialize, and persistent scratch), and exactly
-`KVARN_NATIVE_XPU_SPLITS`, `KVARN_FLUSH_WRITER`, and
-`KVARN_NATIVE_XPU_PREFILL_STORE`. Auto is forced to `reference` for the latter
-two. Any other argument or effective
+decode, DPAS layout, materialize, and persistent scratch), and the explicitly
+selected split, writer, prefill-store, frontend, and forward-pool axes. Auto is
+forced to the `reference` frontend/store paths and
+`KVARN_FORWARD_POOL_ENSURE=always`. Any other argument or effective
 performance-environment difference invalidates the cell. Secret-looking
 argument values are redacted before argv or profile evidence is written.
 The runner pins `KVARN_PREFILL_FP16_WINDOW_BLOCKS=16` identically in both
@@ -489,6 +489,12 @@ launcher must export—it does not override the launcher. Auto must still export
 the neutral value `1`, and a mismatch in either arm aborts the trial before a
 measurement is accepted.
 
+`--native-frontend qkv_scatter_inline` requires two independent runtime proofs:
+the existing fused-QKV active marker and the inline-specific configured marker.
+The service-only `--forward-pool-ensure always|fused_qkv_proof` selector is
+captured in service profiles and sealed provenance; it is deliberately absent
+from direct primitive results.
+
 Use `--plan-only` to realize immutable launcher programs and materialize and
 inspect `session.json` without starting a service. `--context` and `--batch`
 are repeatable and also accept comma-separated values, for example
@@ -596,7 +602,7 @@ layout environment, split count, process/candidate closure digests, engine-log
 digest, hardware-preflight digest, Kineto trace digest, profiler configuration,
 per-step device-kernel totals, top kernels by device time, and queue idle gaps.
 The variant block also records the cache layout, kernel strategy, split count,
-fusion selection, and scheduling selection. A compact GPU-only leaderboard
+fusion selection, frontend, forward-pool guard, and scheduling selection. A compact GPU-only leaderboard
 block provides total device-kernel time, launch count, union-busy time, device
 span, and idle fraction. These are useful for ranking factory experiments
 inside the same profiler setup, but remain diagnostic and non-promotable.

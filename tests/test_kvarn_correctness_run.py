@@ -259,6 +259,9 @@ def _service_environment(
             spec, args
         ),
         "KVARN_NATIVE_XPU_FRONTEND": correctness.native_frontend_for_spec(spec, args),
+        "KVARN_FORWARD_POOL_ENSURE": correctness.forward_pool_ensure_for_spec(
+            spec, args
+        ),
         "KVARN_NATIVE_XPU_KERNEL_VARIANT": (
             correctness.native_kernel_variant_for_spec(spec, args)
         ),
@@ -341,7 +344,7 @@ def test_dpas_mode_uses_separate_launchers_and_keeps_reference_natural(
     assert correctness.candidate_variant_provenance(args)["variant_id"] == (
         "native-xe2-xe2_dpas-q6_scalar-fixed_b1s32_b4s8-"
         "per_layer-indices-reference-writer-reference-prefill-store-"
-        "reference-frontend-eager_mnbt2048"
+        "reference-frontend-always-forward-pool-ensure-eager_mnbt2048"
     )
     assert correctness.service_variant_provenance(reference, args)["variant_id"] == (
         "natural-kvarn-correctness-reference-eager_mnbt2048"
@@ -448,6 +451,7 @@ def test_qkv_frontend_is_native_only_and_reference_phase_is_unfused(
         flush_writer="native_xe2",
         prefill_store="hadamard_scatter",
         native_frontend="qkv_scatter",
+        forward_pool_ensure="fused_qkv_proof",
         model="model",
         served_model="sunny-chat",
         model_revision="1" * 40,
@@ -460,6 +464,11 @@ def test_qkv_frontend_is_native_only_and_reference_phase_is_unfused(
 
     assert correctness.native_frontend_for_spec(native, args) == "qkv_scatter"
     assert correctness.native_frontend_for_spec(reference, args) == "reference"
+    assert (
+        correctness.forward_pool_ensure_for_spec(native, args)
+        == "fused_qkv_proof"
+    )
+    assert correctness.forward_pool_ensure_for_spec(reference, args) == "always"
     assert correctness.flush_writer_for_spec(native, args) == "native_xe2"
     assert correctness.flush_writer_for_spec(reference, args) == "reference"
     assert correctness.prefill_store_for_spec(native, args) == "hadamard_scatter"
@@ -482,6 +491,12 @@ def test_qkv_frontend_is_native_only_and_reference_phase_is_unfused(
     assert correctness.service_spec_evidence(reference, args)["native_frontend"] == (
         "reference"
     )
+    assert correctness.service_spec_evidence(native, args)["forward_pool_ensure"] == (
+        "fused_qkv_proof"
+    )
+    assert correctness.service_spec_evidence(reference, args)[
+        "forward_pool_ensure"
+    ] == "always"
 
     reference_environment = _service_environment(reference, args)
     correctness.verify_service_profile(
@@ -499,7 +514,8 @@ def test_qkv_frontend_is_native_only_and_reference_phase_is_unfused(
     assert shared_variant["variant_id"] != per_layer_variant["variant_id"]
     assert (
         "-shared-indices-native_xe2-writer-hadamard_scatter-prefill-store-"
-        "qkv_scatter-frontend-" in shared_variant["variant_id"]
+        "qkv_scatter-frontend-fused_qkv_proof-forward-pool-ensure-"
+        in shared_variant["variant_id"]
     )
 
 
@@ -874,6 +890,7 @@ def test_cli_binds_config_ref_and_keeps_mandatory_inactive_units(
     assert args.native_layout == "xe2_dpas"
     assert args.request_stable_projection_rows is True
     assert args.request_stable_rmsnorm is True
+    assert args.forward_pool_ensure == "always"
 
     diagnostic = correctness.parse_args(
         [
@@ -886,12 +903,18 @@ def test_cli_binds_config_ref_and_keeps_mandatory_inactive_units(
             "0",
             "--request-stable-rmsnorm",
             "1",
+            "--native-frontend",
+            "qkv_scatter_inline",
+            "--forward-pool-ensure",
+            "fused_qkv_proof",
             "--output-dir",
             str(tmp_path / "diagnostic-request-policy"),
         ]
     )
     assert diagnostic.request_stable_projection_rows is False
     assert diagnostic.request_stable_rmsnorm is True
+    assert diagnostic.native_frontend == "qkv_scatter_inline"
+    assert diagnostic.forward_pool_ensure == "fused_qkv_proof"
     native_spec = correctness.SERVICE_PLAN[0]
     assert correctness.runtime_factory_axes_for_spec(native_spec, diagnostic)[
         "KVARN_FACTORY_REQUEST_STABLE_PROJECTION_ROWS"

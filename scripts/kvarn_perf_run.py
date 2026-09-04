@@ -80,8 +80,12 @@ NATIVE_SPLIT_POLICIES = split_policy.NATIVE_SPLIT_POLICIES
 FLUSH_INDEX_MATERIALIZATION_VARIANTS = ("per_layer", "shared")
 FLUSH_WRITER_VARIANTS = ("reference", "native_xe2", "sinkhorn_pack_xe2")
 PREFILL_STORE_VARIANTS = ("reference", "hadamard_scatter")
-NATIVE_FRONTEND_VARIANTS = ("reference", "qkv_scatter")
+NATIVE_FRONTEND_VARIANTS = ("reference", "qkv_scatter", "qkv_scatter_inline")
 NATIVE_FRONTEND_ACTIVE_MARKER = "[KVARN_FRONTEND] active=qkv_scatter;"
+NATIVE_FRONTEND_INLINE_ACTIVE_MARKER = (
+    "[KVARN_FRONTEND_INLINE] configured=qkv_scatter_inline;"
+)
+FORWARD_POOL_ENSURE_VARIANTS = ("always", "fused_qkv_proof")
 B70_Q6_SPLITS = split_policy.B70_Q6_SPLITS
 B70_Q6_MAX_SPLITS = split_policy.B70_Q6_MAX_SPLITS
 B70_Q6_V2_MAX_SPLITS = split_policy.B70_Q6_V2_MAX_SPLITS
@@ -181,6 +185,7 @@ CAPTURED_ENVIRONMENT = (
     "KVARN_NATIVE_XPU_DPAS_LAYOUT",
     "KVARN_FLUSH_INDEX_MATERIALIZATION",
     "KVARN_FLUSH_WRITER",
+    "KVARN_FORWARD_POOL_ENSURE",
     "KVARN_NATIVE_XPU_PREFILL_STORE",
     "KVARN_NATIVE_XPU_FRONTEND",
     "KVARN_NATIVE_XPU_KERNEL_VARIANT",
@@ -229,6 +234,7 @@ ARM_ARGUMENTS = {"--kv-cache-dtype"}
 ARM_ENVIRONMENT = {
     "KVARN_FLUSH_INDEX_MATERIALIZATION",
     "KVARN_FLUSH_WRITER",
+    "KVARN_FORWARD_POOL_ENSURE",
     "KVARN_NATIVE_XPU_PREFILL_STORE",
     "KVARN_NATIVE_XPU",
     "KVARN_NATIVE_XPU_CACHE_LAYOUT",
@@ -649,6 +655,20 @@ def native_frontend_for_run(run: PlannedRun, args: argparse.Namespace) -> str:
     return selected if run.arm == "candidate" else "reference"
 
 
+def forward_pool_ensure_environment(args: argparse.Namespace) -> str:
+    """Return the selected engine-lifetime forward pool guard."""
+    selection = getattr(args, "forward_pool_ensure", "always")
+    if selection not in FORWARD_POOL_ENSURE_VARIANTS:
+        raise RunnerError(f"unsupported forward pool ensure {selection!r}")
+    return selection
+
+
+def forward_pool_ensure_for_run(run: PlannedRun, args: argparse.Namespace) -> str:
+    """Keep the auto control on the conservative reference guard."""
+    selected = forward_pool_ensure_environment(args)
+    return selected if run.arm == "candidate" else "always"
+
+
 def variant_provenance_for_run(
     run: PlannedRun, args: argparse.Namespace
 ) -> dict[str, str]:
@@ -667,6 +687,7 @@ def variant_provenance_for_run(
     flush_indices = flush_index_materialization_environment(args)
     flush_writer = flush_writer_environment(args)
     prefill_store = prefill_store_environment(args)
+    forward_pool_ensure = forward_pool_ensure_environment(args)
     return {
         "kernel_strategy": f"native_xe2_qlen1_{kernel_variant}",
         "split_policy": split_policy,
@@ -674,14 +695,16 @@ def variant_provenance_for_run(
             "native_materializer_persistent_scratch_"
             f"{flush_indices}_indices_{flush_writer}_writer_"
             f"{prefill_store}_prefill_store_"
-            f"{native_frontend}_frontend"
+            f"{native_frontend}_frontend_"
+            f"{forward_pool_ensure}_forward_pool_ensure"
         ),
         "scheduling_variant": scheduling,
         "variant_id": (
             f"native-xe2-{args.native_layout}-{kernel_variant}-"
             f"{split_policy}-{flush_indices}-indices-{flush_writer}-writer-"
             f"{prefill_store}-prefill-store-"
-            f"{native_frontend}-frontend-{scheduling}"
+            f"{native_frontend}-frontend-"
+            f"{forward_pool_ensure}-forward-pool-ensure-{scheduling}"
         ),
     }
 
@@ -767,6 +790,9 @@ def load_correctness(
     native_frontend = document.get("native_frontend")
     if native_frontend not in NATIVE_FRONTEND_VARIANTS:
         raise RunnerError("correctness artifact native frontend is unsupported")
+    forward_pool_ensure = document.get("forward_pool_ensure")
+    if forward_pool_ensure not in FORWARD_POOL_ENSURE_VARIANTS:
+        raise RunnerError("correctness artifact forward pool ensure is unsupported")
     service_controls = document.get("service_controls")
     correctness_onednn = (
         service_controls.get("kvarn_onednn_deterministic")
@@ -788,6 +814,7 @@ def load_correctness(
         "kvarn_flush_writer": flush_writer,
         "kvarn_prefill_store": prefill_store,
         "kvarn_native_frontend": native_frontend,
+        "kvarn_forward_pool_ensure": forward_pool_ensure,
         "kvarn_onednn_deterministic": correctness_onednn,
         "kvarn_request_stable_projection_rows": correctness_projection_rows,
         "kvarn_request_stable_rmsnorm": correctness_rmsnorm,
@@ -916,6 +943,7 @@ def load_correctness(
             "flush_writer": flush_writer,
             "prefill_store": prefill_store,
             "native_frontend": native_frontend,
+            "forward_pool_ensure": forward_pool_ensure,
             "onednn_deterministic": correctness_onednn,
             "request_stable_projection_rows": correctness_projection_rows,
             "request_stable_rmsnorm": correctness_rmsnorm,
@@ -1057,6 +1085,7 @@ def service_environment(run: PlannedRun, args: argparse.Namespace) -> dict[str, 
             run, args
         )
     environment["KVARN_PREFILL_FP16_WINDOW_BLOCKS"] = str(DEFAULT_PREFILL_WINDOW_BLOCKS)
+    environment["KVARN_FORWARD_POOL_ENSURE"] = forward_pool_ensure_for_run(run, args)
     return environment
 
 
@@ -1574,6 +1603,9 @@ def service_profile_evidence(
         "flush_writer_environment": environment.get("KVARN_FLUSH_WRITER"),
         "prefill_store_environment": environment.get("KVARN_NATIVE_XPU_PREFILL_STORE"),
         "native_frontend_environment": environment.get("KVARN_NATIVE_XPU_FRONTEND"),
+        "forward_pool_ensure_environment": environment.get(
+            "KVARN_FORWARD_POOL_ENSURE"
+        ),
         "vllm_use_v2_model_runner_environment": environment.get(
             "VLLM_USE_V2_MODEL_RUNNER"
         ),
@@ -1671,6 +1703,7 @@ def verify_service_profile(
         "KVARN_FLUSH_WRITER": flush_writer_for_run(run, args),
         "KVARN_NATIVE_XPU_PREFILL_STORE": prefill_store_for_run(run, args),
         "KVARN_NATIVE_XPU_FRONTEND": native_frontend_for_run(run, args),
+        "KVARN_FORWARD_POOL_ENSURE": forward_pool_ensure_for_run(run, args),
         "KVARN_NATIVE_XPU_KERNEL_VARIANT": native_kernel_variant_for_run(run, args),
         "KVARN_NATIVE_XPU_MATERIALIZE": native,
         "KVARN_NATIVE_XPU_PERSISTENT_SCRATCH": native,
@@ -2075,12 +2108,25 @@ def validate_engine_log(
     if expected_frontend not in NATIVE_FRONTEND_VARIANTS:
         raise RunnerError(f"unsupported native frontend {expected_frontend!r}")
     frontend_active = NATIVE_FRONTEND_ACTIVE_MARKER in text
-    expected_frontend_active = native and expected_frontend == "qkv_scatter"
+    expected_frontend_active = native and expected_frontend in {
+        "qkv_scatter",
+        "qkv_scatter_inline",
+    }
     if frontend_active != expected_frontend_active:
         expectation = "execute" if expected_frontend_active else "not execute"
         scope = "native" if native else "non-native"
         raise RunnerError(
             f"{scope} engine log must {expectation} the fused QKV frontend"
+        )
+    frontend_inline_active = NATIVE_FRONTEND_INLINE_ACTIVE_MARKER in text
+    expected_frontend_inline_active = (
+        native and expected_frontend == "qkv_scatter_inline"
+    )
+    if frontend_inline_active != expected_frontend_inline_active:
+        expectation = "execute" if expected_frontend_inline_active else "not execute"
+        scope = "native" if native else "non-native"
+        raise RunnerError(
+            f"{scope} engine log must {expectation} the inline fused QKV frontend"
         )
     selection_fields = (
         expected_kernel_variant,
@@ -2121,7 +2167,13 @@ def validate_engine_log(
     result["native_frontend_active_verified"] = frontend_active
     result["native_frontend_log_marker"] = (
         NATIVE_FRONTEND_ACTIVE_MARKER
-        if native and expected_frontend == "qkv_scatter"
+        if expected_frontend_active
+        else "not_applicable"
+    )
+    result["native_frontend_inline_active_verified"] = frontend_inline_active
+    result["native_frontend_inline_log_marker"] = (
+        NATIVE_FRONTEND_INLINE_ACTIVE_MARKER
+        if expected_frontend_inline_active
         else "not_applicable"
     )
     result["native_layout_evidence"] = (
@@ -2294,6 +2346,8 @@ def seal_benchmark_result(
         != prefill_store_for_run(run, args)
         or profile.get("native_frontend_environment")
         != native_frontend_for_run(run, args)
+        or profile.get("forward_pool_ensure_environment")
+        != forward_pool_ensure_for_run(run, args)
         or profile.get("vllm_use_v2_model_runner_environment")
         != VLLM_USE_V2_MODEL_RUNNER
         or profile.get("variant_provenance") != expected_variant
@@ -2384,6 +2438,7 @@ def seal_benchmark_result(
         "kvarn_flush_writer": flush_writer_for_run(run, args),
         "kvarn_prefill_store": prefill_store_for_run(run, args),
         "kvarn_native_frontend": native_frontend_for_run(run, args),
+        "kvarn_forward_pool_ensure": forward_pool_ensure_for_run(run, args),
         "kvarn_vllm_use_v2_model_runner": VLLM_USE_V2_MODEL_RUNNER,
         "kvarn_native_layout_log_marker": (
             kvarn_factory_marker(
@@ -2991,6 +3046,8 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             != prefill_store_environment(args)
             or correctness_factory["native_frontend"]
             != native_frontend_environment(args)
+            or correctness_factory["forward_pool_ensure"]
+            != forward_pool_ensure_environment(args)
             or correctness_factory["onednn_deterministic"]
             != onednn_deterministic_environment(args)
             or correctness_factory["request_stable_projection_rows"]
@@ -3064,6 +3121,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             "kvarn_flush_writer": flush_writer_environment(args),
             "kvarn_prefill_store": prefill_store_environment(args),
             "kvarn_native_frontend": native_frontend_environment(args),
+            "kvarn_forward_pool_ensure": forward_pool_ensure_environment(args),
             "vllm_use_v2_model_runner": VLLM_USE_V2_MODEL_RUNNER,
         },
         **selected_variant,
@@ -3084,6 +3142,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
                     run, args
                 ),
                 "expected_native_frontend": native_frontend_for_run(run, args),
+                "expected_forward_pool_ensure": forward_pool_ensure_for_run(run, args),
                 "expected_flush_writer": flush_writer_for_run(run, args),
                 "expected_prefill_store": prefill_store_for_run(run, args),
                 "launcher_binding": launcher_binding_for_run(run, args),
@@ -3441,6 +3500,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help=(
             "engine-lifetime Q/K/V frontend selected at launcher runtime without "
             "rebuilding the shared candidate (default: reference)"
+        ),
+    )
+    parser.add_argument(
+        "--forward-pool-ensure",
+        choices=FORWARD_POOL_ENSURE_VARIANTS,
+        default="always",
+        help=(
+            "engine-lifetime forward pool guard for the native candidate; "
+            "the auto reference always uses always (default: always)"
         ),
     )
     parser.add_argument(

@@ -410,6 +410,7 @@ def variant_provenance(
     flush_indices = perf.flush_index_materialization_environment(args)
     flush_writer = perf.flush_writer_for_run(run, args)
     prefill_store = perf.prefill_store_for_run(run, args)
+    forward_pool_ensure = perf.forward_pool_ensure_for_run(run, args)
     if run.arm == "reference":
         kernel_strategy = "auto_vllm_backend"
         fusion_selection = "backend_default"
@@ -422,14 +423,16 @@ def variant_provenance(
         fusion_selection = (
             f"fused_attention_decode_{flush_indices}_flush_"
             f"{flush_writer}_writer_{prefill_store}_prefill_store_"
-            f"{native_frontend}_frontend"
+            f"{native_frontend}_frontend_"
+            f"{forward_pool_ensure}_forward_pool_ensure"
         )
         scheduling_selection = "split_k"
         generated_id = (
             f"native-xe2-{layout}-{perf.native_kernel_variant_for_run(run, args)}-"
             f"split{splits}-{flush_indices}-flush-{flush_writer}-writer-"
             f"{prefill_store}-prefill-store-"
-            f"{native_frontend}-frontend-b{run.workload.batch}"
+            f"{native_frontend}-frontend-"
+            f"{forward_pool_ensure}-forward-pool-ensure-b{run.workload.batch}"
         )
     variant_id = args.variant_id or generated_id
     if VARIANT_ID_PATTERN.fullmatch(variant_id) is None:
@@ -445,6 +448,7 @@ def variant_provenance(
         "split_policy": perf.native_split_policy_for_run(run, args),
         "split_policy_selector": perf.native_split_policy_name_for_run(run, args),
         "native_frontend": native_frontend,
+        "forward_pool_ensure": forward_pool_ensure,
         "request_stable_projection_rows": (
             perf.request_stable_projection_rows_environment(args)
         ),
@@ -598,6 +602,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
     )
     run = perf.PlannedRun(workload=workload, arm=args.arm, order=1)
     native_frontend = perf.native_frontend_for_run(run, args)
+    forward_pool_ensure = perf.forward_pool_ensure_for_run(run, args)
     expected_launcher = perf.launcher_name(run, args)
     if args.launcher is not None and args.launcher != expected_launcher:
         raise perf.RunnerError(
@@ -655,6 +660,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             perf.native_kernel_variant_for_run(run, args)
         ],
         "native_frontend": native_frontend,
+        "forward_pool_ensure": forward_pool_ensure,
         "flush_writer": perf.flush_writer_for_run(run, args),
         "prefill_store": perf.prefill_store_for_run(run, args),
         "native_factory_marker": (
@@ -822,12 +828,22 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
                     "native_factory_selection_verified"
                 ],
                 "native_frontend": native_frontend,
+                "forward_pool_ensure": forward_pool_ensure,
+                "forward_pool_ensure_environment": service_profile[
+                    "forward_pool_ensure_environment"
+                ],
                 "flush_writer": perf.flush_writer_for_run(run, args),
                 "prefill_store": perf.prefill_store_for_run(run, args),
                 "native_frontend_active_verified": log_scan[
                     "native_frontend_active_verified"
                 ],
                 "native_frontend_log_marker": log_scan["native_frontend_log_marker"],
+                "native_frontend_inline_active_verified": log_scan[
+                    "native_frontend_inline_active_verified"
+                ],
+                "native_frontend_inline_log_marker": log_scan[
+                    "native_frontend_inline_log_marker"
+                ],
                 "variant_id": variant["variant_id"],
                 "variant_parameters": variant,
                 "logical_launcher": expected_launcher,
@@ -876,10 +892,17 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
                 "native_factory_selection_verified"
             ],
             native_frontend=native_frontend,
+            forward_pool_ensure=forward_pool_ensure,
             flush_writer=perf.flush_writer_for_run(run, args),
             prefill_store=perf.prefill_store_for_run(run, args),
             native_frontend_active_verified=log_scan["native_frontend_active_verified"],
             native_frontend_log_marker=log_scan["native_frontend_log_marker"],
+            native_frontend_inline_active_verified=log_scan[
+                "native_frontend_inline_active_verified"
+            ],
+            native_frontend_inline_log_marker=log_scan[
+                "native_frontend_inline_log_marker"
+            ],
         )
         perf.write_json_atomic(run_dir / "run.json", manifest)
         perf.write_checksums(args.output_dir)
@@ -935,6 +958,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--native-frontend",
         choices=perf.NATIVE_FRONTEND_VARIANTS,
         default="reference",
+    )
+    parser.add_argument(
+        "--forward-pool-ensure",
+        choices=perf.FORWARD_POOL_ENSURE_VARIANTS,
+        default="always",
+        help=(
+            "engine-lifetime forward pool guard for the native profile; "
+            "the auto reference always uses always"
+        ),
     )
     parser.add_argument(
         "--flush-index-materialization",

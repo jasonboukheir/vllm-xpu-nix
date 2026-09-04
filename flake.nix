@@ -258,6 +258,33 @@
             vllm-xpu-kvarn-factory
             pkgs.python312Packages.pytest
           ]);
+
+          # Service and correctness harnesses need both the vLLM executable
+          # and a Python interpreter from one immutable candidate.  The
+          # withPackages interpreter above has the complete Python closure,
+          # but is not wrapped with vLLM's pinned Level Zero, compute-runtime,
+          # IGC, oneAPI, compiler, and JIT-linker environment.  Preserve the
+          # package's existing bin/vllm wrapper and apply those same runtime
+          # arguments to Python.  PYTHONPATH is the sole exception: the
+          # withPackages environment already owns its complete module path,
+          # while vLLM's argument contains a package-output placeholder.
+          kvarnFactoryRuntimeWrapperArgs = builtins.filter (
+            arg: !(pkgs.lib.hasPrefix "--prefix PYTHONPATH " arg)
+          ) vllm-xpu-kvarn-factory.makeWrapperArgs;
+          vllm-xpu-kvarn-factory-env = pkgs.symlinkJoin {
+            name = "vllm-xpu-kvarn-factory-env";
+            paths = [ kvarnFactoryPython ];
+            nativeBuildInputs = [ pkgs.makeWrapper ];
+            postBuild = ''
+              rm -f "$out/bin/python" "$out/bin/python3" "$out/bin/python3.12"
+              makeWrapper \
+                ${kvarnFactoryPython}/bin/python \
+                "$out/bin/python" \
+                ${builtins.concatStringsSep " " kvarnFactoryRuntimeWrapperArgs}
+              ln -s python "$out/bin/python3"
+              ln -s python "$out/bin/python3.12"
+            '';
+          };
           kvarn-factory-host = pkgs.writeShellApplication {
             name = "kvarn-factory-host";
             runtimeInputs = [
@@ -382,6 +409,7 @@
               vllm-xpu
               vllm-xpu-unstable
               vllm-xpu-kvarn-factory
+              vllm-xpu-kvarn-factory-env
               kvarn-factory-host
               ;
             inherit (stableLibs)
@@ -528,6 +556,7 @@
         // pick "vllm-xpu-kernels-unstable"
         // pick "vllm-xpu"
         // pick "vllm-xpu-unstable"
-        // pick "vllm-xpu-kvarn-factory";
+        // pick "vllm-xpu-kvarn-factory"
+        // pick "vllm-xpu-kvarn-factory-env";
     };
 }

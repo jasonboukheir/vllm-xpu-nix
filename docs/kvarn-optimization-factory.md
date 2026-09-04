@@ -27,15 +27,29 @@ Every artifact records these axes explicitly:
 
 | Axis | Required examples |
 |---|---|
-| `variant_id` | `r1-p1-dpas-q6-t64` |
+| `variant_id` | `r1-p2-dpas-q6-t64` |
 | `cache_layout` | `natural`, `xe2_dpas` |
 | `kernel_strategy` | `q8_bf16_dpas`, `q6_bf16_dpas` |
 | `split_policy` | `fixed16`, `fixed24`, `b70_context_bucket_v1` |
-| `fusion_strategy` | `reduce_h256`, `query_reduce_h256` |
+| `fusion_strategy` | `reduce_h256`, `qkv_store_reduce_h256` |
 | `scheduling_variant` | `tile64`, `page128` |
 | provenance | source commits/diffs, derivations and closures, exact launcher |
 | workload | model revision, B1/B4, context, output length, seed, all serve args |
 | hardware | exact device name plus a successful candidate XPU tensor operation |
+
+The expensive build is the round boundary, not the variant boundary. One
+extension contains the baseline and every compatible round specialization.
+At engine initialization the host resolves a named cache layout, named kernel
+variant, and split policy, freezes them on the attention implementation, and
+passes their explicit IDs plus the exact split count to every native operator.
+The C++ hot path does not read environment variables. A factory launcher may
+set the names, but changing the cache layout always requires a fresh engine and
+fresh cache allocation.
+
+The public beta remains simple: selecting a Kvarn KV-cache dtype is sufficient
+to enable the conservative natural-layout/reference implementation. Factory
+selectors are optional overrides for B70 experiments, not prerequisites for
+using Kvarn.
 
 ## Evidence entering round 1
 
@@ -56,6 +70,14 @@ and 1896.6 us for B4. DPAS therefore closes most of the gap, but the reader
 alone remains about 14% slower for B1 and 35% slower for B4. Kvarn query and
 output rotations add about 120 us for B1 and 150 us for B4 at this point.
 These are isolated device stages, not service-parity claims.
+
+The byte-rate points away from raw HBM bandwidth as the main remaining
+bottleneck. A 65,023-token Kvarn read covers approximately 71.3 MB per request
+(508 pages x 4 KV heads x 35,072 bytes), or about 118 GB/s at the measured B1
+time and 111 GB/s at B4. Dense BF16 auto moves approximately 266 MB per request
+and reaches roughly 506–561 GB/s in the same checkpoint. This makes packed
+unpack/conversion instructions and matrix utilization first-round targets;
+merely reducing already-compressed memory traffic is unlikely to close parity.
 
 The existing B70 split sweep also showed that fixed split count is leaving
 performance on the table: B4/65K improved from 3233 us at split 16 to 2975 us
@@ -88,29 +110,30 @@ Primary implementation references:
 ## Round 1 ranked variants
 
 All compatible specializations should be emitted by one XPU-kernel build and
-selected by the host before launch. `r1-p0` is the current DPAS baseline, not a
-promotion candidate by itself.
+selected by the host before launch. The initial combined dispatch matrix is
+`q8-scalar`, `q6-scalar`, `q8-vector`, and, if template-compatible,
+`q6-vector`; integer-QK, fused-Q, and page-128 remain separate named paths so a
+win can be attributed. `r1-p0` is the current DPAS baseline, not a promotion
+candidate by itself.
 
 | Rank / ID | Isolated change | Expected impact | Cost | Risk | Fast decision |
 |---|---|---:|---:|---:|---|
-| `r1-p1-dpas-q6-t64` | Replace the q-packed-8 Xe DPAS tile with an exact GQA-6 repeat/tile | 15–25% core work | medium | medium | compile, ragged/long correctness, then B1/B4 device time |
-| `r1-p2-dpas-fused-q` | Consume public BF16 Q and perform H256 inside the decode producer; keep the existing fused reducer/H256 output | 60–85 us and one launch, strongest at B1 | medium | medium | bitwise/close compare at transform boundary, then launch/time delta |
-| `r1-p3-dpas-bucket-split` | Select split 16/24 from B70 batch/context buckets while retaining the same producer/reducer kernels | up to ~8% from existing B4/65K evidence | low | low | sweep 4K/16K/65K B1/B4 together |
-| `r1-p4-dpas-vector-load` | Vector-load each aligned per-lane packed K/V fragment; leave arithmetic unchanged | 5–15% if scalar load/unpack issue-bound | low–medium | low | assembly/kernel-time check plus exact primitive compare |
-| `r1-p5-dpas-page128` | One physical page per work iteration with a corrected ReduceK=8/page-128 epilogue | 5–20% through metadata reuse and fewer loop/schedule steps | medium–high | high | known ReduceK=8 boundary/ragged cases first; kill on any mismatch |
+| `r1-p1-dpas-qk-i8u4` | Quantize page-scaled Q to int8 and execute QK directly against packed uint4 codes; leave PV and every other boundary unchanged | 20–45% if BF16 conversion/DPAS dominates | high | high numerical risk | compare QK logits/output against q8 at adversarial pages first; kill quickly on drift |
+| `r1-p2-dpas-q6-t64` | Replace the q-packed-8 Xe DPAS tile with an exact GQA-6 repeat/tile | 10–25% core work | medium | medium | compile, ragged/long correctness, then B1/B4 device time |
+| `r1-p3-dpas-fused-qkv-store` | Extend the existing K/V H256 scatter launch with independent Q-head workgroups that write rotated Q; do not repeat H256 in every decode split | one launch and much of the measured 60–85 us Q-transform stage, strongest at B1 | medium | medium | exact transformed-Q/K/V boundary compare, then launch/time delta |
+| `r1-p4-dpas-bucket-split` | Select split 16/24 from B70 batch/context buckets while retaining the same producer/reducer kernels | up to ~8% from existing B4/65K evidence | low | low | sweep 4K/16K/65K B1/B4 together |
+| `r1-p5-dpas-vector-load` | Vector-load each aligned per-lane packed K/V fragment; leave arithmetic unchanged | 5–15% if scalar load/unpack issue-bound | low–medium | low | assembly/kernel-time check plus exact primitive compare |
+| `r1-p6-dpas-page128` | One physical page per work iteration with a corrected ReduceK=8/page-128 epilogue | 5–20% through metadata reuse and fewer loop/schedule steps | medium–high | high | known ReduceK=8 boundary/ragged cases first; kill on any mismatch |
 | `r1-p0-dpas-q8-t64` | Current Xe2 DPAS-native layout and q-packed-8/tile-64 implementation | baseline | complete | known-correct primitive | control for every primitive sweep |
 
 Keep these next-round experiments ranked but out of round 1 so attribution
 stays clear:
 
-1. QK-only mixed int8 x uint4 DPAS with per-query/page scaling. It has very
-   high upside and very high numerical risk; it must be isolated from a later
-   PV quantization experiment.
-2. PV-only uint8 x uint4 DPAS probability/value accumulation, independently
+1. PV-only uint8 x uint4 DPAS probability/value accumulation, independently
    selectable and correctness-eliminated before combination with integer QK.
-3. Prefetched/double-buffered packed K/V tiles after the vector-load result
+2. Prefetched/double-buffered packed K/V tiles after the vector-load result
    shows whether the current kernel is latency- or instruction-bound.
-4. Persistent decode across heads/layers only if the XPU trace shows queue
+3. Persistent decode across heads/layers only if the XPU trace shows queue
    starvation rather than dominant device work.
 
 ## Round loop and elimination gates
@@ -138,11 +161,12 @@ Rows are appended from immutable JSON artifacts; `pending` is not a zero.
 | `auto-control` | control | pending | pending | pending | pending | pending | pending | pending | pending | pending | performance control |
 | `natural-oracle` | primitive reference | pending | pending | pending | pending | pending | pending | pending | pending | pending | correctness only |
 | `r1-p0-dpas-q8-t64` | primitive pass at 262K | pending | pending | pending | pending | pending | pending | pending | pending | pending | round baseline |
-| `r1-p1-dpas-q6-t64` | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending |
-| `r1-p2-dpas-fused-q` | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending |
-| `r1-p3-dpas-bucket-split` | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending |
-| `r1-p4-dpas-vector-load` | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending |
-| `r1-p5-dpas-page128` | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending |
+| `r1-p1-dpas-qk-i8u4` | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending |
+| `r1-p2-dpas-q6-t64` | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending |
+| `r1-p3-dpas-fused-qkv-store` | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending |
+| `r1-p4-dpas-bucket-split` | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending |
+| `r1-p5-dpas-vector-load` | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending |
+| `r1-p6-dpas-page128` | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending |
 
 Final promotion still requires native Kvarn statistical parity or better with
 auto on the B70: paired ratio at least 98%, hard throughput and per-request

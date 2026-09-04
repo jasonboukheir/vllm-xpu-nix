@@ -135,7 +135,7 @@ scripts/kvarn_perf_run.py \
   --native-layout xe2_dpas \
   --native-kernel-variant q6_next_page_prefetch \
   --native-split-policy b70_q6_v2 \
-  --flush-writer native_xe2 \
+  --flush-writer sinkhorn_pack_xe2 \
   --prefill-store hadamard_scatter \
   ...
 ```
@@ -219,7 +219,7 @@ nix run .#kvarn-factory -- \
   --vllm-xpu-nix-repo "$PWD" \
   --vllm-repo /tmp/vllm-kvarn-upstream-sync \
   --kernels-repo /tmp/vllm-xpu-kernels-upstream-sync \
-  --flush-writer native_xe2 \
+  --flush-writer sinkhorn_pack_xe2 \
   --prefill-store hadamard_scatter
 ```
 
@@ -241,6 +241,13 @@ repositories, with ambiguous shared libraries, or without exact Nix
 derivation and closure attestations. Evidence is written atomically under
 `benchmark-results/kvarn/`; `/tmp` and overwrites are rejected.
 
+The `sinkhorn_pack_xe2` writer is an independently selectable Round5
+candidate. It fuses Sinkhorn balancing and DPAS-record packing directly from
+the FP16/BF16 tail pages, while `native_xe2` remains the prior native packer
+for already-balanced FP32 tensors and `reference` remains the correctness
+implementation. All three preserve the same immutable `xe2_dpas` cache ABI;
+only the two native writers require that layout.
+
 Use `--service-layer-count 16` to add the service-shaped primitive screen. It
 allocates disjoint auto caches and Kvarn packed-cache/tail pools for sixteen
 logical attention layers, then times a complete round-robin store/frontend plus
@@ -261,6 +268,8 @@ oracle before their timing is reported.
 The mandatory B70 kill suite is selector-scoped. A `native_xe2` writer run
 adds compact/padded byte-exact packing, ragged block IDs, arbitrary values,
 ties-to-even, constant rows, and invalid-stride rejection. A
+`sinkhorn_pack_xe2` run adds raw FP16/BF16 Sinkhorn-to-record differential,
+halfway-rounding, ragged ownership, long-address, and invalid-ABI gates. A
 `hadamard_scatter` prefill run adds FP16/BF16, structured rows, deterministic
 repeat, allocator reuse, and B1/B4 backend-stride append cases. Incorrect
 writers therefore fail before the slower service correctness matrix.

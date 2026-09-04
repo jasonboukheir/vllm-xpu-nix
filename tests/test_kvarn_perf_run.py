@@ -1058,7 +1058,7 @@ def test_runtime_factory_environment_carries_exact_per_process_axes(
     args.request_stable_projection_rows = False
     args.request_stable_rmsnorm = True
     args.flush_index_materialization = "shared"
-    args.flush_writer = "native_xe2"
+    args.flush_writer = "sinkhorn_pack_xe2"
     args.prefill_store = "hadamard_scatter"
     args.native_frontend = "qkv_scatter"
     candidate = PlannedRun(Workload(65023, 4, 32, 4, 17), "candidate", 1)
@@ -1068,7 +1068,7 @@ def test_runtime_factory_environment_carries_exact_per_process_axes(
     assert candidate_axes == {
         "KVARN_FACTORY_CACHE_LAYOUT": "xe2_dpas",
         "KVARN_FACTORY_FLUSH_INDEX_MATERIALIZATION": "shared",
-        "KVARN_FACTORY_FLUSH_WRITER": "native_xe2",
+        "KVARN_FACTORY_FLUSH_WRITER": "sinkhorn_pack_xe2",
         "KVARN_FACTORY_KERNEL_VARIANT": "q6_next_page_prefetch",
         "KVARN_FACTORY_KV_CACHE_DTYPE": runner.COMPACT_DTYPE,
         "KVARN_FACTORY_MAX_MODEL_LEN": "65536",
@@ -1083,7 +1083,10 @@ def test_runtime_factory_environment_carries_exact_per_process_axes(
     }
     candidate_environment = runner.service_environment(candidate, args)
     assert "KVARN_FACTORY_SPLITS" not in candidate_environment
-    assert candidate_environment["KVARN_FACTORY_FLUSH_WRITER"] == "native_xe2"
+    assert (
+        candidate_environment["KVARN_FACTORY_FLUSH_WRITER"]
+        == "sinkhorn_pack_xe2"
+    )
     assert (
         candidate_environment["KVARN_FACTORY_PREFILL_STORE"]
         == "hadamard_scatter"

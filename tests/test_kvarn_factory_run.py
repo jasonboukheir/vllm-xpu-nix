@@ -276,6 +276,15 @@ def test_focused_kill_suite_selects_writer_and_prefill_direct_op_gates() -> None
     assert any("invalid_ragged_block_ids" in node for node in selected)
     assert any("backend_strides_and_appends" in node for node in selected)
 
+    sinkhorn = factory.focused_xpu_tests(
+        variants,
+        flush_writer="sinkhorn_pack_xe2",
+    )
+    assert set(factory.FOCUSED_XPU_SINKHORN_WRITER_TESTS) <= set(sinkhorn)
+    assert not set(factory.FOCUSED_XPU_NATIVE_WRITER_TESTS) & set(sinkhorn)
+    assert any("matches_reference" in node for node in sinkhorn)
+    assert any("int64_long_context" in node for node in sinkhorn)
+
 
 def test_matrix_expands_auto_and_explicit_split_sweeps() -> None:
     cases = factory.build_matrix(

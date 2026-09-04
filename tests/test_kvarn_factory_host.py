@@ -540,6 +540,11 @@ def test_default_cli_is_the_matched_b70_factory_matrix() -> None:
     assert selected.prefill_store == "hadamard_scatter"
     assert selected.service_layer_count == 16
 
+    sinkhorn = host.parse_args(
+        [*argv, "--flush-writer", "sinkhorn_pack_xe2"]
+    )
+    assert sinkhorn.flush_writer == "sinkhorn_pack_xe2"
+
 
 @pytest.mark.parametrize(
     ("option", "value"),

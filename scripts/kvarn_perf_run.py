@@ -76,7 +76,7 @@ NATIVE_KERNEL_VARIANTS = {
 REFERENCE_NATIVE_KERNEL_VARIANT = "baseline"
 NATIVE_SPLIT_POLICIES = split_policy.NATIVE_SPLIT_POLICIES
 FLUSH_INDEX_MATERIALIZATION_VARIANTS = ("per_layer", "shared")
-FLUSH_WRITER_VARIANTS = ("reference", "native_xe2")
+FLUSH_WRITER_VARIANTS = ("reference", "native_xe2", "sinkhorn_pack_xe2")
 PREFILL_STORE_VARIANTS = ("reference", "hadamard_scatter")
 NATIVE_FRONTEND_VARIANTS = ("reference", "qkv_scatter")
 NATIVE_FRONTEND_ACTIVE_MARKER = "[KVARN_FRONTEND] active=qkv_scatter;"
@@ -747,9 +747,9 @@ def load_correctness(
     flush_writer = document.get("flush_writer")
     if flush_writer not in FLUSH_WRITER_VARIANTS:
         raise RunnerError("correctness artifact flush writer is unsupported")
-    if flush_writer == "native_xe2" and native_layout != "xe2_dpas":
+    if flush_writer != "reference" and native_layout != "xe2_dpas":
         raise RunnerError(
-            "correctness artifact native_xe2 writer requires xe2_dpas layout"
+            "correctness artifact native Kvarn writer requires xe2_dpas layout"
         )
     prefill_store = document.get("prefill_store")
     if prefill_store not in PREFILL_STORE_VARIANTS:
@@ -3513,9 +3513,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             raise RunnerError(
                 "non-baseline native kernel variants require --native-layout xe2_dpas"
             )
-        if args.flush_writer == "native_xe2" and args.native_layout != "xe2_dpas":
+        if args.flush_writer != "reference" and args.native_layout != "xe2_dpas":
             raise RunnerError(
-                "--flush-writer native_xe2 requires --native-layout xe2_dpas"
+                "native --flush-writer requires --native-layout xe2_dpas"
             )
         args.context = _parse_int_list(args.context, DEFAULT_CONTEXTS)
         args.batch = _parse_int_list(args.batch, DEFAULT_BATCHES)

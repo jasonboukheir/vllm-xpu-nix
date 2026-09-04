@@ -1032,9 +1032,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             args.native_kernel_variant or perf.REFERENCE_NATIVE_KERNEL_VARIANT
         )
         args.native_split_policy = args.native_split_policy or "fixed"
-        if args.flush_writer == "native_xe2" and args.native_layout != "xe2_dpas":
+        if args.flush_writer != "reference" and args.native_layout != "xe2_dpas":
             raise perf.RunnerError(
-                "--flush-writer native_xe2 requires --native-layout xe2_dpas"
+                "native --flush-writer requires --native-layout xe2_dpas"
             )
         args.onednn_deterministic = bool(args.onednn_deterministic)
         args.request_stable_projection_rows = bool(

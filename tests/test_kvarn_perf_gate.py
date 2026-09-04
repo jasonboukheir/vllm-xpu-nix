@@ -1374,20 +1374,22 @@ def test_match_gate_accepts_qkv_candidate_with_unfused_reference(
     )
 
 
+@pytest.mark.parametrize("flush_writer", ["native_xe2", "sinkhorn_pack_xe2"])
 def test_match_gate_binds_native_writer_and_prefill_store_to_candidate(
     tmp_path: Path,
+    flush_writer: str,
 ) -> None:
     result = _compare(
         _arms(
             tmp_path,
-            flush_writer="native_xe2",
+            flush_writer=flush_writer,
             prefill_store="hadamard_scatter",
         )
     )
 
     assert result["reference"]["arm"]["kvarn_flush_writer"] == "reference"
     assert result["reference"]["arm"]["kvarn_prefill_store"] == "reference"
-    assert result["candidate"]["arm"]["kvarn_flush_writer"] == "native_xe2"
+    assert result["candidate"]["arm"]["kvarn_flush_writer"] == flush_writer
     assert (
         result["candidate"]["arm"]["kvarn_prefill_store"]
         == "hadamard_scatter"

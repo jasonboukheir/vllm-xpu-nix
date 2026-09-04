@@ -57,7 +57,7 @@ NATIVE_KERNEL_VARIANTS = {
 }
 NATIVE_SPLIT_POLICIES = split_policy.NATIVE_SPLIT_POLICIES
 FLUSH_INDEX_MATERIALIZATION_VARIANTS = ("per_layer", "shared")
-FLUSH_WRITER_VARIANTS = ("reference", "native_xe2")
+FLUSH_WRITER_VARIANTS = ("reference", "native_xe2", "sinkhorn_pack_xe2")
 PREFILL_STORE_VARIANTS = ("reference", "hadamard_scatter")
 NATIVE_FRONTEND_VARIANTS = ("reference", "qkv_scatter")
 NATIVE_FRONTEND_ACTIVE_MARKER = "[KVARN_FRONTEND] active=qkv_scatter;"
@@ -476,8 +476,8 @@ def validate_factory_qualification(
         raise GateError(f"{path}: selected factory output dtype is unsupported")
     if flush_writer not in FLUSH_WRITER_VARIANTS:
         raise GateError(f"{path}: selected factory flush writer is unsupported")
-    if flush_writer == "native_xe2" and native_layout != "xe2_dpas":
-        raise GateError(f"{path}: native_xe2 writer requires xe2_dpas")
+    if flush_writer != "reference" and native_layout != "xe2_dpas":
+        raise GateError(f"{path}: native Kvarn writer requires xe2_dpas")
     if prefill_store not in PREFILL_STORE_VARIANTS:
         raise GateError(f"{path}: selected factory prefill store is unsupported")
     if native_split_policy == "b70_q6_v2":
@@ -1212,8 +1212,8 @@ def validate_correctness_gate_evidence(
     selected_splits = DEFAULT_NATIVE_SPLITS if native_splits is None else native_splits
     if flush_writer not in FLUSH_WRITER_VARIANTS:
         raise GateError(f"{path}: flush writer is unsupported")
-    if flush_writer == "native_xe2" and native_layout != "xe2_dpas":
-        raise GateError(f"{path}: native_xe2 writer requires xe2_dpas layout")
+    if flush_writer != "reference" and native_layout != "xe2_dpas":
+        raise GateError(f"{path}: native Kvarn writer requires xe2_dpas layout")
     if prefill_store not in PREFILL_STORE_VARIANTS:
         raise GateError(f"{path}: prefill store is unsupported")
     if request_stable_projection_rows not in {"0", "1"}:
@@ -2114,8 +2114,8 @@ def _load_correctness(path: Path) -> tuple[dict[str, Any], str]:
     flush_writer = document.get("flush_writer")
     if flush_writer not in FLUSH_WRITER_VARIANTS:
         raise GateError(f"{path}: flush writer is unsupported")
-    if flush_writer == "native_xe2" and native_layout != "xe2_dpas":
-        raise GateError(f"{path}: native_xe2 writer requires xe2_dpas layout")
+    if flush_writer != "reference" and native_layout != "xe2_dpas":
+        raise GateError(f"{path}: native Kvarn writer requires xe2_dpas layout")
     prefill_store = document.get("prefill_store")
     if prefill_store not in PREFILL_STORE_VARIANTS:
         raise GateError(f"{path}: prefill store is unsupported")

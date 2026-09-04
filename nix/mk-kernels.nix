@@ -14,11 +14,13 @@
 let
   mkKernelLibSrc = import ./lib/kernel-lib-src.nix { inherit (pkgs) lib; };
 
-  # The aggregate Python package retains the upstream revision-bearing
-  # version.  Split .so derivations use their filtered source-store identity
-  # instead: changing an unrelated sibling subtree then leaves both their name
-  # and derivation hash stable, while a relevant source change still produces
-  # a new, content-addressed identity.
+  # The aggregate Python package retains the upstream revision-bearing version.
+  # Split .so derivations use the filtered source-store hash as their artifact
+  # source identity.  Consequently, a change confined to a later target subtree
+  # (notably attention, which is last in the ordering chain below) leaves earlier
+  # derivations stable.  Shared CMake/common-source changes intentionally change
+  # every projection, and predecessor changes also invalidate successors through
+  # buildDependencies.
   mkKernelLibVersion =
     version: src:
     let
@@ -95,12 +97,24 @@ let
         passthru = (old.passthru or { }) // {
           kernelSourceProvenance = {
             library = libName;
-            upstreamVersion = version;
-            upstreamRevision = sourceRevision;
-            filteredSource = toString libSrc;
-            filteredSourceStoreHash = builtins.head (
-              pkgs.lib.splitString "-" (builtins.baseNameOf (toString libSrc))
-            );
+            # This projection is the source identity that participates in the
+            # derivation.  Preserve it in benchmark provenance whenever a split
+            # library is attested.
+            artifactIdentity = {
+              scheme = "nix-filtered-source-store-hash-v1";
+              filteredSource = toString libSrc;
+              filteredSourceStoreHash = builtins.head (
+                pkgs.lib.splitString "-" (builtins.baseNameOf (toString libSrc))
+              );
+            };
+            # These fields say that the current aggregate checkout is compatible
+            # with the projected source.  They are passthru metadata, deliberately
+            # absent from the split derivation identity so an unchanged projection
+            # can be reused across upstream commits.
+            compatibilityProvenance = {
+              upstreamVersion = version;
+              upstreamRevision = sourceRevision;
+            };
           };
         };
       });
@@ -204,7 +218,10 @@ let
       };
       # Each library still builds with NIX_BUILD_CORES internally. Chaining the
       # derivations prevents the daemon from running several SYCL compiler farms
-      # at once; GDN alone peaks at tens of GiB under icpx -O3.
+      # at once; GDN alone peaks at tens of GiB under icpx -O3. This is a
+      # directional cache tradeoff, not a fully independent graph: changing a
+      # predecessor invalidates every successor. Attention is last so the common
+      # Kvarn iteration case reuses all five earlier libraries.
       gdnAttn = mkLib {
         libName = "gdn_attn_kernels_xe_2";
         featureFlags = gdnAttnFlags;

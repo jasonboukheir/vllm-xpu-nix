@@ -418,6 +418,10 @@
           };
 
           checks = {
+            kernel-lib-cache-identity = import ./nix/tests/kernel-lib-cache-identity.nix {
+              inherit pkgs;
+            };
+
             formatting =
               pkgs.runCommand "vllm-xpu-nix-formatting"
                 {

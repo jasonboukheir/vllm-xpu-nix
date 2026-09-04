@@ -144,6 +144,12 @@ stdenv.mkDerivation (
     ++ lib.optional useCcache ccache
     ++ buildDependencies;
 
+    # buildDependencies are order-only inputs used to serialize memory-heavy
+    # compiler farms.  None of the split feature libraries may link to or embed
+    # a predecessor.  Fail the build if a future setup hook or discovery change
+    # turns this scheduling edge into a runtime reference.
+    disallowedReferences = buildDependencies;
+
     buildInputs = [
       stdenv.cc.cc.lib
       intel-oneapi-base

@@ -135,14 +135,30 @@ that motivated the sweep. The selector rejects `--splits`, every kernel except
 ID18, and never enters `NATIVE_SPLIT_POLICIES`; service/runtime defaults and
 the existing `b70_q6`/`b70_q6_v2` policies therefore remain unchanged.
 
-Build `.#vllm-xpu-kvarn-factory` for the complete current-layout matrix. It
-compiles every implemented decode specialization through ID18 plus the
-fused-QKV operator into one BMG-AOT attention library. Runtime selection
-therefore does not start another Nix build. The package also freezes the
-generated upstream FA2 buildout to Brutus's text-only Qwen3.8 profile: two
-head-dimension-256 chunk-prefill policies and one qgroup-8, block-64
-paged-decode policy. This reduces the attention target from 663 Ninja actions
-to about 12 while retaining matched auto and Kvarn paths.
+Build `.#vllm-xpu-kvarn-factory-env` for the service candidate. It contains
+both `bin/vllm` and `bin/python`; both wrappers select the same pinned Level
+Zero, compute-runtime, IGC, oneAPI, compiler, and JIT-linker environment, so
+the harness's Python XPU proof cannot silently use `/run/opengl-driver` while
+the service uses the candidate closure. The underlying
+`vllm-xpu-kvarn-factory` compiles every implemented decode specialization
+through ID18 plus the fused-QKV operator into one BMG-AOT attention library.
+Runtime selection therefore does not start another Nix build. The package also
+freezes the generated upstream FA2 buildout to Brutus's text-only Qwen3.8
+profile: two head-dimension-256 chunk-prefill policies and one qgroup-8,
+block-64 paged-decode policy. This reduces the attention target from 663 Ninja
+actions to about 12 while retaining matched auto and Kvarn paths.
+
+```console
+nix build .#vllm-xpu-kvarn-factory-env
+scripts/kvarn_perf_run.py \
+  --launcher-mode runtime-factory \
+  --candidate-env "$(readlink -f result)" \
+  ...
+```
+
+`nix run .#kvarn-factory` remains the direct primitive factory host and uses
+the same underlying factory package; the new environment does not change that
+host's sanitization or launch behavior.
 
 ### One package-free service launcher
 

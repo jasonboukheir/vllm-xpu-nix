@@ -359,15 +359,12 @@ def service_spec_evidence(
     return {
         **dataclasses.asdict(spec),
         "launcher": launcher_name(spec, args),
-        "launcher_binding": launcher_binding_for_spec(spec, args),
         "native_layout": native_layout_for_spec(spec, args),
         "native_kernel_variant": native_kernel_variant_for_spec(spec, args),
         "native_kernel_variant_id": perf.NATIVE_KERNEL_VARIANTS[
             native_kernel_variant_for_spec(spec, args)
         ],
-        "native_output_dtype": args.native_output_dtype,
         "native_frontend": native_frontend_for_spec(spec, args),
-        "onednn_deterministic": onednn_deterministic_for_spec(spec, args),
         "request_stable_projection_rows": request_stable_projection_rows_for_spec(
             spec, args
         ),

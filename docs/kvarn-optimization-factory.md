@@ -60,7 +60,7 @@ extension:
 | Selector | Values in the combined build | Lifetime |
 |---|---|---|
 | `KVARN_NATIVE_XPU_CACHE_LAYOUT` | `natural`, `xe2_dpas` | engine/cache ABI; restart and allocate a fresh cache to change |
-| `KVARN_NATIVE_XPU_KERNEL_VARIANT` | `baseline`, `qk_i8u4`, `q6_scalar`, `q8_vector`, `q6_vector`, `q6_cached_weights`, `q6_exact_rows`, `q6_cached_weights_exact_rows`, `q6_page_pair`, `q6_main_grf128`, `q6_split_reducer_specialized`, `q6_next_page_prefetch`, `q6_next_page_prefetch_split_reducer`, `q6_simd_unpack`, `q6_block_output_store`, `q6_current_half_v_prefetch`, `q6_page_record_cursor`, `q6_prefetch_record_cursor`, `q6_b1_short_last_producer` | startup selector; every listed specialization is in the same library |
+| `KVARN_NATIVE_XPU_KERNEL_VARIANT` | `baseline`, `qk_i8u4`, `q6_scalar`, `q8_vector`, `q6_vector`, `q6_cached_weights`, `q6_exact_rows`, `q6_cached_weights_exact_rows`, `q6_page_pair`, `q6_main_grf128`, `q6_split_reducer_specialized`, `q6_next_page_prefetch`, `q6_next_page_prefetch_split_reducer`, `q6_simd_unpack`, `q6_block_output_store`, `q6_current_half_v_prefetch`, `q6_page_record_cursor`, `q6_prefetch_record_cursor` | startup selector; every listed specialization is in the same library |
 | `KVARN_NATIVE_XPU_SPLIT_POLICY` | `fixed`, `b70_q6`, `b70_q6_v2` | startup policy; named policies select the effective count per decode call |
 | `KVARN_NATIVE_XPU_SPLITS` | `1`, `2`, `4`, `8`, `16`, `17`, `24`, `32` | scratch-allocation maximum; effective count may be selected per call |
 | `KVARN_FLUSH_WRITER` | `reference`, `native_xe2` | startup writer; `native_xe2` requires the `xe2_dpas` D256/G128/K4V4/Hkv4 cache ABI |
@@ -108,18 +108,9 @@ prefetch/reducer and SIMD-unpack experiments; ID `15` isolates two-row plus
 one-row block-2D output stores from all of those changes. IDs `16` through `18`
 retain ID13 as the reader control and independently select current-half V
 prefetch, page-record address reuse, or their composition.
-ID `19`, `q6_b1_short_last_producer`, retains ID18's cache ABI and producer
-math but fuses split reduction and output finalization into the last producer.
-It is active only for B1 multi-split calls whose current sequence length is at
-most 8,192 tokens and whose completion state is initialized; every other call
-fails closed to ID18. This 8K guard keeps a 4K-prompt plus 512-token service
-measurement entirely inside the optimized bucket. Harness artifacts record
-the engine selector, the versioned dispatch contract, the expected effective
-variant for each workload, and whether ID19 is active, so B4 or long-context
-ID18 fallback results cannot be credited to ID19.
 
 Build `.#vllm-xpu-kvarn-factory` for the complete current-layout matrix. It
-compiles every implemented decode specialization through ID19 plus the
+compiles every implemented decode specialization through ID18 plus the
 fused-QKV operator into one BMG-AOT attention library. Runtime selection
 therefore does not start another Nix build. The package also freezes the
 generated upstream FA2 buildout to Brutus's text-only Qwen3.8 profile: two
@@ -167,14 +158,6 @@ runtime-factory selector and records the complete policy contract across its
 require the full correctness manifest, matched factory qualification, exact
 candidate identity, B70 execution proof, and the existing throughput/latency
 thresholds.
-
-ID19 is available only through `--launcher-mode runtime-factory`. Profile it
-with a B1 workload that remains at or below 8,192 tokens for the complete
-generation to measure the optimization itself. B4 and long-context profiles
-are permitted but explicitly labeled as ID18 fallback cells. The formal
-service runner does not narrow the release gate: selecting ID19 still runs the
-complete B1/B4 4K--65K matrix and full 262K correctness suite, with
-out-of-scope calls explicitly attributed to the ID18 fallback.
 
 Two additional strict selectors isolate the model-wide request-stability costs
 without rebuilding the candidate:
@@ -243,7 +226,7 @@ nix run .#kvarn-factory -- \
 This realizes one BMG-AOT package, then tests every selected kernel variant and
 the configured split sweep in one pinned Python/Torch/XPU process. The default
 `--variants all` is literal: it runs every compiled, runnable ID (`0`--`4` and
-`6`--`19`) at split 8 and 32 with direct BF16 output. Use an explicit named
+`6`--`18`) at split 8 and 32 with direct BF16 output. Use an explicit named
 comma-separated shortlist when a smaller sweep is intended. Sixteen warmup
 rounds precede twenty
 measured rounds per arm because the first B70 sweep showed material

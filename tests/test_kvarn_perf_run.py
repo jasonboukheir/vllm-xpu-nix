@@ -319,50 +319,6 @@ def test_correctness_is_optional_only_for_exploratory_cli(tmp_path: Path) -> Non
         )
 
 
-def test_id19_perf_cli_requires_runtime_factory(tmp_path: Path) -> None:
-    candidate = tmp_path / "candidate"
-    (candidate / "bin").mkdir(parents=True)
-    for executable in ("vllm", "python"):
-        (candidate / "bin" / executable).write_text("", encoding="utf-8")
-    common = [
-        "--candidate-env",
-        str(candidate),
-        "--allow-tmp",
-        "--plan-only",
-        "--exploratory",
-        "--runtime-cache",
-        str(tmp_path / "runtime-cache-id19"),
-        "--context",
-        "4096",
-        "--batch",
-        "1",
-        "--repeats",
-        "2",
-        "--native-layout",
-        "xe2_dpas",
-        "--native-kernel-variant",
-        "q6_b1_short_last_producer",
-        "--native-split-policy",
-        "b70_q6",
-    ]
-    with pytest.raises(SystemExit):
-        runner.parse_args(
-            [*common, "--output-dir", str(tmp_path / "immutable-id19")]
-        )
-
-    args = runner.parse_args(
-        [
-            *common,
-            "--launcher-mode",
-            "runtime-factory",
-            "--output-dir",
-            str(tmp_path / "runtime-id19"),
-        ]
-    )
-    assert args.native_kernel_variant == "q6_b1_short_last_producer"
-    assert args.native_splits == {1: 32}
-
-
 def test_exploratory_plan_session_has_no_formal_claims(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -541,44 +497,6 @@ def test_perf_launcher_name_binds_each_factory_variant(
         f"vllm-xpu-brutus-kvarn-native-dpas-{variant}-b4"
     )
     assert runner.NATIVE_KERNEL_VARIANTS[variant] == variant_id
-
-
-def test_id19_runtime_contract_attributes_only_full_b1_short_generation(
-    tmp_path: Path,
-) -> None:
-    args = _args(tmp_path)
-    args.native_layout = "xe2_dpas"
-    args.native_kernel_variant = "q6_b1_short_last_producer"
-    args.native_split_policy = "b70_q6"
-    args.native_splits = {1: 32, 4: 8}
-    args.launcher_mode = "runtime-factory"
-    active = PlannedRun(Workload(4096, 1, 512, 1, 17), "candidate", 1)
-    crossing = PlannedRun(Workload(8000, 1, 512, 1, 17), "candidate", 1)
-    b4 = PlannedRun(Workload(4096, 4, 512, 4, 17), "candidate", 1)
-
-    assert runner.NATIVE_KERNEL_VARIANTS[args.native_kernel_variant] == 19
-    assert runner.effective_native_kernel_variant_for_run(active, args) == (
-        "q6_b1_short_last_producer"
-    )
-    assert runner.effective_native_kernel_variant_for_run(crossing, args) == (
-        "q6_prefetch_record_cursor"
-    )
-    assert runner.effective_native_kernel_variant_for_run(b4, args) == (
-        "q6_prefetch_record_cursor"
-    )
-    assert runner.native_kernel_dispatch_contract_for_run(active, args) == {
-        "schema_version": 1,
-        "selected_variant": {"name": "q6_b1_short_last_producer", "id": 19},
-        "activation_scope": {
-            "kind": "b1_short_multisplit",
-            "decode_batch_size": 1,
-            "current_sequence_length_maximum_inclusive": 8192,
-            "num_kv_splits_minimum": 2,
-            "requires_unrotate_output": True,
-            "requires_initialized_completion_state": True,
-        },
-        "fallback_variant": {"name": "q6_prefetch_record_cursor", "id": 18},
-    }
 
 
 @pytest.mark.parametrize(

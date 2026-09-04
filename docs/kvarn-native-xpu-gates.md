@@ -405,14 +405,6 @@ stricter, but cannot weaken the 95% throughput/per-request floor, 110% p99
 latency ceiling, 98% paired parity target, or four-pair minimum. The repeat
 count must supply every requested ABBA pair.
 
-Scoped engine selectors do not narrow that matrix. In particular, ID19
-(`q6_b1_short_last_producer`) is attributed to itself only for multi-split B1
-generations that remain at or below 8,192 current-sequence tokens. Its B4 and
-long-context cells are recorded as ID18 (`q6_prefetch_record_cursor`) fallback
-while retaining ID19 as the immutable engine selector. Correctness through
-262K and every formal performance threshold remain mandatory for the combined
-dispatch; fallback cells are never reported as evidence of an ID19 speedup.
-
 Before starting the matrix, the runner uses the candidate's pinned Python and
 Torch to allocate, synchronize, and read back an XPU tensor. Formal or
 exploratory measurements proceed only when exactly one visible device is

@@ -46,6 +46,7 @@ NATIVE_KERNEL_VARIANTS = {
     "q6_main_grf128": 10,
     "q6_split_reducer_specialized": 11,
     "q6_next_page_prefetch": 12,
+    "q6_next_page_prefetch_split_reducer": 13,
     "q6_simd_unpack": 14,
 }
 NATIVE_SPLIT_POLICIES = ("fixed", "b70_q6")
@@ -68,6 +69,7 @@ B70_Q6_KERNEL_VARIANTS = frozenset(
         "q6_main_grf128",
         "q6_split_reducer_specialized",
         "q6_next_page_prefetch",
+        "q6_next_page_prefetch_split_reducer",
         "q6_simd_unpack",
     }
 )
@@ -87,6 +89,7 @@ COMBINED_LIBRARY_VARIANT_MATRIX = [
         "q6_main_grf128",
         "q6_split_reducer_specialized",
         "q6_next_page_prefetch",
+        "q6_next_page_prefetch_split_reducer",
         "q6_simd_unpack",
     )
 ]

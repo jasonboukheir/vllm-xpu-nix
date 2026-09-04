@@ -463,6 +463,7 @@ def test_commands_pin_launcher_and_deterministic_workload(tmp_path: Path) -> Non
         ("q6_main_grf128", 10),
         ("q6_split_reducer_specialized", 11),
         ("q6_next_page_prefetch", 12),
+        ("q6_next_page_prefetch_split_reducer", 13),
         ("q6_simd_unpack", 14),
     ],
 )

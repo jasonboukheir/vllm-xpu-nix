@@ -76,9 +76,10 @@ def test_named_factory_ids_are_complete_and_stable() -> None:
         "q6_main_grf128": 10,
         "q6_split_reducer_specialized": 11,
         "q6_next_page_prefetch": 12,
+        "q6_next_page_prefetch_split_reducer": 13,
         "q6_simd_unpack": 14,
     }
-    assert set(factory.VARIANTS_BY_ID) == (set(range(13)) - {5}) | {14}
+    assert set(factory.VARIANTS_BY_ID) == set(range(15)) - {5}
     assert all(spec.dpas_layout for spec in factory.VARIANTS.values())
     assert all(spec.cache_layout == "xe2_dpas" for spec in factory.VARIANTS.values())
     assert all(
@@ -107,6 +108,7 @@ def test_named_factory_ids_are_complete_and_stable() -> None:
         "q6_main_grf128",
         "q6_split_reducer_specialized",
         "q6_next_page_prefetch",
+        "q6_next_page_prefetch_split_reducer",
         "q6_simd_unpack",
     )
     assert factory.ALL_VARIANT_NAMES == tuple(factory.VARIANTS)
@@ -124,6 +126,9 @@ def test_named_factory_ids_are_complete_and_stable() -> None:
         factory.VARIANTS["q6_simd_unpack"].scheduling_variant
         == "tile64_vector_load_simd_unpack"
     )
+    combined = factory.VARIANTS["q6_next_page_prefetch_split_reducer"]
+    assert combined.scheduling_variant == "tile64_next_page_prefetch"
+    assert combined.fusion_strategy == "specialized_split_reduction"
 
 
 def test_variant_parser_accepts_names_and_all_but_not_numeric_aliases() -> None:
@@ -146,6 +151,7 @@ def test_variant_parser_accepts_names_and_all_but_not_numeric_aliases() -> None:
         10,
         11,
         12,
+        13,
         14,
     ]
     with pytest.raises(factory.FactoryError, match="ID 5.*reserved"):
@@ -169,6 +175,7 @@ def test_focused_kill_suite_has_262k_coverage_for_every_variant() -> None:
         10: "q6_main_grf128",
         11: "q6-split-reducer-specialized",
         12: "q6-next-page-prefetch",
+        13: "q6-next-page-prefetch-split-reducer",
         14: "q6-simd-unpack",
     }
     assert set(expected_node_ids) == set(factory.VARIANTS_BY_ID)

@@ -74,6 +74,7 @@ class VariantSpec:
     name: str
     description: str
     dpas_layout: bool = True
+    work_unit_tokens: int = 64
 
 
 VARIANTS = {
@@ -84,7 +85,6 @@ VARIANTS = {
         VariantSpec(2, "q6_scalar", "q6 scalar packed-word loads"),
         VariantSpec(3, "q8_vector", "q8 vector packed-word loads"),
         VariantSpec(4, "q6_vector", "q6 vector packed-word loads"),
-        VariantSpec(5, "page128", "128-token decode-tile candidate"),
         VariantSpec(6, "q6_cached_weights", "q6 cached epilogue weights"),
         VariantSpec(7, "q6_exact_rows", "q6 exact live-row loops"),
         VariantSpec(
@@ -92,7 +92,12 @@ VARIANTS = {
             "q6_cached_weights_exact_rows",
             "q6 cached epilogue weights plus exact live-row loops",
         ),
-        VariantSpec(9, "q6_page_pair", "q6 paired-page main loop"),
+        VariantSpec(
+            9,
+            "q6_page_pair",
+            "q6 paired-page main loop",
+            work_unit_tokens=128,
+        ),
         VariantSpec(10, "q6_main_grf128", "q6 GRF128 main-kernel experiment"),
         VariantSpec(
             11,
@@ -557,6 +562,8 @@ def parse_variants(value: str) -> list[VariantSpec]:
     names = list(ALL_VARIANT_NAMES) if value == "all" else value.split(",")
     if not names or any(not name for name in names):
         raise FactoryError("--variants must contain named candidate IDs")
+    if "page128" in names:
+        raise FactoryError("kernel variant 'page128' (ID 5) is reserved")
     unknown = [name for name in names if name not in VARIANTS]
     if unknown:
         raise FactoryError(
@@ -601,8 +608,9 @@ def parse_output_dtypes(value: str) -> list[str]:
     return list(dict.fromkeys(names))
 
 
-def effective_split_count(context: int, requested: int) -> int:
-    kv_tiles = math.ceil(context / 64)
+def effective_split_count(context: int, requested: int, variant: VariantSpec) -> int:
+    """Mirror the native wrapper's variant-specific empty-split collapse."""
+    kv_tiles = math.ceil(context / variant.work_unit_tokens)
     return 1 if requested > 1 and kv_tiles < requested else requested
 
 
@@ -632,14 +640,14 @@ def build_matrix(
                     if requested_value is None
                     else requested_value
                 )
-                effective = effective_split_count(context, requested)
                 for output_dtype in output_dtypes:
-                    if output_dtype == "bf16" and effective == 1:
-                        raise FactoryError(
-                            "direct bf16 output requires a multi-split decode so the "
-                            "native reducer can fuse the output H256 transform"
-                        )
                     for variant in variants:
+                        effective = effective_split_count(context, requested, variant)
+                        if output_dtype == "bf16" and effective == 1:
+                            raise FactoryError(
+                                "direct bf16 output requires a multi-split decode so "
+                                "the native reducer can fuse the output H256 transform"
+                            )
                         key = (
                             batch,
                             context,

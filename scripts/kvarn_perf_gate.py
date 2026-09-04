@@ -322,7 +322,6 @@ COMMON_PROVENANCE_FIELDS = (
     "kvarn_hardware_preflight_path",
     "kvarn_hardware_preflight_sha256",
     "kvarn_evidence_mode",
-    "kvarn_flush_index_materialization",
     "kvarn_onednn_deterministic",
     "kvarn_vllm_use_v2_model_runner",
 )
@@ -341,6 +340,7 @@ ARM_PROVENANCE_FIELDS = (
     "kvarn_native_max_splits",
     "kvarn_native_nominal_splits",
     "kvarn_native_split_policy",
+    "kvarn_flush_index_materialization",
     "kvarn_native_frontend",
     "kvarn_native_layout_log_marker",
     "kvarn_native_layout_evidence",
@@ -1930,13 +1930,21 @@ def _load_correctness(path: Path) -> tuple[dict[str, Any], str]:
     native_frontend = document.get("native_frontend")
     if native_frontend not in NATIVE_FRONTEND_VARIANTS:
         raise GateError(f"{path}: native frontend is unsupported")
+    service_controls = document.get("service_controls")
+    correctness_onednn = (
+        service_controls.get("kvarn_onednn_deterministic")
+        if isinstance(service_controls, dict)
+        else None
+    )
+    if correctness_onednn not in {"0", "1"}:
+        raise GateError(f"{path}: correctness oneDNN selector is unsupported")
     expected_service_controls = {
         "kvarn_flush_index_materialization": flush_index_materialization,
         "kvarn_native_frontend": native_frontend,
-        "kvarn_onednn_deterministic": "1",
+        "kvarn_onednn_deterministic": correctness_onednn,
         "vllm_use_v2_model_runner": "0",
     }
-    if document.get("service_controls") != expected_service_controls:
+    if service_controls != expected_service_controls:
         raise GateError(f"{path}: correctness service controls are inconsistent")
     raw_native_splits = document.get("native_nominal_splits_by_batch")
     if not isinstance(raw_native_splits, dict) or set(raw_native_splits) != {"1", "4"}:

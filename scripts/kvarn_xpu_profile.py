@@ -487,9 +487,14 @@ def start_profile_service(
     config: Mapping[str, Any],
 ) -> perf.ServiceProcess:
     command = [
-        *perf.service_command(run, args),
-        "--profiler-config",
-        json.dumps(config, sort_keys=True, separators=(",", ":")),
+        *perf.service_command(
+            run,
+            args,
+            extra_arguments=(
+                "--profiler-config",
+                json.dumps(config, sort_keys=True, separators=(",", ":")),
+            ),
+        ),
     ]
     perf.write_json_atomic(run_dir / "service-command.json", command)
     for attempt in range(1, args.startup_attempts + 1):
@@ -645,6 +650,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         "variant_parameters": variant,
         "logical_launcher": expected_launcher,
         "resolved_launcher": args.resolved_launchers[expected_launcher],
+        "launcher_binding": perf.launcher_binding_for_run(run, args),
         "repositories": [
             perf.repository_state("vllm-xpu-nix", args.packaging_repo),
             perf.repository_state("nix-config", args.config_repo),
@@ -799,6 +805,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
                 "variant_parameters": variant,
                 "logical_launcher": expected_launcher,
                 "resolved_launcher": args.resolved_launchers[expected_launcher],
+                "launcher_binding": perf.launcher_binding_for_run(run, args),
                 "process_package": identity["process_package"],
                 "process_closure_sha256": identity["process_closure_sha256"],
                 "candidate_closure_sha256": identity["candidate_closure_sha256"],
@@ -900,6 +907,17 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         choices=perf.NATIVE_FRONTEND_VARIANTS,
         default="reference",
     )
+    parser.add_argument(
+        "--flush-index-materialization",
+        choices=perf.FLUSH_INDEX_MATERIALIZATION_VARIANTS,
+        default="per_layer",
+    )
+    parser.add_argument(
+        "--onednn-deterministic",
+        type=int,
+        choices=(0, 1),
+        default=1,
+    )
     parser.add_argument("--native-splits", type=int)
     parser.add_argument(
         "--launcher",
@@ -916,6 +934,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--served-model", default="sunny-chat")
     parser.add_argument("--base-url", default="http://127.0.0.1:8000")
     parser.add_argument("--config-ref", default="path:/home/jasonbk/.config/nix")
+    parser.add_argument(
+        "--launcher-mode",
+        choices=perf.LAUNCHER_MODES,
+        default="immutable",
+        help=(
+            "immutable keeps variant-specific config apps; runtime-factory "
+            "resolves one package-free app and supplies all engine selectors"
+        ),
+    )
     parser.add_argument(
         "--runtime-cache",
         type=Path,
@@ -952,6 +979,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             args.native_kernel_variant or perf.REFERENCE_NATIVE_KERNEL_VARIANT
         )
         args.native_split_policy = args.native_split_policy or "fixed"
+        args.onednn_deterministic = bool(args.onednn_deterministic)
         args.output_dir = perf.ensure_durable(args.output_dir, allow_tmp=args.allow_tmp)
         args.candidate_env = args.candidate_env.expanduser().resolve()
         args.runtime_cache = args.runtime_cache.expanduser().resolve()
@@ -972,8 +1000,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             raise perf.RunnerError(
                 "--candidate-env must contain bin/python for XPU proof"
             )
-        if args.max_model_len != 65536:
-            raise perf.RunnerError("current Brutus profiling launchers are 65,536")
+        if args.max_model_len not in {65536, 262144}:
+            raise perf.RunnerError("max model length must be 65,536 or 262,144")
+        if (
+            args.max_model_len == 262144
+            and perf.launcher_mode(args) != "runtime-factory"
+        ):
+            raise perf.RunnerError(
+                "262K profiling requires --launcher-mode runtime-factory"
+            )
         if args.context < 1 or args.context + args.output_tokens > args.max_model_len:
             raise perf.RunnerError("context plus output tokens exceeds model length")
         if (
@@ -991,14 +1026,19 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             raise perf.RunnerError("max num batched tokens must be positive")
         if args.arm == "reference" and args.native_layout != "natural":
             raise perf.RunnerError("the auto reference layout must be natural")
-        if args.arm == "candidate" and (
-            args.native_layout != "xe2_dpas"
-            or args.native_kernel_variant not in perf.B70_Q6_KERNEL_VARIANTS
-            or args.native_split_policy != "b70_q6"
+        if (
+            args.arm == "candidate"
+            and perf.launcher_mode(args) == "immutable"
+            and (
+                args.native_layout != "xe2_dpas"
+                or args.native_kernel_variant not in perf.B70_Q6_KERNEL_VARIANTS
+                or args.native_split_policy != "b70_q6"
+            )
         ):
             raise perf.RunnerError(
-                "Round-2 candidate profiles require xe2_dpas, a Q6 kernel "
-                "variant, and b70_q6; natural/fixed is reference-only"
+                "immutable Round-2 profiling launchers require xe2_dpas, a Q6 "
+                "kernel variant, and b70_q6; use --launcher-mode runtime-factory "
+                "for other compatible compiled variants"
             )
         if (
             args.native_kernel_variant != perf.REFERENCE_NATIVE_KERNEL_VARIANT

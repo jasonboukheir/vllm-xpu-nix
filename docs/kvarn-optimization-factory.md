@@ -88,6 +88,44 @@ head-dimension-256 chunk-prefill policies and one qgroup-8, block-64
 paged-decode policy. This reduces the attention target from 663 Ninja actions
 to about 12 while retaining matched auto and Kvarn paths.
 
+### One package-free service launcher
+
+Config revisions `99a2710a` and `5dac52ef` expose
+`vllm-xpu-brutus-kvarn-factory-runtime`. The launcher contains no pinned vLLM
+or attention-library store reference. It accepts the already-built candidate
+package as its first argument, validates all `KVARN_FACTORY_*` selectors, then
+translates them into the engine environment and canonical serve arguments.
+Use it through the harness rather than invoking it by hand:
+
+```console
+scripts/kvarn_perf_run.py \
+  --launcher-mode runtime-factory \
+  --candidate-env /nix/store/CURRENT-FACTORY-CANDIDATE \
+  --native-layout xe2_dpas \
+  --native-kernel-variant q6_next_page_prefetch \
+  --native-split-policy b70_q6 \
+  ...
+```
+
+The same `--launcher-mode runtime-factory` switch is supported by
+`kvarn_correctness_run.py` and `kvarn_xpu_profile.py`. It makes cache dtype,
+layout, kernel, split policy/count, frontend, flush strategy, oneDNN mode,
+65K/262K model length, and B1/B4 width process-start choices. The launcher is
+resolved to one immutable Nix-store program once per harness run, while every
+service-start record contains the exact selector map. `KVARN_FACTORY_SPLITS`
+is recorded as `null` and omitted from the process environment when `b70_q6`
+owns split selection.
+
+The historical `immutable` launcher mode remains the default for compatibility.
+The correctness runner has one explicit exception in runtime-factory mode: its
+262K natural-layout, non-native compact-Kvarn oracle still uses the immutable
+reference launcher because the package-free config app intentionally supports
+only auto or native Kvarn. That oracle remains oneDNN-deterministic even when a
+runtime-factory candidate selects the diagnostic non-deterministic mode. This
+preserves the exact-token equivalence gate while recording the difference.
+Trailing `--kv-cache-dtype`, `--max-model-len`, or `--max-num-seqs` arguments
+are rejected because those values belong exclusively to the runtime selectors.
+
 That partial buildout is deliberately fail-narrow. It is valid for the frozen
 eager, no-MTP, no-prefix-cache, no-DCP Brutus profile and requires the startup
 log to report block size 64. A different model, effective block size, prefix

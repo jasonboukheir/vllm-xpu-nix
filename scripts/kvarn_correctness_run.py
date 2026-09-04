@@ -213,6 +213,13 @@ def native_frontend_for_spec(spec: ServiceSpec, args: argparse.Namespace) -> str
     return selected if spec.native else "reference"
 
 
+def onednn_deterministic_for_spec(spec: ServiceSpec, args: argparse.Namespace) -> str:
+    """The legacy compact non-native oracle has only a deterministic app."""
+    if not spec.native and perf.launcher_mode(args) == "runtime-factory":
+        return "1"
+    return perf.onednn_deterministic_environment(args)
+
+
 def candidate_variant_provenance(args: argparse.Namespace) -> dict[str, str]:
     split_policy = args.native_split_policy
     if split_policy == "fixed":
@@ -254,6 +261,8 @@ def service_variant_provenance(
 
 
 def launcher_name(spec: ServiceSpec, args: argparse.Namespace) -> str:
+    if spec.native and perf.launcher_mode(args) == "runtime-factory":
+        return perf.RUNTIME_FACTORY_LAUNCHER
     if spec.native and args.native_layout == "xe2_dpas":
         suffix = "-262k" if spec.max_model_len == 262144 else ""
         return (
@@ -263,12 +272,61 @@ def launcher_name(spec: ServiceSpec, args: argparse.Namespace) -> str:
     return spec.launcher
 
 
+def runtime_factory_axes_for_spec(
+    spec: ServiceSpec, args: argparse.Namespace
+) -> dict[str, str | None]:
+    if not spec.native:
+        raise CorrectnessError(
+            "the package-free launcher cannot select compact non-native Kvarn"
+        )
+    split_policy = native_split_policy_for_spec(spec, args)
+    axes: dict[str, str | None] = {
+        "KVARN_FACTORY_CACHE_LAYOUT": native_layout_for_spec(spec, args),
+        "KVARN_FACTORY_FLUSH_INDEX_MATERIALIZATION": (
+            perf.flush_index_materialization_environment(args)
+        ),
+        "KVARN_FACTORY_KERNEL_VARIANT": native_kernel_variant_for_spec(spec, args),
+        "KVARN_FACTORY_KV_CACHE_DTYPE": perf.COMPACT_DTYPE,
+        "KVARN_FACTORY_MAX_MODEL_LEN": str(spec.max_model_len),
+        "KVARN_FACTORY_MAX_NUM_SEQS": str(spec.batch),
+        "KVARN_FACTORY_NATIVE_XPU_FRONTEND": native_frontend_for_spec(spec, args),
+        "KVARN_FACTORY_ONEDNN_DETERMINISTIC": onednn_deterministic_for_spec(spec, args),
+        "KVARN_FACTORY_SPLITS": (
+            None
+            if split_policy == "b70_q6"
+            else native_splits_environment_for_spec(spec, args)
+        ),
+        "KVARN_FACTORY_SPLIT_POLICY": split_policy,
+    }
+    if tuple(axes) != perf.RUNTIME_FACTORY_SELECTORS:
+        raise CorrectnessError("runtime factory selector schema drifted")
+    return axes
+
+
+def launcher_binding_for_spec(
+    spec: ServiceSpec, args: argparse.Namespace
+) -> dict[str, Any]:
+    logical = launcher_name(spec, args)
+    runtime = spec.native and perf.launcher_mode(args) == "runtime-factory"
+    binding: dict[str, Any] = {
+        "mode": "runtime-factory" if runtime else "immutable",
+        "logical_launcher": logical,
+        "resolved_launcher": getattr(args, "resolved_launchers", {}).get(logical),
+    }
+    if runtime:
+        binding["runtime_axes"] = runtime_factory_axes_for_spec(spec, args)
+    elif perf.launcher_mode(args) == "runtime-factory":
+        binding["exception"] = "compact_non_native_reference_not_selectable"
+    return binding
+
+
 def service_spec_evidence(
     spec: ServiceSpec, args: argparse.Namespace
 ) -> dict[str, Any]:
     return {
         **dataclasses.asdict(spec),
         "launcher": launcher_name(spec, args),
+        "launcher_binding": launcher_binding_for_spec(spec, args),
         "native_layout": native_layout_for_spec(spec, args),
         "native_kernel_variant": native_kernel_variant_for_spec(spec, args),
         "native_kernel_variant_id": perf.NATIVE_KERNEL_VARIANTS[
@@ -276,6 +334,7 @@ def service_spec_evidence(
         ],
         "native_output_dtype": args.native_output_dtype,
         "native_frontend": native_frontend_for_spec(spec, args),
+        "onednn_deterministic": onednn_deterministic_for_spec(spec, args),
         "max_decode_splits": native_max_splits_for_spec(spec, args),
         "nominal_decode_splits": native_splits_for_spec(spec, args),
         "native_split_policy": native_split_policy_for_spec(spec, args),
@@ -424,12 +483,21 @@ def primitive_environment(args: argparse.Namespace) -> dict[str, str]:
 
 def service_environment(spec: ServiceSpec, args: argparse.Namespace) -> dict[str, str]:
     environment = runner_environment(args)
-    environment["KVARN_FACTORY_FLUSH_INDEX_MATERIALIZATION"] = (
-        perf.flush_index_materialization_environment(args)
-    )
-    environment["KVARN_FACTORY_NATIVE_XPU_FRONTEND"] = native_frontend_for_spec(
-        spec, args
-    )
+    if spec.native and perf.launcher_mode(args) == "runtime-factory":
+        environment.update(
+            {
+                name: value
+                for name, value in runtime_factory_axes_for_spec(spec, args).items()
+                if value is not None
+            }
+        )
+    else:
+        environment["KVARN_FACTORY_FLUSH_INDEX_MATERIALIZATION"] = (
+            perf.flush_index_materialization_environment(args)
+        )
+        environment["KVARN_FACTORY_NATIVE_XPU_FRONTEND"] = native_frontend_for_spec(
+            spec, args
+        )
     environment["KVARN_PREFILL_FP16_WINDOW_BLOCKS"] = str(DEFAULT_PREFILL_WINDOW_BLOCKS)
     return environment
 
@@ -1007,7 +1075,7 @@ def verify_service_profile(
         "KVARN_NATIVE_XPU_PERSISTENT_SCRATCH": native,
         "KVARN_NATIVE_XPU_SPLITS": native_splits_environment_for_spec(spec, args),
         "KVARN_NATIVE_XPU_SPLIT_POLICY": native_split_policy_for_spec(spec, args),
-        "KVARN_ONEDNN_DETERMINISTIC": "1",
+        "KVARN_ONEDNN_DETERMINISTIC": onednn_deterministic_for_spec(spec, args),
         "KVARN_PREFILL_FP16_WINDOW_BLOCKS": str(DEFAULT_PREFILL_WINDOW_BLOCKS),
         "VLLM_CACHE_ROOT": str(args.runtime_cache / "vllm-xpu-brutus-kvarn"),
         "VLLM_TARGET_DEVICE": "xpu",
@@ -1046,11 +1114,16 @@ def verify_service_profile(
 
 
 def service_command(spec: ServiceSpec, args: argparse.Namespace) -> list[str]:
+    trailing_arguments = [
+        "--max-num-batched-tokens",
+        str(args.max_num_batched_tokens),
+    ]
+    if spec.native and perf.launcher_mode(args) == "runtime-factory":
+        perf.validate_runtime_factory_trailing_arguments(trailing_arguments)
     return [
         args.resolved_launchers[launcher_name(spec, args)],
         str(args.candidate_env),
-        "--max-num-batched-tokens",
-        str(args.max_num_batched_tokens),
+        *trailing_arguments,
     ]
 
 
@@ -1913,7 +1986,7 @@ def build_manifest(
             "kvarn_flush_index_materialization": (
                 perf.flush_index_materialization_environment(args)
             ),
-            "kvarn_onednn_deterministic": "1",
+            "kvarn_onednn_deterministic": perf.onednn_deterministic_environment(args),
             "kvarn_native_frontend": perf.native_frontend_environment(args),
             "vllm_use_v2_model_runner": perf.VLLM_USE_V2_MODEL_RUNNER,
         },
@@ -2006,6 +2079,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         },
         "native_output_dtype": args.native_output_dtype,
         "native_split_policy": args.native_split_policy,
+        "launcher_mode": perf.launcher_mode(args),
         "flush_index_materialization": (
             perf.flush_index_materialization_environment(args)
         ),
@@ -2014,7 +2088,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             "kvarn_flush_index_materialization": (
                 perf.flush_index_materialization_environment(args)
             ),
-            "kvarn_onednn_deterministic": "1",
+            "kvarn_onednn_deterministic": perf.onednn_deterministic_environment(args),
             "kvarn_native_frontend": perf.native_frontend_environment(args),
             "vllm_use_v2_model_runner": perf.VLLM_USE_V2_MODEL_RUNNER,
         },
@@ -2101,6 +2175,13 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="direct native output path that must be qualified (default: bf16)",
     )
     parser.add_argument(
+        "--onednn-deterministic",
+        type=int,
+        choices=(0, 1),
+        default=1,
+        help="candidate engine oneDNN selector; 0 requires runtime-factory mode",
+    )
+    parser.add_argument(
         "--flush-index-materialization",
         choices=perf.FLUSH_INDEX_MATERIALIZATION_VARIANTS,
         default="per_layer",
@@ -2130,6 +2211,16 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--cancel-after-events", type=int, default=257)
     parser.add_argument("--base-url", default="http://127.0.0.1:8000")
     parser.add_argument("--config-ref", default="path:/home/jasonbk/.config/nix")
+    parser.add_argument(
+        "--launcher-mode",
+        choices=perf.LAUNCHER_MODES,
+        default="immutable",
+        help=(
+            "immutable keeps the historical named launchers; runtime-factory "
+            "uses the package-free launcher for every native phase while the "
+            "compact non-native 262K reference remains immutable"
+        ),
+    )
     parser.add_argument(
         "--fixtures",
         type=Path,
@@ -2175,18 +2266,35 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--allow-tmp", action="store_true")
     args = parser.parse_args(argv)
     try:
+        args.onednn_deterministic = bool(args.onednn_deterministic)
         if args.native_output_dtype != "bf16":
             raise CorrectnessError(
                 "finalist service qualification requires --native-output-dtype bf16"
             )
-        if (
+        if perf.launcher_mode(args) == "immutable" and (
             args.native_layout != "xe2_dpas"
             or args.native_kernel_variant not in perf.B70_Q6_KERNEL_VARIANTS
             or args.native_split_policy != "b70_q6"
         ):
             raise CorrectnessError(
-                "Round-2 finalist qualification requires xe2_dpas, a Q6 kernel "
-                "variant, and b70_q6; natural/fixed is reference-only"
+                "immutable Round-2 finalist launchers require xe2_dpas, a Q6 "
+                "kernel variant, and b70_q6; use --launcher-mode runtime-factory "
+                "for other compatible compiled variants"
+            )
+        if (
+            not args.onednn_deterministic
+            and perf.launcher_mode(args) != "runtime-factory"
+        ):
+            raise CorrectnessError(
+                "non-deterministic oneDNN correctness requires "
+                "--launcher-mode runtime-factory"
+            )
+        if (
+            args.native_kernel_variant != perf.REFERENCE_NATIVE_KERNEL_VARIANT
+            and args.native_layout != "xe2_dpas"
+        ):
+            raise CorrectnessError(
+                "non-baseline native kernel variants require --native-layout xe2_dpas"
             )
         if args.native_split_policy == "b70_q6":
             if args.native_splits:

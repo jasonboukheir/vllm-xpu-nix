@@ -365,6 +365,62 @@ def test_profile_command_and_dpas_launcher_provenance(
     }
 
 
+def test_runtime_factory_profile_accepts_runtime_axes_without_named_launcher(
+    tmp_path: Path,
+) -> None:
+    candidate = tmp_path / "candidate"
+    (candidate / "bin").mkdir(parents=True)
+    (candidate / "bin" / "vllm").write_text("", encoding="utf-8")
+    (candidate / "bin" / "python").write_text("", encoding="utf-8")
+    config = tmp_path / "config"
+    config.mkdir()
+
+    args = profile.parse_args(
+        [
+            "--candidate-env",
+            str(candidate),
+            "--output-dir",
+            str(tmp_path / "profile"),
+            "--allow-tmp",
+            "--runtime-cache",
+            str(tmp_path / "runtime-cache"),
+            "--config-repo",
+            str(config),
+            "--config-ref",
+            f"path:{config}",
+            "--launcher-mode",
+            "runtime-factory",
+            "--native-layout",
+            "natural",
+            "--native-kernel-variant",
+            "baseline",
+            "--native-split-policy",
+            "fixed",
+            "--native-splits",
+            "17",
+            "--flush-index-materialization",
+            "shared",
+            "--onednn-deterministic",
+            "0",
+        ]
+    )
+    run = perf.PlannedRun(perf.Workload(4096, 1, 96, 1, 17), "candidate", 1)
+
+    assert perf.launcher_name(run, args) == perf.RUNTIME_FACTORY_LAUNCHER
+    assert perf.runtime_factory_axes_for_run(run, args) == {
+        "KVARN_FACTORY_CACHE_LAYOUT": "natural",
+        "KVARN_FACTORY_FLUSH_INDEX_MATERIALIZATION": "shared",
+        "KVARN_FACTORY_KERNEL_VARIANT": "baseline",
+        "KVARN_FACTORY_KV_CACHE_DTYPE": perf.COMPACT_DTYPE,
+        "KVARN_FACTORY_MAX_MODEL_LEN": "65536",
+        "KVARN_FACTORY_MAX_NUM_SEQS": "1",
+        "KVARN_FACTORY_NATIVE_XPU_FRONTEND": "reference",
+        "KVARN_FACTORY_ONEDNN_DETERMINISTIC": "0",
+        "KVARN_FACTORY_SPLITS": "17",
+        "KVARN_FACTORY_SPLIT_POLICY": "fixed",
+    }
+
+
 def test_candidate_profile_cli_rejects_fixed_round2_launcher_contract(
     tmp_path: Path,
 ) -> None:

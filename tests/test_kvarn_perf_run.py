@@ -982,6 +982,69 @@ def test_service_environment_pins_window_and_scrubs_full_defer(
     )
 
 
+def test_runtime_factory_environment_carries_exact_per_process_axes(
+    tmp_path: Path,
+) -> None:
+    args = _args(tmp_path)
+    args.launcher_mode = "runtime-factory"
+    args.native_layout = "xe2_dpas"
+    args.native_kernel_variant = "q6_next_page_prefetch"
+    args.native_split_policy = "b70_q6"
+    args.native_splits = {1: 32, 4: 8}
+    args.onednn_deterministic = False
+    args.flush_index_materialization = "shared"
+    args.native_frontend = "qkv_scatter"
+    candidate = PlannedRun(Workload(65023, 4, 32, 4, 17), "candidate", 1)
+    reference = PlannedRun(candidate.workload, "reference", 2)
+
+    candidate_axes = runner.runtime_factory_axes_for_run(candidate, args)
+    assert candidate_axes == {
+        "KVARN_FACTORY_CACHE_LAYOUT": "xe2_dpas",
+        "KVARN_FACTORY_FLUSH_INDEX_MATERIALIZATION": "shared",
+        "KVARN_FACTORY_KERNEL_VARIANT": "q6_next_page_prefetch",
+        "KVARN_FACTORY_KV_CACHE_DTYPE": runner.COMPACT_DTYPE,
+        "KVARN_FACTORY_MAX_MODEL_LEN": "65536",
+        "KVARN_FACTORY_MAX_NUM_SEQS": "4",
+        "KVARN_FACTORY_NATIVE_XPU_FRONTEND": "qkv_scatter",
+        "KVARN_FACTORY_ONEDNN_DETERMINISTIC": "0",
+        "KVARN_FACTORY_SPLITS": None,
+        "KVARN_FACTORY_SPLIT_POLICY": "b70_q6",
+    }
+    assert "KVARN_FACTORY_SPLITS" not in runner.service_environment(candidate, args)
+    assert runner.runtime_factory_axes_for_run(reference, args) == {
+        "KVARN_FACTORY_CACHE_LAYOUT": "natural",
+        "KVARN_FACTORY_FLUSH_INDEX_MATERIALIZATION": "per_layer",
+        "KVARN_FACTORY_KERNEL_VARIANT": "baseline",
+        "KVARN_FACTORY_KV_CACHE_DTYPE": "auto",
+        "KVARN_FACTORY_MAX_MODEL_LEN": "65536",
+        "KVARN_FACTORY_MAX_NUM_SEQS": "4",
+        "KVARN_FACTORY_NATIVE_XPU_FRONTEND": "reference",
+        "KVARN_FACTORY_ONEDNN_DETERMINISTIC": "0",
+        "KVARN_FACTORY_SPLITS": "1",
+        "KVARN_FACTORY_SPLIT_POLICY": "fixed",
+    }
+    assert runner.launcher_name(candidate, args) == runner.RUNTIME_FACTORY_LAUNCHER
+    assert runner.launcher_name(reference, args) == runner.RUNTIME_FACTORY_LAUNCHER
+
+
+@pytest.mark.parametrize(
+    "argument",
+    [
+        "--kv-cache-dtype",
+        "--kv-cache-dtype=auto",
+        "--max-model-len",
+        "--max-model-len=65536",
+        "--max-num-seqs",
+        "--max-num-seqs=4",
+    ],
+)
+def test_runtime_factory_rejects_duplicate_launcher_owned_arguments(
+    argument: str,
+) -> None:
+    with pytest.raises(RunnerError, match="trailing duplicates"):
+        runner.validate_runtime_factory_trailing_arguments([argument])
+
+
 def test_native_log_allows_unrelated_fallback_but_rejects_kvarn_fallback(
     tmp_path: Path,
 ) -> None:
@@ -1532,6 +1595,7 @@ def test_matched_profile_normalizes_only_declared_arm_differences(
         "do-not-persist",
     ]
     environment = {
+        "KVARN_FLUSH_INDEX_MATERIALIZATION": "per_layer",
         "KVARN_NATIVE_XPU": "0",
         "KVARN_NATIVE_XPU_CACHE_LAYOUT": "natural",
         "KVARN_NATIVE_XPU_DPAS_LAYOUT": "0",
@@ -1547,6 +1611,7 @@ def test_matched_profile_normalizes_only_declared_arm_differences(
     environment["KVARN_NATIVE_XPU"] = "1"
     environment["KVARN_NATIVE_XPU_DPAS_LAYOUT"] = "0"
     environment["KVARN_NATIVE_XPU_SPLITS"] = "24"
+    environment["KVARN_FLUSH_INDEX_MATERIALIZATION"] = "shared"
     candidate = service_profile_evidence(argv, environment)
 
     assert (
@@ -1561,6 +1626,10 @@ def test_matched_profile_normalizes_only_declared_arm_differences(
     assert reference["vllm_use_v2_model_runner_environment"] == "0"
     assert "2048" in reference["redacted_argv"]
     assert "KVARN_NATIVE_XPU_SPLITS" in reference["allowed_arm_environment_differences"]
+    assert (
+        "KVARN_FLUSH_INDEX_MATERIALIZATION"
+        in reference["allowed_arm_environment_differences"]
+    )
     assert (
         "KVARN_NATIVE_XPU_DPAS_LAYOUT"
         in reference["allowed_arm_environment_differences"]
@@ -1724,6 +1793,68 @@ def test_launchers_are_resolved_once_to_immutable_programs(
         "--max-num-batched-tokens",
         "2048",
     ]
+
+
+def test_runtime_factory_resolves_one_launcher_for_all_arms_and_batches(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    args = _args(tmp_path)
+    args.launcher_mode = "runtime-factory"
+    args.native_layout = "xe2_dpas"
+    args.native_kernel_variant = "q8_vector"
+    args.native_split_policy = "fixed"
+    args.native_splits = {1: 17, 4: 24}
+    args.config_repo.mkdir()
+    plan = [
+        PlannedRun(Workload(4096, batch, 4, batch, 17), arm, order)
+        for order, (arm, batch) in enumerate(
+            (("reference", 1), ("candidate", 1), ("reference", 4), ("candidate", 4)),
+            start=1,
+        )
+    ]
+    commands: list[list[str]] = []
+
+    def fake_run(command: list[str], **_kwargs: object) -> SimpleCompleted:
+        commands.append(command)
+        value: object = (
+            {
+                "program": f"/logical/bin/{runner.RUNTIME_FACTORY_LAUNCHER}",
+                "context": {"/nix/store/factory.drv": {"outputs": ["out"]}},
+            }
+            if "eval" in command
+            else [
+                {
+                    "drvPath": "/nix/store/factory.drv",
+                    "outputs": {"out": "/nix/store/factory"},
+                }
+            ]
+        )
+        return SimpleCompleted(json.dumps(value))
+
+    class SimpleCompleted:
+        def __init__(self, stdout: str) -> None:
+            self.stdout = stdout
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(Path, "is_file", lambda _self: True)
+
+    resolved = resolve_launchers(plan, args)
+
+    assert len(commands) == 2
+    assert resolved == {
+        runner.RUNTIME_FACTORY_LAUNCHER: (
+            f"/nix/store/factory/bin/{runner.RUNTIME_FACTORY_LAUNCHER}"
+        )
+    }
+    args.resolved_launchers = resolved
+    assert all(
+        service_command(run, args)[0]
+        == f"/nix/store/factory/bin/{runner.RUNTIME_FACTORY_LAUNCHER}"
+        for run in plan
+    )
+    binding = runner.launcher_binding_for_run(plan[-1], args)
+    assert binding["logical_launcher"] == runner.RUNTIME_FACTORY_LAUNCHER
+    assert binding["runtime_axes"]["KVARN_FACTORY_SPLITS"] == "24"
 
 
 def test_launcher_resolution_rejects_mismatched_app_derivation(

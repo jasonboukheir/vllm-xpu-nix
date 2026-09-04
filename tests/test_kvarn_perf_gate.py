@@ -10,7 +10,7 @@ from scripts import kvarn_perf_gate as gate_module
 from scripts.kvarn_perf_gate import GateError, _load_correctness, compare
 
 
-def test_combined_library_matrix_registers_opt_in_variants_through_id15() -> None:
+def test_combined_library_matrix_registers_opt_in_variants_through_id18() -> None:
     assert [
         (item["kernel_variant"], item["kernel_variant_id"])
         for item in gate_module.COMBINED_LIBRARY_VARIANT_MATRIX
@@ -27,6 +27,9 @@ def test_combined_library_matrix_registers_opt_in_variants_through_id15() -> Non
         ("q6_next_page_prefetch_split_reducer", 13),
         ("q6_simd_unpack", 14),
         ("q6_block_output_store", 15),
+        ("q6_current_half_v_prefetch", 16),
+        ("q6_page_record_cursor", 17),
+        ("q6_prefetch_record_cursor", 18),
     ]
 
 

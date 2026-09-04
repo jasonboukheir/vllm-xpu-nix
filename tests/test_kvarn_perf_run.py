@@ -470,6 +470,9 @@ def test_commands_pin_launcher_and_deterministic_workload(tmp_path: Path) -> Non
         ("q6_next_page_prefetch_split_reducer", 13),
         ("q6_simd_unpack", 14),
         ("q6_block_output_store", 15),
+        ("q6_current_half_v_prefetch", 16),
+        ("q6_page_record_cursor", 17),
+        ("q6_prefetch_record_cursor", 18),
     ],
 )
 def test_perf_launcher_name_binds_each_factory_variant(

@@ -238,6 +238,36 @@ VARIANTS = {
             "block2d_main_output_standard_split_reduction",
             "tile64_block2d_output_store",
         ),
+        VariantSpec(
+            16,
+            "q6_current_half_v_prefetch",
+            "q6 ID13 reader plus current-half V prefetch",
+            "xe2_dpas",
+            "native_xe2_qlen1_q6_current_half_v_prefetch",
+            "runtime_explicit_count",
+            "specialized_split_reduction",
+            "tile64_next_page_current_half_v_prefetch",
+        ),
+        VariantSpec(
+            17,
+            "q6_page_record_cursor",
+            "q6 ID13 reader plus page-record address reuse",
+            "xe2_dpas",
+            "native_xe2_qlen1_q6_page_record_cursor",
+            "runtime_explicit_count",
+            "specialized_split_reduction",
+            "tile64_next_page_prefetch_record_cursor",
+        ),
+        VariantSpec(
+            18,
+            "q6_prefetch_record_cursor",
+            "q6 ID13 reader plus current-half V prefetch and record reuse",
+            "xe2_dpas",
+            "native_xe2_qlen1_q6_prefetch_record_cursor",
+            "runtime_explicit_count",
+            "specialized_split_reduction",
+            "tile64_next_page_current_half_v_prefetch_record_cursor",
+        ),
     )
 }
 VARIANTS_BY_ID = {spec.variant_id: spec for spec in VARIANTS.values()}
@@ -254,6 +284,9 @@ DEFAULT_VARIANT_NAMES = (
     "q6_next_page_prefetch_split_reducer",
     "q6_simd_unpack",
     "q6_block_output_store",
+    "q6_current_half_v_prefetch",
+    "q6_page_record_cursor",
+    "q6_prefetch_record_cursor",
 )
 # ``all`` is literal: every runnable layout-compatible dispatch compiled into
 # the shared attention DSO participates.  DEFAULT_VARIANT_NAMES remains the
@@ -318,6 +351,9 @@ FOCUSED_XPU_262K_TESTS = {
     13: f"{_XPU_LONG_CONTEXT_TEST}[q6-next-page-prefetch-split-reducer]",
     14: f"{_XPU_LONG_CONTEXT_TEST}[q6-simd-unpack]",
     15: f"{_XPU_LONG_CONTEXT_TEST}[q6-block-output-store]",
+    16: f"{_XPU_LONG_CONTEXT_TEST}[q6-current-half-v-prefetch]",
+    17: f"{_XPU_LONG_CONTEXT_TEST}[q6-page-record-cursor]",
+    18: f"{_XPU_LONG_CONTEXT_TEST}[q6-prefetch-record-cursor]",
 }
 # The Q8-family variants (0, 1, and 3) use a direct split-24 262K case as
 # both gates. Q6 variants also get the query-row/LSE multisplit attribution.
@@ -329,7 +365,7 @@ FOCUSED_XPU_MULTISPLIT_TESTS = {
     4: f"{_XPU_Q6_MULTISPLIT_TEST}[4]",
     **{
         variant_id: f"{_XPU_Q6_MULTISPLIT_TEST}[{variant_id}]"
-        for variant_id in (6, 7, 8, 9, 10, 11, 12, 13, 14, 15)
+        for variant_id in (6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18)
     },
 }
 FOCUSED_XPU_ID15_TEST = (

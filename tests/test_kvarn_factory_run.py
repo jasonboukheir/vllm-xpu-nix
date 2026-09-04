@@ -79,8 +79,11 @@ def test_named_factory_ids_are_complete_and_stable() -> None:
         "q6_next_page_prefetch_split_reducer": 13,
         "q6_simd_unpack": 14,
         "q6_block_output_store": 15,
+        "q6_current_half_v_prefetch": 16,
+        "q6_page_record_cursor": 17,
+        "q6_prefetch_record_cursor": 18,
     }
-    assert set(factory.VARIANTS_BY_ID) == set(range(16)) - {5}
+    assert set(factory.VARIANTS_BY_ID) == set(range(19)) - {5}
     assert all(spec.dpas_layout for spec in factory.VARIANTS.values())
     assert all(spec.cache_layout == "xe2_dpas" for spec in factory.VARIANTS.values())
     assert all(
@@ -112,6 +115,9 @@ def test_named_factory_ids_are_complete_and_stable() -> None:
         "q6_next_page_prefetch_split_reducer",
         "q6_simd_unpack",
         "q6_block_output_store",
+        "q6_current_half_v_prefetch",
+        "q6_page_record_cursor",
+        "q6_prefetch_record_cursor",
     )
     assert factory.ALL_VARIANT_NAMES == tuple(factory.VARIANTS)
     assert factory.VARIANTS["q6_page_pair"].scheduling_variant == "paired_page_k128"
@@ -134,6 +140,27 @@ def test_named_factory_ids_are_complete_and_stable() -> None:
     assert (
         factory.VARIANTS["q6_block_output_store"].fusion_strategy
         == "block2d_main_output_standard_split_reduction"
+    )
+    for name in (
+        "q6_current_half_v_prefetch",
+        "q6_page_record_cursor",
+        "q6_prefetch_record_cursor",
+    ):
+        assert (
+            factory.VARIANTS[name].fusion_strategy
+            == "specialized_split_reduction"
+        )
+    assert (
+        factory.VARIANTS["q6_current_half_v_prefetch"].scheduling_variant
+        == "tile64_next_page_current_half_v_prefetch"
+    )
+    assert (
+        factory.VARIANTS["q6_page_record_cursor"].scheduling_variant
+        == "tile64_next_page_prefetch_record_cursor"
+    )
+    assert (
+        factory.VARIANTS["q6_prefetch_record_cursor"].scheduling_variant
+        == "tile64_next_page_current_half_v_prefetch_record_cursor"
     )
 
 
@@ -160,6 +187,9 @@ def test_variant_parser_accepts_names_and_all_but_not_numeric_aliases() -> None:
         13,
         14,
         15,
+        16,
+        17,
+        18,
     ]
     with pytest.raises(factory.FactoryError, match="ID 5.*reserved"):
         factory.parse_variants("page128")
@@ -184,6 +214,9 @@ def test_focused_kill_suite_maps_every_variant_to_multisplit_and_262k() -> None:
         13: "q6-next-page-prefetch-split-reducer",
         14: "q6-simd-unpack",
         15: "q6-block-output-store",
+        16: "q6-current-half-v-prefetch",
+        17: "q6-page-record-cursor",
+        18: "q6-prefetch-record-cursor",
     }
     assert set(expected_node_ids) == set(factory.VARIANTS_BY_ID)
     assert set(factory.FOCUSED_XPU_MULTISPLIT_TESTS) == set(factory.VARIANTS_BY_ID)

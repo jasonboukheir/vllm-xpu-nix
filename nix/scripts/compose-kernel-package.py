@@ -1,4 +1,4 @@
-"""Restamp composed vllm-xpu-kernels metadata and regenerate RECORD."""
+"""Scrub donor bytecode, restamp metadata, and regenerate RECORD."""
 
 from __future__ import annotations
 
@@ -12,10 +12,28 @@ from pathlib import Path
 from packaging.version import Version
 
 
+def scrub_cached_bytecode(site: Path) -> None:
+    """Remove bytecode whose code objects retain the donor store path."""
+    for pattern in ("*.pyc", "*.pyo"):
+        for path in site.rglob(pattern):
+            path.unlink()
+    cache_dirs = sorted(
+        site.rglob("__pycache__"), key=lambda path: len(path.parts), reverse=True
+    )
+    for path in cache_dirs:
+        if path.is_dir() and not any(path.iterdir()):
+            path.rmdir()
+
+
 def main() -> None:
     site = Path(sys.argv[1])
     old_dist_info = Path(sys.argv[2])
     normalized_version = str(Version(sys.argv[3]))
+
+    # baseGlue is copied into the composed package. Its cached bytecode embeds
+    # the donor's absolute path in co_filename, which would retain the entire
+    # donor output in the runtime closure. Source files remain importable.
+    scrub_cached_bytecode(site)
 
     metadata = old_dist_info / "METADATA"
     text, count = re.subn(

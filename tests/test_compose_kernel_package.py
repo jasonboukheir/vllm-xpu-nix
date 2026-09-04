@@ -2,6 +2,7 @@ import base64
 import csv
 import hashlib
 import importlib.util
+import py_compile
 from pathlib import Path
 
 SCRIPT = Path(__file__).parents[1] / "nix" / "scripts" / "compose-kernel-package.py"
@@ -21,6 +22,17 @@ def test_restamps_metadata_and_regenerates_record(tmp_path, monkeypatch):
     package.mkdir(parents=True)
     (package / "_C.abi3.so").write_bytes(b"base")
     (package / "_vllm_fa2_C.abi3.so").write_bytes(b"fa2")
+    source = package / "donor.py"
+    source.write_text("VALUE = 1\n")
+    cache = package / "__pycache__"
+    cache.mkdir()
+    bytecode = cache / "donor.cpython-312.pyc"
+    py_compile.compile(
+        str(source),
+        cfile=str(bytecode),
+        dfile="/nix/store/fake-base-glue/vllm_xpu_kernels/donor.py",
+        doraise=True,
+    )
 
     old_dist_info = site / "vllm_xpu_kernels-0.1.14.1+src.old.dist-info"
     old_dist_info.mkdir()
@@ -45,6 +57,8 @@ def test_restamps_metadata_and_regenerates_record(tmp_path, monkeypatch):
 
     new_dist_info = site / "vllm_xpu_kernels-0.1.14.1+unstable.2026.9.4.gabc.dist-info"
     assert not old_dist_info.exists()
+    assert not bytecode.exists()
+    assert not cache.exists()
     assert (
         "Version: 0.1.14.1+unstable.2026.9.4.gabc\n"
         in (new_dist_info / "METADATA").read_text()
@@ -60,3 +74,4 @@ def test_restamps_metadata_and_regenerates_record(tmp_path, monkeypatch):
         f"sha256={expected_digest.rstrip(b'=').decode()}",
         "3",
     ]
+    assert not any(name.endswith((".pyc", ".pyo")) for name in rows)

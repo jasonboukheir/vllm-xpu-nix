@@ -32,7 +32,7 @@ Every artifact records these axes explicitly:
 | `kernel_strategy` | `q8_bf16_dpas`, `q6_bf16_dpas` |
 | `split_policy` | `fixed16`, `fixed24`, `b70_context_bucket_v1` |
 | `fusion_strategy` | `reduce_h256`, `qkv_store_reduce_h256` |
-| `scheduling_variant` | `tile64`, `page128` |
+| `scheduling_variant` | `tile64`, `tile64_next_page_prefetch`, `tile64_vector_load_simd_unpack` |
 | provenance | source commits/diffs, derivations and closures, exact launcher |
 | workload | model revision, B1/B4, context, output length, seed, all serve args |
 | hardware | exact device name plus a successful candidate XPU tensor operation |
@@ -53,8 +53,9 @@ to enable the conservative natural-layout/reference implementation. Factory
 selectors are optional overrides for B70 experiments, not prerequisites for
 using Kvarn.
 
-The round-1 library exposes this frozen engine-start selection surface. Kernel
-variants and split counts do not require rebuilding the extension:
+The combined factory library exposes this frozen engine-start selection
+surface. Kernel variants and split counts do not require rebuilding the
+extension:
 
 | Selector | Values in the combined build | Lifetime |
 |---|---|---|
@@ -96,7 +97,7 @@ prefetch/reducer and SIMD-unpack experiments; ID `15` isolates two-row plus
 one-row block-2D output stores from all of those changes.
 
 Build `.#vllm-xpu-kvarn-factory` for the complete current-layout matrix. It
-compiles every implemented Round-1 and Round-2 decode specialization plus the
+compiles every implemented decode specialization through ID15 plus the
 fused-QKV operator into one BMG-AOT attention library. Runtime selection
 therefore does not start another Nix build. The package also freezes the
 generated upstream FA2 buildout to Brutus's text-only Qwen3.8 profile: two
@@ -106,7 +107,8 @@ to about 12 while retaining matched auto and Kvarn paths.
 
 ### One package-free service launcher
 
-Config revisions `99a2710a` and `5dac52ef` expose
+Config branch `feature/kvarn-runtime-factory` at revision
+`c3bfa82fe29ac598c63301fedcc6e04ccf56e547` exposes
 `vllm-xpu-brutus-kvarn-factory-runtime`. The launcher contains no pinned vLLM
 or attention-library store reference. It accepts the already-built candidate
 package as its first argument, validates all `KVARN_FACTORY_*` selectors, then

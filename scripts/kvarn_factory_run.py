@@ -350,13 +350,9 @@ def verify_nix_artifact(
     output_path = nix_store_root(resolved)
     derivation = attestation["derivation"]
     try:
-        outputs = sorted(
-            set(
-                command_runner(
-                    ("nix-store", "-q", "--outputs", derivation)
-                ).splitlines()
-            )
-        )
+        # Query output -> deriver.  The reverse `--outputs <drv>` query is not
+        # valid for a realized floating content-addressed derivation on Nix
+        # 2.34, even when this exact output reports that resolved deriver.
         actual_deriver = command_runner(
             ("nix-store", "-q", "--deriver", str(output_path))
         )
@@ -365,10 +361,6 @@ def verify_nix_artifact(
         )
     except (OSError, subprocess.CalledProcessError) as error:
         raise FactoryError(f"cannot verify {label} Nix artifact: {error}") from error
-    if str(output_path) not in outputs:
-        raise FactoryError(
-            f"{label} library output {output_path} is not produced by {derivation}"
-        )
     if actual_deriver != derivation:
         raise FactoryError(
             f"{label} output deriver mismatch: expected {derivation}, "
@@ -406,21 +398,14 @@ def verify_nix_output(
         raise FactoryError(f"{label} must be an exact Nix store output: {resolved}")
     derivation = attestation["derivation"]
     try:
-        outputs = sorted(
-            set(
-                command_runner(
-                    ("nix-store", "-q", "--outputs", derivation)
-                ).splitlines()
-            )
-        )
+        # See verify_nix_artifact: output -> deriver is the CA-safe identity
+        # check, while derivation -> outputs can fail for a resolved CA drv.
         actual_deriver = command_runner(("nix-store", "-q", "--deriver", str(resolved)))
         closure = sorted(
             set(command_runner(("nix-store", "-qR", str(resolved))).splitlines())
         )
     except (OSError, subprocess.CalledProcessError) as error:
         raise FactoryError(f"cannot verify {label} Nix output: {error}") from error
-    if str(resolved) not in outputs:
-        raise FactoryError(f"{label} output {resolved} is not produced by {derivation}")
     if actual_deriver != derivation:
         raise FactoryError(
             f"{label} output deriver mismatch: expected {derivation}, "

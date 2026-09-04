@@ -254,7 +254,7 @@ def _service_environment(
         "KVARN_FLUSH_INDEX_MATERIALIZATION": (
             correctness.perf.flush_index_materialization_environment(args)
         ),
-        "KVARN_NATIVE_XPU_FRONTEND": correctness.perf.native_frontend_environment(args),
+        "KVARN_NATIVE_XPU_FRONTEND": correctness.native_frontend_for_spec(spec, args),
         "KVARN_NATIVE_XPU_KERNEL_VARIANT": (
             correctness.native_kernel_variant_for_spec(spec, args)
         ),
@@ -290,6 +290,8 @@ def test_service_profile_enforces_262k_reference_and_native_settings(
         native_split_policy="fixed",
         native_splits={1: 24, 4: 16},
         native_output_dtype="bf16",
+        flush_index_materialization="per_layer",
+        native_frontend="reference",
         hf_home=tmp_path / "hf",
         runtime_cache=tmp_path / "cache",
     )
@@ -314,6 +316,8 @@ def test_dpas_mode_uses_separate_launchers_and_keeps_reference_natural(
         native_split_policy="fixed",
         native_splits={1: 32, 4: 8},
         native_output_dtype="bf16",
+        flush_index_materialization="per_layer",
+        native_frontend="reference",
         model="model",
         served_model="sunny-chat",
         model_revision="1" * 40,
@@ -331,7 +335,8 @@ def test_dpas_mode_uses_separate_launchers_and_keeps_reference_natural(
     assert correctness.native_layout_for_spec(native, args) == "xe2_dpas"
     assert correctness.native_layout_for_spec(reference, args) == "natural"
     assert correctness.candidate_variant_provenance(args)["variant_id"] == (
-        "native-xe2-xe2_dpas-q6_scalar-fixed_b1s32_b4s8-eager_mnbt2048"
+        "native-xe2-xe2_dpas-q6_scalar-fixed_b1s32_b4s8-"
+        "per_layer-flush-reference-frontend-eager_mnbt2048"
     )
     assert correctness.service_variant_provenance(reference, args)["variant_id"] == (
         "natural-kvarn-correctness-reference-eager_mnbt2048"
@@ -345,6 +350,65 @@ def test_dpas_mode_uses_separate_launchers_and_keeps_reference_natural(
         reference,
         args,
     )
+
+
+def test_qkv_frontend_is_native_only_and_reference_phase_is_unfused(
+    tmp_path: Path,
+) -> None:
+    args = argparse.Namespace(
+        native_layout="xe2_dpas",
+        native_kernel_variant="q6_scalar",
+        native_split_policy="fixed",
+        native_splits={1: 32, 4: 8},
+        native_output_dtype="bf16",
+        flush_index_materialization="per_layer",
+        native_frontend="qkv_scatter",
+        model="model",
+        served_model="sunny-chat",
+        model_revision="1" * 40,
+        max_num_batched_tokens=2048,
+        hf_home=tmp_path / "hf",
+        runtime_cache=tmp_path / "cache",
+    )
+    native = correctness.SERVICE_PLAN[4]
+    reference = correctness.SERVICE_PLAN[3]
+
+    assert correctness.native_frontend_for_spec(native, args) == "qkv_scatter"
+    assert correctness.native_frontend_for_spec(reference, args) == "reference"
+    assert (
+        correctness.service_environment(native, args)[
+            "KVARN_FACTORY_NATIVE_XPU_FRONTEND"
+        ]
+        == "qkv_scatter"
+    )
+    assert (
+        correctness.service_environment(reference, args)[
+            "KVARN_FACTORY_NATIVE_XPU_FRONTEND"
+        ]
+        == "reference"
+    )
+    assert correctness.service_spec_evidence(native, args)["native_frontend"] == (
+        "qkv_scatter"
+    )
+    assert correctness.service_spec_evidence(reference, args)["native_frontend"] == (
+        "reference"
+    )
+
+    reference_environment = _service_environment(reference, args)
+    correctness.verify_service_profile(
+        _service_argv(reference, args), reference_environment, reference, args
+    )
+    reference_environment["KVARN_NATIVE_XPU_FRONTEND"] = "qkv_scatter"
+    with pytest.raises(correctness.CorrectnessError, match="profile mismatch"):
+        correctness.verify_service_profile(
+            _service_argv(reference, args), reference_environment, reference, args
+        )
+
+    per_layer_variant = correctness.candidate_variant_provenance(args)
+    args.flush_index_materialization = "shared"
+    shared_variant = correctness.candidate_variant_provenance(args)
+    assert shared_variant["variant_id"] != per_layer_variant["variant_id"]
+    assert "-shared-flush-qkv_scatter-frontend-" in shared_variant["variant_id"]
 
 
 @pytest.mark.parametrize(
@@ -383,9 +447,11 @@ def test_service_environment_pins_bounded_window_and_scrubs_full_defer(
     args = argparse.Namespace(
         runtime_cache=tmp_path / "cache",
         hf_home=tmp_path / "hf",
+        flush_index_materialization="per_layer",
+        native_frontend="reference",
     )
 
-    environment = correctness.service_environment(args)
+    environment = correctness.service_environment(correctness.SERVICE_PLAN[0], args)
 
     assert environment["KVARN_PREFILL_FP16_WINDOW_BLOCKS"] == "16"
     assert environment["KVARN_FACTORY_FLUSH_INDEX_MATERIALIZATION"] == "per_layer"
@@ -427,6 +493,8 @@ def test_manifest_rejects_content_free_gate_evidence(
         native_split_policy="fixed",
         native_splits={1: 24, 4: 16},
         native_output_dtype="bf16",
+        flush_index_materialization="per_layer",
+        native_frontend="reference",
         factory_qualification={"status": "passed"},
         max_num_batched_tokens=2048,
         source_identity={"revisions": {"vllm": "1" * 40}},

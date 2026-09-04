@@ -161,6 +161,8 @@ CORRECTNESS_PHASE_SPECS = {
 
 def _candidate_variant_provenance(
     native_layout: str,
+    native_frontend: str,
+    flush_index_materialization: str,
     native_kernel_variant: str = "baseline",
     native_split_policy: str = "fixed",
     native_splits: Mapping[int, int] | None = None,
@@ -175,11 +177,15 @@ def _candidate_variant_provenance(
     return {
         "kernel_strategy": f"native_xe2_qlen1_{native_kernel_variant}",
         "split_policy": split_policy,
-        "fusion_strategy": "native_materializer_persistent_scratch",
+        "fusion_strategy": (
+            "native_materializer_persistent_scratch_"
+            f"{flush_index_materialization}_flush_{native_frontend}_frontend"
+        ),
         "scheduling_variant": scheduling,
         "variant_id": (
             f"native-xe2-{native_layout}-{native_kernel_variant}-"
-            f"{split_policy}-{scheduling}"
+            f"{split_policy}-{flush_index_materialization}-flush-"
+            f"{native_frontend}-frontend-{scheduling}"
         ),
     }
 
@@ -207,6 +213,8 @@ def _performance_reference_variant_provenance() -> dict[str, str]:
 def _correctness_phase_spec(
     phase_name: str,
     native_layout: str,
+    native_frontend: str,
+    flush_index_materialization: str,
     native_kernel_variant: str = "baseline",
     native_split_policy: str = "fixed",
     native_splits: Mapping[int, int] | None = None,
@@ -214,6 +222,7 @@ def _correctness_phase_spec(
     spec = dict(CORRECTNESS_PHASE_SPECS[phase_name])
     selected_splits = DEFAULT_NATIVE_SPLITS if native_splits is None else native_splits
     effective_layout = native_layout if spec["native"] else "natural"
+    effective_frontend = native_frontend if spec["native"] else "reference"
     if spec["native"] and native_layout == "xe2_dpas":
         suffix = "-262k" if spec["max_model_len"] == 262144 else ""
         spec["launcher"] = (
@@ -228,6 +237,7 @@ def _correctness_phase_spec(
     spec.update(
         native_kernel_variant=selected_kernel,
         native_kernel_variant_id=NATIVE_KERNEL_VARIANTS[selected_kernel],
+        native_frontend=effective_frontend,
         native_split_policy=selected_policy,
         max_decode_splits=max_splits,
         nominal_decode_splits=effective_splits,
@@ -235,6 +245,8 @@ def _correctness_phase_spec(
     spec.update(
         _candidate_variant_provenance(
             native_layout,
+            native_frontend,
+            flush_index_materialization,
             native_kernel_variant,
             native_split_policy,
             selected_splits,
@@ -309,7 +321,6 @@ COMMON_PROVENANCE_FIELDS = (
     "kvarn_hardware_preflight_sha256",
     "kvarn_evidence_mode",
     "kvarn_flush_index_materialization",
-    "kvarn_native_frontend",
     "kvarn_onednn_deterministic",
     "kvarn_vllm_use_v2_model_runner",
 )
@@ -328,6 +339,7 @@ ARM_PROVENANCE_FIELDS = (
     "kvarn_native_max_splits",
     "kvarn_native_nominal_splits",
     "kvarn_native_split_policy",
+    "kvarn_native_frontend",
     "kvarn_native_layout_log_marker",
     "kvarn_native_layout_evidence",
     "kvarn_kernel_strategy",
@@ -737,6 +749,8 @@ def _validate_correctness_phase(
     expected_spec = _correctness_phase_spec(
         phase_name,
         native_layout,
+        native_frontend,
+        flush_index_materialization,
         native_kernel_variant,
         native_split_policy,
         native_splits,
@@ -767,6 +781,10 @@ def _validate_correctness_phase(
     expected_direct_bf16_marker = (
         NATIVE_DIRECT_BF16_MARKER if expected_spec["native"] else "not_applicable"
     )
+    effective_frontend = expected_spec["native_frontend"]
+    expected_frontend_active = (
+        expected_spec["native"] and effective_frontend == "qkv_scatter"
+    )
     if (
         phase.get("status") != "passed"
         or phase.get("spec") != expected_spec
@@ -788,13 +806,12 @@ def _validate_correctness_phase(
         or phase.get("native_layout_log_marker") != expected_marker
         or phase.get("native_layout_evidence") != expected_layout_evidence
         or phase.get("flush_index_materialization") != flush_index_materialization
-        or phase.get("native_frontend") != native_frontend
-        or phase.get("native_frontend_active_verified")
-        is not (expected_spec["native"] and native_frontend == "qkv_scatter")
+        or phase.get("native_frontend") != effective_frontend
+        or phase.get("native_frontend_active_verified") is not expected_frontend_active
         or phase.get("native_frontend_log_marker")
         != (
             NATIVE_FRONTEND_ACTIVE_MARKER
-            if expected_spec["native"] and native_frontend == "qkv_scatter"
+            if expected_frontend_active
             else "not_applicable"
         )
         or not isinstance(phase.get("workload"), dict)
@@ -816,7 +833,7 @@ def _validate_correctness_phase(
         or profile.get("native_split_policy_environment") != expected_policy
         or profile.get("flush_index_materialization_environment")
         != flush_index_materialization
-        or profile.get("native_frontend_environment") != native_frontend
+        or profile.get("native_frontend_environment") != effective_frontend
         or not isinstance(captured_environment, dict)
         or captured_environment.get("KVARN_NATIVE_XPU_DPAS_LAYOUT")
         != NATIVE_LAYOUT_ENV[expected_layout]
@@ -828,7 +845,7 @@ def _validate_correctness_phase(
         or captured_environment.get("KVARN_NATIVE_XPU_SPLIT_POLICY") != expected_policy
         or captured_environment.get("KVARN_FLUSH_INDEX_MATERIALIZATION")
         != flush_index_materialization
-        or captured_environment.get("KVARN_NATIVE_XPU_FRONTEND") != native_frontend
+        or captured_environment.get("KVARN_NATIVE_XPU_FRONTEND") != effective_frontend
         or captured_environment.get("KVARN_ONEDNN_DETERMINISTIC") != "1"
         or captured_environment.get("VLLM_USE_V2_MODEL_RUNNER") != "0"
         or profile.get("variant_provenance") != expected_variant
@@ -859,9 +876,7 @@ def _validate_correctness_phase(
     if expected_spec["native"] and not direct_bf16_verified:
         raise GateError(f"{owner}: {phase_name} lacks direct BF16 runtime proof")
     frontend_active = NATIVE_FRONTEND_ACTIVE_MARKER in log_text
-    if expected_spec["native"] and (
-        frontend_active != (native_frontend == "qkv_scatter")
-    ):
+    if frontend_active != expected_frontend_active:
         raise GateError(f"{owner}: {phase_name} frontend runtime proof differs")
     if expected_marker not in log_text:
         raise GateError(f"{owner}: {phase_name} lacks the exact factory marker")
@@ -873,9 +888,15 @@ def _validate_correctness_phase(
         or log_scan.get("fatal_findings") != []
         or log_scan.get("native_direct_bf16_verified") is not expected_spec["native"]
         or log_scan.get("native_direct_bf16_log_marker") != expected_direct_bf16_marker
-        or log_scan.get("native_frontend_expected") != native_frontend
+        or log_scan.get("native_frontend_expected") != effective_frontend
         or log_scan.get("native_frontend_active_verified")
-        is not (expected_spec["native"] and native_frontend == "qkv_scatter")
+        is not expected_frontend_active
+        or log_scan.get("native_frontend_log_marker")
+        != (
+            NATIVE_FRONTEND_ACTIVE_MARKER
+            if expected_frontend_active
+            else "not_applicable"
+        )
     ):
         raise GateError(f"{owner}: {phase_name} log scan is not clean")
     return phase["workload"]
@@ -1820,6 +1841,8 @@ def _load_correctness(path: Path) -> tuple[dict[str, Any], str]:
         _correctness_phase_spec(
             phase_name,
             native_layout,
+            native_frontend,
+            flush_index_materialization,
             native_kernel_variant,
             native_split_policy,
             native_splits,
@@ -1830,6 +1853,8 @@ def _load_correctness(path: Path) -> tuple[dict[str, Any], str]:
         raise GateError(f"{path}: service_start_plan differs from native_layout")
     expected_variant = _candidate_variant_provenance(
         native_layout,
+        native_frontend,
+        flush_index_materialization,
         native_kernel_variant,
         native_split_policy,
         native_splits,
@@ -1974,6 +1999,7 @@ def _validate_logs(
     expected_kernel_variant: str | None = None,
     expected_max_splits: int | None = None,
     expected_split_policy: str | None = None,
+    expected_frontend: str,
 ) -> list[dict[str, Any]]:
     if expected_layout not in NATIVE_LAYOUTS or (
         not expect_native and expected_layout != "natural"
@@ -1996,6 +2022,9 @@ def _validate_logs(
         if expect_native
         else "unavailable"
     )
+    if expected_frontend not in NATIVE_FRONTEND_VARIANTS:
+        raise GateError(f"{arm} has an invalid native-frontend log expectation")
+    expected_frontend_active = expect_native and expected_frontend == "qkv_scatter"
     resolved = [path.resolve() for path in paths]
     if len(set(resolved)) != len(resolved):
         raise GateError(f"{arm} engine-log paths must be unique")
@@ -2032,6 +2061,9 @@ def _validate_logs(
             raise GateError(f"{path}: native candidate lacks direct BF16 runtime proof")
         if expect_native and expected_marker not in text:
             raise GateError(f"{path}: native candidate lacks the exact factory marker")
+        frontend_active = NATIVE_FRONTEND_ACTIVE_MARKER in text
+        if frontend_active != expected_frontend_active:
+            raise GateError(f"{path}: {arm} frontend runtime proof differs")
         evidence.append(
             {
                 "sha256": hashlib.sha256(raw).hexdigest(),
@@ -2043,6 +2075,8 @@ def _validate_logs(
                 "native_direct_bf16_log_marker": (
                     NATIVE_DIRECT_BF16_MARKER if expect_native else "not_applicable"
                 ),
+                "native_frontend_expected": expected_frontend,
+                "native_frontend_active_verified": frontend_active,
                 **xpu,
             }
         )
@@ -2248,6 +2282,10 @@ def compare(
     cand_native = first_cand.provenance["kvarn_native_xpu"]
     if (ref_native, cand_native) != ("0", "1"):
         raise GateError("reference must disable and candidate must enable native XPU")
+    if first_ref.provenance["kvarn_native_frontend"] != "reference":
+        raise GateError("reference must use the unfused reference frontend")
+    if first_cand.provenance["kvarn_native_frontend"] != correctness["native_frontend"]:
+        raise GateError("candidate frontend must match correctness")
     ref_layout = first_ref.provenance["kvarn_native_layout"]
     cand_layout = first_cand.provenance["kvarn_native_layout"]
     if ref_layout != "natural" or cand_layout != correctness_layout:
@@ -2357,12 +2395,14 @@ def compare(
         "reference",
         expect_native=False,
         expected_layout=ref_layout,
+        expected_frontend="reference",
     )
     candidate_log_evidence = _validate_logs(
         candidate_logs,
         "candidate",
         expect_native=True,
         expected_layout=cand_layout,
+        expected_frontend=correctness["native_frontend"],
         expected_kernel_variant=correctness_kernel_variant,
         expected_max_splits=correctness_max_splits,
         expected_split_policy=correctness_split_policy,

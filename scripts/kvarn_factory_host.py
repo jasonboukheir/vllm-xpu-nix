@@ -23,9 +23,9 @@ from typing import NoReturn
 
 BASE_LIBRARY = "_C.abi3.so"
 FLASH_LIBRARY = "_vllm_fa2_C.abi3.so"
-DEFAULT_VARIANTS = (
-    "q6_scalar,q6_vector,q6_cached_weights,q6_exact_rows,q6_cached_weights_exact_rows"
-)
+# Resolve ``all`` in the runner so every layout-compatible candidate compiled
+# into the shared library automatically participates in the default sweep.
+DEFAULT_VARIANTS = "all"
 DEFAULT_SPLITS = "8,32"
 DEFAULT_CONTEXTS = "4096,16384,65023"
 DEFAULT_BATCHES = "1,4"

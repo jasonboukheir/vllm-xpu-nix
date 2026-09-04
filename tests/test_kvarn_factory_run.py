@@ -67,14 +67,12 @@ def test_named_factory_ids_are_complete_and_stable() -> None:
         "q6_cached_weights",
         "q6_exact_rows",
         "q6_cached_weights_exact_rows",
-    )
-    assert factory.ALL_VARIANT_NAMES == (
-        *factory.DEFAULT_VARIANT_NAMES,
         "q6_page_pair",
         "q6_main_grf128",
         "q6_split_reducer_specialized",
         "q6_next_page_prefetch",
     )
+    assert factory.ALL_VARIANT_NAMES == factory.DEFAULT_VARIANT_NAMES
 
 
 def test_variant_parser_accepts_names_and_all_but_not_numeric_aliases() -> None:

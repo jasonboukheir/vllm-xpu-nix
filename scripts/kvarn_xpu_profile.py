@@ -406,6 +406,8 @@ def variant_provenance(
     """Describe the small, currently supported first-round variant space."""
     layout = perf.native_layout_for_run(run, args)
     splits = perf.native_splits_for_run(run, args)
+    native_frontend = perf.native_frontend_for_run(run, args)
+    flush_indices = perf.flush_index_materialization_environment(args)
     if run.arm == "reference":
         kernel_strategy = "auto_vllm_backend"
         fusion_selection = "backend_default"
@@ -415,11 +417,14 @@ def variant_provenance(
         kernel_strategy = (
             f"native_xe2_decode_{perf.native_kernel_variant_for_run(run, args)}"
         )
-        fusion_selection = "fused_attention_decode"
+        fusion_selection = (
+            f"fused_attention_decode_{flush_indices}_flush_{native_frontend}_frontend"
+        )
         scheduling_selection = "split_k"
         generated_id = (
             f"native-xe2-{layout}-{perf.native_kernel_variant_for_run(run, args)}-"
-            f"split{splits}-b{run.workload.batch}"
+            f"split{splits}-{flush_indices}-flush-"
+            f"{native_frontend}-frontend-b{run.workload.batch}"
         )
     variant_id = args.variant_id or generated_id
     if VARIANT_ID_PATTERN.fullmatch(variant_id) is None:
@@ -434,6 +439,8 @@ def variant_provenance(
         "max_split_count": perf.native_max_splits_for_run(run, args),
         "split_policy": perf.native_split_policy_for_run(run, args),
         "split_policy_selector": perf.native_split_policy_name_for_run(run, args),
+        "native_frontend": native_frontend,
+        "flush_index_materialization": flush_indices,
         "fusion_selection": fusion_selection,
         "scheduling_selection": scheduling_selection,
         "scheduler_max_num_batched_tokens": args.max_num_batched_tokens,
@@ -492,7 +499,7 @@ def start_profile_service(
         process = subprocess.Popen(
             command,
             cwd=args.config_repo,
-            env=perf.service_environment(args),
+            env=perf.service_environment(run, args),
             stdout=log_stream,
             stderr=subprocess.STDOUT,
             start_new_session=True,
@@ -568,6 +575,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         seed=args.seed,
     )
     run = perf.PlannedRun(workload=workload, arm=args.arm, order=1)
+    native_frontend = perf.native_frontend_for_run(run, args)
     expected_launcher = perf.launcher_name(run, args)
     if args.launcher is not None and args.launcher != expected_launcher:
         raise perf.RunnerError(
@@ -622,6 +630,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         "native_kernel_variant_id": perf.NATIVE_KERNEL_VARIANTS[
             perf.native_kernel_variant_for_run(run, args)
         ],
+        "native_frontend": native_frontend,
         "native_factory_marker": (
             perf.kvarn_factory_marker(
                 cache_layout=perf.native_layout_for_run(run, args),
@@ -734,6 +743,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
                 if args.arm == "candidate"
                 else None
             ),
+            expected_frontend=native_frontend,
         )
         perf.write_json_atomic(run_dir / "engine-log-scan.json", log_scan)
         trace_path = find_kineto_trace(trace_dir)
@@ -780,6 +790,11 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
                 "native_factory_selection_verified": log_scan[
                     "native_factory_selection_verified"
                 ],
+                "native_frontend": native_frontend,
+                "native_frontend_active_verified": log_scan[
+                    "native_frontend_active_verified"
+                ],
+                "native_frontend_log_marker": log_scan["native_frontend_log_marker"],
                 "variant_id": variant["variant_id"],
                 "variant_parameters": variant,
                 "logical_launcher": expected_launcher,
@@ -826,6 +841,9 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             native_factory_selection_verified=log_scan[
                 "native_factory_selection_verified"
             ],
+            native_frontend=native_frontend,
+            native_frontend_active_verified=log_scan["native_frontend_active_verified"],
+            native_frontend_log_marker=log_scan["native_frontend_log_marker"],
         )
         perf.write_json_atomic(run_dir / "run.json", manifest)
         perf.write_checksums(args.output_dir)
@@ -876,6 +894,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--native-split-policy",
         choices=perf.NATIVE_SPLIT_POLICIES,
+    )
+    parser.add_argument(
+        "--native-frontend",
+        choices=perf.NATIVE_FRONTEND_VARIANTS,
+        default="reference",
     )
     parser.add_argument("--native-splits", type=int)
     parser.add_argument(

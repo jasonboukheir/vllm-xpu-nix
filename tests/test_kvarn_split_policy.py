@@ -38,9 +38,14 @@ def test_b70_q6_v2_contract_is_context_explicit_and_boundary_exact() -> None:
         "supported_harness_batches": [1, 4],
         "scratch_max_splits": 32,
         "kernel_compatibility": {
-            "kind": "exact_variant",
-            "name": "q6_next_page_prefetch",
-            "id": 12,
+            "kind": "exact_variants",
+            "variants": [
+                {"name": "q6_next_page_prefetch", "id": 12},
+                {
+                    "name": "q6_next_page_prefetch_split_reducer",
+                    "id": 13,
+                },
+            ],
         },
         "rules": [
             {
@@ -75,17 +80,19 @@ def test_b70_q6_v2_contract_is_context_explicit_and_boundary_exact() -> None:
     ) == 32
 
 
-def test_b70_q6_v2_is_id12_only() -> None:
-    policy.validate_kernel_compatibility(
-        "b70_q6_v2",
+def test_b70_q6_v2_accepts_profiled_id12_and_id13_only() -> None:
+    for kernel_variant in (
         "q6_next_page_prefetch",
-        q6_variants=perf.B70_Q6_KERNEL_VARIANTS,
-    )
-    with pytest.raises(ValueError, match="ID12"):
+        "q6_next_page_prefetch_split_reducer",
+    ):
         policy.validate_kernel_compatibility(
             "b70_q6_v2",
-            "q6_next_page_prefetch_split_reducer",
+            kernel_variant,
             q6_variants=perf.B70_Q6_KERNEL_VARIANTS,
+        )
+    with pytest.raises(ValueError, match="ID12.*ID13"):
+        policy.validate_kernel_compatibility(
+            "b70_q6_v2", "q6_scalar", q6_variants=perf.B70_Q6_KERNEL_VARIANTS
         )
 
 
@@ -104,8 +111,12 @@ def test_runtime_factory_resolves_v2_per_context_without_split_environment() -> 
     ] == "b70_q6_v2"
 
 
-def test_exploratory_perf_and_profile_clis_accept_v2_only_for_id12(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize(
+    "kernel_variant",
+    ["q6_next_page_prefetch", "q6_next_page_prefetch_split_reducer"],
+)
+def test_exploratory_perf_and_profile_clis_accept_v2_profiled_variants(
+    tmp_path, monkeypatch: pytest.MonkeyPatch, kernel_variant: str
 ) -> None:
     candidate = tmp_path / "candidate"
     (candidate / "bin").mkdir(parents=True)
@@ -122,7 +133,7 @@ def test_exploratory_perf_and_profile_clis_accept_v2_only_for_id12(
         "--native-layout",
         "xe2_dpas",
         "--native-kernel-variant",
-        "q6_next_page_prefetch",
+        kernel_variant,
         "--native-split-policy",
         "b70_q6_v2",
         "--runtime-cache",
@@ -168,7 +179,7 @@ def test_exploratory_perf_and_profile_clis_accept_v2_only_for_id12(
     assert perf.native_splits_for_run(profile_run, profile_args) == 32
 
     wrong_kernel = list(common)
-    wrong_kernel[wrong_kernel.index("q6_next_page_prefetch")] = "q6_scalar"
+    wrong_kernel[wrong_kernel.index(kernel_variant)] = "q6_scalar"
     with pytest.raises(SystemExit):
         perf.parse_args(
             [

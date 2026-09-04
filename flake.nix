@@ -429,6 +429,11 @@
           };
 
           checks = {
+            kernel-glue-cache-identity = import ./nix/tests/kernel-glue-cache-identity.nix {
+              inherit pkgs;
+              kernelSource = vllm-xpu-kernels-unstable-src';
+            };
+
             kernel-lib-cache-identity = import ./nix/tests/kernel-lib-cache-identity.nix {
               inherit pkgs;
             };
@@ -443,7 +448,14 @@
                   # The historical Nix tree is not uniformly nixfmt-clean
                   # yet. Expand this list as the remaining files are
                   # normalized.
-                  nixfmt --check flake.nix nix/devshells.nix
+                  nixfmt --check \
+                    flake.nix \
+                    nix/devshells.nix \
+                    nix/lib/kernel-glue-src.nix \
+                    nix/mk-kernels.nix \
+                    nix/tests/kernel-glue-cache-identity.nix \
+                    nix/vllm-xpu-kernels-compose.nix \
+                    nix/vllm-xpu-kernels.nix
                   touch $out
                 '';
 

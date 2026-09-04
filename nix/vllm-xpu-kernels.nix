@@ -20,6 +20,7 @@
   zlib,
   which,
   ccache,
+  pname ? "vllm-xpu-kernels",
   attn-kernels-xe-2,
   gdn-attn-kernels-xe-2,
   mqa-logits-kernels-xe-2,
@@ -39,6 +40,18 @@
   # ccache via `which("ccache")`, so having ccache in nativeBuildInputs
   # is enough to flip on -DCMAKE_{C,CXX}_COMPILER_LAUNCHER=ccache.
   useCcache ? true,
+  # Build only one native-glue component. These values are forwarded as
+  # setup.py/CMake feature-option environment variables. The default empty set
+  # preserves upstream's all-enabled behavior for callers outside the split
+  # factory.
+  featureOptions ? { },
+  withAttnLibrary ? true,
+  withGdnAttnLibrary ? true,
+  withMqaLogitsLibrary ? true,
+  withMhcLibrary ? true,
+  withGroupedGemmXe2Library ? true,
+  withGroupedGemmXeDefaultLibrary ? true,
+  pythonImportsCheck ? [ "vllm_xpu_kernels" ],
 }:
 
 let
@@ -58,11 +71,12 @@ let
   ccachePreBuild = lib.optionalString useCcache ''
     export CCACHE_BASEDIR=$NIX_BUILD_TOP
   '';
+
+  featureEnvAttrs = lib.mapAttrs (_name: enabled: if enabled then "ON" else "OFF") featureOptions;
 in
 python3Packages.buildPythonPackage (
   {
-    pname = "vllm-xpu-kernels";
-    inherit version;
+    inherit pname version;
     format = "pyproject";
 
     inherit src;
@@ -94,13 +108,13 @@ python3Packages.buildPythonPackage (
       intel-graphics-compiler
       ocl-icd
       zlib
-      attn-kernels-xe-2
-      gdn-attn-kernels-xe-2
-      mqa-logits-kernels-xe-2
-      mhc-kernels-xe-2
-      grouped-gemm-xe-2
-      grouped-gemm-xe-default
-    ];
+    ]
+    ++ lib.optional withAttnLibrary attn-kernels-xe-2
+    ++ lib.optional withGdnAttnLibrary gdn-attn-kernels-xe-2
+    ++ lib.optional withMqaLogitsLibrary mqa-logits-kernels-xe-2
+    ++ lib.optional withMhcLibrary mhc-kernels-xe-2
+    ++ lib.optional withGroupedGemmXe2Library grouped-gemm-xe-2
+    ++ lib.optional withGroupedGemmXeDefaultLibrary grouped-gemm-xe-default;
 
     propagatedBuildInputs = [
       torch-xpu
@@ -111,6 +125,7 @@ python3Packages.buildPythonPackage (
     patches = [
       ./patches/0001-split-kernel-libs.patch
       ./patches/0004-skip-prebuilt-additional-libs.patch
+      ./patches/0006-forward-mhc-feature-flag.patch
     ];
 
     postPatch = ''
@@ -145,12 +160,12 @@ python3Packages.buildPythonPackage (
       export VLLM_XPU_XE2_AOT_DEVICES="${aotDevicesStr}"
       export CMAKE_BUILD_TYPE=Release
 
-      export VLLM_XPU_PREBUILT_ATTN_KERNELS_XE_2_LIB=${attn-kernels-xe-2}/lib/libattn_kernels_xe_2.so
-      export VLLM_XPU_PREBUILT_GDN_ATTN_KERNELS_XE_2_LIB=${gdn-attn-kernels-xe-2}/lib/libgdn_attn_kernels_xe_2.so
-      export VLLM_XPU_PREBUILT_MQA_LOGITS_KERNELS_XE_2_LIB=${mqa-logits-kernels-xe-2}/lib/libmqa_logits_kernels_xe_2.so
-      export VLLM_XPU_PREBUILT_MHC_KERNELS_XE_2_LIB=${mhc-kernels-xe-2}/lib/libmhc_kernels_xe_2.so
-      export VLLM_XPU_PREBUILT_GROUPED_GEMM_XE_2_LIB=${grouped-gemm-xe-2}/lib/libgrouped_gemm_xe_2.so
-      export VLLM_XPU_PREBUILT_GROUPED_GEMM_XE_DEFAULT_LIB=${grouped-gemm-xe-default}/lib/libgrouped_gemm_xe_default.so
+      ${lib.optionalString withAttnLibrary "export VLLM_XPU_PREBUILT_ATTN_KERNELS_XE_2_LIB=${attn-kernels-xe-2}/lib/libattn_kernels_xe_2.so"}
+      ${lib.optionalString withGdnAttnLibrary "export VLLM_XPU_PREBUILT_GDN_ATTN_KERNELS_XE_2_LIB=${gdn-attn-kernels-xe-2}/lib/libgdn_attn_kernels_xe_2.so"}
+      ${lib.optionalString withMqaLogitsLibrary "export VLLM_XPU_PREBUILT_MQA_LOGITS_KERNELS_XE_2_LIB=${mqa-logits-kernels-xe-2}/lib/libmqa_logits_kernels_xe_2.so"}
+      ${lib.optionalString withMhcLibrary "export VLLM_XPU_PREBUILT_MHC_KERNELS_XE_2_LIB=${mhc-kernels-xe-2}/lib/libmhc_kernels_xe_2.so"}
+      ${lib.optionalString withGroupedGemmXe2Library "export VLLM_XPU_PREBUILT_GROUPED_GEMM_XE_2_LIB=${grouped-gemm-xe-2}/lib/libgrouped_gemm_xe_2.so"}
+      ${lib.optionalString withGroupedGemmXeDefaultLibrary "export VLLM_XPU_PREBUILT_GROUPED_GEMM_XE_DEFAULT_LIB=${grouped-gemm-xe-default}/lib/libgrouped_gemm_xe_default.so"}
 
       export MAX_JOBS=''${NIX_BUILD_CORES:-1}
     '';
@@ -162,7 +177,7 @@ python3Packages.buildPythonPackage (
     dontCheckRuntimeDeps = true;
     dontStrip = true;
 
-    pythonImportsCheck = [ "vllm_xpu_kernels" ];
+    inherit pythonImportsCheck;
 
     meta = {
       description = "vLLM XPU kernels (SYCL/CUTLASS-SYCL) for Intel Arc / Battlemage / PVC";
@@ -172,4 +187,5 @@ python3Packages.buildPythonPackage (
     };
   }
   // ccacheEnvAttrs
+  // featureEnvAttrs
 )

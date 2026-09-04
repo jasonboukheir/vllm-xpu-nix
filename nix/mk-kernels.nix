@@ -1,7 +1,8 @@
 # Kernel-build factories for vllm-xpu-kernels. Returns:
 #   - mkKernelLibs: the six per-feature kernel *lib* derivations
 #     (attn / gdn-attn / mqa-logits / mhc / grouped-gemm xe-2 / xe-default)
-#   - mkVllmXpuKernels: the python package wiring those libs together;
+#   - mkVllmXpuKernels: a composed Python package with reusable non-FA2 glue
+#     and a narrow FA2 binding that wires those libs together;
 #     makeOverridable, so consumers tune it via
 #     `.override { aotDevices = [...]; kernelConfig = {...}; useCcache = ...; }`
 {
@@ -13,15 +14,16 @@
 }:
 let
   mkKernelLibSrc = import ./lib/kernel-lib-src.nix { inherit (pkgs) lib; };
+  mkKernelGlueSrc = import ./lib/kernel-glue-src.nix { inherit (pkgs) lib; };
 
-  # The aggregate Python package retains the upstream revision-bearing version.
-  # Split .so derivations use the filtered source-store hash as their artifact
-  # source identity.  Consequently, a change confined to a later target subtree
-  # (notably attention, which is last in the ordering chain below) leaves earlier
-  # derivations stable.  Shared CMake/common-source changes intentionally change
-  # every projection, and predecessor changes also invalidate successors through
-  # buildDependencies.
-  mkKernelLibVersion =
+  # The final composed Python package retains the upstream revision-bearing
+  # version. Split .so and native-glue components use the filtered source-store
+  # hash as their artifact source identity. Consequently, a change confined to
+  # a later target subtree (notably attention, which is last in the ordering
+  # chain below) leaves earlier derivations stable. Shared CMake/common-source
+  # changes intentionally change every projection, and predecessor changes also
+  # invalidate successors through buildDependencies.
+  mkProjectedVersion =
     version: src:
     let
       baseVersion = builtins.head (pkgs.lib.splitString "+" version);
@@ -65,7 +67,7 @@ let
       libSrc = mkKernelLibSrc {
         inherit src libName;
       };
-      libVersion = mkKernelLibVersion version libSrc;
+      libVersion = mkProjectedVersion version libSrc;
       isAttn = libName == "attn_kernels_xe_2";
       factory = pkgs.callPackage ./vllm-xpu-lib.nix {
         intel-oneapi-base = intel-oneapi;
@@ -322,22 +324,104 @@ let
         }
         // kernelCfg
       );
-    in
-    (pkgs.callPackage ./vllm-xpu-kernels.nix (
-      {
+      baseGlueSrc = mkKernelGlueSrc {
+        inherit src;
+        component = "base";
+      };
+      fa2BindingSrc = mkKernelGlueSrc {
+        inherit src;
+        component = "fa2";
+      };
+      componentCommon = {
         intel-oneapi-base = intel-oneapi;
         inherit intel-pti torch-xpu useCcache;
         python3Packages = pkgs.python312Packages;
-        inherit src version aotDevices;
-        inherit cutlass-src onednn-src;
-      }
-      // libs
-    )).overrideAttrs
-      (old: {
-        passthru = (old.passthru or { }) // {
-          kernelLibraries = libs;
+        inherit aotDevices cutlass-src onednn-src;
+      };
+      baseGlue = pkgs.callPackage ./vllm-xpu-kernels.nix (
+        componentCommon
+        // libs
+        // {
+          pname = "vllm-xpu-kernels-base-glue";
+          src = baseGlueSrc;
+          version = mkProjectedVersion version baseGlueSrc;
+          featureOptions = {
+            BUILD_SYCL_TLA_KERNELS = true;
+            VLLM_XPU_ENABLE_XE2 = true;
+            VLLM_XPU_ENABLE_XE_DEFAULT = true;
+            BASIC_KERNELS_ENABLED = true;
+            FA2_KERNELS_ENABLED = false;
+            MOE_KERNELS_ENABLED = true;
+            GDN_KERNELS_ENABLED = true;
+            MQA_LOGITS_KERNELS_ENABLED = true;
+            MHC_KERNELS_ENABLED = true;
+            XPU_SPECIFIC_KERNELS_ENABLED = true;
+            XPUMEM_ALLOCATOR_ENABLED = true;
+            VLLM_XPU_ENABLE_ONEDNN = true;
+          };
+          withAttnLibrary = false;
+        }
+      );
+      fa2Binding =
+        (pkgs.callPackage ./vllm-xpu-kernels.nix (
+          componentCommon
+          // libs
+          // {
+            pname = "vllm-xpu-kernels-fa2-binding";
+            src = fa2BindingSrc;
+            version = mkProjectedVersion version fa2BindingSrc;
+            featureOptions = {
+              BUILD_SYCL_TLA_KERNELS = true;
+              VLLM_XPU_ENABLE_XE2 = true;
+              VLLM_XPU_ENABLE_XE_DEFAULT = false;
+              BASIC_KERNELS_ENABLED = false;
+              FA2_KERNELS_ENABLED = true;
+              MOE_KERNELS_ENABLED = false;
+              GDN_KERNELS_ENABLED = false;
+              MQA_LOGITS_KERNELS_ENABLED = false;
+              MHC_KERNELS_ENABLED = false;
+              XPU_SPECIFIC_KERNELS_ENABLED = false;
+              XPUMEM_ALLOCATOR_ENABLED = false;
+              VLLM_XPU_ENABLE_ONEDNN = false;
+            };
+            withGdnAttnLibrary = false;
+            withMqaLogitsLibrary = false;
+            withMhcLibrary = false;
+            withGroupedGemmXe2Library = false;
+            withGroupedGemmXeDefaultLibrary = false;
+            pythonImportsCheck = [ ];
+          }
+        )).overrideAttrs
+          (old: {
+            passthru = (old.passthru or { }) // {
+              attentionLibrary = libs.attn-kernels-xe-2;
+            };
+          });
+      composed = pkgs.callPackage ./vllm-xpu-kernels-compose.nix {
+        inherit
+          baseGlue
+          fa2Binding
+          torch-xpu
+          version
+          ;
+        python3Packages = pkgs.python312Packages;
+      };
+    in
+    composed.overrideAttrs (old: {
+      passthru = (old.passthru or { }) // {
+        kernelLibraries = libs;
+        kernelComponents = {
+          base-glue = baseGlue;
+          fa2-binding = fa2Binding;
         };
-      })
+        kernelPackagingProvenance = {
+          scheme = "split-native-glue-v1";
+          baseGlueSource = toString baseGlueSrc;
+          fa2BindingSource = toString fa2BindingSrc;
+          compatibilityRevision = sourceRevision;
+        };
+      };
+    })
   );
 in
 {

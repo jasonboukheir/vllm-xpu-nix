@@ -70,7 +70,8 @@ policy and `KVARN_NATIVE_XPU_SPLITS` are mutually exclusive so a launcher
 cannot present two different scheduling contracts.
 
 `b70_q6_v2` is an exploratory, context-aware policy for
-`q6_next_page_prefetch` (ID12) only. It allocates scratch for 32 splits,
+`q6_next_page_prefetch` (ID12) and
+`q6_next_page_prefetch_split_reducer` (ID13). It allocates scratch for 32 splits,
 selects B1=32 at every context, and selects B4=8 through 48 Ki tokens
 (49,152 inclusive) or B4=32 above that boundary. It is available only through
 the runtime-factory launcher; the historical immutable launchers remain bound

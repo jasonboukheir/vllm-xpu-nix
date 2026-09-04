@@ -1441,8 +1441,12 @@ def test_formal_gate_accepts_exact_b70_q6_v2_contract(tmp_path: Path) -> None:
     assert result["candidate"]["arm"]["kvarn_native_split_policy"] == "b70_q6_v2"
 
 
+@pytest.mark.parametrize(
+    "native_kernel_variant",
+    ["q6_next_page_prefetch", "q6_next_page_prefetch_split_reducer"],
+)
 def test_factory_qualification_binds_context_dependent_b70_q6_v2(
-    tmp_path: Path,
+    tmp_path: Path, native_kernel_variant: str
 ) -> None:
     library = tmp_path / "native.so"
     library.write_bytes(b"selected native library")
@@ -1455,7 +1459,7 @@ def test_factory_qualification_binds_context_dependent_b70_q6_v2(
         tmp_path / "factory.json",
         native_library=library,
         revisions=revisions,
-        native_kernel_variant="q6_next_page_prefetch",
+        native_kernel_variant=native_kernel_variant,
         native_splits={},
         native_split_policy="b70_q6_v2",
     )
@@ -1463,7 +1467,7 @@ def test_factory_qualification_binds_context_dependent_b70_q6_v2(
     qualification = gate_module.validate_factory_qualification(
         factory,
         native_layout="xe2_dpas",
-        native_kernel_variant="q6_next_page_prefetch",
+        native_kernel_variant=native_kernel_variant,
         native_split_policy="b70_q6_v2",
         native_splits={},
         output_dtype="bf16",
@@ -1485,9 +1489,11 @@ def test_factory_qualification_binds_context_dependent_b70_q6_v2(
         "65023": {"1": 32, "4": 32},
     }
     assert selection["split_policy_contract"]["kernel_compatibility"] == {
-        "kind": "exact_variant",
-        "name": "q6_next_page_prefetch",
-        "id": 12,
+        "kind": "exact_variants",
+        "variants": [
+            {"name": "q6_next_page_prefetch", "id": 12},
+            {"name": "q6_next_page_prefetch_split_reducer", "id": 13},
+        ],
     }
 
 

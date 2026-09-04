@@ -19,6 +19,10 @@ B70_Q6_SPLITS = {1: 32, 4: 8}
 B70_Q6_MAX_SPLITS = 32
 B70_Q6_V2_KERNEL_VARIANT = "q6_next_page_prefetch"
 B70_Q6_V2_KERNEL_VARIANT_ID = 12
+B70_Q6_V2_KERNEL_VARIANTS = {
+    B70_Q6_V2_KERNEL_VARIANT: B70_Q6_V2_KERNEL_VARIANT_ID,
+    "q6_next_page_prefetch_split_reducer": 13,
+}
 B70_Q6_V2_CONTEXT_THRESHOLD = 48 * 1024
 B70_Q6_V2_MAX_SPLITS = 32
 
@@ -52,9 +56,11 @@ _B70_Q6_V2_CONTRACT = {
     "supported_harness_batches": list(SUPPORTED_HARNESS_BATCHES),
     "scratch_max_splits": B70_Q6_V2_MAX_SPLITS,
     "kernel_compatibility": {
-        "kind": "exact_variant",
-        "name": B70_Q6_V2_KERNEL_VARIANT,
-        "id": B70_Q6_V2_KERNEL_VARIANT_ID,
+        "kind": "exact_variants",
+        "variants": [
+            {"name": name, "id": variant_id}
+            for name, variant_id in B70_Q6_V2_KERNEL_VARIANTS.items()
+        ],
     },
     "rules": [
         _rule(batch=1, maximum=None, splits=32),
@@ -144,7 +150,11 @@ def validate_kernel_compatibility(
 ) -> None:
     if selector == "b70_q6" and kernel_variant not in q6_variants:
         raise ValueError("b70_q6 split policy requires a q6 native kernel variant")
-    if selector == "b70_q6_v2" and kernel_variant != B70_Q6_V2_KERNEL_VARIANT:
+    if (
+        selector == "b70_q6_v2"
+        and kernel_variant not in B70_Q6_V2_KERNEL_VARIANTS
+    ):
         raise ValueError(
-            "b70_q6_v2 split policy requires q6_next_page_prefetch (ID12)"
+            "b70_q6_v2 split policy requires q6_next_page_prefetch (ID12) "
+            "or q6_next_page_prefetch_split_reducer (ID13)"
         )

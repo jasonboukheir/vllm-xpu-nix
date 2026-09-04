@@ -1235,8 +1235,9 @@ def test_focused_xpu_kill_suite_is_bound_to_library_and_fail_closed(
     assert result["prefill_store"] == "reference"
     assert captured["cwd"] == repo.resolve()
     assert captured["env"]["VLLM_XPU_KERNELS_LIBRARY"] == str(library.resolve())
+    assert "--noconftest" in captured["command"]
     assert "no:cacheprovider" in captured["command"]
-    assert all(str(repo.resolve()) in item for item in captured["command"][7:])
+    assert all(str(repo.resolve()) in item for item in captured["command"][8:])
 
     def skipped_run(_command, **_kwargs):
         return SimpleNamespace(

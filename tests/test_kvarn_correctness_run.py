@@ -503,6 +503,7 @@ def test_qkv_frontend_is_native_only_and_reference_phase_is_unfused(
         ("q6_next_page_prefetch", 12),
         ("q6_next_page_prefetch_split_reducer", 13),
         ("q6_simd_unpack", 14),
+        ("q6_block_output_store", 15),
     ],
 )
 def test_dpas_launcher_names_bind_variant_for_65k_and_262k(

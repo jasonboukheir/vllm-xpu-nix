@@ -279,6 +279,7 @@ def test_gzip_trace_loading(tmp_path: Path) -> None:
         ("q6_next_page_prefetch", 12),
         ("q6_next_page_prefetch_split_reducer", 13),
         ("q6_simd_unpack", 14),
+        ("q6_block_output_store", 15),
     ],
 )
 def test_profile_command_and_dpas_launcher_provenance(

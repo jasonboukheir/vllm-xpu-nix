@@ -228,6 +228,16 @@ VARIANTS = {
             "standard_split_reduction",
             "tile64_vector_load_simd_unpack",
         ),
+        VariantSpec(
+            15,
+            "q6_block_output_store",
+            "q6 two-row plus one-row block-2D output stores",
+            "xe2_dpas",
+            "native_xe2_qlen1_q6_block_output_store",
+            "runtime_explicit_count",
+            "block2d_main_output_standard_split_reduction",
+            "tile64_block2d_output_store",
+        ),
     )
 }
 VARIANTS_BY_ID = {spec.variant_id: spec for spec in VARIANTS.values()}
@@ -243,6 +253,7 @@ DEFAULT_VARIANT_NAMES = (
     "q6_next_page_prefetch",
     "q6_next_page_prefetch_split_reducer",
     "q6_simd_unpack",
+    "q6_block_output_store",
 )
 # ``all`` is literal: every runnable layout-compatible dispatch compiled into
 # the shared attention DSO participates.  DEFAULT_VARIANT_NAMES remains the
@@ -253,6 +264,7 @@ FOCUSED_XPU_TESTS = (
     "tests/flash_attn/test_kvarn_decode_xpu.py::test_nonuniform_kvarn_factors_across_page_boundary",
     "tests/flash_attn/test_kvarn_decode_xpu.py::test_factory_dpas_variants_match_canonical_ragged_and_hybrid",
     "tests/flash_attn/test_kvarn_decode_xpu.py::test_q6_multisplit_lse_owns_all_six_distinct_query_rows",
+    "tests/flash_attn/test_kvarn_decode_xpu.py::test_q6_block_output_store_matches_scalar_across_reducers",
     "tests/flash_attn/test_kvarn_decode_xpu.py::test_full_precision_tail_and_packed_history_share_softmax",
     "tests/flash_attn/test_kvarn_decode_xpu.py::test_long_context_ragged_b4_matches_structured_oracle[natural-split24]",
     "tests/flash_attn/test_kvarn_decode_xpu.py::test_long_context_ragged_b4_matches_structured_oracle[dpas-split1]",
@@ -270,6 +282,7 @@ FOCUSED_XPU_TESTS = (
     "tests/flash_attn/test_kvarn_decode_xpu.py::test_long_context_ragged_b4_matches_structured_oracle[q6-next-page-prefetch]",
     "tests/flash_attn/test_kvarn_decode_xpu.py::test_long_context_ragged_b4_matches_structured_oracle[q6-next-page-prefetch-split-reducer]",
     "tests/flash_attn/test_kvarn_decode_xpu.py::test_long_context_ragged_b4_matches_structured_oracle[q6-simd-unpack]",
+    "tests/flash_attn/test_kvarn_decode_xpu.py::test_long_context_ragged_b4_matches_structured_oracle[q6-block-output-store]",
     "tests/flash_attn/test_kvarn_hadamard_scatter_xpu.py::test_kvarn_fused_qkv_hadamard_scatter_matches_separate_ops",
 )
 FOCUSED_XPU_MIN_PASSED = 48

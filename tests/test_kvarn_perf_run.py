@@ -500,6 +500,34 @@ def test_perf_launcher_name_binds_each_factory_variant(
 
 
 @pytest.mark.parametrize(
+    ("variant", "variant_id"),
+    [
+        ("q6_page_metadata_cursor", 20),
+        ("q6_paired_nibble_half2", 21),
+    ],
+)
+def test_round6_variants_use_only_the_runtime_factory_launcher(
+    tmp_path: Path, variant: str, variant_id: int
+) -> None:
+    args = _args(tmp_path)
+    args.launcher_mode = "runtime-factory"
+    args.native_layout = "xe2_dpas"
+    args.native_kernel_variant = variant
+    args.native_split_policy = "fixed"
+    args.native_splits = {1: 24, 4: 16}
+    run = PlannedRun(Workload(4096, 4, 512, 4, 17), "candidate", 1)
+
+    assert runner.NATIVE_KERNEL_VARIANTS[variant] == variant_id
+    assert variant in runner.RUNTIME_FACTORY_ONLY_KERNEL_VARIANTS
+    assert variant in runner.B70_Q6_KERNEL_VARIANTS
+    assert variant not in runner.IMMUTABLE_QUALIFIED_KERNEL_VARIANTS
+    assert runner.launcher_name(run, args) == runner.RUNTIME_FACTORY_LAUNCHER
+    assert runner.runtime_factory_axes_for_run(run, args)[
+        "KVARN_FACTORY_KERNEL_VARIANT"
+    ] == variant
+
+
+@pytest.mark.parametrize(
     ("arm", "expected"),
     [
         ("reference", "vllm-xpu-brutus-auto-b4-onednn-nondeterministic"),
@@ -605,6 +633,46 @@ def test_scheduler_budget_cli_defaults_overrides_and_rejects_zero(
     assert nondeterministic.onednn_deterministic is False
     assert diagnostic.request_stable_projection_rows is False
     assert diagnostic.request_stable_rmsnorm is True
+    for variant in sorted(runner.RUNTIME_FACTORY_ONLY_KERNEL_VARIANTS):
+        for split_selector, split_arguments in (
+            ("b70_q6", ["--native-split-policy", "b70_q6"]),
+            (
+                "fixed",
+                [
+                    "--native-split-policy",
+                    "fixed",
+                    "--native-splits",
+                    "1=32",
+                    "--native-splits",
+                    "4=8",
+                ],
+            ),
+        ):
+            runtime = runner.parse_args(
+                [
+                    *common,
+                    "--native-kernel-variant",
+                    variant,
+                    *split_arguments,
+                    "--launcher-mode",
+                    "runtime-factory",
+                    "--output-dir",
+                    str(tmp_path / f"runtime-{variant}-{split_selector}"),
+                ]
+            )
+            assert runtime.native_kernel_variant == variant
+            assert runtime.native_split_policy == split_selector
+            assert runtime.native_splits == {1: 32, 4: 8}
+        with pytest.raises(SystemExit):
+            runner.parse_args(
+                [
+                    *common,
+                    "--native-kernel-variant",
+                    variant,
+                    "--output-dir",
+                    str(tmp_path / f"immutable-{variant}"),
+                ]
+            )
     with pytest.raises(SystemExit):
         runner.parse_args(
             [

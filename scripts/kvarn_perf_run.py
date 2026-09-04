@@ -72,6 +72,8 @@ NATIVE_KERNEL_VARIANTS = {
     "q6_current_half_v_prefetch": 16,
     "q6_page_record_cursor": 17,
     "q6_prefetch_record_cursor": 18,
+    "q6_page_metadata_cursor": 20,
+    "q6_paired_nibble_half2": 21,
 }
 REFERENCE_NATIVE_KERNEL_VARIANT = "baseline"
 NATIVE_SPLIT_POLICIES = split_policy.NATIVE_SPLIT_POLICIES
@@ -101,7 +103,15 @@ B70_Q6_KERNEL_VARIANTS = frozenset(
         "q6_current_half_v_prefetch",
         "q6_page_record_cursor",
         "q6_prefetch_record_cursor",
+        "q6_page_metadata_cursor",
+        "q6_paired_nibble_half2",
     }
+)
+RUNTIME_FACTORY_ONLY_KERNEL_VARIANTS = frozenset(
+    {"q6_page_metadata_cursor", "q6_paired_nibble_half2"}
+)
+IMMUTABLE_QUALIFIED_KERNEL_VARIANTS = (
+    B70_Q6_KERNEL_VARIANTS - RUNTIME_FACTORY_ONLY_KERNEL_VARIANTS
 )
 VARIANT_FIELDS = (
     "kernel_strategy",
@@ -3496,9 +3506,17 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                 "performance runs require explicit --native-layout, "
                 "--native-kernel-variant, and --native-split-policy"
             )
+        if (
+            args.native_kernel_variant in RUNTIME_FACTORY_ONLY_KERNEL_VARIANTS
+            and launcher_mode(args) != "runtime-factory"
+        ):
+            raise RunnerError(
+                f"{args.native_kernel_variant} requires --launcher-mode "
+                "runtime-factory"
+            )
         if launcher_mode(args) == "immutable" and (
             args.native_layout != "xe2_dpas"
-            or args.native_kernel_variant not in B70_Q6_KERNEL_VARIANTS
+            or args.native_kernel_variant not in IMMUTABLE_QUALIFIED_KERNEL_VARIANTS
             or args.native_split_policy != "b70_q6"
         ):
             raise RunnerError(

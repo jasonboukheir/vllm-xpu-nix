@@ -54,6 +54,8 @@ NATIVE_KERNEL_VARIANTS = {
     "q6_current_half_v_prefetch": 16,
     "q6_page_record_cursor": 17,
     "q6_prefetch_record_cursor": 18,
+    "q6_page_metadata_cursor": 20,
+    "q6_paired_nibble_half2": 21,
 }
 NATIVE_SPLIT_POLICIES = split_policy.NATIVE_SPLIT_POLICIES
 FLUSH_INDEX_MATERIALIZATION_VARIANTS = ("per_layer", "shared")
@@ -83,6 +85,8 @@ B70_Q6_KERNEL_VARIANTS = frozenset(
         "q6_current_half_v_prefetch",
         "q6_page_record_cursor",
         "q6_prefetch_record_cursor",
+        "q6_page_metadata_cursor",
+        "q6_paired_nibble_half2",
     }
 )
 COMBINED_LIBRARY_VARIANT_MATRIX = [
@@ -107,6 +111,8 @@ COMBINED_LIBRARY_VARIANT_MATRIX = [
         "q6_current_half_v_prefetch",
         "q6_page_record_cursor",
         "q6_prefetch_record_cursor",
+        "q6_page_metadata_cursor",
+        "q6_paired_nibble_half2",
     )
 ]
 VARIANT_FIELDS = (

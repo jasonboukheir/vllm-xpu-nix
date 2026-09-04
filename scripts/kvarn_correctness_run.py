@@ -2444,9 +2444,19 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             raise CorrectnessError(
                 "finalist service qualification requires --native-output-dtype bf16"
             )
+        if (
+            args.native_kernel_variant
+            in perf.RUNTIME_FACTORY_ONLY_KERNEL_VARIANTS
+            and perf.launcher_mode(args) != "runtime-factory"
+        ):
+            raise CorrectnessError(
+                f"{args.native_kernel_variant} requires --launcher-mode "
+                "runtime-factory"
+            )
         if perf.launcher_mode(args) == "immutable" and (
             args.native_layout != "xe2_dpas"
-            or args.native_kernel_variant not in perf.B70_Q6_KERNEL_VARIANTS
+            or args.native_kernel_variant
+            not in perf.IMMUTABLE_QUALIFIED_KERNEL_VARIANTS
             or args.native_split_policy != "b70_q6"
         ):
             raise CorrectnessError(

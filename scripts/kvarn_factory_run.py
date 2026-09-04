@@ -37,7 +37,7 @@ KVARN_RECORD_STRIDE = 35_072
 SOFTMAX_SCALE = 1.0 / 16.0
 VALID_SPLITS = (1, 2, 4, 8, 16, 17, 24, 32)
 VALID_OUTPUT_DTYPES = ("fp16", "bf16")
-FLUSH_WRITER_VARIANTS = ("reference", "native_xe2")
+FLUSH_WRITER_VARIANTS = ("reference", "native_xe2", "sinkhorn_pack_xe2")
 PREFILL_STORE_VARIANTS = ("reference", "hadamard_scatter")
 MATCHED_FIXTURE_MODE = "matched-production"
 UNMATCHED_FIXTURE_MODE = "unmatched-diagnostic"
@@ -385,6 +385,13 @@ FOCUSED_XPU_NATIVE_WRITER_TESTS = (
     "tests/flash_attn/test_kvarn_hadamard_scatter_xpu.py::test_kvarn_balanced_writer_skips_invalid_ragged_block_ids",
     "tests/flash_attn/test_kvarn_hadamard_scatter_xpu.py::test_kvarn_balanced_writer_matches_nontrivial_rounding",
     "tests/flash_attn/test_kvarn_hadamard_scatter_xpu.py::test_kvarn_balanced_writer_rejects_non_abi_record_stride",
+)
+FOCUSED_XPU_SINKHORN_WRITER_TESTS = (
+    "tests/flash_attn/test_kvarn_sinkhorn_writer_xpu.py::test_sinkhorn_writer_matches_reference",
+    "tests/flash_attn/test_kvarn_sinkhorn_writer_xpu.py::test_sinkhorn_writer_preserves_rtn_halfway_ties",
+    "tests/flash_attn/test_kvarn_sinkhorn_writer_xpu.py::test_sinkhorn_writer_masks_ragged_ownership",
+    "tests/flash_attn/test_kvarn_sinkhorn_writer_xpu.py::test_sinkhorn_writer_uses_int64_long_context_record_addressing",
+    "tests/flash_attn/test_kvarn_sinkhorn_writer_xpu.py::test_sinkhorn_writer_rejects_non_abi_inputs",
 )
 FOCUSED_XPU_PREFILL_STORE_TESTS = (
     "tests/flash_attn/test_kvarn_hadamard_scatter_xpu.py::test_kvarn_hadamard_scatter_matches_fp32",
@@ -1720,6 +1727,8 @@ def focused_xpu_tests(
         selected.append(FOCUSED_XPU_ID15_TEST)
     if flush_writer == "native_xe2":
         selected.extend(FOCUSED_XPU_NATIVE_WRITER_TESTS)
+    elif flush_writer == "sinkhorn_pack_xe2":
+        selected.extend(FOCUSED_XPU_SINKHORN_WRITER_TESTS)
     elif flush_writer != "reference":
         raise FactoryError(f"unsupported flush writer {flush_writer!r}")
     if prefill_store == "hadamard_scatter":

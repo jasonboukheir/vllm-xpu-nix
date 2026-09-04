@@ -2476,9 +2476,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             raise CorrectnessError(
                 "non-baseline native kernel variants require --native-layout xe2_dpas"
             )
-        if args.flush_writer == "native_xe2" and args.native_layout != "xe2_dpas":
+        if args.flush_writer != "reference" and args.native_layout != "xe2_dpas":
             raise CorrectnessError(
-                "--flush-writer native_xe2 requires --native-layout xe2_dpas"
+                "native --flush-writer requires --native-layout xe2_dpas"
             )
         if perf.split_policy.owns_runtime_selection(args.native_split_policy):
             if args.native_splits:

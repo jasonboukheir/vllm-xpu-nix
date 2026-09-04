@@ -35,7 +35,7 @@ NIX_STORE_HASH = re.compile(r"^[0-9abcdfghijklmnpqrsvwxyz]{32}$")
 # Resolve ``all`` in the runner so every layout-compatible candidate compiled
 # into the shared library automatically participates in the default sweep.
 DEFAULT_VARIANTS = "all"
-FLUSH_WRITER_VARIANTS = ("reference", "native_xe2")
+FLUSH_WRITER_VARIANTS = ("reference", "native_xe2", "sinkhorn_pack_xe2")
 PREFILL_STORE_VARIANTS = ("reference", "hadamard_scatter")
 DEFAULT_FLUSH_WRITER = "reference"
 DEFAULT_PREFILL_STORE = "reference"

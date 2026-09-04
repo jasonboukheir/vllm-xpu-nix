@@ -336,8 +336,11 @@ def test_profile_command_and_dpas_launcher_provenance(
         "request_stable_rmsnorm": "1",
         "request_stability_qualification": "qualified-default",
         "flush_index_materialization": "per_layer",
+        "flush_writer": "reference",
+        "prefill_store": "reference",
         "fusion_selection": (
-            "fused_attention_decode_per_layer_flush_qkv_scatter_frontend"
+            "fused_attention_decode_per_layer_flush_reference_writer_"
+            "reference_prefill_store_qkv_scatter_frontend"
         ),
         "scheduling_selection": "split_k",
         "scheduler_max_num_batched_tokens": 2048,
@@ -349,7 +352,10 @@ def test_profile_command_and_dpas_launcher_provenance(
     args.flush_index_materialization = "shared"
     shared_variant = variant_provenance(run, args)
     assert shared_variant["variant_id"] != per_layer_variant["variant_id"]
-    assert "-shared-flush-qkv_scatter-frontend-" in shared_variant["variant_id"]
+    assert (
+        "-shared-flush-reference-writer-reference-prefill-store-"
+        "qkv_scatter-frontend-" in shared_variant["variant_id"]
+    )
     assert shared_variant["flush_index_materialization"] == "shared"
     args.flush_index_materialization = "per_layer"
     args.native_split_policy = "b70_q6"
@@ -368,8 +374,11 @@ def test_profile_command_and_dpas_launcher_provenance(
         "request_stable_rmsnorm": "1",
         "request_stability_qualification": "qualified-default",
         "flush_index_materialization": "per_layer",
+        "flush_writer": "reference",
+        "prefill_store": "reference",
         "fusion_selection": (
-            "fused_attention_decode_per_layer_flush_qkv_scatter_frontend"
+            "fused_attention_decode_per_layer_flush_reference_writer_"
+            "reference_prefill_store_qkv_scatter_frontend"
         ),
         "scheduling_selection": "split_k",
         "scheduler_max_num_batched_tokens": 2048,
@@ -426,12 +435,14 @@ def test_runtime_factory_profile_accepts_runtime_axes_without_named_launcher(
     assert perf.runtime_factory_axes_for_run(run, args) == {
         "KVARN_FACTORY_CACHE_LAYOUT": "natural",
         "KVARN_FACTORY_FLUSH_INDEX_MATERIALIZATION": "shared",
+        "KVARN_FACTORY_FLUSH_WRITER": "reference",
         "KVARN_FACTORY_KERNEL_VARIANT": "baseline",
         "KVARN_FACTORY_KV_CACHE_DTYPE": perf.COMPACT_DTYPE,
         "KVARN_FACTORY_MAX_MODEL_LEN": "65536",
         "KVARN_FACTORY_MAX_NUM_SEQS": "1",
         "KVARN_FACTORY_NATIVE_XPU_FRONTEND": "reference",
         "KVARN_FACTORY_ONEDNN_DETERMINISTIC": "0",
+        "KVARN_FACTORY_PREFILL_STORE": "reference",
         "KVARN_FACTORY_REQUEST_STABLE_PROJECTION_ROWS": "0",
         "KVARN_FACTORY_REQUEST_STABLE_RMSNORM": "1",
         "KVARN_FACTORY_SPLITS": "17",

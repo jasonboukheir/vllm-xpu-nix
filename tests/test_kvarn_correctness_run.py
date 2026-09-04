@@ -254,6 +254,10 @@ def _service_environment(
         "KVARN_FLUSH_INDEX_MATERIALIZATION": (
             correctness.perf.flush_index_materialization_environment(args)
         ),
+        "KVARN_FLUSH_WRITER": correctness.flush_writer_for_spec(spec, args),
+        "KVARN_NATIVE_XPU_PREFILL_STORE": correctness.prefill_store_for_spec(
+            spec, args
+        ),
         "KVARN_NATIVE_XPU_FRONTEND": correctness.native_frontend_for_spec(spec, args),
         "KVARN_NATIVE_XPU_KERNEL_VARIANT": (
             correctness.native_kernel_variant_for_spec(spec, args)
@@ -336,7 +340,8 @@ def test_dpas_mode_uses_separate_launchers_and_keeps_reference_natural(
     assert correctness.native_layout_for_spec(reference, args) == "natural"
     assert correctness.candidate_variant_provenance(args)["variant_id"] == (
         "native-xe2-xe2_dpas-q6_scalar-fixed_b1s32_b4s8-"
-        "per_layer-flush-reference-frontend-eager_mnbt2048"
+        "per_layer-indices-reference-writer-reference-prefill-store-"
+        "reference-frontend-eager_mnbt2048"
     )
     assert correctness.service_variant_provenance(reference, args)["variant_id"] == (
         "natural-kvarn-correctness-reference-eager_mnbt2048"
@@ -440,6 +445,8 @@ def test_qkv_frontend_is_native_only_and_reference_phase_is_unfused(
         native_splits={1: 32, 4: 8},
         native_output_dtype="bf16",
         flush_index_materialization="per_layer",
+        flush_writer="native_xe2",
+        prefill_store="hadamard_scatter",
         native_frontend="qkv_scatter",
         model="model",
         served_model="sunny-chat",
@@ -453,6 +460,10 @@ def test_qkv_frontend_is_native_only_and_reference_phase_is_unfused(
 
     assert correctness.native_frontend_for_spec(native, args) == "qkv_scatter"
     assert correctness.native_frontend_for_spec(reference, args) == "reference"
+    assert correctness.flush_writer_for_spec(native, args) == "native_xe2"
+    assert correctness.flush_writer_for_spec(reference, args) == "reference"
+    assert correctness.prefill_store_for_spec(native, args) == "hadamard_scatter"
+    assert correctness.prefill_store_for_spec(reference, args) == "reference"
     assert (
         correctness.service_environment(native, args)[
             "KVARN_FACTORY_NATIVE_XPU_FRONTEND"
@@ -486,7 +497,10 @@ def test_qkv_frontend_is_native_only_and_reference_phase_is_unfused(
     args.flush_index_materialization = "shared"
     shared_variant = correctness.candidate_variant_provenance(args)
     assert shared_variant["variant_id"] != per_layer_variant["variant_id"]
-    assert "-shared-flush-qkv_scatter-frontend-" in shared_variant["variant_id"]
+    assert (
+        "-shared-indices-native_xe2-writer-hadamard_scatter-prefill-store-"
+        "qkv_scatter-frontend-" in shared_variant["variant_id"]
+    )
 
 
 @pytest.mark.parametrize(

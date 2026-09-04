@@ -49,7 +49,7 @@ TRACE_SUFFIXES = (".pt.trace.json", ".pt.trace.json.gz")
 MIN_PROFILE_STEPS = 20
 MAX_PROFILE_STEPS = 50
 DECODE_SETTLE_STEPS = 4
-VARIANT_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]{0,127}$")
+VARIANT_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]{0,191}$")
 
 
 def profile_delay_iterations(
@@ -408,6 +408,8 @@ def variant_provenance(
     splits = perf.native_splits_for_run(run, args)
     native_frontend = perf.native_frontend_for_run(run, args)
     flush_indices = perf.flush_index_materialization_environment(args)
+    flush_writer = perf.flush_writer_for_run(run, args)
+    prefill_store = perf.prefill_store_for_run(run, args)
     if run.arm == "reference":
         kernel_strategy = "auto_vllm_backend"
         fusion_selection = "backend_default"
@@ -418,18 +420,21 @@ def variant_provenance(
             f"native_xe2_decode_{perf.native_kernel_variant_for_run(run, args)}"
         )
         fusion_selection = (
-            f"fused_attention_decode_{flush_indices}_flush_{native_frontend}_frontend"
+            f"fused_attention_decode_{flush_indices}_flush_"
+            f"{flush_writer}_writer_{prefill_store}_prefill_store_"
+            f"{native_frontend}_frontend"
         )
         scheduling_selection = "split_k"
         generated_id = (
             f"native-xe2-{layout}-{perf.native_kernel_variant_for_run(run, args)}-"
-            f"split{splits}-{flush_indices}-flush-"
+            f"split{splits}-{flush_indices}-flush-{flush_writer}-writer-"
+            f"{prefill_store}-prefill-store-"
             f"{native_frontend}-frontend-b{run.workload.batch}"
         )
     variant_id = args.variant_id or generated_id
     if VARIANT_ID_PATTERN.fullmatch(variant_id) is None:
         raise perf.RunnerError(
-            "variant id must be a lowercase slug of at most 128 characters"
+            "variant id must be a lowercase slug of at most 192 characters"
         )
     return {
         "variant_id": variant_id,
@@ -451,6 +456,8 @@ def variant_provenance(
             else "diagnostic-unqualified"
         ),
         "flush_index_materialization": flush_indices,
+        "flush_writer": flush_writer,
+        "prefill_store": prefill_store,
         "fusion_selection": fusion_selection,
         "scheduling_selection": scheduling_selection,
         "scheduler_max_num_batched_tokens": args.max_num_batched_tokens,
@@ -648,6 +655,8 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             perf.native_kernel_variant_for_run(run, args)
         ],
         "native_frontend": native_frontend,
+        "flush_writer": perf.flush_writer_for_run(run, args),
+        "prefill_store": perf.prefill_store_for_run(run, args),
         "native_factory_marker": (
             perf.kvarn_factory_marker(
                 cache_layout=perf.native_layout_for_run(run, args),
@@ -813,6 +822,8 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
                     "native_factory_selection_verified"
                 ],
                 "native_frontend": native_frontend,
+                "flush_writer": perf.flush_writer_for_run(run, args),
+                "prefill_store": perf.prefill_store_for_run(run, args),
                 "native_frontend_active_verified": log_scan[
                     "native_frontend_active_verified"
                 ],
@@ -865,6 +876,8 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
                 "native_factory_selection_verified"
             ],
             native_frontend=native_frontend,
+            flush_writer=perf.flush_writer_for_run(run, args),
+            prefill_store=perf.prefill_store_for_run(run, args),
             native_frontend_active_verified=log_scan["native_frontend_active_verified"],
             native_frontend_log_marker=log_scan["native_frontend_log_marker"],
         )
@@ -927,6 +940,16 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--flush-index-materialization",
         choices=perf.FLUSH_INDEX_MATERIALIZATION_VARIANTS,
         default="per_layer",
+    )
+    parser.add_argument(
+        "--flush-writer",
+        choices=perf.FLUSH_WRITER_VARIANTS,
+        default="reference",
+    )
+    parser.add_argument(
+        "--prefill-store",
+        choices=perf.PREFILL_STORE_VARIANTS,
+        default="reference",
     )
     parser.add_argument(
         "--onednn-deterministic",
@@ -1009,6 +1032,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             args.native_kernel_variant or perf.REFERENCE_NATIVE_KERNEL_VARIANT
         )
         args.native_split_policy = args.native_split_policy or "fixed"
+        if args.flush_writer == "native_xe2" and args.native_layout != "xe2_dpas":
+            raise perf.RunnerError(
+                "--flush-writer native_xe2 requires --native-layout xe2_dpas"
+            )
         args.onednn_deterministic = bool(args.onednn_deterministic)
         args.request_stable_projection_rows = bool(
             args.request_stable_projection_rows
@@ -1098,7 +1125,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             and VARIANT_ID_PATTERN.fullmatch(args.variant_id) is None
         ):
             raise perf.RunnerError(
-                "variant id must be a lowercase slug of at most 128 characters"
+                "variant id must be a lowercase slug of at most 192 characters"
             )
         if perf.split_policy.owns_runtime_selection(args.native_split_policy):
             if args.arm != "candidate":

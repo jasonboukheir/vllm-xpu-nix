@@ -259,6 +259,24 @@ def test_focused_kill_suite_adds_id15_block_store_matrix_only_for_id15() -> None
     assert factory.FOCUSED_XPU_ID15_TEST in with_id15
 
 
+def test_focused_kill_suite_selects_writer_and_prefill_direct_op_gates() -> None:
+    variants = [factory.VARIANTS["q6_next_page_prefetch_split_reducer"]]
+    reference = factory.focused_xpu_tests(variants)
+    selected = factory.focused_xpu_tests(
+        variants,
+        flush_writer="native_xe2",
+        prefill_store="hadamard_scatter",
+    )
+
+    assert not set(factory.FOCUSED_XPU_NATIVE_WRITER_TESTS) & set(reference)
+    assert not set(factory.FOCUSED_XPU_PREFILL_STORE_TESTS) & set(reference)
+    assert set(factory.FOCUSED_XPU_NATIVE_WRITER_TESTS) <= set(selected)
+    assert set(factory.FOCUSED_XPU_PREFILL_STORE_TESTS) <= set(selected)
+    assert any("nontrivial_rounding" in node for node in selected)
+    assert any("invalid_ragged_block_ids" in node for node in selected)
+    assert any("backend_strides_and_appends" in node for node in selected)
+
+
 def test_matrix_expands_auto_and_explicit_split_sweeps() -> None:
     cases = factory.build_matrix(
         batches=[1, 4],
@@ -1034,6 +1052,8 @@ def test_focused_xpu_kill_suite_is_bound_to_library_and_fail_closed(
         {"variant_id": 12, "name": "q6_next_page_prefetch"},
         {"variant_id": 13, "name": "q6_next_page_prefetch_split_reducer"},
     ]
+    assert result["flush_writer"] == "reference"
+    assert result["prefill_store"] == "reference"
     assert captured["cwd"] == repo.resolve()
     assert captured["env"]["VLLM_XPU_KERNELS_LIBRARY"] == str(library.resolve())
     assert "no:cacheprovider" in captured["command"]

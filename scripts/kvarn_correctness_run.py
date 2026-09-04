@@ -222,6 +222,18 @@ def native_frontend_for_spec(spec: ServiceSpec, args: argparse.Namespace) -> str
     return selected if spec.native else "reference"
 
 
+def flush_writer_for_spec(spec: ServiceSpec, args: argparse.Namespace) -> str:
+    """Keep the natural-layout Kvarn oracle on the reference writer."""
+    selected = perf.flush_writer_environment(args)
+    return selected if spec.native else "reference"
+
+
+def prefill_store_for_spec(spec: ServiceSpec, args: argparse.Namespace) -> str:
+    """Keep the natural-layout Kvarn oracle on the reference prefill store."""
+    selected = perf.prefill_store_environment(args)
+    return selected if spec.native else "reference"
+
+
 def onednn_deterministic_for_spec(spec: ServiceSpec, args: argparse.Namespace) -> str:
     """The legacy compact non-native oracle has only a deterministic app."""
     if not spec.native and perf.launcher_mode(args) == "runtime-factory":
@@ -256,17 +268,22 @@ def candidate_variant_provenance(args: argparse.Namespace) -> dict[str, str]:
     scheduling = f"eager_mnbt{args.max_num_batched_tokens}"
     native_frontend = perf.native_frontend_environment(args)
     flush_indices = perf.flush_index_materialization_environment(args)
+    flush_writer = perf.flush_writer_environment(args)
+    prefill_store = perf.prefill_store_environment(args)
     return {
         "kernel_strategy": f"native_xe2_qlen1_{args.native_kernel_variant}",
         "split_policy": split_policy,
         "fusion_strategy": (
             "native_materializer_persistent_scratch_"
-            f"{flush_indices}_flush_{native_frontend}_frontend"
+            f"{flush_indices}_indices_{flush_writer}_writer_"
+            f"{prefill_store}_prefill_store_"
+            f"{native_frontend}_frontend"
         ),
         "scheduling_variant": scheduling,
         "variant_id": (
             f"native-xe2-{args.native_layout}-{args.native_kernel_variant}-"
-            f"{split_policy}-{flush_indices}-flush-"
+            f"{split_policy}-{flush_indices}-indices-{flush_writer}-writer-"
+            f"{prefill_store}-prefill-store-"
             f"{native_frontend}-frontend-{scheduling}"
         ),
     }
@@ -312,12 +329,14 @@ def runtime_factory_axes_for_spec(
         "KVARN_FACTORY_FLUSH_INDEX_MATERIALIZATION": (
             perf.flush_index_materialization_environment(args)
         ),
+        "KVARN_FACTORY_FLUSH_WRITER": flush_writer_for_spec(spec, args),
         "KVARN_FACTORY_KERNEL_VARIANT": native_kernel_variant_for_spec(spec, args),
         "KVARN_FACTORY_KV_CACHE_DTYPE": perf.COMPACT_DTYPE,
         "KVARN_FACTORY_MAX_MODEL_LEN": str(spec.max_model_len),
         "KVARN_FACTORY_MAX_NUM_SEQS": str(spec.batch),
         "KVARN_FACTORY_NATIVE_XPU_FRONTEND": native_frontend_for_spec(spec, args),
         "KVARN_FACTORY_ONEDNN_DETERMINISTIC": onednn_deterministic_for_spec(spec, args),
+        "KVARN_FACTORY_PREFILL_STORE": prefill_store_for_spec(spec, args),
         "KVARN_FACTORY_REQUEST_STABLE_PROJECTION_ROWS": (
             request_stable_projection_rows_for_spec(spec, args)
         ),
@@ -365,6 +384,8 @@ def service_spec_evidence(
             native_kernel_variant_for_spec(spec, args)
         ],
         "native_frontend": native_frontend_for_spec(spec, args),
+        "flush_writer": flush_writer_for_spec(spec, args),
+        "prefill_store": prefill_store_for_spec(spec, args),
         "request_stable_projection_rows": request_stable_projection_rows_for_spec(
             spec, args
         ),
@@ -446,6 +467,8 @@ def passed_artifact(
     native_splits: Mapping[int, int],
     native_output_dtype: str,
     flush_index_materialization: str,
+    flush_writer: str,
+    prefill_store: str,
     native_frontend: str,
     request_stable_projection_rows: str,
     request_stable_rmsnorm: str,
@@ -470,6 +493,8 @@ def passed_artifact(
             native_splits=native_splits,
             native_output_dtype=native_output_dtype,
             flush_index_materialization=flush_index_materialization,
+            flush_writer=flush_writer,
+            prefill_store=prefill_store,
             native_frontend=native_frontend,
             request_stable_projection_rows=request_stable_projection_rows,
             request_stable_rmsnorm=request_stable_rmsnorm,
@@ -536,6 +561,8 @@ def service_environment(spec: ServiceSpec, args: argparse.Namespace) -> dict[str
         environment["KVARN_FACTORY_FLUSH_INDEX_MATERIALIZATION"] = (
             perf.flush_index_materialization_environment(args)
         )
+        environment["KVARN_FACTORY_FLUSH_WRITER"] = flush_writer_for_spec(spec, args)
+        environment["KVARN_FACTORY_PREFILL_STORE"] = prefill_store_for_spec(spec, args)
         environment["KVARN_FACTORY_NATIVE_XPU_FRONTEND"] = native_frontend_for_spec(
             spec, args
         )
@@ -1110,6 +1137,8 @@ def verify_service_profile(
         "KVARN_FLUSH_INDEX_MATERIALIZATION": (
             perf.flush_index_materialization_environment(args)
         ),
+        "KVARN_FLUSH_WRITER": flush_writer_for_spec(spec, args),
+        "KVARN_NATIVE_XPU_PREFILL_STORE": prefill_store_for_spec(spec, args),
         "KVARN_NATIVE_XPU_FRONTEND": native_frontend_for_spec(spec, args),
         "KVARN_NATIVE_XPU_KERNEL_VARIANT": native_kernel_variant_for_spec(spec, args),
         "KVARN_NATIVE_XPU_MATERIALIZE": native,
@@ -1280,6 +1309,10 @@ def run_service_phase(
         captured_flush_index_materialization = service.environment.get(
             "KVARN_FLUSH_INDEX_MATERIALIZATION"
         )
+        captured_flush_writer = service.environment.get("KVARN_FLUSH_WRITER")
+        captured_prefill_store = service.environment.get(
+            "KVARN_NATIVE_XPU_PREFILL_STORE"
+        )
         captured_native_frontend = service.environment.get("KVARN_NATIVE_XPU_FRONTEND")
         captured_request_stable_projection_rows = service.environment.get(
             "KVARN_REQUEST_STABLE_PROJECTION_ROWS"
@@ -1335,6 +1368,8 @@ def run_service_phase(
             native_split_policy=service_variant_provenance(spec, args)["split_policy"],
             native_split_policy_environment=captured_split_policy_environment,
             flush_index_materialization=captured_flush_index_materialization,
+            flush_writer=captured_flush_writer,
+            prefill_store=captured_prefill_store,
             native_frontend=captured_native_frontend,
             request_stable_projection_rows=(
                 request_stable_projection_rows_for_spec(spec, args)
@@ -2014,6 +2049,8 @@ def build_manifest(
             flush_index_materialization=(
                 perf.flush_index_materialization_environment(args)
             ),
+            flush_writer=perf.flush_writer_environment(args),
+            prefill_store=perf.prefill_store_environment(args),
             native_frontend=perf.native_frontend_environment(args),
             request_stable_projection_rows=(
                 perf.request_stable_projection_rows_environment(args)
@@ -2052,6 +2089,8 @@ def build_manifest(
         "flush_index_materialization": (
             perf.flush_index_materialization_environment(args)
         ),
+        "flush_writer": perf.flush_writer_environment(args),
+        "prefill_store": perf.prefill_store_environment(args),
         "native_frontend": perf.native_frontend_environment(args),
         "request_stability_qualification": (
             "qualified-default"
@@ -2063,6 +2102,8 @@ def build_manifest(
             "kvarn_flush_index_materialization": (
                 perf.flush_index_materialization_environment(args)
             ),
+            "kvarn_flush_writer": perf.flush_writer_environment(args),
+            "kvarn_prefill_store": perf.prefill_store_environment(args),
             "kvarn_onednn_deterministic": perf.onednn_deterministic_environment(args),
             "kvarn_request_stable_projection_rows": (
                 perf.request_stable_projection_rows_environment(args)
@@ -2120,6 +2161,8 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             native_split_policy=args.native_split_policy,
             native_splits=args.native_splits,
             output_dtype=args.native_output_dtype,
+            flush_writer=perf.flush_writer_environment(args),
+            prefill_store=perf.prefill_store_environment(args),
             expected_revisions={
                 "vllm-xpu-nix": args.packaging_commit,
                 "vllm": args.vllm_commit,
@@ -2163,6 +2206,8 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         "flush_index_materialization": (
             perf.flush_index_materialization_environment(args)
         ),
+        "flush_writer": perf.flush_writer_environment(args),
+        "prefill_store": perf.prefill_store_environment(args),
         "native_frontend": perf.native_frontend_environment(args),
         "request_stability_qualification": (
             "qualified-default"
@@ -2174,6 +2219,8 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             "kvarn_flush_index_materialization": (
                 perf.flush_index_materialization_environment(args)
             ),
+            "kvarn_flush_writer": perf.flush_writer_environment(args),
+            "kvarn_prefill_store": perf.prefill_store_environment(args),
             "kvarn_onednn_deterministic": perf.onednn_deterministic_environment(args),
             "kvarn_request_stable_projection_rows": (
                 perf.request_stable_projection_rows_environment(args)
@@ -2301,6 +2348,18 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--flush-writer",
+        choices=perf.FLUSH_WRITER_VARIANTS,
+        default="reference",
+        help="engine-lifetime full-page writer for native correctness services",
+    )
+    parser.add_argument(
+        "--prefill-store",
+        choices=perf.PREFILL_STORE_VARIANTS,
+        default="reference",
+        help="engine-lifetime multi-token store for native correctness services",
+    )
+    parser.add_argument(
         "--native-frontend",
         choices=perf.NATIVE_FRONTEND_VARIANTS,
         default="reference",
@@ -2416,6 +2475,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ):
             raise CorrectnessError(
                 "non-baseline native kernel variants require --native-layout xe2_dpas"
+            )
+        if args.flush_writer == "native_xe2" and args.native_layout != "xe2_dpas":
+            raise CorrectnessError(
+                "--flush-writer native_xe2 requires --native-layout xe2_dpas"
             )
         if perf.split_policy.owns_runtime_selection(args.native_split_policy):
             if args.native_splits:

@@ -84,6 +84,8 @@ def _factory_result(
     native_split_policy: str = "b70_q6",
     output_dtype: str = "bf16",
     explicit_factory_axes: bool = False,
+    flush_writer: str = "reference",
+    prefill_store: str = "reference",
 ) -> Path:
     variant_id = gate_module.NATIVE_KERNEL_VARIANTS[native_kernel_variant]
     cases: list[dict[str, object]] = []
@@ -244,6 +246,8 @@ def _factory_result(
             "passed": True,
             "returncode": 0,
             "skipped_count": 0,
+            "flush_writer": flush_writer,
+            "prefill_store": prefill_store,
         },
         "libraries": {
             "flash": {
@@ -310,6 +314,8 @@ def _factory_result(
         },
         "requested_settings": {
             "fixture_mode": "matched-production",
+            "flush_writer": flush_writer,
+            "prefill_store": prefill_store,
             "output_dtypes": [output_dtype],
             "matrix": [
                 {field: case[field] for field in matrix_fields} for case in cases
@@ -330,6 +336,8 @@ def _correctness(
     native_split_policy: str = "b70_q6",
     native_splits: dict[int, int] | None = None,
     flush_index_materialization: str = "per_layer",
+    flush_writer: str = "reference",
+    prefill_store: str = "reference",
     native_frontend: str = "reference",
     request_stable_projection_rows: str = "1",
     request_stable_rmsnorm: str = "1",
@@ -401,11 +409,15 @@ def _correctness(
             selected_splits,
             request_stable_projection_rows,
             request_stable_rmsnorm,
+            flush_writer,
+            prefill_store,
         )
         effective_layout = spec["native_layout"]
         effective_kernel = spec["native_kernel_variant"]
         effective_policy = spec["native_split_policy"]
         effective_frontend = spec["native_frontend"]
+        effective_flush_writer = spec["flush_writer"]
+        effective_prefill_store = spec["prefill_store"]
         max_splits = spec["max_decode_splits"]
         splits_environment = (
             None
@@ -434,6 +446,8 @@ def _correctness(
                     "flush_index_materialization_environment": (
                         flush_index_materialization
                     ),
+                    "flush_writer_environment": effective_flush_writer,
+                    "prefill_store_environment": effective_prefill_store,
                     "native_frontend_environment": effective_frontend,
                     "request_stable_projection_rows_environment": (
                         spec["request_stable_projection_rows"]
@@ -445,6 +459,8 @@ def _correctness(
                         "KVARN_FLUSH_INDEX_MATERIALIZATION": (
                             flush_index_materialization
                         ),
+                        "KVARN_FLUSH_WRITER": effective_flush_writer,
+                        "KVARN_NATIVE_XPU_PREFILL_STORE": effective_prefill_store,
                         "KVARN_NATIVE_XPU_FRONTEND": effective_frontend,
                         "KVARN_NATIVE_XPU_DPAS_LAYOUT": gate_module.NATIVE_LAYOUT_ENV[
                             effective_layout
@@ -554,6 +570,8 @@ def _correctness(
                         else "captured-process-environment-plus-factory-marker"
                     ),
                     "flush_index_materialization": flush_index_materialization,
+                    "flush_writer": effective_flush_writer,
+                    "prefill_store": effective_prefill_store,
                     "native_frontend": effective_frontend,
                     "request_stable_projection_rows": spec[
                         "request_stable_projection_rows"
@@ -716,6 +734,8 @@ def _correctness(
         native_kernel_variant=native_kernel_variant,
         native_splits=selected_splits,
         native_split_policy=native_split_policy,
+        flush_writer=flush_writer,
+        prefill_store=prefill_store,
     )
     factory_qualification = gate_module.validate_factory_qualification(
         factory_path,
@@ -732,6 +752,8 @@ def _correctness(
         expected_package="/nix/store/package",
         expected_native_library=primitive_files["native.so"]["path"],
         expected_native_library_sha256=primitive_files["native.so"]["sha256"],
+        flush_writer=flush_writer,
+        prefill_store=prefill_store,
     )
     document = {
         "status": "passed",
@@ -752,6 +774,8 @@ def _correctness(
         "native_output_dtype": "bf16",
         "native_split_policy": native_split_policy,
         "flush_index_materialization": flush_index_materialization,
+        "flush_writer": flush_writer,
+        "prefill_store": prefill_store,
         "native_frontend": native_frontend,
         "request_stability_qualification": (
             "qualified-default"
@@ -761,6 +785,8 @@ def _correctness(
         ),
         "service_controls": {
             "kvarn_flush_index_materialization": flush_index_materialization,
+            "kvarn_flush_writer": flush_writer,
+            "kvarn_prefill_store": prefill_store,
             "kvarn_native_frontend": native_frontend,
             "kvarn_onednn_deterministic": "1",
             "kvarn_request_stable_projection_rows": (
@@ -779,6 +805,8 @@ def _correctness(
             native_kernel_variant,
             native_split_policy,
             selected_splits,
+            flush_writer,
+            prefill_store,
         ),
         "native_dispatch_verified": True,
         "native_direct_bf16_verified": True,
@@ -795,6 +823,8 @@ def _correctness(
                 selected_splits,
                 request_stable_projection_rows,
                 request_stable_rmsnorm,
+                flush_writer,
+                prefill_store,
             )
             for name in gate_module.CORRECTNESS_PHASE_SPECS
         ],
@@ -842,6 +872,8 @@ def _result(
     native_split_policy: str = "b70_q6",
     native_split_map: dict[int, int] | None = None,
     flush_index_materialization: str = "per_layer",
+    flush_writer: str = "reference",
+    prefill_store: str = "reference",
     native_frontend: str = "reference",
     request_stable_projection_rows: str = "1",
     request_stable_rmsnorm: str = "1",
@@ -943,6 +975,8 @@ def _result(
                             if native_split_map is None
                             else native_split_map
                         ),
+                        flush_writer,
+                        prefill_store,
                     )
                 ),
             }
@@ -1026,6 +1060,10 @@ def _result(
         "kvarn_candidate_closure_sha256": "b" * 64,
         "kvarn_max_num_batched_tokens": "2048",
         "kvarn_flush_index_materialization": flush_index_materialization,
+        "kvarn_flush_writer": "reference" if arm == "reference" else flush_writer,
+        "kvarn_prefill_store": (
+            "reference" if arm == "reference" else prefill_store
+        ),
         "kvarn_native_frontend": (
             "reference" if arm == "reference" else native_frontend
         ),
@@ -1096,6 +1134,8 @@ def _result(
                     native_kernel_variant,
                     native_split_policy,
                     selected_split_map,
+                    flush_writer,
+                    prefill_store,
                 )
             ).items()
         },
@@ -1159,6 +1199,8 @@ def _arms(
     native_splits: dict[int, int] | None = None,
     native_frontend: str = "reference",
     flush_index_materialization: str = "per_layer",
+    flush_writer: str = "reference",
+    prefill_store: str = "reference",
     request_stable_projection_rows: str = "1",
     request_stable_rmsnorm: str = "1",
 ) -> tuple[list[Path], list[Path], list[Path], list[Path], Path]:
@@ -1173,6 +1215,8 @@ def _arms(
         native_splits=selected_splits,
         native_frontend=native_frontend,
         flush_index_materialization=flush_index_materialization,
+        flush_writer=flush_writer,
+        prefill_store=prefill_store,
         request_stable_projection_rows=request_stable_projection_rows,
         request_stable_rmsnorm=request_stable_rmsnorm,
     )
@@ -1217,6 +1261,8 @@ def _arms(
             ttft=reference_ttft,
             itl=reference_itl,
             flush_index_materialization=flush_index_materialization,
+            flush_writer=flush_writer,
+            prefill_store=prefill_store,
             request_stable_projection_rows=request_stable_projection_rows,
             request_stable_rmsnorm=request_stable_rmsnorm,
         )
@@ -1241,6 +1287,8 @@ def _arms(
             native_split_map=selected_splits,
             native_frontend=native_frontend,
             flush_index_materialization=flush_index_materialization,
+            flush_writer=flush_writer,
+            prefill_store=prefill_store,
             request_stable_projection_rows=request_stable_projection_rows,
             request_stable_rmsnorm=request_stable_rmsnorm,
         )
@@ -1316,11 +1364,33 @@ def test_match_gate_accepts_qkv_candidate_with_unfused_reference(
     assert result["reference"]["arm"]["kvarn_native_frontend"] == "reference"
     assert result["candidate"]["arm"]["kvarn_native_frontend"] == "qkv_scatter"
     assert result["candidate"]["arm"]["kvarn_fusion_strategy"] == (
-        "native_materializer_persistent_scratch_shared_flush_qkv_scatter_frontend"
+            "native_materializer_persistent_scratch_shared_indices_"
+            "reference_writer_reference_prefill_store_qkv_scatter_frontend"
     )
     assert (
-        "-shared-flush-qkv_scatter-frontend-"
+        "-shared-indices-reference-writer-reference-prefill-store-"
+        "qkv_scatter-frontend-"
         in result["candidate"]["arm"]["kvarn_variant_id"]
+    )
+
+
+def test_match_gate_binds_native_writer_and_prefill_store_to_candidate(
+    tmp_path: Path,
+) -> None:
+    result = _compare(
+        _arms(
+            tmp_path,
+            flush_writer="native_xe2",
+            prefill_store="hadamard_scatter",
+        )
+    )
+
+    assert result["reference"]["arm"]["kvarn_flush_writer"] == "reference"
+    assert result["reference"]["arm"]["kvarn_prefill_store"] == "reference"
+    assert result["candidate"]["arm"]["kvarn_flush_writer"] == "native_xe2"
+    assert (
+        result["candidate"]["arm"]["kvarn_prefill_store"]
+        == "hadamard_scatter"
     )
     assert result["reference"]["arm"]["kvarn_variant_id"] == (
         "auto-control-eager_mnbt2048"

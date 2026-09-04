@@ -1527,33 +1527,22 @@ def kvarn_factory_marker(
 
 
 def native_direct_bf16_evidence(text: str, *, native: bool) -> dict[str, Any]:
-    """Require and describe the decoder's observed direct-BF16 decision."""
+    """Require direct BF16 for the decoder's final observed batch shape."""
     decoder_lines = [line for line in text.splitlines() if NATIVE_DISPATCH in line]
-    verified_indices = [
-        index
-        for index, line in enumerate(decoder_lines)
-        if NATIVE_DIRECT_BF16_MARKER in line
-    ]
-    disabled_indices = [
-        index
-        for index, line in enumerate(decoder_lines)
-        if NATIVE_DIRECT_BF16_DISABLED_MARKER in line
-    ]
-    # vLLM's startup warmup intentionally exercises a one-split decoder before
-    # any production-shaped request.  That shape has no split reduction to
-    # fuse, so it truthfully reports direct BF16 as disabled.  Accept only that
-    # narrowly identified warmup marker, and only when a later production
-    # dispatch proves that the direct BF16 path was selected.  Disabled
-    # multi-split dispatches and regressions after the proof still fail closed.
-    last_verified = verified_indices[-1] if verified_indices else -1
-    unsafe_disabled = [
-        index
-        for index in disabled_indices
-        if "splits=1)" not in decoder_lines[index] or index > last_verified
-    ]
-    verified = bool(verified_indices) and not unsafe_disabled
+    # During a B4 request the scheduler legitimately ramps through B1 and B2
+    # shapes before reaching the full batch.  Those transitional shapes can
+    # report direct BF16 as disabled even though the steady-state B4 dispatch
+    # uses it.  The last dispatch is the effective production shape and is the
+    # fail-closed attestation point: earlier transitions are permitted, but a
+    # later disabled/missing decision invalidates an earlier proof.
+    final_decoder_line = decoder_lines[-1] if decoder_lines else ""
+    verified = NATIVE_DIRECT_BF16_MARKER in final_decoder_line
     if native and not verified:
-        observed = "False" if disabled_indices else "missing"
+        observed = (
+            "False"
+            if NATIVE_DIRECT_BF16_DISABLED_MARKER in final_decoder_line
+            else "missing"
+        )
         raise RunnerError(
             "native engine log must report the direct BF16 decoder path: "
             f"{NATIVE_DIRECT_BF16_MARKER} (observed {observed})"

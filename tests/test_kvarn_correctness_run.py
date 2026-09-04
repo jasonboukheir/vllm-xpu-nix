@@ -352,6 +352,84 @@ def test_dpas_mode_uses_separate_launchers_and_keeps_reference_natural(
     )
 
 
+def test_runtime_factory_reuses_generic_launcher_but_preserves_triton_reference(
+    tmp_path: Path,
+) -> None:
+    args = argparse.Namespace(
+        launcher_mode="runtime-factory",
+        native_layout="xe2_dpas",
+        native_kernel_variant="q6_page_pair",
+        native_split_policy="b70_q6",
+        native_splits={1: 32, 4: 8},
+        native_output_dtype="bf16",
+        onednn_deterministic=False,
+        flush_index_materialization="shared",
+        native_frontend="qkv_scatter",
+        model="model",
+        served_model="sunny-chat",
+        model_revision="1" * 40,
+        max_num_batched_tokens=2048,
+        hf_home=tmp_path / "hf",
+        runtime_cache=tmp_path / "cache",
+        resolved_launchers={
+            correctness.perf.RUNTIME_FACTORY_LAUNCHER: "/nix/store/factory/bin/run",
+            correctness.SERVICE_PLAN[3].launcher: "/nix/store/reference/bin/run",
+        },
+    )
+    native_65k = correctness.SERVICE_PLAN[0]
+    native_262k = correctness.SERVICE_PLAN[4]
+    reference = correctness.SERVICE_PLAN[3]
+
+    assert correctness.launcher_name(native_65k, args) == (
+        correctness.perf.RUNTIME_FACTORY_LAUNCHER
+    )
+    assert correctness.launcher_name(native_262k, args) == (
+        correctness.perf.RUNTIME_FACTORY_LAUNCHER
+    )
+    assert correctness.launcher_name(reference, args) == reference.launcher
+    axes = correctness.runtime_factory_axes_for_spec(native_262k, args)
+    assert axes["KVARN_FACTORY_MAX_MODEL_LEN"] == "262144"
+    assert axes["KVARN_FACTORY_MAX_NUM_SEQS"] == "1"
+    assert axes["KVARN_FACTORY_CACHE_LAYOUT"] == "xe2_dpas"
+    assert axes["KVARN_FACTORY_KERNEL_VARIANT"] == "q6_page_pair"
+    assert axes["KVARN_FACTORY_SPLIT_POLICY"] == "b70_q6"
+    assert axes["KVARN_FACTORY_SPLITS"] is None
+    assert axes["KVARN_FACTORY_ONEDNN_DETERMINISTIC"] == "0"
+    environment = correctness.service_environment(native_262k, args)
+    assert environment["KVARN_FACTORY_NATIVE_XPU_FRONTEND"] == "qkv_scatter"
+    assert "KVARN_FACTORY_SPLITS" not in environment
+    binding = correctness.launcher_binding_for_spec(native_262k, args)
+    assert binding["resolved_launcher"] == "/nix/store/factory/bin/run"
+    reference_binding = correctness.launcher_binding_for_spec(reference, args)
+    assert reference_binding["mode"] == "immutable"
+    assert reference_binding["exception"] == (
+        "compact_non_native_reference_not_selectable"
+    )
+    assert correctness.onednn_deterministic_for_spec(reference, args) == "1"
+
+
+def test_runtime_factory_supports_natural_baseline_fixed_split_candidate(
+    tmp_path: Path,
+) -> None:
+    args = argparse.Namespace(
+        launcher_mode="runtime-factory",
+        native_layout="natural",
+        native_kernel_variant="baseline",
+        native_split_policy="fixed",
+        native_splits={1: 17, 4: 24},
+        flush_index_materialization="per_layer",
+        native_frontend="reference",
+        max_num_batched_tokens=2048,
+        runtime_cache=tmp_path / "cache",
+        hf_home=tmp_path / "hf",
+    )
+
+    axes = correctness.runtime_factory_axes_for_spec(correctness.SERVICE_PLAN[2], args)
+    assert axes["KVARN_FACTORY_CACHE_LAYOUT"] == "natural"
+    assert axes["KVARN_FACTORY_KERNEL_VARIANT"] == "baseline"
+    assert axes["KVARN_FACTORY_SPLITS"] == "24"
+
+
 def test_qkv_frontend_is_native_only_and_reference_phase_is_unfused(
     tmp_path: Path,
 ) -> None:

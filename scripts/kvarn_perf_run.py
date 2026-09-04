@@ -95,6 +95,23 @@ DEFAULT_MAX_NUM_BATCHED_TOKENS = 2048
 DEFAULT_PREFILL_WINDOW_BLOCKS = 16
 VLLM_USE_V2_MODEL_RUNNER = "0"
 ONEDNN_DETERMINISTIC_LAUNCHER_SUFFIX = "-onednn-nondeterministic"
+LAUNCHER_MODES = ("immutable", "runtime-factory")
+RUNTIME_FACTORY_LAUNCHER = "vllm-xpu-brutus-kvarn-factory-runtime"
+RUNTIME_FACTORY_OWNED_ARGUMENTS = frozenset(
+    {"--kv-cache-dtype", "--max-model-len", "--max-num-seqs"}
+)
+RUNTIME_FACTORY_SELECTORS = (
+    "KVARN_FACTORY_CACHE_LAYOUT",
+    "KVARN_FACTORY_FLUSH_INDEX_MATERIALIZATION",
+    "KVARN_FACTORY_KERNEL_VARIANT",
+    "KVARN_FACTORY_KV_CACHE_DTYPE",
+    "KVARN_FACTORY_MAX_MODEL_LEN",
+    "KVARN_FACTORY_MAX_NUM_SEQS",
+    "KVARN_FACTORY_NATIVE_XPU_FRONTEND",
+    "KVARN_FACTORY_ONEDNN_DETERMINISTIC",
+    "KVARN_FACTORY_SPLITS",
+    "KVARN_FACTORY_SPLIT_POLICY",
+)
 EXPECTED_XPU_DEVICE_NAME = "Intel(R) Arc(TM) Pro B70 Graphics"
 DEFAULT_MODEL = (
     "jasonboukheir/Qwen3.8-27B-AEON-Ultimate-Uncensored-BF16-W4A16-AutoRound"
@@ -170,6 +187,7 @@ PARITY_METRICS = (
 )
 ARM_ARGUMENTS = {"--kv-cache-dtype"}
 ARM_ENVIRONMENT = {
+    "KVARN_FLUSH_INDEX_MATERIALIZATION",
     "KVARN_NATIVE_XPU",
     "KVARN_NATIVE_XPU_CACHE_LAYOUT",
     "KVARN_NATIVE_XPU_DECODE",
@@ -473,12 +491,25 @@ def native_split_policy_for_run(run: PlannedRun, args: argparse.Namespace) -> st
 
 def onednn_deterministic_environment(args: argparse.Namespace) -> str:
     """Return the exact vLLM selector value bound by both matched arms."""
-    return "1" if args.onednn_deterministic else "0"
+    return "1" if getattr(args, "onednn_deterministic", True) else "0"
 
 
 def flush_index_materialization_environment(args: argparse.Namespace) -> str:
     """Return the engine-lifetime flush-index strategy for this factory run."""
     return getattr(args, "flush_index_materialization", "per_layer")
+
+
+def flush_index_materialization_for_run(
+    run: PlannedRun, args: argparse.Namespace
+) -> str:
+    """Return the effective selector accepted by the chosen launcher.
+
+    Auto has no Kvarn flush path. The package-free launcher nevertheless
+    requires its canonical auto selector to be ``per_layer``.
+    """
+    if run.arm == "reference" and launcher_mode(args) == "runtime-factory":
+        return "per_layer"
+    return flush_index_materialization_environment(args)
 
 
 def native_frontend_environment(args: argparse.Namespace) -> str:
@@ -598,13 +629,21 @@ def load_correctness(
     native_frontend = document.get("native_frontend")
     if native_frontend not in NATIVE_FRONTEND_VARIANTS:
         raise RunnerError("correctness artifact native frontend is unsupported")
-    if document.get("service_controls") != {
+    service_controls = document.get("service_controls")
+    correctness_onednn = (
+        service_controls.get("kvarn_onednn_deterministic")
+        if isinstance(service_controls, dict)
+        else None
+    )
+    if service_controls != {
         "kvarn_flush_index_materialization": flush_index_materialization,
         "kvarn_native_frontend": native_frontend,
-        "kvarn_onednn_deterministic": "1",
+        "kvarn_onednn_deterministic": correctness_onednn,
         "vllm_use_v2_model_runner": VLLM_USE_V2_MODEL_RUNNER,
     }:
         raise RunnerError("correctness artifact service controls are inconsistent")
+    if correctness_onednn not in {"0", "1"}:
+        raise RunnerError("correctness artifact oneDNN selector is unsupported")
     raw_native_splits = document.get("native_nominal_splits_by_batch")
     if not isinstance(raw_native_splits, dict) or set(raw_native_splits) != {"1", "4"}:
         raise RunnerError("correctness artifact nominal split map is incomplete")
@@ -666,6 +705,7 @@ def load_correctness(
             "native_output_dtype": native_output_dtype,
             "flush_index_materialization": flush_index_materialization,
             "native_frontend": native_frontend,
+            "onednn_deterministic": correctness_onednn,
             "factory_qualification": factory,
         },
     )
@@ -709,14 +749,82 @@ def runner_environment(args: argparse.Namespace) -> dict[str, str]:
     return environment
 
 
+def launcher_mode(args: argparse.Namespace) -> str:
+    """Return the launcher strategy, preserving the historical default."""
+    mode = getattr(args, "launcher_mode", "immutable")
+    if mode not in LAUNCHER_MODES:
+        raise RunnerError(f"unsupported launcher mode {mode!r}")
+    return mode
+
+
+def runtime_factory_axes_for_run(
+    run: PlannedRun, args: argparse.Namespace
+) -> dict[str, str | None]:
+    """Return every package-free launcher selector for one engine lifetime.
+
+    ``None`` is provenance for an intentionally absent selector.  In
+    particular, the named B70 Q6 policy owns split selection and rejects a
+    simultaneously supplied ``KVARN_FACTORY_SPLITS`` value.
+    """
+    reference = run.arm == "reference"
+    split_policy = native_split_policy_name_for_run(run, args)
+    axes: dict[str, str | None] = {
+        "KVARN_FACTORY_CACHE_LAYOUT": native_layout_for_run(run, args),
+        "KVARN_FACTORY_FLUSH_INDEX_MATERIALIZATION": (
+            flush_index_materialization_for_run(run, args)
+        ),
+        "KVARN_FACTORY_KERNEL_VARIANT": native_kernel_variant_for_run(run, args),
+        "KVARN_FACTORY_KV_CACHE_DTYPE": ARM_SETTINGS[run.arm]["kv_cache_dtype"],
+        "KVARN_FACTORY_MAX_MODEL_LEN": str(args.max_model_len),
+        "KVARN_FACTORY_MAX_NUM_SEQS": str(run.workload.batch),
+        "KVARN_FACTORY_NATIVE_XPU_FRONTEND": native_frontend_for_run(run, args),
+        "KVARN_FACTORY_ONEDNN_DETERMINISTIC": (onednn_deterministic_environment(args)),
+        "KVARN_FACTORY_SPLITS": (
+            None
+            if split_policy == "b70_q6"
+            else native_splits_environment_for_run(run, args)
+        ),
+        "KVARN_FACTORY_SPLIT_POLICY": split_policy,
+    }
+    if tuple(axes) != RUNTIME_FACTORY_SELECTORS:
+        raise RunnerError("runtime factory selector schema drifted")
+    if reference and axes != {
+        "KVARN_FACTORY_CACHE_LAYOUT": "natural",
+        "KVARN_FACTORY_FLUSH_INDEX_MATERIALIZATION": "per_layer",
+        "KVARN_FACTORY_KERNEL_VARIANT": "baseline",
+        "KVARN_FACTORY_KV_CACHE_DTYPE": "auto",
+        "KVARN_FACTORY_MAX_MODEL_LEN": str(args.max_model_len),
+        "KVARN_FACTORY_MAX_NUM_SEQS": str(run.workload.batch),
+        "KVARN_FACTORY_NATIVE_XPU_FRONTEND": "reference",
+        "KVARN_FACTORY_ONEDNN_DETERMINISTIC": (onednn_deterministic_environment(args)),
+        "KVARN_FACTORY_SPLITS": "1",
+        "KVARN_FACTORY_SPLIT_POLICY": "fixed",
+    }:
+        raise RunnerError("auto control runtime selectors are not canonical")
+    return axes
+
+
+def runtime_factory_environment_for_run(
+    run: PlannedRun, args: argparse.Namespace
+) -> dict[str, str]:
+    return {
+        name: value
+        for name, value in runtime_factory_axes_for_run(run, args).items()
+        if value is not None
+    }
+
+
 def service_environment(run: PlannedRun, args: argparse.Namespace) -> dict[str, str]:
     environment = runner_environment(args)
-    environment["KVARN_FACTORY_FLUSH_INDEX_MATERIALIZATION"] = (
-        flush_index_materialization_environment(args)
-    )
-    environment["KVARN_FACTORY_NATIVE_XPU_FRONTEND"] = native_frontend_for_run(
-        run, args
-    )
+    if launcher_mode(args) == "runtime-factory":
+        environment.update(runtime_factory_environment_for_run(run, args))
+    else:
+        environment["KVARN_FACTORY_FLUSH_INDEX_MATERIALIZATION"] = (
+            flush_index_materialization_environment(args)
+        )
+        environment["KVARN_FACTORY_NATIVE_XPU_FRONTEND"] = native_frontend_for_run(
+            run, args
+        )
     environment["KVARN_PREFILL_FP16_WINDOW_BLOCKS"] = str(DEFAULT_PREFILL_WINDOW_BLOCKS)
     return environment
 
@@ -778,6 +886,8 @@ def probe_xpu_hardware(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def launcher_name(run: PlannedRun, args: argparse.Namespace) -> str:
+    if launcher_mode(args) == "runtime-factory":
+        return RUNTIME_FACTORY_LAUNCHER
     if run.arm == "candidate" and args.native_layout == "xe2_dpas":
         suffix = "-262k" if args.max_model_len == 262144 else ""
         launcher = (
@@ -902,15 +1012,48 @@ def resolve_launchers(
     return resolved
 
 
-def service_command(run: PlannedRun, args: argparse.Namespace) -> list[str]:
+def validate_runtime_factory_trailing_arguments(arguments: Sequence[str]) -> None:
+    if any(
+        argument.split("=", 1)[0] in RUNTIME_FACTORY_OWNED_ARGUMENTS
+        for argument in arguments
+    ):
+        raise RunnerError(
+            "runtime factory selectors own --kv-cache-dtype, --max-model-len, "
+            "and --max-num-seqs; trailing duplicates are forbidden"
+        )
+
+
+def launcher_binding_for_run(
+    run: PlannedRun, args: argparse.Namespace
+) -> dict[str, Any]:
+    logical = launcher_name(run, args)
+    binding: dict[str, Any] = {
+        "mode": launcher_mode(args),
+        "logical_launcher": logical,
+        "resolved_launcher": getattr(args, "resolved_launchers", {}).get(logical),
+    }
+    if launcher_mode(args) == "runtime-factory":
+        binding["runtime_axes"] = runtime_factory_axes_for_run(run, args)
+    return binding
+
+
+def service_command(
+    run: PlannedRun,
+    args: argparse.Namespace,
+    *,
+    extra_arguments: Sequence[str] = (),
+) -> list[str]:
     launcher = launcher_name(run, args)
     immutable = getattr(args, "resolved_launchers", {}).get(launcher)
     scheduler_arguments = [
         "--max-num-batched-tokens",
         str(args.max_num_batched_tokens),
     ]
+    trailing_arguments = [*scheduler_arguments, *extra_arguments]
+    if launcher_mode(args) == "runtime-factory":
+        validate_runtime_factory_trailing_arguments(trailing_arguments)
     if immutable is not None:
-        return [immutable, str(args.candidate_env), *scheduler_arguments]
+        return [immutable, str(args.candidate_env), *trailing_arguments]
     return [
         "nix",
         "run",
@@ -918,7 +1061,7 @@ def service_command(run: PlannedRun, args: argparse.Namespace) -> list[str]:
         f"{args.config_ref}#{launcher}",
         "--",
         str(args.candidate_env),
-        *scheduler_arguments,
+        *trailing_arguments,
     ]
 
 
@@ -1284,7 +1427,7 @@ def verify_service_profile(
             native_layout_for_run(run, args)
         ],
         "KVARN_FLUSH_INDEX_MATERIALIZATION": (
-            flush_index_materialization_environment(args)
+            flush_index_materialization_for_run(run, args)
         ),
         "KVARN_NATIVE_XPU_FRONTEND": native_frontend_for_run(run, args),
         "KVARN_NATIVE_XPU_KERNEL_VARIANT": native_kernel_variant_for_run(run, args),
@@ -1881,7 +2024,7 @@ def seal_benchmark_result(
         or profile.get("onednn_deterministic_environment")
         != onednn_deterministic_environment(args)
         or profile.get("flush_index_materialization_environment")
-        != flush_index_materialization_environment(args)
+        != flush_index_materialization_for_run(run, args)
         or profile.get("native_frontend_environment")
         != native_frontend_for_run(run, args)
         or profile.get("vllm_use_v2_model_runner_environment")
@@ -1911,6 +2054,8 @@ def seal_benchmark_result(
         engine_log.read_text(encoding="utf-8", errors="replace"),
         native=run.arm == "candidate",
     )
+    launcher_binding = launcher_binding_for_run(run, args)
+    runtime_axes = launcher_binding.get("runtime_axes")
 
     metadata: dict[str, Any] = {
         "kvarn_evidence_mode": "exploratory" if args.exploratory else "formal",
@@ -1928,6 +2073,17 @@ def seal_benchmark_result(
         "kvarn_xpu_graph": "0",
         "kvarn_scheduler_peak_running": str(int(peak)),
         "kvarn_arm": run.arm,
+        "kvarn_launcher_mode": launcher_binding["mode"],
+        "kvarn_logical_launcher": launcher_binding["logical_launcher"],
+        "kvarn_resolved_launcher": launcher_binding["resolved_launcher"],
+        "kvarn_factory_runtime_axes": runtime_axes,
+        "kvarn_factory_runtime_axes_sha256": (
+            hashlib.sha256(
+                json.dumps(runtime_axes, sort_keys=True, separators=(",", ":")).encode()
+            ).hexdigest()
+            if runtime_axes is not None
+            else None
+        ),
         "kvarn_kv_cache_dtype": ARM_SETTINGS[run.arm]["kv_cache_dtype"],
         "kvarn_native_xpu": ARM_SETTINGS[run.arm]["native_xpu"],
         "kvarn_native_layout": expected_layout,
@@ -1949,7 +2105,7 @@ def seal_benchmark_result(
         "kvarn_native_split_policy": expected_split_policy,
         "kvarn_onednn_deterministic": onednn_deterministic_environment(args),
         "kvarn_flush_index_materialization": (
-            flush_index_materialization_environment(args)
+            flush_index_materialization_for_run(run, args)
         ),
         "kvarn_native_frontend": native_frontend_for_run(run, args),
         "kvarn_vllm_use_v2_model_runner": VLLM_USE_V2_MODEL_RUNNER,
@@ -2039,6 +2195,7 @@ def run_one(
         "arm": run.arm,
         "order": run.order,
         "workload": dataclasses.asdict(run.workload),
+        "launcher_binding": launcher_binding_for_run(run, args),
     }
     write_json_atomic(run_dir / "run.json", manifest)
     try:
@@ -2550,6 +2707,8 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             != flush_index_materialization_environment(args)
             or correctness_factory["native_frontend"]
             != native_frontend_environment(args)
+            or correctness_factory["onednn_deterministic"]
+            != onednn_deterministic_environment(args)
             or any(
                 correctness_factory["native_splits"].get(batch)
                 != args.native_splits[batch]
@@ -2615,6 +2774,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         **selected_variant,
         "max_num_batched_tokens": args.max_num_batched_tokens,
         "resolved_launchers": args.resolved_launchers,
+        "launcher_mode": launcher_mode(args),
         "repositories": repositories,
         "plan": [
             {
@@ -2628,6 +2788,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
                     run, args
                 ),
                 "expected_native_frontend": native_frontend_for_run(run, args),
+                "launcher_binding": launcher_binding_for_run(run, args),
                 "service_command": service_command(run, args),
             }
             for run in plan
@@ -2955,6 +3116,16 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--base-url", default="http://127.0.0.1:8000")
     parser.add_argument("--config-ref", default="path:/home/jasonbk/.config/nix")
     parser.add_argument(
+        "--launcher-mode",
+        choices=LAUNCHER_MODES,
+        default="immutable",
+        help=(
+            "immutable keeps the historical variant-specific config apps; "
+            "runtime-factory resolves one package-free config app and supplies "
+            "strict engine-lifetime selectors for every service start"
+        ),
+    )
+    parser.add_argument(
         "--runtime-cache",
         type=Path,
         default=Path("benchmark-results/kvarn-runtime-cache"),
@@ -2999,14 +3170,22 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                 "performance runs require explicit --native-layout, "
                 "--native-kernel-variant, and --native-split-policy"
             )
-        if (
+        if launcher_mode(args) == "immutable" and (
             args.native_layout != "xe2_dpas"
             or args.native_kernel_variant not in B70_Q6_KERNEL_VARIANTS
             or args.native_split_policy != "b70_q6"
         ):
             raise RunnerError(
-                "Round-2 performance candidates require xe2_dpas, a Q6 kernel "
-                "variant, and b70_q6; natural/fixed is reference-only"
+                "immutable Round-2 performance launchers require xe2_dpas, a Q6 "
+                "kernel variant, and b70_q6; use --launcher-mode runtime-factory "
+                "for other compatible compiled variants"
+            )
+        if (
+            args.native_kernel_variant != REFERENCE_NATIVE_KERNEL_VARIANT
+            and args.native_layout != "xe2_dpas"
+        ):
+            raise RunnerError(
+                "non-baseline native kernel variants require --native-layout xe2_dpas"
             )
         args.context = _parse_int_list(args.context, DEFAULT_CONTEXTS)
         args.batch = _parse_int_list(args.batch, DEFAULT_BATCHES)
@@ -3052,8 +3231,14 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             raise RunnerError("--correctness is required unless --exploratory is set")
         if args.correctness is not None and not args.correctness.is_file():
             raise RunnerError("--correctness must be a readable file")
-        if args.max_model_len != 65536:
-            raise RunnerError("the current auto/native foreground launchers are 65,536")
+        if args.max_model_len not in {65536, 262144}:
+            raise RunnerError("max model length must be 65,536 or 262,144")
+        if args.max_model_len == 262144 and launcher_mode(args) != "runtime-factory":
+            raise RunnerError(
+                "262K matched performance runs require --launcher-mode runtime-factory"
+            )
+        if not args.exploratory and args.max_model_len != 65536:
+            raise RunnerError("formal performance qualification is the 65,536 profile")
         if args.max_num_batched_tokens < 1:
             raise RunnerError("max num batched tokens must be positive")
         if not args.exploratory and (

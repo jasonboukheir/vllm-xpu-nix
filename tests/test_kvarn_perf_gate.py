@@ -1221,6 +1221,24 @@ def test_match_gate_accepts_qkv_candidate_with_unfused_reference(
     )
 
 
+def test_match_gate_allows_canonical_auto_flush_with_shared_kvarn_candidate(
+    tmp_path: Path,
+) -> None:
+    arms = _arms(tmp_path, flush_index_materialization="shared")
+    for path in arms[0]:
+        document = json.loads(path.read_text(encoding="utf-8"))
+        document["kvarn_flush_index_materialization"] = "per_layer"
+        path.write_text(json.dumps(document), encoding="utf-8")
+
+    result = _compare(arms)
+
+    assert result["status"] == "passed"
+    assert result["reference"]["arm"]["kvarn_flush_index_materialization"] == (
+        "per_layer"
+    )
+    assert result["candidate"]["arm"]["kvarn_flush_index_materialization"] == ("shared")
+
+
 def test_gate_rejects_qkv_marker_in_reference_log(tmp_path: Path) -> None:
     arms = _arms(tmp_path, native_frontend="qkv_scatter")
     reference_log = arms[2][0]

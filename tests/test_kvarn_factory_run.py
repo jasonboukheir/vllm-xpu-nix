@@ -82,8 +82,10 @@ def test_named_factory_ids_are_complete_and_stable() -> None:
         "q6_current_half_v_prefetch": 16,
         "q6_page_record_cursor": 17,
         "q6_prefetch_record_cursor": 18,
+        "q6_page_metadata_cursor": 20,
+        "q6_paired_nibble_half2": 21,
     }
-    assert set(factory.VARIANTS_BY_ID) == set(range(19)) - {5}
+    assert set(factory.VARIANTS_BY_ID) == (set(range(19)) - {5}) | {20, 21}
     assert all(spec.dpas_layout for spec in factory.VARIANTS.values())
     assert all(spec.cache_layout == "xe2_dpas" for spec in factory.VARIANTS.values())
     assert all(
@@ -118,6 +120,8 @@ def test_named_factory_ids_are_complete_and_stable() -> None:
         "q6_current_half_v_prefetch",
         "q6_page_record_cursor",
         "q6_prefetch_record_cursor",
+        "q6_page_metadata_cursor",
+        "q6_paired_nibble_half2",
     )
     assert factory.ALL_VARIANT_NAMES == tuple(factory.VARIANTS)
     assert factory.VARIANTS["q6_page_pair"].scheduling_variant == "paired_page_k128"
@@ -145,6 +149,8 @@ def test_named_factory_ids_are_complete_and_stable() -> None:
         "q6_current_half_v_prefetch",
         "q6_page_record_cursor",
         "q6_prefetch_record_cursor",
+        "q6_page_metadata_cursor",
+        "q6_paired_nibble_half2",
     ):
         assert (
             factory.VARIANTS[name].fusion_strategy
@@ -161,6 +167,17 @@ def test_named_factory_ids_are_complete_and_stable() -> None:
     assert (
         factory.VARIANTS["q6_prefetch_record_cursor"].scheduling_variant
         == "tile64_next_page_current_half_v_prefetch_record_cursor"
+    )
+    assert (
+        factory.VARIANTS["q6_page_metadata_cursor"].scheduling_variant
+        == "tile64_next_page_current_half_v_prefetch_record_metadata_cursor"
+    )
+    assert (
+        factory.VARIANTS["q6_paired_nibble_half2"].scheduling_variant
+        == (
+            "tile64_next_page_current_half_v_prefetch_record_cursor_"
+            "paired_nibble_half2"
+        )
     )
 
 
@@ -190,6 +207,8 @@ def test_variant_parser_accepts_names_and_all_but_not_numeric_aliases() -> None:
         16,
         17,
         18,
+        20,
+        21,
     ]
     with pytest.raises(factory.FactoryError, match="ID 5.*reserved"):
         factory.parse_variants("page128")
@@ -217,6 +236,8 @@ def test_focused_kill_suite_maps_every_variant_to_multisplit_and_262k() -> None:
         16: "q6-current-half-v-prefetch",
         17: "q6-page-record-cursor",
         18: "q6-prefetch-record-cursor",
+        20: "q6-page-metadata-cursor",
+        21: "q6-paired-nibble-half2",
     }
     assert set(expected_node_ids) == set(factory.VARIANTS_BY_ID)
     assert set(factory.FOCUSED_XPU_MULTISPLIT_TESTS) == set(factory.VARIANTS_BY_ID)

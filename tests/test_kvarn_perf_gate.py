@@ -10,7 +10,7 @@ from scripts import kvarn_perf_gate as gate_module
 from scripts.kvarn_perf_gate import GateError, _load_correctness, compare
 
 
-def test_combined_library_matrix_registers_opt_in_variants_through_id18() -> None:
+def test_combined_library_matrix_registers_runtime_variants_through_id21() -> None:
     assert [
         (item["kernel_variant"], item["kernel_variant_id"])
         for item in gate_module.COMBINED_LIBRARY_VARIANT_MATRIX
@@ -30,7 +30,13 @@ def test_combined_library_matrix_registers_opt_in_variants_through_id18() -> Non
         ("q6_current_half_v_prefetch", 16),
         ("q6_page_record_cursor", 17),
         ("q6_prefetch_record_cursor", 18),
+        ("q6_page_metadata_cursor", 20),
+        ("q6_paired_nibble_half2", 21),
     ]
+    assert {
+        "q6_page_metadata_cursor",
+        "q6_paired_nibble_half2",
+    } <= gate_module.B70_Q6_KERNEL_VARIANTS
 
 
 def _artifact(path: Path) -> dict[str, str]:

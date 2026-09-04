@@ -537,6 +537,31 @@ def test_dpas_launcher_names_bind_variant_for_65k_and_262k(
     assert correctness.perf.NATIVE_KERNEL_VARIANTS[variant] == variant_id
 
 
+@pytest.mark.parametrize(
+    ("variant", "variant_id"),
+    [
+        ("q6_page_metadata_cursor", 20),
+        ("q6_paired_nibble_half2", 21),
+    ],
+)
+def test_round6_correctness_variants_use_the_runtime_factory_registry(
+    variant: str, variant_id: int
+) -> None:
+    args = argparse.Namespace(
+        launcher_mode="runtime-factory",
+        native_layout="xe2_dpas",
+        native_kernel_variant=variant,
+    )
+
+    assert correctness.perf.NATIVE_KERNEL_VARIANTS[variant] == variant_id
+    assert variant in correctness.perf.RUNTIME_FACTORY_ONLY_KERNEL_VARIANTS
+    assert variant in correctness.perf.B70_Q6_KERNEL_VARIANTS
+    assert variant not in correctness.perf.IMMUTABLE_QUALIFIED_KERNEL_VARIANTS
+    assert correctness.launcher_name(correctness.SERVICE_PLAN[0], args) == (
+        correctness.perf.RUNTIME_FACTORY_LAUNCHER
+    )
+
+
 def test_service_environment_pins_bounded_window_and_scrubs_full_defer(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -874,6 +899,51 @@ def test_cli_binds_config_ref_and_keeps_mandatory_inactive_units(
     assert correctness.runtime_factory_axes_for_spec(native_spec, diagnostic)[
         "KVARN_FACTORY_REQUEST_STABLE_RMSNORM"
     ] == "1"
+
+    for variant in sorted(correctness.perf.RUNTIME_FACTORY_ONLY_KERNEL_VARIANTS):
+        for split_selector, split_arguments in (
+            ("b70_q6", ["--native-split-policy", "b70_q6"]),
+            (
+                "fixed",
+                [
+                    "--native-split-policy",
+                    "fixed",
+                    "--native-splits",
+                    "1=32",
+                    "--native-splits",
+                    "4=8",
+                ],
+            ),
+        ):
+            runtime = correctness.parse_args(
+                [
+                    *common,
+                    "--config-ref",
+                    f"path:{config}",
+                    "--native-kernel-variant",
+                    variant,
+                    *split_arguments,
+                    "--launcher-mode",
+                    "runtime-factory",
+                    "--output-dir",
+                    str(tmp_path / f"runtime-{variant}-{split_selector}"),
+                ]
+            )
+            assert runtime.native_kernel_variant == variant
+            assert runtime.native_split_policy == split_selector
+            assert runtime.native_splits == {1: 32, 4: 8}
+        with pytest.raises(SystemExit):
+            correctness.parse_args(
+                [
+                    *common,
+                    "--config-ref",
+                    f"path:{config}",
+                    "--native-kernel-variant",
+                    variant,
+                    "--output-dir",
+                    str(tmp_path / f"immutable-{variant}"),
+                ]
+            )
 
     with pytest.raises(SystemExit):
         correctness.parse_args(

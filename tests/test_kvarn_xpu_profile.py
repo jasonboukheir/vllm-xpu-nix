@@ -502,6 +502,46 @@ def test_candidate_profile_cli_rejects_fixed_round2_launcher_contract(
     assert args.request_stable_projection_rows is True
     assert args.request_stable_rmsnorm is True
 
+    for variant in sorted(perf.RUNTIME_FACTORY_ONLY_KERNEL_VARIANTS):
+        for split_selector, split_arguments, expected_splits in (
+            ("b70_q6", ["--native-split-policy", "b70_q6"], {1: 32}),
+            (
+                "fixed",
+                ["--native-split-policy", "fixed", "--native-splits", "17"],
+                {1: 17},
+            ),
+        ):
+            runtime = profile.parse_args(
+                [
+                    *common,
+                    "--native-kernel-variant",
+                    variant,
+                    *split_arguments,
+                    "--launcher-mode",
+                    "runtime-factory",
+                    "--output-dir",
+                    str(tmp_path / f"runtime-{variant}-{split_selector}"),
+                ]
+            )
+            assert perf.NATIVE_KERNEL_VARIANTS[variant] in {20, 21}
+            assert variant in perf.B70_Q6_KERNEL_VARIANTS
+            assert variant not in perf.IMMUTABLE_QUALIFIED_KERNEL_VARIANTS
+            assert runtime.native_kernel_variant == variant
+            assert runtime.native_split_policy == split_selector
+            assert runtime.native_splits == expected_splits
+        with pytest.raises(SystemExit):
+            profile.parse_args(
+                [
+                    *common,
+                    "--native-kernel-variant",
+                    variant,
+                    "--native-split-policy",
+                    "b70_q6",
+                    "--output-dir",
+                    str(tmp_path / f"immutable-{variant}"),
+                ]
+            )
+
     with pytest.raises(SystemExit):
         profile.parse_args(
             [

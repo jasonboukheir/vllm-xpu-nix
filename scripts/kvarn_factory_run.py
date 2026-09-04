@@ -281,6 +281,26 @@ VARIANTS = {
             "specialized_split_reduction",
             "tile64_next_page_current_half_v_prefetch_record_cursor",
         ),
+        VariantSpec(
+            20,
+            "q6_page_metadata_cursor",
+            "q6 ID18 reader plus sequential page-metadata reuse",
+            "xe2_dpas",
+            "native_xe2_qlen1_q6_page_metadata_cursor",
+            "runtime_explicit_count",
+            "specialized_split_reduction",
+            "tile64_next_page_current_half_v_prefetch_record_metadata_cursor",
+        ),
+        VariantSpec(
+            21,
+            "q6_paired_nibble_half2",
+            "q6 ID18 reader plus paired-nibble half2 expansion",
+            "xe2_dpas",
+            "native_xe2_qlen1_q6_paired_nibble_half2",
+            "runtime_explicit_count",
+            "specialized_split_reduction",
+            "tile64_next_page_current_half_v_prefetch_record_cursor_paired_nibble_half2",
+        ),
     )
 }
 VARIANTS_BY_ID = {spec.variant_id: spec for spec in VARIANTS.values()}
@@ -300,6 +320,8 @@ DEFAULT_VARIANT_NAMES = (
     "q6_current_half_v_prefetch",
     "q6_page_record_cursor",
     "q6_prefetch_record_cursor",
+    "q6_page_metadata_cursor",
+    "q6_paired_nibble_half2",
 )
 # ``all`` is literal: every runnable layout-compatible dispatch compiled into
 # the shared attention DSO participates.  DEFAULT_VARIANT_NAMES remains the
@@ -367,6 +389,8 @@ FOCUSED_XPU_262K_TESTS = {
     16: f"{_XPU_LONG_CONTEXT_TEST}[q6-current-half-v-prefetch]",
     17: f"{_XPU_LONG_CONTEXT_TEST}[q6-page-record-cursor]",
     18: f"{_XPU_LONG_CONTEXT_TEST}[q6-prefetch-record-cursor]",
+    20: f"{_XPU_LONG_CONTEXT_TEST}[q6-page-metadata-cursor]",
+    21: f"{_XPU_LONG_CONTEXT_TEST}[q6-paired-nibble-half2]",
 }
 # The Q8-family variants (0, 1, and 3) use a direct split-24 262K case as
 # both gates. Q6 variants also get the query-row/LSE multisplit attribution.
@@ -378,7 +402,23 @@ FOCUSED_XPU_MULTISPLIT_TESTS = {
     4: f"{_XPU_Q6_MULTISPLIT_TEST}[4]",
     **{
         variant_id: f"{_XPU_Q6_MULTISPLIT_TEST}[{variant_id}]"
-        for variant_id in (6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18)
+        for variant_id in (
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            20,
+            21,
+        )
     },
 }
 FOCUSED_XPU_ID15_TEST = (

@@ -1032,6 +1032,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             args.native_kernel_variant or perf.REFERENCE_NATIVE_KERNEL_VARIANT
         )
         args.native_split_policy = args.native_split_policy or "fixed"
+        if (
+            args.native_kernel_variant
+            in perf.RUNTIME_FACTORY_ONLY_KERNEL_VARIANTS
+            and perf.launcher_mode(args) != "runtime-factory"
+        ):
+            raise perf.RunnerError(
+                f"{args.native_kernel_variant} requires --launcher-mode "
+                "runtime-factory"
+            )
         if args.flush_writer != "reference" and args.native_layout != "xe2_dpas":
             raise perf.RunnerError(
                 "native --flush-writer requires --native-layout xe2_dpas"
@@ -1099,7 +1108,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             and perf.launcher_mode(args) == "immutable"
             and (
                 args.native_layout != "xe2_dpas"
-                or args.native_kernel_variant not in perf.B70_Q6_KERNEL_VARIANTS
+                or args.native_kernel_variant
+                not in perf.IMMUTABLE_QUALIFIED_KERNEL_VARIANTS
                 or args.native_split_policy != "b70_q6"
             )
         ):

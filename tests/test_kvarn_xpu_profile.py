@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from scripts import kvarn_perf_run as perf
+from scripts import kvarn_xpu_profile as profile
 from scripts.kvarn_xpu_profile import (
     DIAGNOSTIC_WARNING,
     analyze_trace,
@@ -264,7 +265,19 @@ def test_gzip_trace_loading(tmp_path: Path) -> None:
     assert len(loaded["traceEvents"]) == 80
 
 
-def test_profile_command_and_dpas_launcher_provenance(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("variant", "variant_id"),
+    [
+        ("q6_scalar", 2),
+        ("q6_vector", 4),
+        ("q6_cached_weights", 6),
+        ("q6_exact_rows", 7),
+        ("q6_cached_weights_exact_rows", 8),
+    ],
+)
+def test_profile_command_and_dpas_launcher_provenance(
+    tmp_path: Path, variant: str, variant_id: int
+) -> None:
     workload = perf.Workload(
         context=4096, batch=4, output_tokens=96, num_prompts=4, seed=17
     )
@@ -275,16 +288,24 @@ def test_profile_command_and_dpas_launcher_provenance(tmp_path: Path) -> None:
         served_model="sunny-chat",
         model=perf.DEFAULT_MODEL,
         config_ref="path:/config",
+        max_model_len=65536,
         max_num_batched_tokens=2048,
         native_layout="xe2_dpas",
+        native_kernel_variant=variant,
+        native_split_policy="fixed",
         native_splits={4: 16},
         variant_id="factory-dpas-001",
         resolved_launchers={
-            "vllm-xpu-brutus-kvarn-native-dpas-b4": "/nix/store/app/bin/launch"
+            f"vllm-xpu-brutus-kvarn-native-dpas-{variant}-b4": (
+                "/nix/store/app/bin/launch"
+            )
         },
     )
 
-    assert perf.launcher_name(run, args) == "vllm-xpu-brutus-kvarn-native-dpas-b4"
+    assert perf.launcher_name(run, args) == (
+        f"vllm-xpu-brutus-kvarn-native-dpas-{variant}-b4"
+    )
+    assert perf.NATIVE_KERNEL_VARIANTS[variant] == variant_id
     assert perf.service_command(run, args)[0] == "/nix/store/app/bin/launch"
     command = profile_benchmark_command(run, args, tmp_path / "raw.json")
     assert command[command.index("--num-warmups") + 1] == "4"
@@ -292,10 +313,77 @@ def test_profile_command_and_dpas_launcher_provenance(tmp_path: Path) -> None:
     assert variant_provenance(run, args) == {
         "variant_id": "factory-dpas-001",
         "layout": "xe2_dpas",
-        "kernel_strategy": "native_xe2_decode",
+        "kernel_strategy": f"native_xe2_decode_{variant}",
         "split_count": 16,
+        "max_split_count": 16,
+        "split_policy": "fixed_b4s16",
+        "split_policy_selector": "fixed",
         "fusion_selection": "fused_attention_decode",
         "scheduling_selection": "split_k",
         "scheduler_max_num_batched_tokens": 2048,
         "scheduler_max_num_seqs": 4,
     }
+    args.native_split_policy = "b70_q6"
+    args.native_splits = {4: 8}
+    args.variant_id = "factory-dpas-b70-q6"
+    assert variant_provenance(run, args) == {
+        "variant_id": "factory-dpas-b70-q6",
+        "layout": "xe2_dpas",
+        "kernel_strategy": f"native_xe2_decode_{variant}",
+        "split_count": 8,
+        "max_split_count": 32,
+        "split_policy": "b70_q6",
+        "split_policy_selector": "b70_q6",
+        "fusion_selection": "fused_attention_decode",
+        "scheduling_selection": "split_k",
+        "scheduler_max_num_batched_tokens": 2048,
+        "scheduler_max_num_seqs": 4,
+    }
+
+
+def test_candidate_profile_cli_rejects_fixed_round2_launcher_contract(
+    tmp_path: Path,
+) -> None:
+    candidate = tmp_path / "candidate"
+    (candidate / "bin").mkdir(parents=True)
+    for executable in ("vllm", "python"):
+        (candidate / "bin" / executable).write_text("", encoding="utf-8")
+    config = tmp_path / "config"
+    config.mkdir()
+    common = [
+        "--candidate-env",
+        str(candidate),
+        "--allow-tmp",
+        "--runtime-cache",
+        str(tmp_path / "runtime-cache"),
+        "--config-repo",
+        str(config),
+        "--config-ref",
+        f"path:{config}",
+        "--native-layout",
+        "xe2_dpas",
+        "--native-kernel-variant",
+        "q6_scalar",
+    ]
+
+    with pytest.raises(SystemExit):
+        profile.parse_args(
+            [
+                *common,
+                "--native-split-policy",
+                "fixed",
+                "--output-dir",
+                str(tmp_path / "fixed"),
+            ]
+        )
+
+    args = profile.parse_args(
+        [
+            *common,
+            "--native-split-policy",
+            "b70_q6",
+            "--output-dir",
+            str(tmp_path / "b70"),
+        ]
+    )
+    assert args.native_splits == {1: 32}

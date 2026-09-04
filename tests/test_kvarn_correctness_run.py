@@ -19,7 +19,6 @@ def test_service_plan_has_exact_six_restarts_and_selected_splits() -> None:
         "native-262k-b1-first",
         "native-262k-b1-restart",
     ]
-    assert [spec.splits for spec in correctness.SERVICE_PLAN] == [24, 24, 16, 1, 24, 24]
     assert correctness.PRIMITIVE_PLAN == (
         (
             "native_decode_short",
@@ -186,15 +185,24 @@ def _service_environment(
         "HF_HOME": str(args.hf_home),
         "HOME": str(args.runtime_cache / "vllm-xpu-brutus-kvarn"),
         "KVARN_NATIVE_XPU": native,
+        "KVARN_NATIVE_XPU_CACHE_LAYOUT": correctness.native_layout_for_spec(spec, args),
         "KVARN_NATIVE_XPU_DECODE": native,
         "KVARN_NATIVE_XPU_DPAS_LAYOUT": (
             correctness.perf.NATIVE_LAYOUT_ENV[args.native_layout]
             if spec.native
             else "0"
         ),
+        "KVARN_NATIVE_XPU_KERNEL_VARIANT": (
+            correctness.native_kernel_variant_for_spec(spec, args)
+        ),
         "KVARN_NATIVE_XPU_MATERIALIZE": native,
         "KVARN_NATIVE_XPU_PERSISTENT_SCRATCH": native,
-        "KVARN_NATIVE_XPU_SPLITS": str(spec.splits),
+        "KVARN_NATIVE_XPU_SPLITS": correctness.native_splits_environment_for_spec(
+            spec, args
+        ),
+        "KVARN_NATIVE_XPU_SPLIT_POLICY": correctness.native_split_policy_for_spec(
+            spec, args
+        ),
         "KVARN_PREFILL_FP16_WINDOW_BLOCKS": "16",
         "VLLM_CACHE_ROOT": str(args.runtime_cache / "vllm-xpu-brutus-kvarn"),
         "VLLM_TARGET_DEVICE": "xpu",
@@ -213,6 +221,10 @@ def test_service_profile_enforces_262k_reference_and_native_settings(
         model_revision="1" * 40,
         max_num_batched_tokens=2048,
         native_layout="natural",
+        native_kernel_variant="baseline",
+        native_split_policy="fixed",
+        native_splits={1: 24, 4: 16},
+        native_output_dtype="bf16",
         hf_home=tmp_path / "hf",
         runtime_cache=tmp_path / "cache",
     )
@@ -233,6 +245,10 @@ def test_dpas_mode_uses_separate_launchers_and_keeps_reference_natural(
 ) -> None:
     args = argparse.Namespace(
         native_layout="xe2_dpas",
+        native_kernel_variant="q6_scalar",
+        native_split_policy="fixed",
+        native_splits={1: 32, 4: 8},
+        native_output_dtype="bf16",
         model="model",
         served_model="sunny-chat",
         model_revision="1" * 40,
@@ -244,13 +260,13 @@ def test_dpas_mode_uses_separate_launchers_and_keeps_reference_natural(
     reference = correctness.SERVICE_PLAN[3]
 
     assert correctness.launcher_name(native, args) == (
-        "vllm-xpu-brutus-kvarn-native-dpas-262k-b1"
+        "vllm-xpu-brutus-kvarn-native-dpas-q6_scalar-262k-b1"
     )
     assert correctness.launcher_name(reference, args) == reference.launcher
     assert correctness.native_layout_for_spec(native, args) == "xe2_dpas"
     assert correctness.native_layout_for_spec(reference, args) == "natural"
     assert correctness.candidate_variant_provenance(args)["variant_id"] == (
-        "native-xe2-xe2_dpas-fixed_b1s24_b4s16-eager_mnbt2048"
+        "native-xe2-xe2_dpas-q6_scalar-fixed_b1s32_b4s8-eager_mnbt2048"
     )
     assert correctness.service_variant_provenance(reference, args)["variant_id"] == (
         "natural-kvarn-correctness-reference-eager_mnbt2048"
@@ -264,6 +280,30 @@ def test_dpas_mode_uses_separate_launchers_and_keeps_reference_natural(
         reference,
         args,
     )
+
+
+@pytest.mark.parametrize(
+    ("variant", "variant_id"),
+    [
+        ("q6_scalar", 2),
+        ("q6_vector", 4),
+        ("q6_cached_weights", 6),
+        ("q6_exact_rows", 7),
+        ("q6_cached_weights_exact_rows", 8),
+    ],
+)
+def test_dpas_launcher_names_bind_variant_for_65k_and_262k(
+    variant: str, variant_id: int
+) -> None:
+    args = argparse.Namespace(native_layout="xe2_dpas", native_kernel_variant=variant)
+
+    assert correctness.launcher_name(correctness.SERVICE_PLAN[0], args) == (
+        f"vllm-xpu-brutus-kvarn-native-dpas-{variant}-b1"
+    )
+    assert correctness.launcher_name(correctness.SERVICE_PLAN[4], args) == (
+        f"vllm-xpu-brutus-kvarn-native-dpas-{variant}-262k-b1"
+    )
+    assert correctness.perf.NATIVE_KERNEL_VARIANTS[variant] == variant_id
 
 
 def test_service_environment_pins_bounded_window_and_scrubs_full_defer(
@@ -312,6 +352,11 @@ def test_manifest_rejects_content_free_gate_evidence(
         candidate_env=candidate,
         expected_package=Path("/nix/store/package"),
         native_layout="natural",
+        native_kernel_variant="baseline",
+        native_split_policy="fixed",
+        native_splits={1: 24, 4: 16},
+        native_output_dtype="bf16",
+        factory_qualification={"status": "passed"},
         max_num_batched_tokens=2048,
         source_identity={"revisions": {"vllm": "1" * 40}},
     )
@@ -336,6 +381,12 @@ def test_manifest_rejects_content_free_gate_evidence(
                 {
                     "status": "passed",
                     "native_dispatch_verified": spec.native,
+                    "native_direct_bf16_verified": spec.native,
+                    "native_direct_bf16_log_marker": (
+                        correctness.perf.NATIVE_DIRECT_BF16_MARKER
+                        if spec.native
+                        else "not_applicable"
+                    ),
                 }
             ),
             encoding="utf-8",
@@ -500,6 +551,8 @@ def test_cli_binds_config_ref_and_keeps_mandatory_inactive_units(
     )
     config = tmp_path / "config"
     config.mkdir()
+    factory = tmp_path / "factory.json"
+    factory.write_text("{}\n", encoding="utf-8")
     common = [
         "--candidate-env",
         str(candidate),
@@ -507,6 +560,14 @@ def test_cli_binds_config_ref_and_keeps_mandatory_inactive_units(
         str(fixtures),
         "--runtime-cache",
         str(tmp_path / "cache"),
+        "--factory-result",
+        str(factory),
+        "--native-layout",
+        "xe2_dpas",
+        "--native-kernel-variant",
+        "q6_scalar",
+        "--native-split-policy",
+        "b70_q6",
         "--config-repo",
         str(config),
         "--allow-tmp",
@@ -548,7 +609,7 @@ def test_cli_binds_config_ref_and_keeps_mandatory_inactive_units(
     )
     assert args.config_ref == f"path:{config.resolve()}"
     assert set(correctness.REQUIRED_INACTIVE_UNITS) < set(args.require_inactive_unit)
-    assert args.native_layout == "natural"
+    assert args.native_layout == "xe2_dpas"
 
     dpas = correctness.parse_args(
         [
@@ -562,6 +623,60 @@ def test_cli_binds_config_ref_and_keeps_mandatory_inactive_units(
         ]
     )
     assert dpas.native_layout == "xe2_dpas"
+
+    b70 = correctness.parse_args(
+        [
+            *common,
+            "--config-ref",
+            f"path:{config}",
+            "--native-layout",
+            "xe2_dpas",
+            "--native-kernel-variant",
+            "q6_scalar",
+            "--native-split-policy",
+            "b70_q6",
+            "--output-dir",
+            str(tmp_path / "valid-b70"),
+        ]
+    )
+    assert b70.native_splits == {1: 32, 4: 8}
+
+    with pytest.raises(SystemExit):
+        correctness.parse_args(
+            [
+                *common,
+                "--config-ref",
+                f"path:{config}",
+                "--native-layout",
+                "xe2_dpas",
+                "--native-kernel-variant",
+                "q6_scalar",
+                "--native-split-policy",
+                "b70_q6",
+                "--native-splits",
+                "1=32",
+                "--native-splits",
+                "4=8",
+                "--output-dir",
+                str(tmp_path / "invalid-b70-conflict"),
+            ]
+        )
+    with pytest.raises(SystemExit):
+        correctness.parse_args(
+            [
+                *common,
+                "--config-ref",
+                f"path:{config}",
+                "--native-kernel-variant",
+                "q6_scalar",
+                "--native-layout",
+                "natural",
+                "--native-split-policy",
+                "fixed",
+                "--output-dir",
+                str(tmp_path / "invalid-natural-q6"),
+            ]
+        )
 
 
 def test_tracked_checkout_identity_records_head_digest_and_dirtiness(

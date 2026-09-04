@@ -99,11 +99,11 @@
     "vllm-xpu-kernels-unstable-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1788500620,
-        "narHash": "sha256-d/B1k+yQIYJBbNsBIpgDPEJbJ16cv8khNo21qUh8Tw4=",
+        "lastModified": 1788504259,
+        "narHash": "sha256-G5cWVwt0Ziq4b14AyakXTmEiFU8sdgY8HvRiGNht7IY=",
         "ref": "refs/heads/experimental/kvarn-factory-20260903",
-        "rev": "8d859bbeca06f2f064ff501efd42026c56963609",
-        "revCount": 394,
+        "rev": "f25ea1d91446a1c194bfdd938e7d86a8bfcadcff",
+        "revCount": 395,
         "submodules": true,
         "type": "git",
         "url": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm-xpu-kernels.git"
@@ -135,11 +135,11 @@
     "vllm-xpu-unstable-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1788497554,
-        "narHash": "sha256-zZiqZ3bhXcQls/QwEcNEG8tZKMN/gsexZcO4UWKJ3yk=",
+        "lastModified": 1788504798,
+        "narHash": "sha256-lYBXQRmWNtos1o/DOAQijeexMGI5Q2womhtrAxvhvvA=",
         "ref": "refs/heads/experimental/kvarn-factory-20260903",
-        "rev": "7ab349c7c725aaef307461db263b2e9b9f94f0bd",
-        "revCount": 20866,
+        "rev": "8bd972d7b1e97073656909a1beee8c79a0c5035f",
+        "revCount": 20868,
         "type": "git",
         "url": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm.git"
       },

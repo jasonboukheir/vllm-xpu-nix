@@ -42,9 +42,34 @@ except ModuleNotFoundError:  # Direct execution from the scripts directory.
 
 
 NATIVE_DISPATCH = "Using the native Xe2 KVarN qlen=1 decoder"
+NATIVE_DIRECT_BF16_MARKER = "direct bf16 output=True"
+NATIVE_DIRECT_BF16_DISABLED_MARKER = "direct bf16 output=False"
 COMPACT_DTYPE = "kvarn_k4v4_g128_compact"
 NATIVE_LAYOUTS = ("natural", "xe2_dpas")
 NATIVE_LAYOUT_ENV = {"natural": "0", "xe2_dpas": "1"}
+NATIVE_KERNEL_VARIANTS = {
+    "baseline": 0,
+    "qk_i8u4": 1,
+    "q6_scalar": 2,
+    "q8_vector": 3,
+    "q6_vector": 4,
+    "q6_cached_weights": 6,
+    "q6_exact_rows": 7,
+    "q6_cached_weights_exact_rows": 8,
+}
+REFERENCE_NATIVE_KERNEL_VARIANT = "baseline"
+NATIVE_SPLIT_POLICIES = ("fixed", "b70_q6")
+B70_Q6_SPLITS = {1: 32, 4: 8}
+B70_Q6_MAX_SPLITS = 32
+B70_Q6_KERNEL_VARIANTS = frozenset(
+    {
+        "q6_scalar",
+        "q6_vector",
+        "q6_cached_weights",
+        "q6_exact_rows",
+        "q6_cached_weights_exact_rows",
+    }
+)
 VARIANT_FIELDS = (
     "kernel_strategy",
     "split_policy",
@@ -85,11 +110,14 @@ CAPTURED_ENVIRONMENT = (
     "HF_HOME",
     "HOME",
     "KVARN_NATIVE_XPU",
+    "KVARN_NATIVE_XPU_CACHE_LAYOUT",
     "KVARN_NATIVE_XPU_DECODE",
     "KVARN_NATIVE_XPU_DPAS_LAYOUT",
+    "KVARN_NATIVE_XPU_KERNEL_VARIANT",
     "KVARN_NATIVE_XPU_MATERIALIZE",
     "KVARN_NATIVE_XPU_PERSISTENT_SCRATCH",
     "KVARN_NATIVE_XPU_SPLITS",
+    "KVARN_NATIVE_XPU_SPLIT_POLICY",
     "KVARN_PREFILL_FP16_WINDOW_BLOCKS",
     "VLLM_CACHE_ROOT",
     "VLLM_TARGET_DEVICE",
@@ -126,11 +154,14 @@ PARITY_METRICS = (
 ARM_ARGUMENTS = {"--kv-cache-dtype"}
 ARM_ENVIRONMENT = {
     "KVARN_NATIVE_XPU",
+    "KVARN_NATIVE_XPU_CACHE_LAYOUT",
     "KVARN_NATIVE_XPU_DECODE",
     "KVARN_NATIVE_XPU_DPAS_LAYOUT",
+    "KVARN_NATIVE_XPU_KERNEL_VARIANT",
     "KVARN_NATIVE_XPU_MATERIALIZE",
     "KVARN_NATIVE_XPU_PERSISTENT_SCRATCH",
     "KVARN_NATIVE_XPU_SPLITS",
+    "KVARN_NATIVE_XPU_SPLIT_POLICY",
 }
 SENSITIVE_NAME = re.compile(
     r"(?i)(?:authorization|bearer|credential|password|secret|token|api[_-]?key)"
@@ -365,7 +396,7 @@ def build_plan(
 
 
 def native_splits_for_run(run: PlannedRun, args: argparse.Namespace) -> int:
-    """Return the verified effective split count for one service arm."""
+    """Return the nominal split selection for this batch and service arm."""
     if run.arm == "reference":
         return REFERENCE_NATIVE_SPLITS
     try:
@@ -376,9 +407,51 @@ def native_splits_for_run(run: PlannedRun, args: argparse.Namespace) -> int:
         ) from exc
 
 
+def native_split_policy_name_for_run(run: PlannedRun, args: argparse.Namespace) -> str:
+    """Return the engine-lifetime split-policy selector for one arm."""
+    return "fixed" if run.arm == "reference" else args.native_split_policy
+
+
+def native_max_splits_for_run(run: PlannedRun, args: argparse.Namespace) -> int:
+    """Return the scratch ceiling reported by the immutable startup marker."""
+    if run.arm == "reference":
+        return REFERENCE_NATIVE_SPLITS
+    if native_split_policy_name_for_run(run, args) == "b70_q6":
+        return B70_Q6_MAX_SPLITS
+    return native_splits_for_run(run, args)
+
+
+def native_splits_environment_for_run(
+    run: PlannedRun, args: argparse.Namespace
+) -> str | None:
+    """Return the legacy fixed-split selector, absent for named policies."""
+    if native_split_policy_name_for_run(run, args) == "b70_q6":
+        return None
+    return str(native_max_splits_for_run(run, args))
+
+
 def native_layout_for_run(run: PlannedRun, args: argparse.Namespace) -> str:
     """The auto reference is always natural; only the native candidate varies."""
     return "natural" if run.arm == "reference" else args.native_layout
+
+
+def native_kernel_variant_for_run(run: PlannedRun, args: argparse.Namespace) -> str:
+    """Return the engine-lifetime native decoder selected for one arm."""
+    if run.arm == "reference":
+        return REFERENCE_NATIVE_KERNEL_VARIANT
+    return args.native_kernel_variant
+
+
+def native_split_policy_for_run(run: PlannedRun, args: argparse.Namespace) -> str:
+    """Return a stable name for the fixed maximum-split policy."""
+    policy = native_split_policy_name_for_run(run, args)
+    if run.arm == "reference":
+        return "neutral_1"
+    if policy != "fixed":
+        return policy
+    return "fixed_" + "_".join(
+        f"b{batch}s{splits}" for batch, splits in sorted(args.native_splits.items())
+    )
 
 
 def variant_provenance_for_run(
@@ -393,21 +466,23 @@ def variant_provenance_for_run(
             "scheduling_variant": scheduling,
             "variant_id": f"auto-control-{scheduling}",
         }
-    split_policy = "fixed_" + "_".join(
-        f"b{batch}s{splits}" for batch, splits in sorted(args.native_splits.items())
-    )
+    kernel_variant = native_kernel_variant_for_run(run, args)
+    split_policy = native_split_policy_for_run(run, args)
     return {
-        "kernel_strategy": "native_xe2_qlen1",
+        "kernel_strategy": f"native_xe2_qlen1_{kernel_variant}",
         "split_policy": split_policy,
         "fusion_strategy": "native_materializer_persistent_scratch",
         "scheduling_variant": scheduling,
-        "variant_id": f"native-xe2-{args.native_layout}-{split_policy}-{scheduling}",
+        "variant_id": (
+            f"native-xe2-{args.native_layout}-{kernel_variant}-"
+            f"{split_policy}-{scheduling}"
+        ),
     }
 
 
 def load_correctness(
     path: Path, explicit_candidate_id: str | None
-) -> tuple[str, str, dict[str, str], str, dict[str, str]]:
+) -> tuple[str, str, dict[str, str], str, dict[str, str], dict[str, Any]]:
     try:
         raw = path.read_bytes()
         document = json.loads(raw)
@@ -415,6 +490,11 @@ def load_correctness(
         raise RunnerError(f"cannot load correctness artifact {path}: {exc}") from exc
     if not isinstance(document, dict) or document.get("status") != "passed":
         raise RunnerError("correctness artifact status must be passed")
+    if (
+        document.get("native_direct_bf16_verified") is not True
+        or document.get("native_direct_bf16_log_marker") != NATIVE_DIRECT_BF16_MARKER
+    ):
+        raise RunnerError("correctness artifact lacks direct BF16 runtime proof")
     candidate_id = document.get("candidate_id")
     if not isinstance(candidate_id, str) or not candidate_id:
         raise RunnerError("correctness artifact candidate_id must be non-empty")
@@ -442,6 +522,67 @@ def load_correctness(
         raise RunnerError(
             "correctness artifact native_layout must be natural or xe2_dpas"
         )
+    native_kernel_variant = document.get("native_kernel_variant")
+    if native_kernel_variant not in NATIVE_KERNEL_VARIANTS:
+        raise RunnerError("correctness artifact native kernel variant is unsupported")
+    if (
+        document.get("native_kernel_variant_id")
+        != NATIVE_KERNEL_VARIANTS[native_kernel_variant]
+    ):
+        raise RunnerError("correctness artifact native kernel variant ID differs")
+    if (
+        native_kernel_variant != REFERENCE_NATIVE_KERNEL_VARIANT
+        and native_layout != "xe2_dpas"
+    ):
+        raise RunnerError(
+            "correctness artifact combines a non-baseline kernel with natural layout"
+        )
+    native_split_policy = document.get("native_split_policy")
+    if native_split_policy not in NATIVE_SPLIT_POLICIES:
+        raise RunnerError("correctness artifact native split policy is unsupported")
+    native_output_dtype = document.get("native_output_dtype")
+    if native_output_dtype != "bf16":
+        raise RunnerError("correctness finalist requires bf16 native output")
+    raw_native_splits = document.get("native_nominal_splits_by_batch")
+    if not isinstance(raw_native_splits, dict) or set(raw_native_splits) != {"1", "4"}:
+        raise RunnerError("correctness artifact nominal split map is incomplete")
+    if any(
+        isinstance(value, bool)
+        or not isinstance(value, int)
+        or value not in SUPPORTED_NATIVE_SPLITS
+        for value in raw_native_splits.values()
+    ):
+        raise RunnerError("correctness artifact native split map is unsupported")
+    native_splits = {int(batch): splits for batch, splits in raw_native_splits.items()}
+    expected_scratch_max = max(native_splits.values())
+    if native_split_policy == "b70_q6":
+        if native_kernel_variant not in B70_Q6_KERNEL_VARIANTS:
+            raise RunnerError("correctness b70_q6 policy requires a Q6 kernel")
+        if native_splits != B70_Q6_SPLITS:
+            raise RunnerError("correctness b70_q6 nominal split map differs")
+        expected_scratch_max = B70_Q6_MAX_SPLITS
+    if document.get("native_scratch_max_splits") != expected_scratch_max:
+        raise RunnerError("correctness artifact scratch split ceiling differs")
+    factory = document.get("factory_qualification")
+    if (
+        not isinstance(factory, dict)
+        or factory.get("status") != "passed"
+        or factory.get("qualification_scope")
+        != "selected_native_variant_primitive_matrix"
+        or factory.get("package_output") != identity["process_package"]
+        or factory.get("selection")
+        != {
+            "cache_layout": native_layout,
+            "kernel_variant": native_kernel_variant,
+            "kernel_variant_id": NATIVE_KERNEL_VARIANTS[native_kernel_variant],
+            "split_policy": native_split_policy,
+            "effective_splits_by_batch": {
+                str(batch): splits for batch, splits in sorted(native_splits.items())
+            },
+            "output_dtype": native_output_dtype,
+        }
+    ):
+        raise RunnerError("correctness artifact factory binding is inconsistent")
     variant_provenance: dict[str, str] = {}
     for field in VARIANT_FIELDS:
         value = document.get(field)
@@ -454,6 +595,15 @@ def load_correctness(
         identity,
         native_layout,
         variant_provenance,
+        {
+            "native_kernel_variant": native_kernel_variant,
+            "native_kernel_variant_id": NATIVE_KERNEL_VARIANTS[native_kernel_variant],
+            "native_split_policy": native_split_policy,
+            "native_splits": native_splits,
+            "native_scratch_max_splits": expected_scratch_max,
+            "native_output_dtype": native_output_dtype,
+            "factory_qualification": factory,
+        },
     )
 
 
@@ -559,7 +709,11 @@ def probe_xpu_hardware(args: argparse.Namespace) -> dict[str, Any]:
 
 def launcher_name(run: PlannedRun, args: argparse.Namespace) -> str:
     if run.arm == "candidate" and args.native_layout == "xe2_dpas":
-        return f"vllm-xpu-brutus-kvarn-native-dpas-b{run.workload.batch}"
+        suffix = "-262k" if args.max_model_len == 262144 else ""
+        return (
+            "vllm-xpu-brutus-kvarn-native-dpas-"
+            f"{args.native_kernel_variant}{suffix}-b{run.workload.batch}"
+        )
     return ARM_SETTINGS[run.arm]["launcher"].format(batch=run.workload.batch)
 
 
@@ -934,16 +1088,29 @@ def service_profile_evidence(
         "variant_provenance": {field: "<ARM_VALUE>" for field in VARIANT_FIELDS},
     }
     encoded = json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode()
-    raw_layout = environment.get("KVARN_NATIVE_XPU_DPAS_LAYOUT")
-    native_layout = {value: name for name, value in NATIVE_LAYOUT_ENV.items()}.get(
-        raw_layout
+    legacy_layout = environment.get("KVARN_NATIVE_XPU_DPAS_LAYOUT")
+    named_layout = environment.get("KVARN_NATIVE_XPU_CACHE_LAYOUT")
+    native_layout = (
+        named_layout
+        if named_layout in NATIVE_LAYOUTS
+        else {value: name for name, value in NATIVE_LAYOUT_ENV.items()}.get(
+            legacy_layout
+        )
     )
     return {
         "redacted_argv": _redact_argv(argv),
         "redacted_environment": redacted_environment,
         "max_num_batched_tokens": _arg_after(argv, "--max-num-batched-tokens"),
         "native_layout": native_layout,
-        "native_layout_environment": raw_layout,
+        "native_layout_environment": legacy_layout,
+        "native_cache_layout_environment": named_layout,
+        "native_kernel_variant_environment": environment.get(
+            "KVARN_NATIVE_XPU_KERNEL_VARIANT"
+        ),
+        "native_max_splits_environment": environment.get("KVARN_NATIVE_XPU_SPLITS"),
+        "native_split_policy_environment": environment.get(
+            "KVARN_NATIVE_XPU_SPLIT_POLICY"
+        ),
         "variant_provenance": dict(variant_provenance or {}),
         "canonical_matched_profile": canonical,
         "canonical_matched_profile_sha256": hashlib.sha256(encoded).hexdigest(),
@@ -1027,13 +1194,16 @@ def verify_service_profile(
         "HF_HOME": str(args.hf_home),
         "HOME": str(args.runtime_cache / "vllm-xpu-brutus-kvarn"),
         "KVARN_NATIVE_XPU": native,
+        "KVARN_NATIVE_XPU_CACHE_LAYOUT": native_layout_for_run(run, args),
         "KVARN_NATIVE_XPU_DECODE": native,
         "KVARN_NATIVE_XPU_DPAS_LAYOUT": NATIVE_LAYOUT_ENV[
             native_layout_for_run(run, args)
         ],
+        "KVARN_NATIVE_XPU_KERNEL_VARIANT": native_kernel_variant_for_run(run, args),
         "KVARN_NATIVE_XPU_MATERIALIZE": native,
         "KVARN_NATIVE_XPU_PERSISTENT_SCRATCH": native,
-        "KVARN_NATIVE_XPU_SPLITS": str(native_splits_for_run(run, args)),
+        "KVARN_NATIVE_XPU_SPLITS": native_splits_environment_for_run(run, args),
+        "KVARN_NATIVE_XPU_SPLIT_POLICY": native_split_policy_name_for_run(run, args),
         "KVARN_PREFILL_FP16_WINDOW_BLOCKS": str(DEFAULT_PREFILL_WINDOW_BLOCKS),
         "VLLM_CACHE_ROOT": str(args.runtime_cache / "vllm-xpu-brutus-kvarn"),
         "VLLM_TARGET_DEVICE": "xpu",
@@ -1328,8 +1498,61 @@ def scheduler_summary(
     }
 
 
+def kvarn_factory_marker(
+    *,
+    cache_layout: str,
+    kernel_variant: str,
+    max_decode_splits: int,
+    split_policy: str = "fixed",
+) -> str:
+    """Return the exact immutable factory-selection startup marker."""
+    try:
+        variant_id = NATIVE_KERNEL_VARIANTS[kernel_variant]
+    except KeyError as exc:
+        raise RunnerError(
+            f"unsupported native kernel variant {kernel_variant!r}"
+        ) from exc
+    if cache_layout not in NATIVE_LAYOUTS:
+        raise RunnerError(f"unsupported native cache layout {cache_layout!r}")
+    if max_decode_splits not in SUPPORTED_NATIVE_SPLITS:
+        raise RunnerError(f"unsupported native split count {max_decode_splits}")
+    if split_policy not in NATIVE_SPLIT_POLICIES:
+        raise RunnerError(f"unsupported native split policy {split_policy!r}")
+    return (
+        f"[KVARN_FACTORY] selected_cache_layout={cache_layout}; "
+        f"selected_kernel_variant={kernel_variant}({variant_id}); "
+        f"max_decode_splits={max_decode_splits}; "
+        f"selected_split_policy={split_policy}; immutable for engine lifetime"
+    )
+
+
+def native_direct_bf16_evidence(text: str, *, native: bool) -> dict[str, Any]:
+    """Require and describe the decoder's observed direct-BF16 decision."""
+    decoder_lines = [line for line in text.splitlines() if NATIVE_DISPATCH in line]
+    verified = any(NATIVE_DIRECT_BF16_MARKER in line for line in decoder_lines)
+    disabled = any(NATIVE_DIRECT_BF16_DISABLED_MARKER in line for line in decoder_lines)
+    if native and (disabled or not verified):
+        observed = "False" if disabled else "missing"
+        raise RunnerError(
+            "native engine log must report the direct BF16 decoder path: "
+            f"{NATIVE_DIRECT_BF16_MARKER} (observed {observed})"
+        )
+    return {
+        "native_direct_bf16_verified": verified if native else False,
+        "native_direct_bf16_log_marker": (
+            NATIVE_DIRECT_BF16_MARKER if native else "not_applicable"
+        ),
+    }
+
+
 def validate_engine_log(
-    path: Path, *, native: bool, expected_layout: str = "natural"
+    path: Path,
+    *,
+    native: bool,
+    expected_layout: str = "natural",
+    expected_kernel_variant: str | None = None,
+    expected_max_splits: int | None = None,
+    expected_split_policy: str | None = None,
 ) -> dict[str, Any]:
     if (
         expected_layout not in NATIVE_LAYOUTS
@@ -1353,11 +1576,48 @@ def validate_engine_log(
         raise RunnerError(f"engine log must {expectation} native dispatch evidence")
     if native and FALLBACK_PATTERN.search(text):
         raise RunnerError("native engine log reports a Kvarn fallback")
+    direct_bf16 = native_direct_bf16_evidence(text, native=native)
+    selection_fields = (
+        expected_kernel_variant,
+        expected_max_splits,
+        expected_split_policy,
+    )
+    if any(value is None for value in selection_fields) and any(
+        value is not None for value in selection_fields
+    ):
+        raise RunnerError(
+            "factory marker validation requires kernel variant, max splits, and policy"
+        )
+    marker = None
+    if all(value is not None for value in selection_fields):
+        assert expected_kernel_variant is not None
+        assert expected_max_splits is not None
+        assert expected_split_policy is not None
+        marker = kvarn_factory_marker(
+            cache_layout=expected_layout,
+            kernel_variant=expected_kernel_variant,
+            max_decode_splits=expected_max_splits,
+            split_policy=expected_split_policy,
+        )
+        if marker not in text:
+            raise RunnerError(
+                "engine log lacks the exact immutable Kvarn factory selection: "
+                + marker
+            )
     result["xpu_runtime"] = xpu
     result["native_layout_expected"] = expected_layout
-    result["native_layout_log_marker"] = "unavailable"
+    result["native_layout_log_marker"] = marker or "unavailable"
+    result["native_factory_selection_verified"] = marker is not None
+    result["native_kernel_variant_expected"] = expected_kernel_variant
+    result["native_max_splits_expected"] = expected_max_splits
+    result["native_split_policy_expected"] = expected_split_policy
+    result.update(direct_bf16)
     result["native_layout_evidence"] = (
-        "captured-process-environment-plus-native-dispatch"
+        "captured-process-environment-plus-factory-marker-plus-native-dispatch"
+        if native and marker is not None
+        else "captured-process-environment-plus-factory-marker"
+        if marker is not None
+        else "captured-process-environment-plus-native-dispatch"
         if native
         else "captured-process-environment"
     )
@@ -1486,15 +1746,24 @@ def seal_benchmark_result(
             f"expected {args.max_num_batched_tokens}, got {max_num_batched_tokens!r}"
         )
     expected_layout = native_layout_for_run(run, args)
+    expected_kernel_variant = native_kernel_variant_for_run(run, args)
+    expected_effective_splits = native_splits_for_run(run, args)
+    expected_max_splits = native_max_splits_for_run(run, args)
+    expected_split_policy = native_split_policy_name_for_run(run, args)
     expected_variant = variant_provenance_for_run(run, args)
     if (
         profile.get("native_layout") != expected_layout
         or profile.get("native_layout_environment")
         != NATIVE_LAYOUT_ENV[expected_layout]
+        or profile.get("native_cache_layout_environment") != expected_layout
+        or profile.get("native_kernel_variant_environment") != expected_kernel_variant
+        or profile.get("native_max_splits_environment")
+        != native_splits_environment_for_run(run, args)
+        or profile.get("native_split_policy_environment") != expected_split_policy
         or profile.get("variant_provenance") != expected_variant
     ):
         raise RunnerError(
-            "verified service profile lost the selected native cache layout"
+            "verified service profile lost the selected Kvarn factory configuration"
         )
 
     hardware_path = Path(args.hardware_preflight_path).resolve()
@@ -1512,6 +1781,10 @@ def seal_benchmark_result(
         raise RunnerError("engine log lacks positive XPU runtime evidence")
     if not args.exploratory and warmup_result is None:
         raise RunnerError("formal performance evidence requires a full-width warmup")
+    direct_bf16 = native_direct_bf16_evidence(
+        engine_log.read_text(encoding="utf-8", errors="replace"),
+        native=run.arm == "candidate",
+    )
 
     metadata: dict[str, Any] = {
         "kvarn_evidence_mode": "exploratory" if args.exploratory else "formal",
@@ -1533,14 +1806,37 @@ def seal_benchmark_result(
         "kvarn_native_xpu": ARM_SETTINGS[run.arm]["native_xpu"],
         "kvarn_native_layout": expected_layout,
         "kvarn_native_layout_environment": NATIVE_LAYOUT_ENV[expected_layout],
-        "kvarn_native_layout_log_marker": "unavailable",
+        "kvarn_native_cache_layout_environment": expected_layout,
+        "kvarn_native_kernel_variant": expected_kernel_variant,
+        "kvarn_native_kernel_variant_id": str(
+            NATIVE_KERNEL_VARIANTS[expected_kernel_variant]
+        ),
+        "kvarn_native_output_dtype": (
+            "bf16" if run.arm == "candidate" else "not_applicable"
+        ),
+        "kvarn_native_direct_bf16_verified": direct_bf16["native_direct_bf16_verified"],
+        "kvarn_native_direct_bf16_log_marker": direct_bf16[
+            "native_direct_bf16_log_marker"
+        ],
+        "kvarn_native_max_splits": str(expected_max_splits),
+        "kvarn_native_nominal_splits": str(expected_effective_splits),
+        "kvarn_native_split_policy": expected_split_policy,
+        "kvarn_native_layout_log_marker": (
+            kvarn_factory_marker(
+                cache_layout=expected_layout,
+                kernel_variant=expected_kernel_variant,
+                max_decode_splits=expected_max_splits,
+                split_policy=expected_split_policy,
+            )
+            if run.arm == "candidate"
+            else "unavailable"
+        ),
         "kvarn_native_layout_evidence": (
-            "captured-process-environment-plus-native-dispatch"
+            "captured-process-environment-plus-factory-marker-plus-native-dispatch"
             if run.arm == "candidate"
             else "captured-process-environment"
         ),
         **{f"kvarn_{field}": value for field, value in expected_variant.items()},
-        "kvarn_native_splits": str(native_splits_for_run(run, args)),
         "kvarn_run_order": str(run.order),
         "kvarn_run_uuid": run_uuid,
         "kvarn_run_started_at": started_at,
@@ -1708,6 +2004,19 @@ def run_one(
             run_dir / "engine.log",
             native=run.arm == "candidate",
             expected_layout=native_layout_for_run(run, args),
+            expected_kernel_variant=(
+                native_kernel_variant_for_run(run, args)
+                if run.arm == "candidate"
+                else None
+            ),
+            expected_max_splits=(
+                native_max_splits_for_run(run, args) if run.arm == "candidate" else None
+            ),
+            expected_split_policy=(
+                native_split_policy_name_for_run(run, args)
+                if run.arm == "candidate"
+                else None
+            ),
         )
         write_json_atomic(run_dir / "engine-log-scan.json", log_scan)
         sealed = seal_benchmark_result(
@@ -2083,6 +2392,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
     correctness_sha256: str | None = None
     correctness_identity: dict[str, str] | None = None
     correctness_variant: dict[str, str] | None = None
+    correctness_factory: dict[str, Any] | None = None
     if args.correctness is not None:
         (
             candidate_id,
@@ -2090,6 +2400,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             correctness_identity,
             correctness_layout,
             correctness_variant,
+            correctness_factory,
         ) = load_correctness(args.correctness, args.candidate_id)
         if candidate_id != str(args.candidate_env):
             raise RunnerError(
@@ -2098,6 +2409,19 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         if correctness_layout != args.native_layout:
             raise RunnerError(
                 "correctness artifact native_layout differs from --native-layout"
+            )
+        if (
+            correctness_factory["native_kernel_variant"] != args.native_kernel_variant
+            or correctness_factory["native_split_policy"] != args.native_split_policy
+            or any(
+                correctness_factory["native_splits"].get(batch)
+                != args.native_splits[batch]
+                for batch in args.batch
+            )
+        ):
+            raise RunnerError(
+                "correctness artifact factory selection differs from the selected "
+                "performance candidate"
             )
     plan = build_plan(
         contexts=args.context,
@@ -2131,10 +2455,18 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         "promotable": not args.exploratory,
         "created_at": utc_timestamp(),
         "candidate_env": str(args.candidate_env),
-        "candidate_native_splits_by_batch": {
+        "candidate_nominal_splits_by_batch": {
             str(batch): splits for batch, splits in sorted(args.native_splits.items())
         },
         "native_layout": args.native_layout,
+        "native_kernel_variant": args.native_kernel_variant,
+        "native_kernel_variant_id": NATIVE_KERNEL_VARIANTS[args.native_kernel_variant],
+        "native_split_policy": args.native_split_policy,
+        "native_scratch_max_splits": (
+            B70_Q6_MAX_SPLITS
+            if args.native_split_policy == "b70_q6"
+            else max(args.native_splits.values())
+        ),
         **selected_variant,
         "max_num_batched_tokens": args.max_num_batched_tokens,
         "resolved_launchers": args.resolved_launchers,
@@ -2142,7 +2474,14 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         "plan": [
             {
                 **dataclasses.asdict(run),
-                "expected_native_splits": native_splits_for_run(run, args),
+                "nominal_native_splits": native_splits_for_run(run, args),
+                "expected_native_max_splits": native_max_splits_for_run(run, args),
+                "expected_native_kernel_variant": native_kernel_variant_for_run(
+                    run, args
+                ),
+                "expected_native_split_policy": native_split_policy_name_for_run(
+                    run, args
+                ),
                 "service_command": service_command(run, args),
             }
             for run in plan
@@ -2399,11 +2738,20 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--native-layout",
         choices=NATIVE_LAYOUTS,
-        default="natural",
         help=(
             "native candidate cache layout; xe2_dpas requires dedicated Brutus "
-            "native-dpas launcher outputs (default: natural)"
+            "variant-specific native-dpas launcher outputs"
         ),
+    )
+    parser.add_argument(
+        "--native-kernel-variant",
+        choices=tuple(NATIVE_KERNEL_VARIANTS),
+        help="engine-lifetime native decoder specialization",
+    )
+    parser.add_argument(
+        "--native-split-policy",
+        choices=NATIVE_SPLIT_POLICIES,
+        help="engine-lifetime split policy",
     )
     parser.add_argument(
         "--native-splits",
@@ -2467,9 +2815,44 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--allow-tmp", action="store_true")
     args = parser.parse_args(argv)
     try:
+        selectors = (
+            args.native_layout,
+            args.native_kernel_variant,
+            args.native_split_policy,
+        )
+        if any(value is None for value in selectors):
+            raise RunnerError(
+                "performance runs require explicit --native-layout, "
+                "--native-kernel-variant, and --native-split-policy"
+            )
+        if (
+            args.native_layout != "xe2_dpas"
+            or args.native_kernel_variant not in B70_Q6_KERNEL_VARIANTS
+            or args.native_split_policy != "b70_q6"
+        ):
+            raise RunnerError(
+                "Round-2 performance candidates require xe2_dpas, a Q6 kernel "
+                "variant, and b70_q6; natural/fixed is reference-only"
+            )
         args.context = _parse_int_list(args.context, DEFAULT_CONTEXTS)
         args.batch = _parse_int_list(args.batch, DEFAULT_BATCHES)
-        args.native_splits = _parse_native_splits(args.native_splits, args.batch)
+        if args.native_split_policy == "b70_q6":
+            if args.native_splits:
+                raise RunnerError(
+                    "--native-splits must be absent with --native-split-policy b70_q6"
+                )
+            missing = sorted(set(args.batch) - B70_Q6_SPLITS.keys())
+            if missing:
+                raise RunnerError(
+                    f"b70_q6 has no split selection for batches {missing}"
+                )
+            args.native_splits = {batch: B70_Q6_SPLITS[batch] for batch in args.batch}
+            if args.native_kernel_variant not in B70_Q6_KERNEL_VARIANTS:
+                raise RunnerError(
+                    "b70_q6 split policy requires a q6 native kernel variant"
+                )
+        else:
+            args.native_splits = _parse_native_splits(args.native_splits, args.batch)
         args.output_dir = ensure_durable(args.output_dir, allow_tmp=args.allow_tmp)
         args.candidate_env = args.candidate_env.expanduser().resolve()
         if args.correctness is not None:
@@ -2480,6 +2863,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         args.vllm_repo = args.vllm_repo.expanduser().resolve()
         args.kernels_repo = args.kernels_repo.expanduser().resolve()
         args.config_repo = args.config_repo.expanduser().resolve()
+        if not args.config_ref.startswith("path:"):
+            raise RunnerError("--config-ref must be a local path: reference")
+        config_ref_path = Path(args.config_ref.removeprefix("path:")).expanduser()
+        if config_ref_path.resolve() != args.config_repo:
+            raise RunnerError("--config-ref and --config-repo must identify one tree")
+        args.config_ref = f"path:{args.config_repo}"
         if not (args.candidate_env / "bin" / "vllm").is_file():
             raise RunnerError("--candidate-env must contain bin/vllm")
         if not (args.candidate_env / "bin" / "python").is_file():

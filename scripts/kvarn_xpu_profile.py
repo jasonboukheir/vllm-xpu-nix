@@ -412,10 +412,15 @@ def variant_provenance(
         scheduling_selection = "backend_default"
         generated_id = f"auto-natural-b{run.workload.batch}"
     else:
-        kernel_strategy = "native_xe2_decode"
+        kernel_strategy = (
+            f"native_xe2_decode_{perf.native_kernel_variant_for_run(run, args)}"
+        )
         fusion_selection = "fused_attention_decode"
         scheduling_selection = "split_k"
-        generated_id = f"native-xe2-{layout}-split{splits}-b{run.workload.batch}"
+        generated_id = (
+            f"native-xe2-{layout}-{perf.native_kernel_variant_for_run(run, args)}-"
+            f"split{splits}-b{run.workload.batch}"
+        )
     variant_id = args.variant_id or generated_id
     if VARIANT_ID_PATTERN.fullmatch(variant_id) is None:
         raise perf.RunnerError(
@@ -426,6 +431,9 @@ def variant_provenance(
         "layout": layout,
         "kernel_strategy": kernel_strategy,
         "split_count": splits,
+        "max_split_count": perf.native_max_splits_for_run(run, args),
+        "split_policy": perf.native_split_policy_for_run(run, args),
+        "split_policy_selector": perf.native_split_policy_name_for_run(run, args),
         "fusion_selection": fusion_selection,
         "scheduling_selection": scheduling_selection,
         "scheduler_max_num_batched_tokens": args.max_num_batched_tokens,
@@ -602,11 +610,36 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         "native_layout_environment": perf.NATIVE_LAYOUT_ENV[
             perf.native_layout_for_run(run, args)
         ],
-        "native_splits": perf.native_splits_for_run(run, args),
+        "native_cache_layout_environment": perf.native_layout_for_run(run, args),
+        "native_nominal_splits": perf.native_splits_for_run(run, args),
+        "native_splits_environment": perf.native_splits_environment_for_run(run, args),
+        "native_split_policy": perf.native_split_policy_for_run(run, args),
+        "native_split_policy_selector": perf.native_split_policy_name_for_run(
+            run, args
+        ),
+        "native_max_splits": perf.native_max_splits_for_run(run, args),
+        "native_kernel_variant": perf.native_kernel_variant_for_run(run, args),
+        "native_kernel_variant_id": perf.NATIVE_KERNEL_VARIANTS[
+            perf.native_kernel_variant_for_run(run, args)
+        ],
+        "native_factory_marker": (
+            perf.kvarn_factory_marker(
+                cache_layout=perf.native_layout_for_run(run, args),
+                kernel_variant=perf.native_kernel_variant_for_run(run, args),
+                max_decode_splits=perf.native_max_splits_for_run(run, args),
+                split_policy=perf.native_split_policy_name_for_run(run, args),
+            )
+            if args.arm == "candidate"
+            else "unavailable"
+        ),
         "variant_id": variant["variant_id"],
         "variant_parameters": variant,
         "logical_launcher": expected_launcher,
         "resolved_launcher": args.resolved_launchers[expected_launcher],
+        "repositories": [
+            perf.repository_state("vllm-xpu-nix", args.packaging_repo),
+            perf.repository_state("nix-config", args.config_repo),
+        ],
         "profiler_config": config,
         "hardware_preflight": str(hardware_path),
         "hardware_preflight_sha256": perf.sha256_file(hardware_path),
@@ -616,7 +649,9 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
     try:
         service = start_profile_service(run, run_dir, args, config)
         service_profile = perf.service_profile_evidence(
-            service.argv, service.environment
+            service.argv,
+            service.environment,
+            variant_provenance=perf.variant_provenance_for_run(run, args),
         )
         perf.write_json_atomic(
             run_dir / "service-argv.json", service_profile["redacted_argv"]
@@ -684,6 +719,21 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             run_dir / "engine.log",
             native=args.arm == "candidate",
             expected_layout=perf.native_layout_for_run(run, args),
+            expected_kernel_variant=(
+                perf.native_kernel_variant_for_run(run, args)
+                if args.arm == "candidate"
+                else None
+            ),
+            expected_max_splits=(
+                perf.native_max_splits_for_run(run, args)
+                if args.arm == "candidate"
+                else None
+            ),
+            expected_split_policy=(
+                perf.native_split_policy_name_for_run(run, args)
+                if args.arm == "candidate"
+                else None
+            ),
         )
         perf.write_json_atomic(run_dir / "engine-log-scan.json", log_scan)
         trace_path = find_kineto_trace(trace_dir)
@@ -704,7 +754,32 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
                 "native_layout_environment": perf.NATIVE_LAYOUT_ENV[
                     perf.native_layout_for_run(run, args)
                 ],
-                "native_splits": perf.native_splits_for_run(run, args),
+                "native_cache_layout_environment": service_profile[
+                    "native_cache_layout_environment"
+                ],
+                "native_nominal_splits": perf.native_splits_for_run(run, args),
+                "native_split_policy": perf.native_split_policy_for_run(run, args),
+                "native_split_policy_selector": perf.native_split_policy_name_for_run(
+                    run, args
+                ),
+                "native_max_splits": perf.native_max_splits_for_run(run, args),
+                "native_kernel_variant": perf.native_kernel_variant_for_run(run, args),
+                "native_kernel_variant_id": perf.NATIVE_KERNEL_VARIANTS[
+                    perf.native_kernel_variant_for_run(run, args)
+                ],
+                "native_kernel_variant_environment": service_profile[
+                    "native_kernel_variant_environment"
+                ],
+                "native_max_splits_environment": service_profile[
+                    "native_max_splits_environment"
+                ],
+                "native_split_policy_environment": service_profile[
+                    "native_split_policy_environment"
+                ],
+                "native_factory_marker": log_scan["native_layout_log_marker"],
+                "native_factory_selection_verified": log_scan[
+                    "native_factory_selection_verified"
+                ],
                 "variant_id": variant["variant_id"],
                 "variant_parameters": variant,
                 "logical_launcher": expected_launcher,
@@ -733,8 +808,24 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             service_pid=engine_pid,
             profile_summary=str(summary_path),
             profile_summary_sha256=perf.sha256_file(summary_path),
+            service_profile=str(run_dir / "diagnostic-service-profile.json"),
+            service_profile_sha256=perf.sha256_file(
+                run_dir / "diagnostic-service-profile.json"
+            ),
+            candidate_identity=str(run_dir / "candidate-identity.json"),
+            candidate_identity_sha256=perf.sha256_file(
+                run_dir / "candidate-identity.json"
+            ),
+            engine_log=str(run_dir / "engine.log"),
+            engine_log_sha256=perf.sha256_file(run_dir / "engine.log"),
+            engine_log_scan=str(run_dir / "engine-log-scan.json"),
+            engine_log_scan_sha256=perf.sha256_file(run_dir / "engine-log-scan.json"),
             kineto_trace=str(trace_path),
             kineto_trace_sha256=perf.sha256_file(trace_path),
+            native_factory_marker=log_scan["native_layout_log_marker"],
+            native_factory_selection_verified=log_scan[
+                "native_factory_selection_verified"
+            ],
         )
         perf.write_json_atomic(run_dir / "run.json", manifest)
         perf.write_checksums(args.output_dir)
@@ -777,8 +868,14 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "arm/layout/split/batch identifier"
         ),
     )
+    parser.add_argument("--native-layout", choices=perf.NATIVE_LAYOUTS)
     parser.add_argument(
-        "--native-layout", choices=perf.NATIVE_LAYOUTS, default="natural"
+        "--native-kernel-variant",
+        choices=tuple(perf.NATIVE_KERNEL_VARIANTS),
+    )
+    parser.add_argument(
+        "--native-split-policy",
+        choices=perf.NATIVE_SPLIT_POLICIES,
     )
     parser.add_argument("--native-splits", type=int)
     parser.add_argument(
@@ -817,12 +914,35 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--allow-tmp", action="store_true")
     args = parser.parse_args(argv)
     try:
+        selectors = (
+            args.native_layout,
+            args.native_kernel_variant,
+            args.native_split_policy,
+        )
+        if args.arm == "candidate" and any(value is None for value in selectors):
+            raise perf.RunnerError(
+                "candidate profiles require explicit --native-layout, "
+                "--native-kernel-variant, and --native-split-policy"
+            )
+        args.native_layout = args.native_layout or "natural"
+        args.native_kernel_variant = (
+            args.native_kernel_variant or perf.REFERENCE_NATIVE_KERNEL_VARIANT
+        )
+        args.native_split_policy = args.native_split_policy or "fixed"
         args.output_dir = perf.ensure_durable(args.output_dir, allow_tmp=args.allow_tmp)
         args.candidate_env = args.candidate_env.expanduser().resolve()
         args.runtime_cache = args.runtime_cache.expanduser().resolve()
         args.hf_home = args.hf_home.expanduser().resolve()
         args.packaging_repo = args.packaging_repo.expanduser().resolve()
         args.config_repo = args.config_repo.expanduser().resolve()
+        if not args.config_ref.startswith("path:"):
+            raise perf.RunnerError("--config-ref must be a local path: reference")
+        config_ref_path = Path(args.config_ref.removeprefix("path:")).expanduser()
+        if config_ref_path.resolve() != args.config_repo:
+            raise perf.RunnerError(
+                "--config-ref and --config-repo must identify one tree"
+            )
+        args.config_ref = f"path:{args.config_repo}"
         if not (args.candidate_env / "bin" / "vllm").is_file():
             raise perf.RunnerError("--candidate-env must contain bin/vllm")
         if not (args.candidate_env / "bin" / "python").is_file():
@@ -848,6 +968,27 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             raise perf.RunnerError("max num batched tokens must be positive")
         if args.arm == "reference" and args.native_layout != "natural":
             raise perf.RunnerError("the auto reference layout must be natural")
+        if args.arm == "candidate" and (
+            args.native_layout != "xe2_dpas"
+            or args.native_kernel_variant not in perf.B70_Q6_KERNEL_VARIANTS
+            or args.native_split_policy != "b70_q6"
+        ):
+            raise perf.RunnerError(
+                "Round-2 candidate profiles require xe2_dpas, a Q6 kernel "
+                "variant, and b70_q6; natural/fixed is reference-only"
+            )
+        if (
+            args.native_kernel_variant != perf.REFERENCE_NATIVE_KERNEL_VARIANT
+            and args.native_layout != "xe2_dpas"
+        ):
+            raise perf.RunnerError(
+                "non-baseline native kernel variants require --native-layout xe2_dpas"
+            )
+        if (
+            args.arm == "reference"
+            and args.native_kernel_variant != perf.REFERENCE_NATIVE_KERNEL_VARIANT
+        ):
+            raise perf.RunnerError("the auto reference kernel variant must be baseline")
         if (
             args.variant_id is not None
             and VARIANT_ID_PATTERN.fullmatch(args.variant_id) is None
@@ -855,14 +996,27 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             raise perf.RunnerError(
                 "variant id must be a lowercase slug of at most 128 characters"
             )
-        default_splits = (
-            perf.REFERENCE_NATIVE_SPLITS
-            if args.arm == "reference"
-            else perf.DEFAULT_NATIVE_SPLITS[args.batch]
-        )
-        selected_splits = (
-            default_splits if args.native_splits is None else args.native_splits
-        )
+        if args.native_split_policy == "b70_q6":
+            if args.arm != "candidate":
+                raise perf.RunnerError("the auto reference split policy must be fixed")
+            if args.native_splits is not None:
+                raise perf.RunnerError(
+                    "--native-splits must be absent with --native-split-policy b70_q6"
+                )
+            if args.native_kernel_variant not in perf.B70_Q6_KERNEL_VARIANTS:
+                raise perf.RunnerError(
+                    "b70_q6 split policy requires a q6 native kernel variant"
+                )
+            selected_splits = perf.B70_Q6_SPLITS[args.batch]
+        else:
+            default_splits = (
+                perf.REFERENCE_NATIVE_SPLITS
+                if args.arm == "reference"
+                else perf.DEFAULT_NATIVE_SPLITS[args.batch]
+            )
+            selected_splits = (
+                default_splits if args.native_splits is None else args.native_splits
+            )
         if args.arm == "reference" and selected_splits != perf.REFERENCE_NATIVE_SPLITS:
             raise perf.RunnerError("the auto reference native split value must be 1")
         if (

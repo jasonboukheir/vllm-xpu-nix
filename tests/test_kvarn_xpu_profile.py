@@ -332,6 +332,7 @@ def test_profile_command_and_dpas_launcher_provenance(
         "split_policy": "fixed_b4s16",
         "split_policy_selector": "fixed",
         "native_frontend": "qkv_scatter",
+        "forward_pool_ensure": "always",
         "request_stable_projection_rows": "1",
         "request_stable_rmsnorm": "1",
         "request_stability_qualification": "qualified-default",
@@ -340,7 +341,8 @@ def test_profile_command_and_dpas_launcher_provenance(
         "prefill_store": "reference",
         "fusion_selection": (
             "fused_attention_decode_per_layer_flush_reference_writer_"
-            "reference_prefill_store_qkv_scatter_frontend"
+            "reference_prefill_store_qkv_scatter_frontend_"
+            "always_forward_pool_ensure"
         ),
         "scheduling_selection": "split_k",
         "scheduler_max_num_batched_tokens": 2048,
@@ -354,7 +356,8 @@ def test_profile_command_and_dpas_launcher_provenance(
     assert shared_variant["variant_id"] != per_layer_variant["variant_id"]
     assert (
         "-shared-flush-reference-writer-reference-prefill-store-"
-        "qkv_scatter-frontend-" in shared_variant["variant_id"]
+        "qkv_scatter-frontend-always-forward-pool-ensure-"
+        in shared_variant["variant_id"]
     )
     assert shared_variant["flush_index_materialization"] == "shared"
     args.flush_index_materialization = "per_layer"
@@ -370,6 +373,7 @@ def test_profile_command_and_dpas_launcher_provenance(
         "split_policy": "b70_q6",
         "split_policy_selector": "b70_q6",
         "native_frontend": "qkv_scatter",
+        "forward_pool_ensure": "always",
         "request_stable_projection_rows": "1",
         "request_stable_rmsnorm": "1",
         "request_stability_qualification": "qualified-default",
@@ -378,7 +382,8 @@ def test_profile_command_and_dpas_launcher_provenance(
         "prefill_store": "reference",
         "fusion_selection": (
             "fused_attention_decode_per_layer_flush_reference_writer_"
-            "reference_prefill_store_qkv_scatter_frontend"
+            "reference_prefill_store_qkv_scatter_frontend_"
+            "always_forward_pool_ensure"
         ),
         "scheduling_selection": "split_k",
         "scheduler_max_num_batched_tokens": 2048,
@@ -421,6 +426,10 @@ def test_runtime_factory_profile_accepts_runtime_axes_without_named_launcher(
             "17",
             "--flush-index-materialization",
             "shared",
+            "--native-frontend",
+            "qkv_scatter_inline",
+            "--forward-pool-ensure",
+            "fused_qkv_proof",
             "--onednn-deterministic",
             "0",
             "--request-stable-projection-rows",
@@ -432,6 +441,11 @@ def test_runtime_factory_profile_accepts_runtime_axes_without_named_launcher(
     run = perf.PlannedRun(perf.Workload(4096, 1, 96, 1, 17), "candidate", 1)
 
     assert perf.launcher_name(run, args) == perf.RUNTIME_FACTORY_LAUNCHER
+    assert args.native_frontend == "qkv_scatter_inline"
+    assert args.forward_pool_ensure == "fused_qkv_proof"
+    assert perf.service_environment(run, args)["KVARN_FORWARD_POOL_ENSURE"] == (
+        "fused_qkv_proof"
+    )
     assert perf.runtime_factory_axes_for_run(run, args) == {
         "KVARN_FACTORY_CACHE_LAYOUT": "natural",
         "KVARN_FACTORY_FLUSH_INDEX_MATERIALIZATION": "shared",
@@ -440,7 +454,7 @@ def test_runtime_factory_profile_accepts_runtime_axes_without_named_launcher(
         "KVARN_FACTORY_KV_CACHE_DTYPE": perf.COMPACT_DTYPE,
         "KVARN_FACTORY_MAX_MODEL_LEN": "65536",
         "KVARN_FACTORY_MAX_NUM_SEQS": "1",
-        "KVARN_FACTORY_NATIVE_XPU_FRONTEND": "reference",
+        "KVARN_FACTORY_NATIVE_XPU_FRONTEND": "qkv_scatter_inline",
         "KVARN_FACTORY_ONEDNN_DETERMINISTIC": "0",
         "KVARN_FACTORY_PREFILL_STORE": "reference",
         "KVARN_FACTORY_REQUEST_STABLE_PROJECTION_ROWS": "0",

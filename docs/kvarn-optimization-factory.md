@@ -65,6 +65,8 @@ extension:
 | `KVARN_NATIVE_XPU_SPLITS` | `1`, `2`, `4`, `8`, `16`, `17`, `24`, `32` | scratch-allocation maximum; effective count may be selected per call |
 | `KVARN_FLUSH_WRITER` | `reference`, `native_xe2` | startup writer; `native_xe2` requires the `xe2_dpas` D256/G128/K4V4/Hkv4 cache ABI |
 | `KVARN_NATIVE_XPU_PREFILL_STORE` | `reference`, `hadamard_scatter` | startup multi-token store; unsupported calls fall back to the reference path |
+| `KVARN_NATIVE_XPU_FRONTEND` | `reference`, `qkv_scatter`, `qkv_scatter_inline` | startup Q/K/V frontend; inline selection must report both the fused-QKV active marker and its inline-specific marker |
+| `KVARN_FORWARD_POOL_ENSURE` | `always`, `fused_qkv_proof` | startup service-only forward-pool guard; `always` is the conservative default |
 
 The writer/store selectors are orthogonal to the reader ID. `reference` remains
 the public-beta default for both. `native_xe2` replaces the completed-page
@@ -73,6 +75,14 @@ Sinkhorn/RTN packer with the native Xe2 balanced-record writer, while
 selector permits changing the cache layout after allocation. The factory
 harness records both selectors independently so a winning reader is not
 mistaken for a writer or prefill-store gain.
+
+`KVARN_FORWARD_POOL_ENSURE=fused_qkv_proof` is meaningful only in a service
+run whose forward path can prove the fused QKV allocation. The performance,
+correctness, and XPU-profile runners expose it as
+`--forward-pool-ensure fused_qkv_proof`, capture the child-process value, and
+include it in candidate provenance. Their auto/non-native reference phases
+always use `reference` plus `always`. Direct primitive factory results neither
+accept nor report this service-only axis.
 
 `b70_q6` allocates for 32 and selects B1=32, B2=16, B3--4=8,
 B5--8=4, and B9--12=2. It is valid only with a Q6 DPAS reader. The named
@@ -148,13 +158,15 @@ scripts/kvarn_perf_run.py \
   --native-split-policy b70_q6_v2 \
   --flush-writer sinkhorn_pack_xe2 \
   --prefill-store hadamard_scatter \
+  --native-frontend qkv_scatter_inline \
+  --forward-pool-ensure fused_qkv_proof \
   ...
 ```
 
 The same `--launcher-mode runtime-factory` switch is supported by
 `kvarn_correctness_run.py` and `kvarn_xpu_profile.py`. It makes cache dtype,
 layout, kernel, split policy/count, frontend, flush-index strategy, full-page
-writer, multi-token prefill store, oneDNN mode,
+writer, multi-token prefill store, forward-pool guard, oneDNN mode,
 request-stable projections/RMSNorm, 65K/262K model length, and B1/B4 width
 process-start choices. The launcher is
 resolved to one immutable Nix-store program once per harness run, while every

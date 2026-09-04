@@ -443,13 +443,16 @@ def test_runtime_factory_profile_accepts_runtime_axes_without_named_launcher(
     assert perf.launcher_name(run, args) == perf.RUNTIME_FACTORY_LAUNCHER
     assert args.native_frontend == "qkv_scatter_inline"
     assert args.forward_pool_ensure == "fused_qkv_proof"
-    assert perf.service_environment(run, args)["KVARN_FORWARD_POOL_ENSURE"] == (
-        "fused_qkv_proof"
+    assert (
+        perf.service_environment(run, args)["KVARN_FACTORY_FORWARD_POOL_ENSURE"]
+        == "fused_qkv_proof"
     )
+    assert "KVARN_FORWARD_POOL_ENSURE" not in perf.service_environment(run, args)
     assert perf.runtime_factory_axes_for_run(run, args) == {
         "KVARN_FACTORY_CACHE_LAYOUT": "natural",
         "KVARN_FACTORY_FLUSH_INDEX_MATERIALIZATION": "shared",
         "KVARN_FACTORY_FLUSH_WRITER": "reference",
+        "KVARN_FACTORY_FORWARD_POOL_ENSURE": "fused_qkv_proof",
         "KVARN_FACTORY_KERNEL_VARIANT": "baseline",
         "KVARN_FACTORY_KV_CACHE_DTYPE": perf.COMPACT_DTYPE,
         "KVARN_FACTORY_MAX_MODEL_LEN": "65536",

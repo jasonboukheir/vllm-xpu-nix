@@ -145,6 +145,7 @@ RUNTIME_FACTORY_SELECTORS = (
     "KVARN_FACTORY_CACHE_LAYOUT",
     "KVARN_FACTORY_FLUSH_INDEX_MATERIALIZATION",
     "KVARN_FACTORY_FLUSH_WRITER",
+    "KVARN_FACTORY_FORWARD_POOL_ENSURE",
     "KVARN_FACTORY_KERNEL_VARIANT",
     "KVARN_FACTORY_KV_CACHE_DTYPE",
     "KVARN_FACTORY_MAX_MODEL_LEN",
@@ -1035,6 +1036,7 @@ def runtime_factory_axes_for_run(
             flush_index_materialization_for_run(run, args)
         ),
         "KVARN_FACTORY_FLUSH_WRITER": flush_writer_for_run(run, args),
+        "KVARN_FACTORY_FORWARD_POOL_ENSURE": forward_pool_ensure_for_run(run, args),
         "KVARN_FACTORY_KERNEL_VARIANT": native_kernel_variant_for_run(run, args),
         "KVARN_FACTORY_KV_CACHE_DTYPE": ARM_SETTINGS[run.arm]["kv_cache_dtype"],
         "KVARN_FACTORY_MAX_MODEL_LEN": str(args.max_model_len),
@@ -1061,6 +1063,7 @@ def runtime_factory_axes_for_run(
         "KVARN_FACTORY_CACHE_LAYOUT": "natural",
         "KVARN_FACTORY_FLUSH_INDEX_MATERIALIZATION": "per_layer",
         "KVARN_FACTORY_FLUSH_WRITER": "reference",
+        "KVARN_FACTORY_FORWARD_POOL_ENSURE": "always",
         "KVARN_FACTORY_KERNEL_VARIANT": "baseline",
         "KVARN_FACTORY_KV_CACHE_DTYPE": "auto",
         "KVARN_FACTORY_MAX_MODEL_LEN": str(args.max_model_len),
@@ -1100,12 +1103,14 @@ def service_environment(run: PlannedRun, args: argparse.Namespace) -> dict[str, 
             flush_index_materialization_environment(args)
         )
         environment["KVARN_FACTORY_FLUSH_WRITER"] = flush_writer_for_run(run, args)
+        environment["KVARN_FACTORY_FORWARD_POOL_ENSURE"] = forward_pool_ensure_for_run(
+            run, args
+        )
         environment["KVARN_FACTORY_PREFILL_STORE"] = prefill_store_for_run(run, args)
         environment["KVARN_FACTORY_NATIVE_XPU_FRONTEND"] = native_frontend_for_run(
             run, args
         )
     environment["KVARN_PREFILL_FP16_WINDOW_BLOCKS"] = str(DEFAULT_PREFILL_WINDOW_BLOCKS)
-    environment["KVARN_FORWARD_POOL_ENSURE"] = forward_pool_ensure_for_run(run, args)
     return environment
 
 

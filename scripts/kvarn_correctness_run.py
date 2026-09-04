@@ -341,6 +341,7 @@ def runtime_factory_axes_for_spec(
             perf.flush_index_materialization_environment(args)
         ),
         "KVARN_FACTORY_FLUSH_WRITER": flush_writer_for_spec(spec, args),
+        "KVARN_FACTORY_FORWARD_POOL_ENSURE": forward_pool_ensure_for_spec(spec, args),
         "KVARN_FACTORY_KERNEL_VARIANT": native_kernel_variant_for_spec(spec, args),
         "KVARN_FACTORY_KV_CACHE_DTYPE": perf.COMPACT_DTYPE,
         "KVARN_FACTORY_MAX_MODEL_LEN": str(spec.max_model_len),
@@ -576,12 +577,14 @@ def service_environment(spec: ServiceSpec, args: argparse.Namespace) -> dict[str
             perf.flush_index_materialization_environment(args)
         )
         environment["KVARN_FACTORY_FLUSH_WRITER"] = flush_writer_for_spec(spec, args)
+        environment["KVARN_FACTORY_FORWARD_POOL_ENSURE"] = forward_pool_ensure_for_spec(
+            spec, args
+        )
         environment["KVARN_FACTORY_PREFILL_STORE"] = prefill_store_for_spec(spec, args)
         environment["KVARN_FACTORY_NATIVE_XPU_FRONTEND"] = native_frontend_for_spec(
             spec, args
         )
     environment["KVARN_PREFILL_FP16_WINDOW_BLOCKS"] = str(DEFAULT_PREFILL_WINDOW_BLOCKS)
-    environment["KVARN_FORWARD_POOL_ENSURE"] = forward_pool_ensure_for_spec(spec, args)
     return environment
 
 

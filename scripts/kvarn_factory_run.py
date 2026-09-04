@@ -1746,6 +1746,27 @@ def focused_xpu_tests(
     return tuple(dict.fromkeys(selected))
 
 
+def _focused_pytest_command(node_ids: Sequence[str]) -> list[str]:
+    """Build a hermetic pytest command that tolerates duplicate module basenames."""
+    return [
+        sys.executable,
+        "-m",
+        "pytest",
+        "-q",
+        "--noconftest",
+        # The kernel and vLLM production suites intentionally contain a test
+        # module with the same basename. Pytest's default prepend importer puts
+        # both at the same top-level module name and aborts collection. Importlib
+        # mode gives each path an independent module identity while preserving a
+        # single invocation and therefore the existing kill-suite accounting.
+        "--import-mode=importlib",
+        "-p",
+        "no:cacheprovider",
+        "-rA",
+        *node_ids,
+    ]
+
+
 def focused_xpu_test_command(
     kernels_repo: Path,
     variants: Sequence[VariantSpec],
@@ -1783,17 +1804,7 @@ def focused_xpu_test_command(
             if not source.is_relative_to(resolved_vllm):
                 raise FactoryError(f"focused XPU test escapes vLLM repository: {source}")
             node_ids.append(f"{source}::{test_name}")
-    return [
-        sys.executable,
-        "-m",
-        "pytest",
-        "-q",
-        "--noconftest",
-        "-p",
-        "no:cacheprovider",
-        "-rA",
-        *node_ids,
-    ]
+    return _focused_pytest_command(node_ids)
 
 
 def run_focused_xpu_kill_suite(

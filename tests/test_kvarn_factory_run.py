@@ -1236,8 +1236,10 @@ def test_focused_xpu_kill_suite_is_bound_to_library_and_fail_closed(
     assert captured["cwd"] == repo.resolve()
     assert captured["env"]["VLLM_XPU_KERNELS_LIBRARY"] == str(library.resolve())
     assert "--noconftest" in captured["command"]
+    assert "--import-mode=importlib" in captured["command"]
     assert "no:cacheprovider" in captured["command"]
-    assert all(str(repo.resolve()) in item for item in captured["command"][8:])
+    node_ids = captured["command"][captured["command"].index("-rA") + 1 :]
+    assert all(str(repo.resolve()) in item for item in node_ids)
 
     def skipped_run(_command, **_kwargs):
         return SimpleNamespace(
@@ -1300,7 +1302,32 @@ def test_fused_writer_kill_suite_includes_production_vllm_differential(
         f"vllm:{selection}" in result["test_selections"]
         for selection in factory.FOCUSED_XPU_VLLM_SINKHORN_WRITER_TESTS
     )
+    assert "--import-mode=importlib" in result["command"]
     assert any(str(vllm_repo.resolve()) in item for item in result["command"])
+
+
+def test_focused_pytest_command_collects_duplicate_module_basenames(
+    tmp_path: Path,
+) -> None:
+    first = tmp_path / "kernel" / "test_duplicate.py"
+    second = tmp_path / "vllm" / "test_duplicate.py"
+    for source, value in ((first, 1), (second, 2)):
+        source.parent.mkdir(parents=True)
+        source.write_text(
+            f"def test_independent_module_identity():\n    assert {value} > 0\n",
+            encoding="utf-8",
+        )
+
+    completed = subprocess.run(
+        factory._focused_pytest_command([str(first), str(second)]),
+        cwd=tmp_path,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert "2 passed" in completed.stdout
 
 
 def test_fused_writer_command_requires_vllm_repository(tmp_path: Path) -> None:

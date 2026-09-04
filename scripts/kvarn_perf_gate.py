@@ -12,6 +12,7 @@ import os
 import re
 import statistics
 import sys
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -34,6 +35,76 @@ REQUIRED_GATES = (
     "near_262k_reference_equivalence",
     "near_262k_restart",
 )
+CORRECTNESS_FIXTURE_LENGTHS = {
+    "dialogue-127": 127,
+    "code-4095": 4095,
+    "math-16383": 16383,
+    "reasoning-65023": 65023,
+    "reasoning-261631": 261631,
+}
+CORRECTNESS_SHORT_FIXTURES = tuple(list(CORRECTNESS_FIXTURE_LENGTHS)[:4])
+CORRECTNESS_PHASE_SPECS = {
+    "native-65k-b1-first": {
+        "name": "native-65k-b1-first",
+        "launcher": "vllm-xpu-brutus-kvarn-native-b1",
+        "native": True,
+        "batch": 1,
+        "max_model_len": 65536,
+        "splits": 24,
+    },
+    "native-65k-b1-restart": {
+        "name": "native-65k-b1-restart",
+        "launcher": "vllm-xpu-brutus-kvarn-native-b1",
+        "native": True,
+        "batch": 1,
+        "max_model_len": 65536,
+        "splits": 24,
+    },
+    "native-65k-b4": {
+        "name": "native-65k-b4",
+        "launcher": "vllm-xpu-brutus-kvarn-native-b4",
+        "native": True,
+        "batch": 4,
+        "max_model_len": 65536,
+        "splits": 16,
+    },
+    "reference-262k-b1": {
+        "name": "reference-262k-b1",
+        "launcher": "vllm-xpu-brutus-kvarn-262k-b1",
+        "native": False,
+        "batch": 1,
+        "max_model_len": 262144,
+        "splits": 1,
+    },
+    "native-262k-b1-first": {
+        "name": "native-262k-b1-first",
+        "launcher": "vllm-xpu-brutus-kvarn-native-262k-b1",
+        "native": True,
+        "batch": 1,
+        "max_model_len": 262144,
+        "splits": 24,
+    },
+    "native-262k-b1-restart": {
+        "name": "native-262k-b1-restart",
+        "launcher": "vllm-xpu-brutus-kvarn-native-262k-b1",
+        "native": True,
+        "batch": 1,
+        "max_model_len": 262144,
+        "splits": 24,
+    },
+}
+CORRECTNESS_RUNNER_SOURCES = {
+    "scripts/kvarn_correctness_run.py",
+    "scripts/kvarn_perf_gate.py",
+    "scripts/kvarn_perf_run.py",
+    "scripts/kvarn_scan_engine_log.py",
+    "scripts/kvarn_service_gate.py",
+}
+CORRECTNESS_NATIVE_SOURCES = {
+    "tests/flash_attn/test_kvarn_decode_xpu.py",
+    "benchmark/check_kvarn_decode.py",
+    "benchmark/kvarn_utils.py",
+}
 COMMON_PROVENANCE_FIELDS = (
     "backend",
     "model_id",
@@ -65,6 +136,465 @@ ARM_PROVENANCE_FIELDS = (
 
 class GateError(ValueError):
     """Raised when inputs do not form a valid matched comparison."""
+
+
+def _artifact_reference(value: Any, *, name: str, owner: Path) -> tuple[Path, str]:
+    if not isinstance(value, dict):
+        raise GateError(f"{owner}: {name} must be an artifact reference")
+    raw_path, digest = value.get("path"), value.get("sha256")
+    if not isinstance(raw_path, str) or not raw_path:
+        raise GateError(f"{owner}: {name} has no artifact path")
+    if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
+        raise GateError(f"{owner}: {name} has invalid SHA-256")
+    path = Path(raw_path).expanduser().resolve()
+    try:
+        actual = hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError as exc:
+        raise GateError(f"{owner}: cannot read {name} artifact {path}: {exc}") from exc
+    if actual != digest:
+        raise GateError(f"{owner}: {name} artifact SHA differs: {path}")
+    return path, digest
+
+
+def _json_artifact(
+    value: Any, *, name: str, owner: Path
+) -> tuple[Path, dict[str, Any]]:
+    path, _digest = _artifact_reference(value, name=name, owner=owner)
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise GateError(f"{owner}: cannot parse {name} artifact {path}: {exc}") from exc
+    if not isinstance(document, dict):
+        raise GateError(f"{owner}: {name} artifact must be an object")
+    return path, document
+
+
+def _validate_correctness_result(value: Any, fixture_id: str, *, owner: Path) -> None:
+    if not isinstance(value, dict):
+        raise GateError(f"{owner}: result for {fixture_id} must be an object")
+    prompt_tokens = CORRECTNESS_FIXTURE_LENGTHS[fixture_id]
+    expected_usage = {
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": 512,
+        "total_tokens": prompt_tokens + 512,
+    }
+    token_ids = value.get("token_ids")
+    if (
+        value.get("id") != fixture_id
+        or value.get("prompt_token_count") != prompt_tokens
+        or not isinstance(value.get("prompt_token_ids_sha256"), str)
+        or not re.fullmatch(r"[0-9a-f]{64}", value["prompt_token_ids_sha256"])
+        or value.get("max_tokens") != 512
+        or value.get("finish_reason") != "length"
+        or value.get("usage") != expected_usage
+        or value.get("quality_findings") != []
+        or not isinstance(token_ids, list)
+        or len(token_ids) != 512
+        or any(
+            isinstance(token_id, bool) or not isinstance(token_id, int)
+            for token_id in token_ids
+        )
+    ):
+        raise GateError(f"{owner}: result for {fixture_id} has invalid token evidence")
+    encoded = json.dumps(token_ids, separators=(",", ":")).encode()
+    if value.get("token_ids_sha256") != hashlib.sha256(encoded).hexdigest():
+        raise GateError(f"{owner}: result for {fixture_id} has a false token digest")
+
+
+def _validate_correctness_comparison(
+    value: Any, fixture_id: str, *, owner: Path
+) -> None:
+    if not isinstance(value, dict) or any(
+        value.get(name) is not True
+        for name in ("same_fixture", "same_prompt_token_ids", "token_ids_identical")
+    ):
+        raise GateError(f"{owner}: comparison for {fixture_id} is not exact")
+    if value.get("status") != "passed" or value.get("fixture_id") != fixture_id:
+        raise GateError(f"{owner}: comparison for {fixture_id} is not passed")
+    for name in ("expected_token_ids_sha256", "actual_token_ids_sha256"):
+        digest = value.get(name)
+        if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
+            raise GateError(f"{owner}: comparison for {fixture_id} lacks {name}")
+    if value["expected_token_ids_sha256"] != value["actual_token_ids_sha256"]:
+        raise GateError(f"{owner}: comparison for {fixture_id} has unequal digests")
+
+
+def _validate_correctness_comparisons(
+    value: Any, fixture_ids: tuple[str, ...], *, owner: Path
+) -> None:
+    if not isinstance(value, list) or len(value) != len(fixture_ids):
+        raise GateError(f"{owner}: comparison set has the wrong size")
+    for comparison, fixture_id in zip(value, fixture_ids, strict=True):
+        _validate_correctness_comparison(comparison, fixture_id, owner=owner)
+
+
+def _validate_correctness_phase(
+    value: Any,
+    phase_name: str,
+    candidate_id: str,
+    process_package: str,
+    *,
+    owner: Path,
+) -> dict[str, Any]:
+    path, phase = _json_artifact(value, name=f"{phase_name} phase", owner=owner)
+    expected_spec = CORRECTNESS_PHASE_SPECS[phase_name]
+    if (
+        phase.get("status") != "passed"
+        or phase.get("spec") != expected_spec
+        or phase.get("native_dispatch_verified") is not expected_spec["native"]
+        or not isinstance(phase.get("workload"), dict)
+    ):
+        raise GateError(f"{owner}: invalid {phase_name} phase evidence")
+    for name in ("profile", "identity", "engine_log", "engine_log_scan"):
+        _artifact_reference(phase.get(name), name=f"{phase_name}.{name}", owner=path)
+    _identity_path, identity = _json_artifact(
+        phase["identity"], name=f"{phase_name}.identity", owner=path
+    )
+    if (
+        identity.get("candidate_env") != candidate_id
+        or identity.get("process_package") != process_package
+    ):
+        raise GateError(f"{owner}: {phase_name} identity differs from the candidate")
+    log_path, _digest = _artifact_reference(
+        phase["engine_log"], name=f"{phase_name}.engine_log", owner=path
+    )
+    log_text = log_path.read_text(encoding="utf-8", errors="replace")
+    dispatched = NATIVE_DISPATCH in log_text
+    if dispatched is not expected_spec["native"]:
+        raise GateError(f"{owner}: {phase_name} native dispatch evidence differs")
+    if expected_spec["native"] and FALLBACK_PATTERN.search(log_text):
+        raise GateError(f"{owner}: {phase_name} reports a native fallback")
+    _scan_path, log_scan = _json_artifact(
+        phase["engine_log_scan"], name=f"{phase_name}.engine_log_scan", owner=path
+    )
+    if log_scan.get("status") != "passed" or log_scan.get("fatal_findings") != []:
+        raise GateError(f"{owner}: {phase_name} log scan is not clean")
+    return phase["workload"]
+
+
+def validate_correctness_gate_evidence(
+    name: str,
+    evidence: Any,
+    *,
+    path: Path,
+    candidate_id: str,
+    process_package: str,
+) -> None:
+    """Validate the meaning of one hashed correctness-gate artifact."""
+    if name not in REQUIRED_GATES:
+        raise GateError(f"{path}: unknown correctness gate {name}")
+    if (
+        not isinstance(evidence, dict)
+        or evidence.get("status") != "passed"
+        or evidence.get("gate") != name
+    ):
+        raise GateError(f"{path}: gate identity/status differs from {name}")
+
+    if name.startswith("native_decode_"):
+        counts = evidence.get("junit_counts")
+        if (
+            not isinstance(counts, dict)
+            or isinstance(counts.get("tests"), bool)
+            or not isinstance(counts.get("tests"), int)
+            or counts["tests"] < 1
+            or any(
+                counts.get(field) != 0 for field in ("failures", "errors", "skipped")
+            )
+            or evidence.get("candidate_id") != candidate_id
+        ):
+            raise GateError(f"{path}: primitive gate lacks an all-pass JUnit result")
+        command = evidence.get("command")
+        expression = {
+            "native_decode_short": "not long_context_ragged_b4_matches_structured_oracle",
+            "native_decode_262k": "long_context_ragged_b4_matches_structured_oracle",
+        }[name]
+        if (
+            not isinstance(command, list)
+            or not all(isinstance(argument, str) for argument in command)
+            or not any(
+                command[index : index + 2] == ["-m", "pytest"]
+                for index in range(len(command) - 1)
+            )
+            or "-k" not in command
+            or command.index("-k") + 1 >= len(command)
+            or command[command.index("-k") + 1] != expression
+        ):
+            raise GateError(f"{path}: primitive gate has the wrong pytest command")
+        _artifact_reference(
+            evidence.get("native_library"), name="native_library", owner=path
+        )
+        test_source, _digest = _artifact_reference(
+            evidence.get("test_source"), name="test_source", owner=path
+        )
+        if str(test_source) not in command:
+            raise GateError(
+                f"{path}: pytest command did not execute the hashed test source"
+            )
+        _artifact_reference(evidence.get("pytest_log"), name="pytest_log", owner=path)
+        junit, _digest = _artifact_reference(
+            evidence.get("junit"), name="junit", owner=path
+        )
+        try:
+            junit_root = ET.parse(junit).getroot()
+            suites = (
+                [junit_root]
+                if junit_root.tag == "testsuite"
+                else list(junit_root.findall("testsuite"))
+            )
+            junit_counts = {
+                field: sum(int(suite.get(field, "0")) for suite in suites)
+                for field in ("tests", "failures", "errors", "skipped")
+            }
+        except (OSError, ET.ParseError, ValueError) as exc:
+            raise GateError(f"{path}: primitive JUnit is invalid: {exc}") from exc
+        if junit_counts != counts:
+            raise GateError(f"{path}: primitive JUnit counts differ from evidence")
+        helpers = evidence.get("helper_sources")
+        if not isinstance(helpers, dict) or set(helpers) != {
+            "benchmark/check_kvarn_decode.py",
+            "benchmark/kvarn_utils.py",
+        }:
+            raise GateError(f"{path}: primitive helper-source evidence is incomplete")
+        for helper, reference in helpers.items():
+            _artifact_reference(reference, name=helper, owner=path)
+        return
+
+    def phase(field: str, phase_name: str) -> dict[str, Any]:
+        return _validate_correctness_phase(
+            evidence.get(field),
+            phase_name,
+            candidate_id,
+            process_package,
+            owner=path,
+        )
+
+    if name == "b1_replay":
+        workload = phase("service_phase", "native-65k-b1-first")
+        comparisons = evidence.get("comparisons")
+        if comparisons != workload.get("replay_comparisons"):
+            raise GateError(f"{path}: replay evidence differs from its service phase")
+        _validate_correctness_comparisons(
+            comparisons, CORRECTNESS_SHORT_FIXTURES, owner=path
+        )
+        for field in ("first", "replay"):
+            results = workload.get(field)
+            if not isinstance(results, list) or len(results) != 4:
+                raise GateError(f"{path}: {field} result set has the wrong size")
+            for result, fixture_id in zip(
+                results, CORRECTNESS_SHORT_FIXTURES, strict=True
+            ):
+                _validate_correctness_result(result, fixture_id, owner=path)
+        return
+    if name == "cancel_reuse":
+        workload = phase("service_phase", "native-65k-b1-first")
+        cancellation = workload.get("cancellation")
+        if not isinstance(cancellation, dict) or any(
+            evidence.get(field) != cancellation.get(field)
+            for field in (
+                "requested_generated_token_checkpoint",
+                "generated_token_ids_before_close",
+                "idle_metrics_before_replacement",
+                "replacement",
+                "comparison",
+            )
+        ):
+            raise GateError(f"{path}: cancellation evidence differs from its phase")
+        if (
+            cancellation.get("requested_generated_token_checkpoint") != 257
+            or cancellation.get("generated_token_ids_before_close") != 257
+        ):
+            raise GateError(f"{path}: cancellation did not close at token 257")
+        metrics = cancellation.get("idle_metrics_before_replacement")
+        if (
+            not isinstance(metrics, dict)
+            or set(metrics)
+            != {
+                "vllm:num_requests_running",
+                "vllm:num_requests_waiting",
+                "vllm:kv_cache_usage_perc",
+            }
+            or any(
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or value != 0
+                for value in metrics.values()
+            )
+        ):
+            raise GateError(f"{path}: cancellation reuse lacks exact idle metrics")
+        _validate_correctness_result(
+            cancellation.get("replacement"), "reasoning-65023", owner=path
+        )
+        _validate_correctness_comparison(
+            cancellation.get("comparison"), "reasoning-65023", owner=path
+        )
+        return
+    if name == "b1_restart":
+        phase("original_service_phase", "native-65k-b1-first")
+        workload = phase("restarted_service_phase", "native-65k-b1-restart")
+        if evidence.get("comparisons") != workload.get("comparisons"):
+            raise GateError(f"{path}: restart evidence differs from its service phase")
+        _validate_correctness_comparisons(
+            evidence["comparisons"], CORRECTNESS_SHORT_FIXTURES, owner=path
+        )
+        results = workload.get("results")
+        if not isinstance(results, list) or len(results) != 4:
+            raise GateError(f"{path}: restart result set has the wrong size")
+        for result, fixture_id in zip(results, CORRECTNESS_SHORT_FIXTURES, strict=True):
+            _validate_correctness_result(result, fixture_id, owner=path)
+        return
+    if name == "b4_isolation":
+        phase("b1_service_phase", "native-65k-b1-first")
+        workload = phase("b4_service_phase", "native-65k-b4")
+        if any(
+            evidence.get(field) != workload.get(field)
+            for field in ("comparisons", "overlap")
+        ):
+            raise GateError(f"{path}: B4 evidence differs from its service phase")
+        _validate_correctness_comparisons(
+            evidence["comparisons"], CORRECTNESS_SHORT_FIXTURES, owner=path
+        )
+        results = workload.get("results")
+        if not isinstance(results, list) or len(results) != 4:
+            raise GateError(f"{path}: B4 result set has the wrong size")
+        for result, fixture_id in zip(results, CORRECTNESS_SHORT_FIXTURES, strict=True):
+            _validate_correctness_result(result, fixture_id, owner=path)
+        overlap = evidence.get("overlap")
+        if (
+            not isinstance(overlap, dict)
+            or overlap.get("required_running") != 4
+            or overlap.get("required_overlap_observed") is not True
+            or isinstance(overlap.get("peak_running"), bool)
+            or not isinstance(overlap.get("peak_running"), (int, float))
+            or overlap["peak_running"] < 4
+        ):
+            raise GateError(f"{path}: B4 did not prove four-way overlap")
+        return
+    if name == "near_262k_reference_equivalence":
+        reference = phase("reference_service_phase", "reference-262k-b1")
+        native = phase("native_service_phase", "native-262k-b1-first")
+        _validate_correctness_result(
+            reference.get("result"), "reasoning-261631", owner=path
+        )
+        _validate_correctness_result(
+            native.get("result"), "reasoning-261631", owner=path
+        )
+        comparison = evidence.get("comparison")
+        if comparison != native.get("reference_comparison"):
+            raise GateError(f"{path}: 262K comparison differs from its service phase")
+        _validate_correctness_comparison(comparison, "reasoning-261631", owner=path)
+        return
+    if name == "near_262k_restart":
+        phase("reference_service_phase", "reference-262k-b1")
+        phase("first_native_service_phase", "native-262k-b1-first")
+        restarted = phase("restarted_native_service_phase", "native-262k-b1-restart")
+        _validate_correctness_result(
+            restarted.get("result"), "reasoning-261631", owner=path
+        )
+        for field in ("reference_comparison", "native_restart_comparison"):
+            if evidence.get(field) != restarted.get(field):
+                raise GateError(
+                    f"{path}: 262K restart comparison differs from its phase"
+                )
+            _validate_correctness_comparison(
+                evidence[field], "reasoning-261631", owner=path
+            )
+        return
+    raise AssertionError("unreachable")
+
+
+def _validate_correctness_manifest_identity(
+    document: dict[str, Any], path: Path
+) -> str:
+    identity = document.get("candidate_identity")
+    if not isinstance(identity, dict):
+        raise GateError(f"{path}: candidate_identity must be an object")
+    process_package = identity.get("process_package")
+    if not isinstance(process_package, str) or not process_package.startswith(
+        "/nix/store/"
+    ):
+        raise GateError(f"{path}: candidate process package is invalid")
+    for field in ("candidate_closure_sha256", "process_closure_sha256"):
+        digest = identity.get(field)
+        if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
+            raise GateError(f"{path}: candidate identity lacks {field}")
+
+    source = document.get("source_identity")
+    if not isinstance(source, dict):
+        raise GateError(f"{path}: source_identity must be an object")
+    revisions = source.get("revisions")
+    if (
+        not isinstance(revisions, dict)
+        or set(revisions)
+        != {
+            "vllm-xpu-release",
+            "vllm-xpu-unstable-src",
+            "vllm-xpu-kernels-unstable-src",
+        }
+        or any(
+            not isinstance(revision, str) or not re.fullmatch(r"[0-9a-f]{40}", revision)
+            for revision in revisions.values()
+        )
+    ):
+        raise GateError(f"{path}: candidate lock revisions are invalid")
+
+    for field in ("config_checkout", "runner_checkout", "kernel_tracked_checkout"):
+        checkout = source.get(field)
+        if (
+            not isinstance(checkout, dict)
+            or not isinstance(checkout.get("head"), str)
+            or not re.fullmatch(r"[0-9a-f]{40}", checkout["head"])
+            or isinstance(checkout.get("files"), bool)
+            or not isinstance(checkout.get("files"), int)
+            or checkout["files"] < 1
+            or not isinstance(checkout.get("sha256"), str)
+            or not re.fullmatch(r"[0-9a-f]{64}", checkout["sha256"])
+            or checkout.get("unexpected_changes") != []
+        ):
+            raise GateError(f"{path}: {field} is not a clean identified checkout")
+    if (
+        source["kernel_tracked_checkout"]["head"]
+        != revisions["vllm-xpu-kernels-unstable-src"]
+    ):
+        raise GateError(f"{path}: kernel checkout differs from the candidate lock")
+
+    lock_path = source.get("lock_path")
+    lock_sha256 = source.get("lock_sha256")
+    if (
+        not isinstance(lock_path, str)
+        or not isinstance(lock_sha256, str)
+        or not re.fullmatch(r"[0-9a-f]{64}", lock_sha256)
+    ):
+        raise GateError(f"{path}: lock-file identity is invalid")
+    try:
+        lock_bytes = Path(lock_path).expanduser().resolve().read_bytes()
+        lock = json.loads(lock_bytes)
+        locked = lock["nodes"]
+    except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
+        raise GateError(f"{path}: cannot re-read candidate lock: {exc}") from exc
+    if hashlib.sha256(lock_bytes).hexdigest() != lock_sha256 or any(
+        locked.get(name, {}).get("locked", {}).get("rev") != revision
+        for name, revision in revisions.items()
+    ):
+        raise GateError(f"{path}: candidate lock content differs from source identity")
+
+    runner_sources = source.get("runner_sources")
+    if not isinstance(runner_sources, dict) or set(runner_sources) != (
+        CORRECTNESS_RUNNER_SOURCES
+    ):
+        raise GateError(f"{path}: correctness-runner source evidence is incomplete")
+    for name, reference in runner_sources.items():
+        _artifact_reference(reference, name=name, owner=path)
+    native_sources = source.get("native_source_sha256")
+    if (
+        not isinstance(native_sources, dict)
+        or set(native_sources) != (CORRECTNESS_NATIVE_SOURCES)
+        or any(
+            not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest)
+            for digest in native_sources.values()
+        )
+    ):
+        raise GateError(f"{path}: native primitive source identity is incomplete")
+    return process_package
 
 
 @dataclass(frozen=True)
@@ -350,9 +880,10 @@ def _load_correctness(path: Path) -> tuple[dict[str, Any], str]:
     candidate_id = document.get("candidate_id")
     if not isinstance(candidate_id, str) or not candidate_id:
         raise GateError(f"{path}: candidate_id must be a non-empty string")
+    process_package = _validate_correctness_manifest_identity(document, path)
     gates = document.get("gates")
-    if not isinstance(gates, dict):
-        raise GateError(f"{path}: gates must be an object")
+    if not isinstance(gates, dict) or set(gates) != set(REQUIRED_GATES):
+        raise GateError(f"{path}: gates must contain exactly the required gate set")
     for name in REQUIRED_GATES:
         gate = gates.get(name)
         if not isinstance(gate, dict) or gate.get("status") != "passed":
@@ -374,7 +905,60 @@ def _load_correctness(path: Path) -> tuple[dict[str, Any], str]:
             ) from exc
         if actual_sha256 != artifact_sha256:
             raise GateError(f"{path}: correctness evidence SHA differs for {name}")
+        try:
+            evidence_document = json.loads(evidence.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise GateError(
+                f"{path}: cannot parse correctness evidence for {name}: {exc}"
+            ) from exc
+        validate_correctness_gate_evidence(
+            name,
+            evidence_document,
+            path=evidence,
+            candidate_id=candidate_id,
+            process_package=process_package,
+        )
+    resolved = path.expanduser().resolve()
+    _verify_artifact_references(resolved, owner=path, seen={resolved})
     return document, hashlib.sha256(raw).hexdigest()
+
+
+def _verify_artifact_references(path: Path, *, owner: Path, seen: set[Path]) -> None:
+    if path.suffix != ".json":
+        return
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise GateError(f"{owner}: cannot read nested evidence {path}: {exc}") from exc
+
+    def visit(value: Any) -> None:
+        if isinstance(value, list):
+            for item in value:
+                visit(item)
+            return
+        if not isinstance(value, dict):
+            return
+        nested_path = value.get("path")
+        nested_sha256 = value.get("sha256")
+        if isinstance(nested_path, str) and isinstance(nested_sha256, str):
+            nested = Path(nested_path).expanduser().resolve()
+            if not re.fullmatch(r"[0-9a-f]{64}", nested_sha256):
+                raise GateError(f"{owner}: nested evidence has invalid SHA-256")
+            try:
+                actual = hashlib.sha256(nested.read_bytes()).hexdigest()
+            except OSError as exc:
+                raise GateError(
+                    f"{owner}: cannot read nested evidence {nested}: {exc}"
+                ) from exc
+            if actual != nested_sha256:
+                raise GateError(f"{owner}: nested evidence SHA differs: {nested}")
+            if nested not in seen:
+                seen.add(nested)
+                _verify_artifact_references(nested, owner=owner, seen=seen)
+        for item in value.values():
+            visit(item)
+
+    visit(document)
 
 
 def _validate_logs(paths: list[Path], arm: str, *, expect_native: bool) -> list[str]:

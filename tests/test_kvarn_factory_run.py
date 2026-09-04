@@ -13,6 +13,25 @@ from scripts import kvarn_factory_run as factory
 PROJECT_REVISION = "1" * 40
 VLLM_REVISION = "2" * 40
 KERNELS_REVISION = "3" * 40
+ATTENTION_SOURCE_HASH = "4" * 32
+ATTENTION_SOURCE_IDENTITY = {
+    "scheme": factory.FILTERED_SOURCE_SCHEME,
+    "filtered_source_store_hash": ATTENTION_SOURCE_HASH,
+}
+
+
+def _attention_source_contract(output: str, derivation: str) -> dict[str, object]:
+    return {
+        "nix_evaluation_identity": {
+            "output_path": output,
+            "derivation": derivation,
+        },
+        "artifact_identity": ATTENTION_SOURCE_IDENTITY,
+        "compatibility_provenance": {
+            "upstream_revision": KERNELS_REVISION,
+            "asserted_against_expected_repository_revision": True,
+        },
+    }
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -564,6 +583,36 @@ def test_nix_artifact_must_belong_to_attested_derivation_and_closure() -> None:
         )
 
 
+def test_native_attention_source_contract_binds_nix_identity_and_compatibility() -> (
+    None
+):
+    output = Path("/nix/store/" + "n" * 32 + "-attention")
+    derivation = (
+        "/nix/store/"
+        + "d" * 32
+        + "-attention-0.1+src."
+        + ATTENTION_SOURCE_HASH
+        + ".drv"
+    )
+    assert factory.validate_native_attention_source_contract(
+        expected_output=output,
+        expected_derivation=derivation,
+        source_scheme=factory.FILTERED_SOURCE_SCHEME,
+        source_store_hash=ATTENTION_SOURCE_HASH,
+        compatible_revision=KERNELS_REVISION,
+        expected_kernels_revision=KERNELS_REVISION,
+    ) == _attention_source_contract(str(output), derivation)
+    with pytest.raises(factory.FactoryError, match="compatibility revision"):
+        factory.validate_native_attention_source_contract(
+            expected_output=output,
+            expected_derivation=derivation,
+            source_scheme=factory.FILTERED_SOURCE_SCHEME,
+            source_store_hash=ATTENTION_SOURCE_HASH,
+            compatible_revision="6" * 40,
+            expected_kernels_revision=KERNELS_REVISION,
+        )
+
+
 def test_nix_package_output_must_belong_to_attested_derivation_and_closure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -631,11 +680,14 @@ def test_source_ownership_binds_package_and_kernel_outputs_to_correct_repos() ->
     native_attention = {
         "derivation": "/nix/store/"
         + "c" * 32
-        + "-native-attention.g"
-        + KERNELS_REVISION[:7]
+        + "-native-attention-0.1+src."
+        + ATTENTION_SOURCE_HASH
         + ".drv",
         "output_path": native_attention_output,
     }
+    native_attention["source_contract"] = _attention_source_contract(
+        native_attention_output, native_attention["derivation"]
+    )
     expected = {
         "vllm-xpu-nix": PROJECT_REVISION,
         "vllm": VLLM_REVISION,
@@ -678,9 +730,7 @@ def test_source_ownership_binds_package_and_kernel_outputs_to_correct_repos() ->
             native_attention=native_attention,
             expected_revisions=expected,
         )
-    with pytest.raises(
-        factory.FactoryError, match="native_attention source ownership mismatch"
-    ):
+    with pytest.raises(factory.FactoryError, match="Nix-evaluated identity"):
         factory.verify_source_ownership(
             package=package,
             base=base,
@@ -688,7 +738,7 @@ def test_source_ownership_binds_package_and_kernel_outputs_to_correct_repos() ->
             native_attention={
                 **native_attention,
                 "derivation": native_attention["derivation"].replace(
-                    KERNELS_REVISION[:7], VLLM_REVISION[:7]
+                    ATTENTION_SOURCE_HASH, "5" * 32
                 ),
             },
             expected_revisions=expected,
@@ -866,6 +916,14 @@ def test_matched_fixture_is_default_and_unmatched_is_explicit_diagnostic(
     tmp_path: Path,
 ) -> None:
     derivation = "/nix/store/0123456789abcdfghijklmnpqrsvwxyz-test.drv"
+    attention_output = "/nix/store/" + "n" * 32 + "-attention"
+    attention_derivation = (
+        "/nix/store/"
+        + "d" * 32
+        + "-attention-0.1+src."
+        + ATTENTION_SOURCE_HASH
+        + ".drv"
+    )
     common = [
         "--package-output",
         str(tmp_path / "package"),
@@ -888,9 +946,19 @@ def test_matched_fixture_is_default_and_unmatched_is_explicit_diagnostic(
         "--native-attention-library",
         str(tmp_path / "libattn_kernels_xe_2.so"),
         "--native-attention-derivation",
-        derivation,
+        attention_derivation,
         "--native-attention-closure-sha256",
         "3" * 64,
+        "--expected-native-attention-output",
+        attention_output,
+        "--expected-native-attention-derivation",
+        attention_derivation,
+        "--native-attention-source-scheme",
+        factory.FILTERED_SOURCE_SCHEME,
+        "--native-attention-source-store-hash",
+        ATTENTION_SOURCE_HASH,
+        "--native-attention-compatible-revision",
+        KERNELS_REVISION,
         "--expected-vllm-xpu-nix-revision",
         PROJECT_REVISION,
         "--expected-vllm-revision",
@@ -908,6 +976,12 @@ def test_matched_fixture_is_default_and_unmatched_is_explicit_diagnostic(
     assert matched.warmup_rounds == 16
     assert matched.sample_rounds == 20
     assert matched.native_attention_build["closure_sha256"] == "3" * 64
+    assert matched.native_attention_build["source_contract"] == (
+        _attention_source_contract(
+            matched.expected_native_attention_output.as_posix(),
+            matched.expected_native_attention_derivation,
+        )
+    )
     assert set(factory.initial_document(matched)["build_attestations"]) == {
         "package",
         "base",
@@ -1000,6 +1074,14 @@ def test_execution_failure_is_durable_and_nonzero(
     package = tmp_path / "package"
     package.mkdir()
     derivation = "/nix/store/0123456789abcdfghijklmnpqrsvwxyz-test.drv"
+    attention_output = "/nix/store/" + "n" * 32 + "-attention"
+    attention_derivation = (
+        "/nix/store/"
+        + "d" * 32
+        + "-attention-0.1+src."
+        + ATTENTION_SOURCE_HASH
+        + ".drv"
+    )
     args = factory.parse_args(
         [
             "--package-output",
@@ -1023,9 +1105,19 @@ def test_execution_failure_is_durable_and_nonzero(
             "--native-attention-library",
             str(tmp_path / "missing-native-attention.so"),
             "--native-attention-derivation",
-            derivation,
+            attention_derivation,
             "--native-attention-closure-sha256",
             "3" * 64,
+            "--expected-native-attention-output",
+            attention_output,
+            "--expected-native-attention-derivation",
+            attention_derivation,
+            "--native-attention-source-scheme",
+            factory.FILTERED_SOURCE_SCHEME,
+            "--native-attention-source-store-hash",
+            ATTENTION_SOURCE_HASH,
+            "--native-attention-compatible-revision",
+            KERNELS_REVISION,
             "--expected-vllm-xpu-nix-revision",
             PROJECT_REVISION,
             "--expected-vllm-revision",

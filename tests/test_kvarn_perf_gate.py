@@ -146,6 +146,29 @@ def _factory_result(
         native_attention_library.read_bytes()
     ).hexdigest()
     native_attention_output = "/nix/store/factory-native-attention"
+    native_attention_source_hash = "4" * 32
+    native_attention_source_identity = {
+        "scheme": gate_module.FILTERED_SOURCE_SCHEME,
+        "filtered_source_store_hash": native_attention_source_hash,
+    }
+    native_attention_derivation = (
+        "/nix/store/"
+        + "4" * 32
+        + "-native-attention-0.1+src."
+        + native_attention_source_hash
+        + ".drv"
+    )
+    native_attention_source_contract = {
+        "nix_evaluation_identity": {
+            "output_path": native_attention_output,
+            "derivation": native_attention_derivation,
+        },
+        "artifact_identity": native_attention_source_identity,
+        "compatibility_provenance": {
+            "upstream_revision": sources["vllm-xpu-kernels"],
+            "asserted_against_expected_repository_revision": True,
+        },
+    }
     document = {
         "schema_version": 3,
         "artifact_kind": "kvarn_b70_primitive_factory_run",
@@ -218,13 +241,31 @@ def _factory_result(
                 "verified": True,
                 "output_path": native_attention_output,
                 "library_path": str(native_attention_library.resolve()),
+                "derivation": native_attention_derivation,
+                "source_contract": native_attention_source_contract,
             },
         },
         "source_ownership": {
             "verified": True,
             "artifacts": {
-                name: {"verified": True, "member_of_package_closure": True}
-                for name in ("package", "base", "flash", "native_attention")
+                "package": {"verified": True, "member_of_package_closure": True},
+                "base": {"verified": True, "member_of_package_closure": True},
+                "flash": {"verified": True, "member_of_package_closure": True},
+                "native_attention": {
+                    "verified": True,
+                    "member_of_package_closure": True,
+                    "repository": "vllm-xpu-kernels",
+                    "compatible_upstream_revision": sources["vllm-xpu-kernels"],
+                    "derivation": native_attention_derivation,
+                    "derivation_source_marker": (
+                        "+src." + native_attention_source_hash
+                    ),
+                    "artifact_identity": native_attention_source_identity,
+                    "nix_evaluation_identity": native_attention_source_contract[
+                        "nix_evaluation_identity"
+                    ],
+                    "compatibility_source": "factory_nix_evaluation",
+                },
             },
         },
         "native_attention_runtime_binding": {

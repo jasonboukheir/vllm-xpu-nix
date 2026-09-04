@@ -1786,6 +1786,7 @@ def focused_xpu_test_command(
         "-m",
         "pytest",
         "-q",
+        "--noconftest",
         "-p",
         "no:cacheprovider",
         "-rA",

@@ -435,6 +435,8 @@ def test_runner_command_forwards_matrix_and_exact_attestations(tmp_path: Path) -
         native_attention_expectation=native_expectation,
         output=tmp_path / "evidence.json",
         variants="baseline,q8_vector",
+        flush_writer="native_xe2",
+        prefill_store="hadamard_scatter",
         splits="auto,24",
         contexts="4096,65023",
         batches="1,4",
@@ -474,6 +476,8 @@ def test_runner_command_forwards_matrix_and_exact_attestations(tmp_path: Path) -
         KERNELS_REVISION
     )
     assert command[command.index("--variants") + 1] == "baseline,q8_vector"
+    assert command[command.index("--flush-writer") + 1] == "native_xe2"
+    assert command[command.index("--prefill-store") + 1] == "hadamard_scatter"
     assert command[command.index("--splits") + 1] == "auto,24"
     assert command[command.index("--contexts") + 1] == "4096,65023"
     assert command[command.index("--batches") + 1] == "1,4"
@@ -490,30 +494,74 @@ def test_runner_command_forwards_matrix_and_exact_attestations(tmp_path: Path) -
 
 
 def test_default_cli_is_the_matched_b70_factory_matrix() -> None:
-    args = host.parse_args(
-        [
-            "result-kvarn-factory",
-            PROJECT_REVISION,
-            VLLM_REVISION,
-            KERNELS_REVISION,
-            "--expected-native-attention-output",
-            "/nix/store/" + "n" * 32 + "-attention",
-            "--native-attention-source-scheme",
-            host.FILTERED_SOURCE_SCHEME,
-            "--native-attention-source-store-hash",
-            ATTENTION_SOURCE_HASH,
-            "--native-attention-compatible-revision",
-            KERNELS_REVISION,
-        ]
-    )
+    argv = [
+        "result-kvarn-factory",
+        PROJECT_REVISION,
+        VLLM_REVISION,
+        KERNELS_REVISION,
+        "--expected-native-attention-output",
+        "/nix/store/" + "n" * 32 + "-attention",
+        "--native-attention-source-scheme",
+        host.FILTERED_SOURCE_SCHEME,
+        "--native-attention-source-store-hash",
+        ATTENTION_SOURCE_HASH,
+        "--native-attention-compatible-revision",
+        KERNELS_REVISION,
+    ]
+    args = host.parse_args(argv)
     assert args.variants == host.DEFAULT_VARIANTS
     assert args.variants == "all"
+    assert args.flush_writer == host.DEFAULT_FLUSH_WRITER
+    assert args.flush_writer == "reference"
+    assert args.prefill_store == host.DEFAULT_PREFILL_STORE
+    assert args.prefill_store == "reference"
     assert args.splits == host.DEFAULT_SPLITS
     assert args.contexts == host.DEFAULT_CONTEXTS
     assert args.batches == host.DEFAULT_BATCHES
     assert args.output_dtypes == host.DEFAULT_OUTPUT_DTYPES
     assert args.warmup_rounds == host.DEFAULT_WARMUP_ROUNDS
     assert args.sample_rounds == host.DEFAULT_SAMPLE_ROUNDS
+
+    selected = host.parse_args(
+        [
+            *argv,
+            "--flush-writer",
+            "native_xe2",
+            "--prefill-store",
+            "hadamard_scatter",
+        ]
+    )
+    assert selected.flush_writer == "native_xe2"
+    assert selected.prefill_store == "hadamard_scatter"
+
+
+@pytest.mark.parametrize(
+    ("option", "value"),
+    [
+        ("--flush-writer", "native"),
+        ("--prefill-store", "scatter"),
+    ],
+)
+def test_cli_rejects_unknown_writer_selectors(option: str, value: str) -> None:
+    with pytest.raises(SystemExit, match="2"):
+        host.parse_args(
+            [
+                "result-kvarn-factory",
+                PROJECT_REVISION,
+                VLLM_REVISION,
+                KERNELS_REVISION,
+                "--expected-native-attention-output",
+                "/nix/store/" + "n" * 32 + "-attention",
+                "--native-attention-source-scheme",
+                host.FILTERED_SOURCE_SCHEME,
+                "--native-attention-source-store-hash",
+                ATTENTION_SOURCE_HASH,
+                "--native-attention-compatible-revision",
+                KERNELS_REVISION,
+                option,
+                value,
+            ]
+        )
 
 
 def test_launch_executes_once_with_resolved_provenance(
@@ -605,6 +653,8 @@ def test_launch_executes_once_with_resolved_provenance(
         kernels_repo=kernels,
         output_dir=tmp_path / "results",
         variants=host.DEFAULT_VARIANTS,
+        flush_writer="native_xe2",
+        prefill_store="hadamard_scatter",
         splits=host.DEFAULT_SPLITS,
         contexts=host.DEFAULT_CONTEXTS,
         batches=host.DEFAULT_BATCHES,
@@ -632,6 +682,8 @@ def test_launch_executes_once_with_resolved_provenance(
     assert str(flash_path) in captured[0]
     assert str(native_attention_path) in captured[0]
     assert captured[0][captured[0].index("--package-output") + 1] == str(package)
+    assert captured[0][captured[0].index("--flush-writer") + 1] == "native_xe2"
+    assert captured[0][captured[0].index("--prefill-store") + 1] == "hadamard_scatter"
     assert ownership_calls == [
         {
             "package": package_build,

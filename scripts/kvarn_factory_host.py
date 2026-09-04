@@ -35,6 +35,10 @@ NIX_STORE_HASH = re.compile(r"^[0-9abcdfghijklmnpqrsvwxyz]{32}$")
 # Resolve ``all`` in the runner so every layout-compatible candidate compiled
 # into the shared library automatically participates in the default sweep.
 DEFAULT_VARIANTS = "all"
+FLUSH_WRITER_VARIANTS = ("reference", "native_xe2")
+PREFILL_STORE_VARIANTS = ("reference", "hadamard_scatter")
+DEFAULT_FLUSH_WRITER = "reference"
+DEFAULT_PREFILL_STORE = "reference"
 DEFAULT_SPLITS = "8,32"
 DEFAULT_CONTEXTS = "4096,16384,65023"
 DEFAULT_BATCHES = "1,4"
@@ -475,6 +479,8 @@ def build_runner_command(
     expected_project_revision: str,
     expected_vllm_revision: str,
     expected_kernels_revision: str,
+    flush_writer: str = DEFAULT_FLUSH_WRITER,
+    prefill_store: str = DEFAULT_PREFILL_STORE,
     output_dtypes: str = DEFAULT_OUTPUT_DTYPES,
     warmup_rounds: int = DEFAULT_WARMUP_ROUNDS,
     sample_rounds: int = DEFAULT_SAMPLE_ROUNDS,
@@ -534,6 +540,10 @@ def build_runner_command(
         expected_kernels_revision,
         "--variants",
         variants,
+        "--flush-writer",
+        flush_writer,
+        "--prefill-store",
+        prefill_store,
         "--splits",
         splits,
         "--contexts",
@@ -584,6 +594,18 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--output-dir", type=Path, default=project / "benchmark-results/kvarn"
     )
     parser.add_argument("--variants", default=DEFAULT_VARIANTS)
+    parser.add_argument(
+        "--flush-writer",
+        choices=FLUSH_WRITER_VARIANTS,
+        default=DEFAULT_FLUSH_WRITER,
+        help="full-page writer whose direct-op kill suite must pass",
+    )
+    parser.add_argument(
+        "--prefill-store",
+        choices=PREFILL_STORE_VARIANTS,
+        default=DEFAULT_PREFILL_STORE,
+        help="multi-token prefill store whose direct-op kill suite must pass",
+    )
     parser.add_argument("--splits", default=DEFAULT_SPLITS)
     parser.add_argument("--contexts", default=DEFAULT_CONTEXTS)
     parser.add_argument("--batches", default=DEFAULT_BATCHES)
@@ -674,6 +696,8 @@ def launch(
         native_attention_expectation=native_attention_expectation,
         output=output,
         variants=args.variants,
+        flush_writer=args.flush_writer,
+        prefill_store=args.prefill_store,
         splits=args.splits,
         contexts=args.contexts,
         batches=args.batches,

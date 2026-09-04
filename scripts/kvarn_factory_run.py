@@ -28,11 +28,6 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-try:
-    from scripts import kvarn_split_policy as split_policy
-except ModuleNotFoundError:  # Direct execution from the scripts directory.
-    import kvarn_split_policy as split_policy
-
 EXPECTED_DEVICE_NAME = "Intel(R) Arc(TM) Pro B70 Graphics"
 H_Q = 24
 H_KV = 4
@@ -281,16 +276,6 @@ VARIANTS = {
             "specialized_split_reduction",
             "tile64_next_page_current_half_v_prefetch_record_cursor",
         ),
-        VariantSpec(
-            19,
-            "q6_b1_short_last_producer",
-            "q6 ID18 reader with B1 short-context last-producer reduction",
-            "xe2_dpas",
-            "native_xe2_qlen1_q6_b1_short_last_producer",
-            "runtime_explicit_count",
-            "b1_short_last_producer_or_id18_split_reduction",
-            "tile64_next_page_current_half_v_prefetch_record_cursor",
-        ),
     )
 }
 VARIANTS_BY_ID = {spec.variant_id: spec for spec in VARIANTS.values()}
@@ -310,7 +295,6 @@ DEFAULT_VARIANT_NAMES = (
     "q6_current_half_v_prefetch",
     "q6_page_record_cursor",
     "q6_prefetch_record_cursor",
-    "q6_b1_short_last_producer",
 )
 # ``all`` is literal: every runnable layout-compatible dispatch compiled into
 # the shared attention DSO participates.  DEFAULT_VARIANT_NAMES remains the
@@ -378,10 +362,6 @@ FOCUSED_XPU_262K_TESTS = {
     16: f"{_XPU_LONG_CONTEXT_TEST}[q6-current-half-v-prefetch]",
     17: f"{_XPU_LONG_CONTEXT_TEST}[q6-page-record-cursor]",
     18: f"{_XPU_LONG_CONTEXT_TEST}[q6-prefetch-record-cursor]",
-    # ID19 deliberately executes ID18 outside B1/short-context. The long gate
-    # therefore qualifies the exact fail-closed implementation, while the
-    # factory's B1/4K primitive cell exercises ID19 itself.
-    19: f"{_XPU_LONG_CONTEXT_TEST}[q6-prefetch-record-cursor]",
 }
 # The Q8-family variants (0, 1, and 3) use a direct split-24 262K case as
 # both gates. Q6 variants also get the query-row/LSE multisplit attribution.
@@ -395,35 +375,7 @@ FOCUSED_XPU_MULTISPLIT_TESTS = {
         variant_id: f"{_XPU_Q6_MULTISPLIT_TEST}[{variant_id}]"
         for variant_id in (6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18)
     },
-    19: f"{_XPU_Q6_MULTISPLIT_TEST}[18]",
 }
-_ID19_STATIC_TEST = "tests/flash_attn/test_kvarn_last_producer_static.py"
-FOCUSED_ID19_STATIC_TESTS = tuple(
-    f"{_ID19_STATIC_TEST}::{test_name}"
-    for test_name in (
-        "test_id19_is_runtime_selectable_but_fails_closed_to_id18",
-        "test_id19_short_context_bucket_boundaries",
-        "test_id18_producer_and_layout_are_unchanged",
-        "test_completion_protocol_has_release_sequence_and_no_spin",
-        "test_last_producer_preserves_output_contract",
-        "test_scratch_initialization_is_an_explicit_abi_contract",
-        "test_epoch_counter_cycles_only_after_every_producer",
-    )
-)
-_ID19_XPU_TEST = "tests/flash_attn/test_kvarn_id19_b70_xpu.py"
-FOCUSED_XPU_ID19_RUNTIME_TESTS = tuple(
-    f"{_ID19_XPU_TEST}::{test_name}"
-    for test_name in (
-        "test_id19_b1_dpas_matches_exact_id18",
-        "test_id19_reuses_persistent_scratch_and_advances_epochs",
-        "test_id19_unsupported_contract_falls_back_to_exact_id18",
-        "test_id19_direct_bf16_output_matches_id18_fp16_rounding",
-    )
-)
-FOCUSED_ID19_TESTS = (
-    *FOCUSED_ID19_STATIC_TESTS,
-    *FOCUSED_XPU_ID19_RUNTIME_TESTS,
-)
 FOCUSED_XPU_ID15_TEST = (
     f"{_XPU_DECODE_TEST}::"
     "test_q6_block_output_store_matches_scalar_across_reducers"
@@ -516,20 +468,7 @@ class MatrixCase:
     output_dtype: str = "fp16"
     requested_split_policy: str = "fixed"
 
-    def effective_variant(self) -> VariantSpec:
-        name = split_policy.effective_kernel_variant(
-            self.variant.name,
-            batch=self.batch,
-            context_tokens=self.context,
-            num_kv_splits=self.effective_splits,
-        )
-        return VARIANTS[name]
-
-    def selected_variant_active(self) -> bool:
-        return self.effective_variant() == self.variant
-
     def as_dict(self) -> dict[str, Any]:
-        effective_variant = self.effective_variant()
         return {
             "batch": self.batch,
             "context": self.context,
@@ -537,12 +476,6 @@ class MatrixCase:
             "effective_num_kv_splits": self.effective_splits,
             "kernel_variant": self.variant.variant_id,
             "variant_name": self.variant.name,
-            "effective_kernel_variant": effective_variant.variant_id,
-            "effective_variant_name": effective_variant.name,
-            "selected_variant_active": self.selected_variant_active(),
-            "kernel_variant_dispatch_contract": (
-                split_policy.kernel_variant_dispatch_contract(self.variant.name)
-            ),
             "dpas_layout": self.variant.dpas_layout,
             "cache_layout": self.variant.cache_layout,
             "kernel_strategy": self.variant.kernel_strategy,
@@ -1547,9 +1480,6 @@ def build_primitive_leaderboard(results: Sequence[dict[str, Any]]) -> dict[str, 
     axes = (
         "kernel_variant",
         "variant_name",
-        "effective_kernel_variant",
-        "effective_variant_name",
-        "selected_variant_active",
         "output_dtype",
         "cache_layout",
         "kernel_strategy",
@@ -1801,8 +1731,6 @@ def focused_xpu_tests(
         selected_ids.add(variant.variant_id)
         selected.append(FOCUSED_XPU_MULTISPLIT_TESTS[variant.variant_id])
         selected.append(FOCUSED_XPU_262K_TESTS[variant.variant_id])
-    if 19 in selected_ids:
-        selected.extend(FOCUSED_ID19_TESTS)
     if 15 in selected_ids:
         selected.append(FOCUSED_XPU_ID15_TEST)
     if flush_writer == "native_xe2":
@@ -2007,11 +1935,7 @@ def _optional_operator(
 
 
 def load_operators(
-    torch_module: Any,
-    *,
-    base_library: Path,
-    flash_library: Path,
-    require_last_producer_state: bool = False,
+    torch_module: Any, *, base_library: Path, flash_library: Path
 ) -> tuple[SimpleNamespace, dict[str, str | None]]:
     if base_library.resolve() == flash_library.resolve():
         raise FactoryError("base and flash libraries must be distinct files")
@@ -2037,14 +1961,6 @@ def load_operators(
                 "native decode library lacks the explicit factory ABI argument "
                 f"{argument!r}"
             )
-    supports_last_producer_state = (
-        "last_producer_state_initialized" in native_schema
-    )
-    if require_last_producer_state and not supports_last_producer_state:
-        raise FactoryError(
-            "ID19 requires the native decode ABI argument "
-            "'last_producer_state_initialized'"
-        )
     if "dpas_layout" not in scatter_schema:
         raise FactoryError("Kvarn scatter library lacks explicit dpas_layout ABI")
     if fused_schema is not None and "dpas_layout" not in fused_schema:
@@ -2054,9 +1970,6 @@ def load_operators(
             auto_store=cache_store,
             auto_decode=auto_decode,
             native_decode=native_decode,
-            native_decode_supports_last_producer_state=(
-                supports_last_producer_state
-            ),
             hadamard=hadamard,
             scatter=scatter,
             fused_qkv_scatter=fused,
@@ -3024,10 +2937,8 @@ def invoke_native_decode(
     num_kv_splits: int,
     kernel_variant: int,
     dpas_layout: bool,
-    last_producer_state_initialized: bool = False,
-    supports_last_producer_state: bool = False,
 ) -> None:
-    arguments = (
+    operation(
         query,
         cache,
         block_table,
@@ -3046,40 +2957,6 @@ def invoke_native_decode(
         num_kv_splits,
         kernel_variant,
         dpas_layout,
-    )
-    if supports_last_producer_state:
-        operation(*arguments, last_producer_state_initialized)
-        return
-    if last_producer_state_initialized:
-        raise FactoryError(
-            "cannot activate ID19 without the trailing completion-state ABI"
-        )
-    operation(*arguments)
-
-
-def allocate_legacy_scratch(
-    torch_module: Any,
-    *,
-    batch: int,
-    splits: int,
-    initialize_completion_state: bool,
-) -> Any:
-    """Allocate legacy statistics scratch, zeroing ID19 completion state once."""
-    allocator = (
-        torch_module.zeros if initialize_completion_state else torch_module.empty
-    )
-    return allocator(
-        (batch, H_Q, splits),
-        dtype=torch_module.float32,
-        device="xpu:0",
-    )
-
-
-def last_producer_state_ready(case: MatrixCase, kernel_variant: int) -> bool:
-    """Whether this exact launch may use ID19's initialized completion state."""
-    return (
-        kernel_variant == split_policy.Q6_B1_SHORT_LAST_PRODUCER_VARIANT_ID
-        and case.selected_variant_active()
     )
 
 
@@ -3195,14 +3072,10 @@ def _run_service_layer_diagnostic(
                 dtype=torch_module.float32,
                 device="xpu:0",
             ),
-            legacy=allocate_legacy_scratch(
-                torch_module,
-                batch=batch,
-                splits=splits,
-                initialize_completion_state=(
-                    case.variant.variant_id
-                    == split_policy.Q6_B1_SHORT_LAST_PRODUCER_VARIANT_ID
-                ),
+            legacy=torch_module.empty(
+                (batch, H_Q, splits),
+                dtype=torch_module.float32,
+                device="xpu:0",
             ),
             output=torch_module.empty(
                 (batch, H_Q, HEAD_DIM),
@@ -3313,12 +3186,6 @@ def _run_service_layer_diagnostic(
             num_kv_splits=splits,
             kernel_variant=variant,
             dpas_layout=dpas_layout,
-            last_producer_state_initialized=last_producer_state_ready(case, variant),
-            supports_last_producer_state=getattr(
-                operations,
-                "native_decode_supports_last_producer_state",
-                False,
-            ),
         )
 
     def candidate_decode(layer: int) -> None:
@@ -3836,14 +3703,10 @@ def run_case(
                 dtype=torch_module.float32,
                 device="xpu:0",
             ),
-            legacy=allocate_legacy_scratch(
-                torch_module,
-                batch=batch,
-                splits=splits,
-                initialize_completion_state=(
-                    case.variant.variant_id
-                    == split_policy.Q6_B1_SHORT_LAST_PRODUCER_VARIANT_ID
-                ),
+            legacy=torch_module.empty(
+                (batch, H_Q, splits),
+                dtype=torch_module.float32,
+                device="xpu:0",
             ),
             output=torch_module.empty(
                 (batch, H_Q, HEAD_DIM),
@@ -3888,12 +3751,6 @@ def run_case(
             num_kv_splits=splits,
             kernel_variant=variant,
             dpas_layout=dpas,
-            last_producer_state_initialized=last_producer_state_ready(case, variant),
-            supports_last_producer_state=getattr(
-                operations,
-                "native_decode_supports_last_producer_state",
-                False,
-            ),
         )
 
     def normalized_output(buffers: SimpleNamespace) -> Any:
@@ -4292,14 +4149,6 @@ def run_case(
             "num_kv_splits": splits,
             "kernel_variant": case.variant.variant_id,
             "dpas_layout": dpas_layout,
-            "last_producer_state_initialized": last_producer_state_ready(
-                case, case.variant.variant_id
-            ),
-            "last_producer_state_abi_available": getattr(
-                operations,
-                "native_decode_supports_last_producer_state",
-                False,
-            ),
             "natural_oracle": {
                 "kernel_variant": 0,
                 "dpas_layout": False,
@@ -4733,11 +4582,6 @@ def execute(args: argparse.Namespace) -> int:
             torch,
             base_library=Path(base_record["path"]),
             flash_library=Path(flash_record["path"]),
-            require_last_producer_state=any(
-                variant.variant_id
-                == split_policy.Q6_B1_SHORT_LAST_PRODUCER_VARIANT_ID
-                for variant in args.variant_specs
-            ),
         )
         document["native_attention_runtime_binding"] = verify_loaded_native_attention(
             Path(native_attention_record["path"])

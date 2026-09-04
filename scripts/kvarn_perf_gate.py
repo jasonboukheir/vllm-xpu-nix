@@ -54,7 +54,6 @@ NATIVE_KERNEL_VARIANTS = {
     "q6_current_half_v_prefetch": 16,
     "q6_page_record_cursor": 17,
     "q6_prefetch_record_cursor": 18,
-    "q6_b1_short_last_producer": 19,
 }
 NATIVE_SPLIT_POLICIES = split_policy.NATIVE_SPLIT_POLICIES
 FLUSH_INDEX_MATERIALIZATION_VARIANTS = ("per_layer", "shared")
@@ -84,7 +83,6 @@ B70_Q6_KERNEL_VARIANTS = frozenset(
         "q6_current_half_v_prefetch",
         "q6_page_record_cursor",
         "q6_prefetch_record_cursor",
-        "q6_b1_short_last_producer",
     }
 )
 COMBINED_LIBRARY_VARIANT_MATRIX = [
@@ -109,7 +107,6 @@ COMBINED_LIBRARY_VARIANT_MATRIX = [
         "q6_current_half_v_prefetch",
         "q6_page_record_cursor",
         "q6_prefetch_record_cursor",
-        "q6_b1_short_last_producer",
     )
 ]
 VARIANT_FIELDS = (
@@ -299,9 +296,6 @@ def _correctness_phase_spec(
     spec.update(
         native_kernel_variant=selected_kernel,
         native_kernel_variant_id=NATIVE_KERNEL_VARIANTS[selected_kernel],
-        native_kernel_dispatch_contract=(
-            split_policy.kernel_variant_dispatch_contract(selected_kernel)
-        ),
         native_frontend=effective_frontend,
         flush_writer=effective_flush_writer,
         prefill_store=effective_prefill_store,
@@ -408,10 +402,6 @@ ARM_PROVENANCE_FIELDS = (
     "kvarn_native_cache_layout_environment",
     "kvarn_native_kernel_variant",
     "kvarn_native_kernel_variant_id",
-    "kvarn_native_kernel_dispatch_scope",
-    "kvarn_effective_native_kernel_variant",
-    "kvarn_effective_native_kernel_variant_id",
-    "kvarn_selected_native_kernel_variant_active",
     "kvarn_native_output_dtype",
     "kvarn_native_direct_bf16_verified",
     "kvarn_native_direct_bf16_log_marker",
@@ -792,27 +782,9 @@ def validate_factory_qualification(
             f"b{key[0]}-c{key[1]}-s{key[2]}-"
             f"v{variant_id}-{native_kernel_variant}-{output_dtype}"
         )
-        effective_split_count = result.get("effective_num_kv_splits")
-        if isinstance(effective_split_count, bool) or not isinstance(
-            effective_split_count, int
-        ):
-            raise GateError(f"{path}: selected factory result {key} is invalid")
-        expected_effective_name = split_policy.effective_kernel_variant(
-            native_kernel_variant,
-            batch=key[0],
-            context_tokens=key[1],
-            num_kv_splits=effective_split_count,
-        )
-        expected_effective_id = NATIVE_KERNEL_VARIANTS[expected_effective_name]
         if (
             result.get("case_id") != expected_case_id
             or result.get("effective_num_kv_splits") != key[2]
-            or result.get("effective_kernel_variant") != expected_effective_id
-            or result.get("effective_variant_name") != expected_effective_name
-            or result.get("selected_variant_active")
-            is not (expected_effective_name == native_kernel_variant)
-            or result.get("kernel_variant_dispatch_contract")
-            != split_policy.kernel_variant_dispatch_contract(native_kernel_variant)
             or result.get("status") != "correctness_passed_and_timed"
             or result.get("scope") != "xpu_primitive_device_stage"
             or result.get("matched_primitive_ratio_eligible") is not True
@@ -837,13 +809,6 @@ def validate_factory_qualification(
             or explicit.get("num_kv_splits") != key[2]
             or explicit.get("kernel_variant") != variant_id
             or explicit.get("dpas_layout") is not True
-            or native_kernel_variant
-            == split_policy.Q6_B1_SHORT_LAST_PRODUCER_VARIANT
-            and (
-                explicit.get("last_producer_state_abi_available") is not True
-                or explicit.get("last_producer_state_initialized")
-                is not (expected_effective_name == native_kernel_variant)
-            )
             or explicit.get("write_bf16_output") is not (output_dtype == "bf16")
             or not isinstance(result_fixture, dict)
             or result_fixture.get("fixture_mode") != "matched-production"
@@ -867,13 +832,6 @@ def validate_factory_qualification(
             "batch": key[0],
             "context": key[1],
             "num_kv_splits": key[2],
-            "effective_kernel_variant": selected[key][
-                "effective_variant_name"
-            ],
-            "effective_kernel_variant_id": selected[key][
-                "effective_kernel_variant"
-            ],
-            "selected_variant_active": selected[key]["selected_variant_active"],
             "result_sha256": _json_sha256(selected[key]),
         }
         for key in sorted(selected)
@@ -901,9 +859,6 @@ def validate_factory_qualification(
             "cache_layout": native_layout,
             "kernel_variant": native_kernel_variant,
             "kernel_variant_id": variant_id,
-            "kernel_variant_dispatch_contract": (
-                split_policy.kernel_variant_dispatch_contract(native_kernel_variant)
-            ),
             "split_policy": native_split_policy,
             "split_policy_contract": policy_contract,
             "nominal_splits_by_batch": split_policy.nominal_splits_by_batch(
@@ -1097,8 +1052,6 @@ def _validate_correctness_phase(
         or phase.get("native_cache_layout_environment") != expected_layout
         or phase.get("native_kernel_variant") != expected_kernel
         or phase.get("native_kernel_variant_id") != expected_kernel_id
-        or phase.get("native_kernel_dispatch_contract")
-        != expected_spec["native_kernel_dispatch_contract"]
         or phase.get("native_kernel_variant_environment") != expected_kernel
         or phase.get("native_output_dtype") != native_output_dtype
         or phase.get("native_direct_bf16_verified") is not expected_spec["native"]
@@ -2143,10 +2096,6 @@ def _load_correctness(path: Path) -> tuple[dict[str, Any], str]:
         != NATIVE_KERNEL_VARIANTS[native_kernel_variant]
     ):
         raise GateError(f"{path}: native_kernel_variant_id is inconsistent")
-    if document.get(
-        "native_kernel_dispatch_contract"
-    ) != split_policy.kernel_variant_dispatch_contract(native_kernel_variant):
-        raise GateError(f"{path}: native kernel dispatch contract is inconsistent")
     if native_kernel_variant != "baseline" and native_layout != "xe2_dpas":
         raise GateError(
             f"{path}: non-baseline native kernels require the xe2_dpas layout"
@@ -2824,29 +2773,12 @@ def compare(
         expected_direct_bf16_marker = (
             NATIVE_DIRECT_BF16_MARKER if native else "not_applicable"
         )
-        effective_kernel = split_policy.effective_kernel_variant(
-            kernel,
-            batch=concurrency,
-            context_tokens=first_ref.input_lens[0] + first_ref.output_lens[0],
-            num_kv_splits=nominal_splits,
-        )
-        dispatch_scope = split_policy.kernel_variant_dispatch_contract(kernel)[
-            "activation_scope"
-        ]["kind"]
         if (
             run.provenance["kvarn_native_layout_environment"]
             != NATIVE_LAYOUT_ENV[layout]
             or run.provenance["kvarn_native_cache_layout_environment"] != layout
             or run.provenance["kvarn_native_kernel_variant"] != kernel
             or run.provenance["kvarn_native_kernel_variant_id"] != str(kernel_id)
-            or run.provenance["kvarn_native_kernel_dispatch_scope"]
-            != dispatch_scope
-            or run.provenance["kvarn_effective_native_kernel_variant"]
-            != effective_kernel
-            or run.provenance["kvarn_effective_native_kernel_variant_id"]
-            != str(NATIVE_KERNEL_VARIANTS[effective_kernel])
-            or run.provenance["kvarn_selected_native_kernel_variant_active"]
-            != ("1" if effective_kernel == kernel else "0")
             or run.provenance["kvarn_native_output_dtype"] != output_dtype
             or run.provenance["kvarn_native_direct_bf16_verified"] is not native
             or run.provenance["kvarn_native_direct_bf16_log_marker"]

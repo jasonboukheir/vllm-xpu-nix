@@ -25,11 +25,6 @@ B70_Q6_V2_KERNEL_VARIANTS = {
 }
 B70_Q6_V2_CONTEXT_THRESHOLD = 48 * 1024
 B70_Q6_V2_MAX_SPLITS = 32
-Q6_B1_SHORT_LAST_PRODUCER_VARIANT = "q6_b1_short_last_producer"
-Q6_B1_SHORT_LAST_PRODUCER_VARIANT_ID = 19
-Q6_B1_SHORT_LAST_PRODUCER_MAX_SEQUENCE_LENGTH = 8192
-Q6_B1_SHORT_LAST_PRODUCER_FALLBACK_VARIANT = "q6_prefetch_record_cursor"
-Q6_B1_SHORT_LAST_PRODUCER_FALLBACK_VARIANT_ID = 18
 
 
 def _rule(*, batch: int, maximum: int | None, splits: int, minimum: int = 1) -> dict:
@@ -163,63 +158,3 @@ def validate_kernel_compatibility(
             "b70_q6_v2 split policy requires q6_next_page_prefetch (ID12) "
             "or q6_next_page_prefetch_split_reducer (ID13)"
         )
-
-
-def kernel_variant_dispatch_contract(kernel_variant: str) -> dict[str, Any]:
-    """Describe runtime specialization and fail-closed fallback semantics.
-
-    Most decoder IDs own every compatible call made by an engine that selects
-    them. ID19 is deliberately narrower: it fuses the reduction into the last
-    producer only for short, multi-split B1 calls and otherwise executes ID18.
-    This contract lets service evidence distinguish the engine selector from
-    the implementation that is expected to process a particular workload.
-    """
-    if kernel_variant == Q6_B1_SHORT_LAST_PRODUCER_VARIANT:
-        return {
-            "schema_version": 1,
-            "selected_variant": {
-                "name": Q6_B1_SHORT_LAST_PRODUCER_VARIANT,
-                "id": Q6_B1_SHORT_LAST_PRODUCER_VARIANT_ID,
-            },
-            "activation_scope": {
-                "kind": "b1_short_multisplit",
-                "decode_batch_size": 1,
-                "current_sequence_length_maximum_inclusive": (
-                    Q6_B1_SHORT_LAST_PRODUCER_MAX_SEQUENCE_LENGTH
-                ),
-                "num_kv_splits_minimum": 2,
-                "requires_unrotate_output": True,
-                "requires_initialized_completion_state": True,
-            },
-            "fallback_variant": {
-                "name": Q6_B1_SHORT_LAST_PRODUCER_FALLBACK_VARIANT,
-                "id": Q6_B1_SHORT_LAST_PRODUCER_FALLBACK_VARIANT_ID,
-            },
-        }
-    return {
-        "schema_version": 1,
-        "selected_variant": {"name": kernel_variant},
-        "activation_scope": {"kind": "all_compatible_calls"},
-        "fallback_variant": None,
-    }
-
-
-def effective_kernel_variant(
-    kernel_variant: str,
-    *,
-    batch: int,
-    context_tokens: int,
-    num_kv_splits: int,
-) -> str:
-    """Resolve the expected implementation for one native decode workload."""
-    if batch < 1 or context_tokens < 1 or num_kv_splits < 1:
-        raise ValueError("batch, context tokens, and split count must be positive")
-    if kernel_variant != Q6_B1_SHORT_LAST_PRODUCER_VARIANT:
-        return kernel_variant
-    if (
-        batch == 1
-        and context_tokens <= Q6_B1_SHORT_LAST_PRODUCER_MAX_SEQUENCE_LENGTH
-        and num_kv_splits > 1
-    ):
-        return kernel_variant
-    return Q6_B1_SHORT_LAST_PRODUCER_FALLBACK_VARIANT

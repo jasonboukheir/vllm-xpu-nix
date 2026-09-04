@@ -72,7 +72,6 @@ NATIVE_KERNEL_VARIANTS = {
     "q6_current_half_v_prefetch": 16,
     "q6_page_record_cursor": 17,
     "q6_prefetch_record_cursor": 18,
-    "q6_b1_short_last_producer": 19,
 }
 REFERENCE_NATIVE_KERNEL_VARIANT = "baseline"
 NATIVE_SPLIT_POLICIES = split_policy.NATIVE_SPLIT_POLICIES
@@ -102,7 +101,6 @@ B70_Q6_KERNEL_VARIANTS = frozenset(
         "q6_current_half_v_prefetch",
         "q6_page_record_cursor",
         "q6_prefetch_record_cursor",
-        "q6_b1_short_last_producer",
     }
 )
 VARIANT_FIELDS = (
@@ -544,39 +542,6 @@ def native_kernel_variant_for_run(run: PlannedRun, args: argparse.Namespace) -> 
     return args.native_kernel_variant
 
 
-def native_kernel_dispatch_contract_for_run(
-    run: PlannedRun, args: argparse.Namespace
-) -> dict[str, Any]:
-    """Return the immutable selector's call-level activation contract."""
-    return split_policy.kernel_variant_dispatch_contract(
-        native_kernel_variant_for_run(run, args)
-    )
-
-
-def effective_native_kernel_variant_for_run(
-    run: PlannedRun, args: argparse.Namespace
-) -> str:
-    """Resolve the implementation expected for this exact workload cell."""
-    return split_policy.effective_kernel_variant(
-        native_kernel_variant_for_run(run, args),
-        batch=run.workload.batch,
-        # A service measurement covers the complete generation. Attribute the
-        # cell to ID19 only when every measured decode remains in its bucket.
-        context_tokens=run.workload.context + run.workload.output_tokens,
-        num_kv_splits=native_splits_for_run(run, args),
-    )
-
-
-def native_kernel_dispatch_scope_for_run(
-    run: PlannedRun, args: argparse.Namespace
-) -> str:
-    return str(
-        native_kernel_dispatch_contract_for_run(run, args)["activation_scope"][
-            "kind"
-        ]
-    )
-
-
 def native_split_policy_for_run(run: PlannedRun, args: argparse.Namespace) -> str:
     """Return a stable name for the fixed maximum-split policy."""
     policy = native_split_policy_name_for_run(run, args)
@@ -761,11 +726,6 @@ def load_correctness(
         != NATIVE_KERNEL_VARIANTS[native_kernel_variant]
     ):
         raise RunnerError("correctness artifact native kernel variant ID differs")
-    expected_dispatch_contract = split_policy.kernel_variant_dispatch_contract(
-        native_kernel_variant
-    )
-    if document.get("native_kernel_dispatch_contract") != expected_dispatch_contract:
-        raise RunnerError("correctness artifact native dispatch contract differs")
     if (
         native_kernel_variant != REFERENCE_NATIVE_KERNEL_VARIANT
         and native_layout != "xe2_dpas"
@@ -903,8 +863,6 @@ def load_correctness(
             "prefill_store": prefill_store,
         }
         or factory["selection"].get("split_policy_contract") != expected_contract
-        or factory["selection"].get("kernel_variant_dispatch_contract")
-        != expected_dispatch_contract
         or factory["selection"].get("nominal_splits_by_batch")
         != split_policy.nominal_splits_by_batch(
             native_split_policy, native_splits or None
@@ -939,7 +897,6 @@ def load_correctness(
         {
             "native_kernel_variant": native_kernel_variant,
             "native_kernel_variant_id": NATIVE_KERNEL_VARIANTS[native_kernel_variant],
-            "native_kernel_dispatch_contract": expected_dispatch_contract,
             "native_split_policy": native_split_policy,
             "native_splits": native_splits,
             "native_split_policy_contract": expected_contract,
@@ -2393,21 +2350,6 @@ def seal_benchmark_result(
         "kvarn_native_kernel_variant_id": str(
             NATIVE_KERNEL_VARIANTS[expected_kernel_variant]
         ),
-        "kvarn_native_kernel_dispatch_scope": (
-            native_kernel_dispatch_scope_for_run(run, args)
-        ),
-        "kvarn_effective_native_kernel_variant": (
-            effective_native_kernel_variant_for_run(run, args)
-        ),
-        "kvarn_effective_native_kernel_variant_id": str(
-            NATIVE_KERNEL_VARIANTS[effective_native_kernel_variant_for_run(run, args)]
-        ),
-        "kvarn_selected_native_kernel_variant_active": (
-            "1"
-            if effective_native_kernel_variant_for_run(run, args)
-            == expected_kernel_variant
-            else "0"
-        ),
         "kvarn_native_output_dtype": (
             "bf16" if run.arm == "candidate" else "not_applicable"
         ),
@@ -3093,9 +3035,6 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         "native_layout": args.native_layout,
         "native_kernel_variant": args.native_kernel_variant,
         "native_kernel_variant_id": NATIVE_KERNEL_VARIANTS[args.native_kernel_variant],
-        "native_kernel_dispatch_contract": (
-            split_policy.kernel_variant_dispatch_contract(args.native_kernel_variant)
-        ),
         "native_split_policy": args.native_split_policy,
         "native_scratch_max_splits": native_split_policy_contract(args)[
             "scratch_max_splits"
@@ -3130,16 +3069,6 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
                 "expected_native_max_splits": native_max_splits_for_run(run, args),
                 "expected_native_kernel_variant": native_kernel_variant_for_run(
                     run, args
-                ),
-                "expected_effective_native_kernel_variant": (
-                    effective_native_kernel_variant_for_run(run, args)
-                ),
-                "selected_native_kernel_variant_active": (
-                    effective_native_kernel_variant_for_run(run, args)
-                    == native_kernel_variant_for_run(run, args)
-                ),
-                "native_kernel_dispatch_contract": (
-                    native_kernel_dispatch_contract_for_run(run, args)
                 ),
                 "expected_native_split_policy": native_split_policy_name_for_run(
                     run, args
@@ -3576,15 +3505,6 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                 "immutable Round-2 performance launchers require xe2_dpas, a Q6 "
                 "kernel variant, and b70_q6; use --launcher-mode runtime-factory "
                 "for other compatible compiled variants"
-            )
-        if (
-            args.native_kernel_variant
-            == split_policy.Q6_B1_SHORT_LAST_PRODUCER_VARIANT
-            and launcher_mode(args) != "runtime-factory"
-        ):
-            raise RunnerError(
-                "q6_b1_short_last_producer (ID19) requires --launcher-mode "
-                "runtime-factory"
             )
         if (
             args.native_kernel_variant != REFERENCE_NATIVE_KERNEL_VARIANT

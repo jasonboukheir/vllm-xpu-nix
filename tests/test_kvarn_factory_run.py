@@ -79,6 +79,17 @@ def test_named_factory_ids_are_complete_and_stable() -> None:
     }
     assert set(factory.VARIANTS_BY_ID) == set(range(13)) - {5}
     assert all(spec.dpas_layout for spec in factory.VARIANTS.values())
+    assert all(spec.cache_layout == "xe2_dpas" for spec in factory.VARIANTS.values())
+    assert all(
+        spec.kernel_strategy == f"native_xe2_qlen1_{spec.name}"
+        for spec in factory.VARIANTS.values()
+    )
+    assert all(
+        spec.split_policy == "runtime_explicit_count"
+        for spec in factory.VARIANTS.values()
+    )
+    assert all(spec.fusion_strategy for spec in factory.VARIANTS.values())
+    assert all(spec.scheduling_variant for spec in factory.VARIANTS.values())
     assert factory.VARIANTS["q6_page_pair"].work_unit_tokens == 128
     assert all(
         spec.work_unit_tokens == 64
@@ -97,6 +108,16 @@ def test_named_factory_ids_are_complete_and_stable() -> None:
         "q6_next_page_prefetch",
     )
     assert factory.ALL_VARIANT_NAMES == tuple(factory.VARIANTS)
+    assert factory.VARIANTS["q6_page_pair"].scheduling_variant == "paired_page_k128"
+    assert factory.VARIANTS["q6_main_grf128"].scheduling_variant == "tile64_grf128"
+    assert (
+        factory.VARIANTS["q6_split_reducer_specialized"].fusion_strategy
+        == "specialized_split_reduction"
+    )
+    assert (
+        factory.VARIANTS["q6_next_page_prefetch"].scheduling_variant
+        == "tile64_next_page_prefetch"
+    )
 
 
 def test_variant_parser_accepts_names_and_all_but_not_numeric_aliases() -> None:
@@ -171,6 +192,27 @@ def test_matrix_expands_auto_and_explicit_split_sweeps() -> None:
     ]
     assert all(case.effective_splits == case.requested_splits for case in cases)
     assert all(case.output_dtype == "fp16" for case in cases)
+    assert [case.requested_split_policy for case in cases] == [
+        "factory_auto_b1s24_b4s16",
+        "factory_auto_b1s24_b4s16",
+        "fixed",
+        "fixed",
+        "factory_auto_b1s24_b4s16",
+        "factory_auto_b1s24_b4s16",
+        "fixed",
+        "fixed",
+    ]
+    assert all(
+        {
+            "cache_layout",
+            "kernel_strategy",
+            "split_policy",
+            "fusion_strategy",
+            "scheduling_variant",
+        }
+        <= case.as_dict().keys()
+        for case in cases
+    )
     assert factory.effective_split_count(64, 24, factory.VARIANTS["baseline"]) == 1
     with pytest.raises(factory.FactoryError, match="only B1 and B4"):
         factory.build_matrix(
@@ -258,6 +300,101 @@ def test_interleaved_order_is_rotating_and_palindromic() -> None:
     )
     three = factory.interleaved_order(["natural", "candidate", "auto"], 0)
     assert three == tuple(reversed(three))
+
+
+def _leaderboard_result(
+    variant_name: str,
+    *,
+    candidate_decode_us: float,
+    auto_decode_us: float,
+    candidate_stage_us: float,
+    auto_stage_us: float,
+) -> dict[str, object]:
+    spec = factory.VARIANTS[variant_name]
+    case = factory.MatrixCase(
+        batch=1,
+        context=4096,
+        requested_splits=32,
+        effective_splits=32,
+        variant=spec,
+        output_dtype="bf16",
+    )
+    stage = factory.latency_speed_ratios(candidate_stage_us, auto_stage_us)
+    return {
+        **case.as_dict(),
+        "status": "correctness_passed_and_timed",
+        "matched_primitive_ratio_eligible": True,
+        "timing": {
+            "decode": {
+                "arms": {
+                    "candidate": {"device_median_us": candidate_decode_us},
+                    "auto_control": {"device_median_us": auto_decode_us},
+                }
+            }
+        },
+        "diagnostic_ratios": {
+            "decode": factory.latency_speed_ratios(
+                candidate_decode_us, auto_decode_us
+            ),
+            "separate_device_stage": stage,
+            "fused_device_stage": stage,
+        },
+    }
+
+
+def test_ratio_names_make_latency_and_speed_directions_explicit() -> None:
+    ratios = factory.latency_speed_ratios(120.0, 100.0)
+    assert ratios == {
+        "candidate_latency_over_auto": 1.2,
+        "auto_speed_over_candidate": 1.2,
+        "candidate_speed_over_auto": pytest.approx(1 / 1.2),
+        "auto_latency_over_candidate": pytest.approx(1 / 1.2),
+    }
+    with pytest.raises(factory.FactoryError, match="finite and positive"):
+        factory.latency_speed_ratios(0.0, 100.0)
+
+
+def test_primitive_leaderboard_ranks_only_measured_device_stage_metrics() -> None:
+    results = [
+        _leaderboard_result(
+            "q6_scalar",
+            candidate_decode_us=80.0,
+            auto_decode_us=100.0,
+            candidate_stage_us=90.0,
+            auto_stage_us=100.0,
+        ),
+        _leaderboard_result(
+            "q6_next_page_prefetch",
+            candidate_decode_us=110.0,
+            auto_decode_us=100.0,
+            candidate_stage_us=120.0,
+            auto_stage_us=100.0,
+        ),
+    ]
+    leaderboard = factory.build_primitive_leaderboard(results)
+    assert leaderboard["service_parity_eligible"] is False
+    assert leaderboard["timing_source"] == "torch.xpu.Event device elapsed time"
+    assert [row["variant_name"] for row in leaderboard["rows"]] == [
+        "q6_scalar",
+        "q6_next_page_prefetch",
+    ]
+    winner = leaderboard["rows"][0]
+    assert winner["primitive_rank"] == 1
+    assert winner["ranking_basis"] == "fused_device_stage"
+    assert winner["ranking_candidate_speed_over_auto_geomean"] == pytest.approx(
+        100 / 90
+    )
+    assert winner["decode"]["candidate_latency_over_auto_geomean"] == 0.8
+    serialized = json.dumps(leaderboard)
+    for unavailable_service_metric in (
+        "throughput",
+        "tok/s",
+        "ttft",
+        "itl",
+        "launch_count",
+        "idle_fraction",
+    ):
+        assert unavailable_service_metric not in serialized.lower()
 
 
 def test_exact_b70_identity_is_mandatory() -> None:

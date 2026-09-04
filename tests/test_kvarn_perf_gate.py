@@ -76,6 +76,7 @@ def _factory_result(
     native_kernel_variant: str,
     native_splits: dict[int, int],
     output_dtype: str = "bf16",
+    explicit_factory_axes: bool = False,
 ) -> Path:
     variant_id = gate_module.NATIVE_KERNEL_VARIANTS[native_kernel_variant]
     cases: list[dict[str, object]] = []
@@ -121,6 +122,18 @@ def _factory_result(
                 },
                 "timing": {"source": "torch.xpu.Event device elapsed time"},
             }
+            if explicit_factory_axes:
+                case.update(
+                    {
+                        "cache_layout": "xe2_dpas",
+                        "kernel_strategy": (
+                            f"native_xe2_qlen1_{native_kernel_variant}"
+                        ),
+                        "split_policy": "fixed",
+                        "fusion_strategy": "standard_split_reduction",
+                        "scheduling_variant": "tile64",
+                    }
+                )
             case["correctness"]["matched_auto_vs_quantized_natural_passed"] = True
             cases.append(case)
     matrix_fields = (
@@ -133,6 +146,14 @@ def _factory_result(
         "dpas_layout",
         "output_dtype",
     )
+    if explicit_factory_axes:
+        matrix_fields += (
+            "cache_layout",
+            "kernel_strategy",
+            "split_policy",
+            "fusion_strategy",
+            "scheduling_variant",
+        )
     sources = {
         "vllm-xpu-nix": revisions["vllm-xpu-release"],
         "vllm": revisions["vllm-xpu-unstable-src"],
@@ -1337,6 +1358,52 @@ def test_factory_qualification_fails_closed_on_selected_identity_mismatch(
         arguments.update(override)
 
     with pytest.raises(GateError, match=expected_error):
+        gate_module.validate_factory_qualification(factory, **arguments)
+
+
+def test_factory_qualification_accepts_and_checks_explicit_factory_axes(
+    tmp_path: Path,
+) -> None:
+    library = tmp_path / "native.so"
+    library.write_bytes(b"selected native library")
+    revisions = {
+        "vllm-xpu-release": "1" * 40,
+        "vllm-xpu-unstable-src": "2" * 40,
+        "vllm-xpu-kernels-unstable-src": "3" * 40,
+    }
+    factory = _factory_result(
+        tmp_path / "factory.json",
+        native_library=library,
+        revisions=revisions,
+        native_kernel_variant="q6_scalar",
+        native_splits=dict(gate_module.B70_Q6_SPLITS),
+        explicit_factory_axes=True,
+    )
+    arguments = {
+        "native_layout": "xe2_dpas",
+        "native_kernel_variant": "q6_scalar",
+        "native_split_policy": "b70_q6",
+        "native_splits": dict(gate_module.B70_Q6_SPLITS),
+        "output_dtype": "bf16",
+        "expected_revisions": {
+            "vllm-xpu-nix": revisions["vllm-xpu-release"],
+            "vllm": revisions["vllm-xpu-unstable-src"],
+            "vllm-xpu-kernels": revisions["vllm-xpu-kernels-unstable-src"],
+        },
+        "expected_package": "/nix/store/package",
+        "expected_native_library": str(library.resolve()),
+        "expected_native_library_sha256": hashlib.sha256(
+            library.read_bytes()
+        ).hexdigest(),
+    }
+    assert gate_module.validate_factory_qualification(factory, **arguments)[
+        "status"
+    ] == "passed"
+
+    document = json.loads(factory.read_text(encoding="utf-8"))
+    document["results"][0]["kernel_strategy"] = "wrong"
+    factory.write_text(json.dumps(document), encoding="utf-8")
+    with pytest.raises(GateError, match="matrix differs"):
         gate_module.validate_factory_qualification(factory, **arguments)
 
 

@@ -75,6 +75,11 @@ class VariantSpec:
     variant_id: int
     name: str
     description: str
+    cache_layout: str
+    kernel_strategy: str
+    split_policy: str
+    fusion_strategy: str
+    scheduling_variant: str
     dpas_layout: bool = True
     work_unit_tokens: int = 64
 
@@ -82,31 +87,127 @@ class VariantSpec:
 VARIANTS = {
     spec.name: spec
     for spec in (
-        VariantSpec(0, "baseline", "q8 scalar packed-word loads"),
-        VariantSpec(1, "qk_i8u4", "integer q/k dot-product candidate"),
-        VariantSpec(2, "q6_scalar", "q6 scalar packed-word loads"),
-        VariantSpec(3, "q8_vector", "q8 vector packed-word loads"),
-        VariantSpec(4, "q6_vector", "q6 vector packed-word loads"),
-        VariantSpec(6, "q6_cached_weights", "q6 cached epilogue weights"),
-        VariantSpec(7, "q6_exact_rows", "q6 exact live-row loops"),
+        VariantSpec(
+            0,
+            "baseline",
+            "q8 scalar packed-word loads",
+            "xe2_dpas",
+            "native_xe2_qlen1_baseline",
+            "runtime_explicit_count",
+            "standard_split_reduction",
+            "tile64",
+        ),
+        VariantSpec(
+            1,
+            "qk_i8u4",
+            "integer q/k dot-product candidate",
+            "xe2_dpas",
+            "native_xe2_qlen1_qk_i8u4",
+            "runtime_explicit_count",
+            "standard_split_reduction",
+            "tile64",
+        ),
+        VariantSpec(
+            2,
+            "q6_scalar",
+            "q6 scalar packed-word loads",
+            "xe2_dpas",
+            "native_xe2_qlen1_q6_scalar",
+            "runtime_explicit_count",
+            "standard_split_reduction",
+            "tile64",
+        ),
+        VariantSpec(
+            3,
+            "q8_vector",
+            "q8 vector packed-word loads",
+            "xe2_dpas",
+            "native_xe2_qlen1_q8_vector",
+            "runtime_explicit_count",
+            "standard_split_reduction",
+            "tile64_vector_load",
+        ),
+        VariantSpec(
+            4,
+            "q6_vector",
+            "q6 vector packed-word loads",
+            "xe2_dpas",
+            "native_xe2_qlen1_q6_vector",
+            "runtime_explicit_count",
+            "standard_split_reduction",
+            "tile64_vector_load",
+        ),
+        VariantSpec(
+            6,
+            "q6_cached_weights",
+            "q6 cached epilogue weights",
+            "xe2_dpas",
+            "native_xe2_qlen1_q6_cached_weights",
+            "runtime_explicit_count",
+            "cached_softmax_weights_split_reduction",
+            "tile64",
+        ),
+        VariantSpec(
+            7,
+            "q6_exact_rows",
+            "q6 exact live-row loops",
+            "xe2_dpas",
+            "native_xe2_qlen1_q6_exact_rows",
+            "runtime_explicit_count",
+            "standard_split_reduction",
+            "tile64_exact_live_rows",
+        ),
         VariantSpec(
             8,
             "q6_cached_weights_exact_rows",
             "q6 cached epilogue weights plus exact live-row loops",
+            "xe2_dpas",
+            "native_xe2_qlen1_q6_cached_weights_exact_rows",
+            "runtime_explicit_count",
+            "cached_softmax_weights_split_reduction",
+            "tile64_exact_live_rows",
         ),
         VariantSpec(
             9,
             "q6_page_pair",
             "q6 paired-page main loop",
+            "xe2_dpas",
+            "native_xe2_qlen1_q6_page_pair",
+            "runtime_explicit_count",
+            "standard_split_reduction",
+            "paired_page_k128",
             work_unit_tokens=128,
         ),
-        VariantSpec(10, "q6_main_grf128", "q6 GRF128 main-kernel experiment"),
+        VariantSpec(
+            10,
+            "q6_main_grf128",
+            "q6 GRF128 main-kernel experiment",
+            "xe2_dpas",
+            "native_xe2_qlen1_q6_main_grf128",
+            "runtime_explicit_count",
+            "standard_split_reduction",
+            "tile64_grf128",
+        ),
         VariantSpec(
             11,
             "q6_split_reducer_specialized",
             "q6 specialized split reducer",
+            "xe2_dpas",
+            "native_xe2_qlen1_q6_split_reducer_specialized",
+            "runtime_explicit_count",
+            "specialized_split_reduction",
+            "tile64",
         ),
-        VariantSpec(12, "q6_next_page_prefetch", "q6 next-page prefetch"),
+        VariantSpec(
+            12,
+            "q6_next_page_prefetch",
+            "q6 next-page prefetch",
+            "xe2_dpas",
+            "native_xe2_qlen1_q6_next_page_prefetch",
+            "runtime_explicit_count",
+            "standard_split_reduction",
+            "tile64_next_page_prefetch",
+        ),
     )
 }
 VARIANTS_BY_ID = {spec.variant_id: spec for spec in VARIANTS.values()}
@@ -192,6 +293,7 @@ class MatrixCase:
     effective_splits: int
     variant: VariantSpec
     output_dtype: str = "fp16"
+    requested_split_policy: str = "fixed"
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -202,6 +304,11 @@ class MatrixCase:
             "kernel_variant": self.variant.variant_id,
             "variant_name": self.variant.name,
             "dpas_layout": self.variant.dpas_layout,
+            "cache_layout": self.variant.cache_layout,
+            "kernel_strategy": self.variant.kernel_strategy,
+            "split_policy": self.requested_split_policy,
+            "fusion_strategy": self.variant.fusion_strategy,
+            "scheduling_variant": self.variant.scheduling_variant,
             "output_dtype": self.output_dtype,
         }
 
@@ -805,6 +912,11 @@ def build_matrix(
                     if requested_value is None
                     else requested_value
                 )
+                requested_split_policy = (
+                    "factory_auto_b1s24_b4s16"
+                    if requested_value is None
+                    else "fixed"
+                )
                 for output_dtype in output_dtypes:
                     for variant in variants:
                         effective = effective_split_count(context, requested, variant)
@@ -831,6 +943,7 @@ def build_matrix(
                                 effective_splits=effective,
                                 variant=variant,
                                 output_dtype=output_dtype,
+                                requested_split_policy=requested_split_policy,
                             )
                         )
     return cases
@@ -861,6 +974,172 @@ def timing_summary(device_us: list[float], wall_us: list[float]) -> dict[str, An
         "device_p90_us": percentile(device_us, 0.90),
         "wall_median_us": statistics.median(wall_us),
     }
+
+
+def latency_speed_ratios(
+    candidate_latency_us: float, auto_latency_us: float
+) -> dict[str, float]:
+    """Return both latency and reciprocal-rate comparison directions.
+
+    ``candidate_latency_over_auto`` and ``auto_speed_over_candidate`` are
+    numerically identical: if the candidate takes twice as long, auto runs at
+    twice its rate.  Both names are emitted so readers never have to infer
+    whether a higher legacy ``*_over_*`` ratio is good or bad for Kvarn.
+    """
+    values = (candidate_latency_us, auto_latency_us)
+    if any(not math.isfinite(value) or value <= 0 for value in values):
+        raise FactoryError("device-stage latencies must be finite and positive")
+    candidate_latency_over_auto = candidate_latency_us / auto_latency_us
+    candidate_speed_over_auto = auto_latency_us / candidate_latency_us
+    return {
+        "candidate_latency_over_auto": candidate_latency_over_auto,
+        "auto_speed_over_candidate": candidate_latency_over_auto,
+        "candidate_speed_over_auto": candidate_speed_over_auto,
+        "auto_latency_over_candidate": candidate_speed_over_auto,
+    }
+
+
+def geometric_mean(values: Sequence[float]) -> float:
+    if not values or any(not math.isfinite(value) or value <= 0 for value in values):
+        raise FactoryError("geometric mean requires finite positive values")
+    return math.exp(math.fsum(math.log(value) for value in values) / len(values))
+
+
+def _latency_range(values: Sequence[float]) -> dict[str, float]:
+    if not values:
+        raise FactoryError("cannot summarize an empty latency range")
+    return {"minimum_us": min(values), "maximum_us": max(values)}
+
+
+def _leaderboard_stage(cases: Sequence[dict[str, Any]], name: str) -> dict[str, Any]:
+    stages = [case["diagnostic_ratios"].get(name) for case in cases]
+    measured = [stage for stage in stages if isinstance(stage, dict)]
+    if not measured:
+        return {"measured_cases": 0, "available": False}
+    latency = [stage["candidate_latency_over_auto"] for stage in measured]
+    candidate_speed = [stage["candidate_speed_over_auto"] for stage in measured]
+    auto_speed = [stage["auto_speed_over_candidate"] for stage in measured]
+    return {
+        "measured_cases": len(measured),
+        "available": True,
+        "candidate_latency_over_auto_geomean": geometric_mean(latency),
+        "candidate_latency_over_auto_worst": max(latency),
+        "candidate_speed_over_auto_geomean": geometric_mean(candidate_speed),
+        "candidate_speed_over_auto_floor": min(candidate_speed),
+        "auto_speed_over_candidate_geomean": geometric_mean(auto_speed),
+    }
+
+
+def build_primitive_leaderboard(results: Sequence[dict[str, Any]]) -> dict[str, Any]:
+    """Summarize measured primitive/device-stage cells without service claims."""
+    grouped: dict[tuple[Any, ...], list[dict[str, Any]]] = {}
+    axes = (
+        "kernel_variant",
+        "variant_name",
+        "output_dtype",
+        "cache_layout",
+        "kernel_strategy",
+        "fusion_strategy",
+        "scheduling_variant",
+    )
+    for result in results:
+        grouped.setdefault(tuple(result.get(axis) for axis in axes), []).append(result)
+
+    rows: list[dict[str, Any]] = []
+    for key, cases in grouped.items():
+        fields = dict(zip(axes, key, strict=True))
+        decode_candidate_us = [
+            case["timing"]["decode"]["arms"]["candidate"]["device_median_us"]
+            for case in cases
+        ]
+        decode_auto_us = [
+            case["timing"]["decode"]["arms"]["auto_control"]["device_median_us"]
+            for case in cases
+        ]
+        decode = _leaderboard_stage(cases, "decode")
+        decode["candidate_device_median_range"] = _latency_range(
+            decode_candidate_us
+        )
+        decode["auto_device_median_range"] = _latency_range(decode_auto_us)
+        separate = _leaderboard_stage(cases, "separate_device_stage")
+        fused = _leaderboard_stage(cases, "fused_device_stage")
+        ranking_stage = (
+            "fused_device_stage"
+            if fused["measured_cases"] == len(cases)
+            else "separate_device_stage"
+        )
+        ranking_metrics = fused if ranking_stage == "fused_device_stage" else separate
+        rows.append(
+            {
+                **fields,
+                "split_policies_measured": sorted(
+                    {str(case["split_policy"]) for case in cases}
+                ),
+                "case_count": len(cases),
+                "matched_primitive_ratio_eligible_cases": sum(
+                    case.get("matched_primitive_ratio_eligible") is True
+                    for case in cases
+                ),
+                "correctness_status": (
+                    "all_cases_passed"
+                    if all(
+                        case.get("status") == "correctness_passed_and_timed"
+                        for case in cases
+                    )
+                    else "incomplete_or_failed"
+                ),
+                "decode": decode,
+                "separate_device_stage": separate,
+                "fused_device_stage": fused,
+                "ranking_basis": ranking_stage,
+                "ranking_candidate_speed_over_auto_geomean": ranking_metrics.get(
+                    "candidate_speed_over_auto_geomean"
+                ),
+                "ranking_candidate_speed_over_auto_floor": ranking_metrics.get(
+                    "candidate_speed_over_auto_floor"
+                ),
+            }
+        )
+    rows.sort(
+        key=lambda row: (
+            -(row["ranking_candidate_speed_over_auto_geomean"] or 0.0),
+            row["kernel_variant"],
+            row["output_dtype"],
+        )
+    )
+    for rank, row in enumerate(rows, start=1):
+        row["primitive_rank"] = rank
+        row["decision_signal"] = (
+            "leading_primitive_candidate"
+            if rank == 1
+            else "ranked_primitive_candidate"
+        )
+    return {
+        "scope": "xpu_primitive_and_per_layer_device_stage_only",
+        "service_parity_eligible": False,
+        "warning": SCOPE_WARNING,
+        "timing_source": "torch.xpu.Event device elapsed time",
+        "ratio_semantics": {
+            "candidate_latency_over_auto": "lower_is_better_for_candidate",
+            "auto_speed_over_candidate": "lower_is_better_for_candidate",
+            "candidate_speed_over_auto": "higher_is_better_for_candidate",
+        },
+        "row_count": len(rows),
+        "rows": rows,
+    }
+
+
+def print_primitive_leaderboard(leaderboard: dict[str, Any]) -> None:
+    print("primitive leaderboard (XPU device-stage diagnostic; not service parity)")
+    print("rank variant dtype cases correctness speed/auto(gmean) speed/auto(floor)")
+    for row in leaderboard["rows"]:
+        print(
+            f"{row['primitive_rank']:>4} {row['variant_name']:<34} "
+            f"{row['output_dtype']:<5} {row['case_count']:>5} "
+            f"{row['correctness_status']:<22} "
+            f"{row['ranking_candidate_speed_over_auto_geomean']:.4f} "
+            f"{row['ranking_candidate_speed_over_auto_floor']:.4f}"
+        )
 
 
 def measure_interleaved(
@@ -2463,6 +2742,15 @@ def run_case(
         else None
     )
     auto_stage = decode_medians["auto_control"] + frontend_medians["auto_cache_store"]
+    decode_ratios = latency_speed_ratios(
+        decode_medians["candidate"], decode_medians["auto_control"]
+    )
+    separate_stage_ratios = latency_speed_ratios(candidate_separate_stage, auto_stage)
+    fused_stage_ratios = (
+        latency_speed_ratios(candidate_fused_stage, auto_stage)
+        if candidate_fused_stage is not None
+        else None
+    )
     result = {
         **case.as_dict(),
         "case_id": (
@@ -2518,18 +2806,24 @@ def run_case(
             ),
         },
         "diagnostic_ratios": {
+            "decode": decode_ratios,
+            "separate_device_stage": separate_stage_ratios,
+            "fused_device_stage": fused_stage_ratios,
+            # Compatibility aliases. These are latency ratios (lower is better
+            # for the candidate); new consumers should use the named records
+            # above instead of inferring a direction from ``over``.
             "candidate_decode_over_natural": (
                 decode_medians["candidate"] / decode_medians["natural_oracle"]
             ),
-            "candidate_decode_over_auto": (
-                decode_medians["candidate"] / decode_medians["auto_control"]
-            ),
-            "candidate_separate_device_stage_over_auto": (
-                candidate_separate_stage / auto_stage
-            ),
+            "candidate_decode_over_auto": decode_ratios[
+                "candidate_latency_over_auto"
+            ],
+            "candidate_separate_device_stage_over_auto": separate_stage_ratios[
+                "candidate_latency_over_auto"
+            ],
             "candidate_fused_device_stage_over_auto": (
-                candidate_fused_stage / auto_stage
-                if candidate_fused_stage is not None
+                fused_stage_ratios["candidate_latency_over_auto"]
+                if fused_stage_ratios is not None
                 else None
             ),
             "candidate_separate_device_stage_us": candidate_separate_stage,
@@ -2537,6 +2831,11 @@ def run_case(
             "auto_device_stage_us": auto_stage,
             "candidate_output_postprocess_us": candidate_postprocess_us,
             "fusion_selection": "reported_as_independent_axes",
+            "frontend_fusion_strategies_measured": (
+                ["separate_q_plus_kv", "fused_qkv"]
+                if operations.fused_qkv_scatter is not None
+                else ["separate_q_plus_kv"]
+            ),
             "fused_over_separate_frontend": (
                 frontend_medians["kvarn_fused_qkv"]
                 / frontend_medians["kvarn_separate_q_plus_kv"]
@@ -2781,6 +3080,7 @@ def initial_document(args: argparse.Namespace) -> dict[str, Any]:
             "native_attention": args.native_attention_build,
         },
         "results": [],
+        "primitive_leaderboard": build_primitive_leaderboard([]),
     }
 
 
@@ -2917,6 +3217,9 @@ def execute(args: argparse.Namespace) -> int:
                 correctness_rtol=args.correctness_rtol,
             )
             document["results"].append(result)
+            document["primitive_leaderboard"] = build_primitive_leaderboard(
+                document["results"]
+            )
             document["completed_cases"] = index
             write_json_atomic(args.output, document)
             gc.collect()
@@ -2955,6 +3258,7 @@ def execute(args: argparse.Namespace) -> int:
         document["finished_at"] = utc_now()
         document["completed_cases"] = len(args.matrix)
         write_json_atomic(args.output, document)
+        print_primitive_leaderboard(document["primitive_leaderboard"])
         print(f"durable primitive diagnostic: {args.output}", flush=True)
         return 0
     except (Exception, KeyboardInterrupt) as error:  # noqa: BLE001

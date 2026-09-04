@@ -382,7 +382,7 @@ def validate_factory_qualification(
     if not isinstance(document, dict):
         raise GateError(f"{path}: factory qualification must be an object")
     if (
-        document.get("schema_version") != 2
+        document.get("schema_version") != 3
         or document.get("artifact_kind") != "kvarn_b70_primitive_factory_run"
         or document.get("status") != "completed_primitive_diagnostic"
         or document.get("identity_stable_through_sweep") is not True
@@ -458,16 +458,20 @@ def validate_factory_qualification(
     if (
         not isinstance(libraries, dict)
         or not isinstance(libraries.get("flash"), dict)
+        or not isinstance(libraries.get("native_attention"), dict)
         or not isinstance(builds, dict)
         or not isinstance(builds.get("package"), dict)
         or not isinstance(builds.get("flash"), dict)
+        or not isinstance(builds.get("native_attention"), dict)
         or not isinstance(ownership, dict)
         or ownership.get("verified") is not True
     ):
         raise GateError(f"{path}: factory build provenance is incomplete")
     package = builds["package"]
     flash_build = builds["flash"]
+    native_attention_build = builds["native_attention"]
     flash = libraries["flash"]
+    native_attention = libraries["native_attention"]
     owned_artifacts = ownership.get("artifacts")
     if (
         package.get("verified") is not True
@@ -475,12 +479,16 @@ def validate_factory_qualification(
         or flash_build.get("verified") is not True
         or flash_build.get("library_path") != flash.get("path")
         or flash_build.get("output_path") not in package.get("closure_paths", [])
+        or native_attention_build.get("verified") is not True
+        or native_attention_build.get("library_path") != native_attention.get("path")
+        or native_attention_build.get("output_path")
+        not in package.get("closure_paths", [])
         or not isinstance(owned_artifacts, dict)
         or any(
             not isinstance(owned_artifacts.get(name), dict)
             or owned_artifacts[name].get("verified") is not True
             or owned_artifacts[name].get("member_of_package_closure") is not True
-            for name in ("package", "base", "flash")
+            for name in ("package", "base", "flash", "native_attention")
         )
     ):
         raise GateError(f"{path}: factory package/library provenance differs")
@@ -502,6 +510,32 @@ def validate_factory_qualification(
         raise GateError(f"{path}: cannot rehash factory native library: {exc}") from exc
     if actual_flash_sha256 != flash_sha256:
         raise GateError(f"{path}: factory native-library artifact changed")
+    native_attention_path = native_attention.get("path")
+    native_attention_sha256 = native_attention.get("sha256")
+    runtime_binding = document.get("native_attention_runtime_binding")
+    if (
+        not isinstance(native_attention_path, str)
+        or Path(native_attention_path).name != "libattn_kernels_xe_2.so"
+        or not isinstance(native_attention_sha256, str)
+        or not re.fullmatch(r"[0-9a-f]{64}", native_attention_sha256)
+        or not isinstance(runtime_binding, dict)
+        or runtime_binding.get("status") != "verified"
+        or runtime_binding.get("expected_path") != native_attention_path
+        or runtime_binding.get("mapped_path") != native_attention_path
+        or runtime_binding.get("basename") != "libattn_kernels_xe_2.so"
+        or runtime_binding.get("unique_basename_mapping") is not True
+    ):
+        raise GateError(f"{path}: factory native-attention identity differs")
+    try:
+        actual_native_attention_sha256 = hashlib.sha256(
+            Path(native_attention_path).read_bytes()
+        ).hexdigest()
+    except OSError as exc:
+        raise GateError(
+            f"{path}: cannot rehash factory native attention library: {exc}"
+        ) from exc
+    if actual_native_attention_sha256 != native_attention_sha256:
+        raise GateError(f"{path}: factory native-attention artifact changed")
 
     results = document.get("results")
     settings = document.get("requested_settings")
@@ -625,6 +659,11 @@ def validate_factory_qualification(
         "native_library": {
             "path": flash_path,
             "sha256": flash_sha256,
+        },
+        "native_attention_library": {
+            "path": native_attention_path,
+            "sha256": native_attention_sha256,
+            "runtime_binding_verified": True,
         },
         "selection": {
             "cache_layout": native_layout,

@@ -231,6 +231,55 @@ def stable_file_record(path: Path) -> dict[str, Any]:
     }
 
 
+def verify_loaded_native_attention(
+    expected_library: Path,
+    *,
+    maps_path: Path = Path("/proc/self/maps"),
+) -> dict[str, Any]:
+    """Prove the attested Xe2 DSO is the unique mapped library by that name."""
+    expected = expected_library.expanduser().resolve(strict=True)
+    try:
+        mappings = maps_path.read_text(encoding="utf-8").splitlines()
+    except OSError as error:
+        raise FactoryError(
+            f"cannot inspect native attention runtime mappings: {error}"
+        ) from error
+    candidates: set[Path] = set()
+    for mapping in mappings:
+        fields = mapping.split(maxsplit=5)
+        if len(fields) != 6:
+            continue
+        raw_path = fields[5]
+        deleted = raw_path.endswith(" (deleted)")
+        candidate_text = raw_path.removesuffix(" (deleted)")
+        candidate = Path(candidate_text)
+        if candidate.name != expected.name:
+            continue
+        if deleted:
+            raise FactoryError(
+                f"mapped native attention library was deleted: {candidate}"
+            )
+        try:
+            candidates.add(candidate.resolve(strict=True))
+        except OSError as error:
+            raise FactoryError(
+                f"cannot resolve mapped native attention library {candidate}: {error}"
+            ) from error
+    if candidates != {expected}:
+        rendered = ", ".join(str(path) for path in sorted(candidates)) or "none"
+        raise FactoryError(
+            "attested native attention library is not the unique mapped "
+            f"{expected.name}: expected {expected}, found {rendered}"
+        )
+    return {
+        "status": "verified",
+        "expected_path": str(expected),
+        "mapped_path": str(next(iter(candidates))),
+        "basename": expected.name,
+        "unique_basename_mapping": True,
+    }
+
+
 def ensure_durable_output(path: Path, *, allow_tmp: bool) -> Path:
     resolved = path.expanduser().resolve()
     if resolved.suffix != ".json":
@@ -511,12 +560,14 @@ def verify_source_ownership(
     package: dict[str, Any],
     base: dict[str, Any],
     flash: dict[str, Any],
+    native_attention: dict[str, Any],
     expected_revisions: dict[str, str],
 ) -> dict[str, Any]:
     ownership = {
         "package": (package, "vllm"),
         "base": (base, "vllm-xpu-kernels"),
         "flash": (flash, "vllm-xpu-kernels"),
+        "native_attention": (native_attention, "vllm-xpu-kernels"),
     }
     records: dict[str, Any] = {}
     for artifact_name, (artifact, repository_name) in ownership.items():
@@ -536,7 +587,11 @@ def verify_source_ownership(
             "verified": True,
         }
     package_closure = set(package["closure_paths"])
-    for artifact_name, artifact in (("base", base), ("flash", flash)):
+    for artifact_name, artifact in (
+        ("base", base),
+        ("flash", flash),
+        ("native_attention", native_attention),
+    ):
         if artifact["output_path"] not in package_closure:
             raise FactoryError(
                 f"{artifact_name} output {artifact['output_path']} is absent from "
@@ -545,7 +600,10 @@ def verify_source_ownership(
         records[artifact_name]["member_of_package_closure"] = True
     records["package"]["member_of_package_closure"] = True
     return {
-        "contract": "package=vllm;base=vllm-xpu-kernels;flash=vllm-xpu-kernels",
+        "contract": (
+            "package=vllm;base=vllm-xpu-kernels;flash=vllm-xpu-kernels;"
+            "native_attention=vllm-xpu-kernels"
+        ),
         "artifacts": records,
         "verified": True,
     }
@@ -2429,10 +2487,13 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--package-closure-sha256", required=True)
     parser.add_argument("--base-library", type=Path, required=True)
     parser.add_argument("--flash-library", type=Path, required=True)
+    parser.add_argument("--native-attention-library", type=Path, required=True)
     parser.add_argument("--base-derivation", required=True)
     parser.add_argument("--base-closure-sha256", required=True)
     parser.add_argument("--flash-derivation", required=True)
     parser.add_argument("--flash-closure-sha256", required=True)
+    parser.add_argument("--native-attention-derivation", required=True)
+    parser.add_argument("--native-attention-closure-sha256", required=True)
     parser.add_argument("--vllm-xpu-nix-repo", type=Path, default=project)
     parser.add_argument("--vllm-repo", type=Path, default=project.parent / "vllm")
     parser.add_argument(
@@ -2507,6 +2568,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             derivation=args.flash_derivation,
             closure_sha256=args.flash_closure_sha256,
         )
+        args.native_attention_build = validate_build_attestation(
+            label="native-attention",
+            derivation=args.native_attention_derivation,
+            closure_sha256=args.native_attention_closure_sha256,
+        )
         args.expected_revisions = {
             "vllm-xpu-nix": args.expected_vllm_xpu_nix_revision,
             "vllm": args.expected_vllm_revision,
@@ -2524,7 +2590,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 
 def initial_document(args: argparse.Namespace) -> dict[str, Any]:
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "artifact_kind": "kvarn_b70_primitive_factory_run",
         "status": "running",
         "started_at": utc_now(),
@@ -2590,6 +2656,7 @@ def initial_document(args: argparse.Namespace) -> dict[str, Any]:
             "package": args.package_build,
             "base": args.base_build,
             "flash": args.flash_build,
+            "native_attention": args.native_attention_build,
         },
         "results": [],
     }
@@ -2606,7 +2673,12 @@ def execute(args: argparse.Namespace) -> int:
         )
         base_record = stable_file_record(args.base_library)
         flash_record = stable_file_record(args.flash_library)
-        document["libraries"] = {"base": base_record, "flash": flash_record}
+        native_attention_record = stable_file_record(args.native_attention_library)
+        document["libraries"] = {
+            "base": base_record,
+            "flash": flash_record,
+            "native_attention": native_attention_record,
+        }
         document["build_attestations"] = {
             "package": package_build,
             "base": verify_nix_artifact(
@@ -2619,11 +2691,17 @@ def execute(args: argparse.Namespace) -> int:
                 library=Path(flash_record["path"]),
                 attestation=args.flash_build,
             ),
+            "native_attention": verify_nix_artifact(
+                label="native attention",
+                library=Path(native_attention_record["path"]),
+                attestation=args.native_attention_build,
+            ),
         }
         document["source_ownership"] = verify_source_ownership(
             package=document["build_attestations"]["package"],
             base=document["build_attestations"]["base"],
             flash=document["build_attestations"]["flash"],
+            native_attention=document["build_attestations"]["native_attention"],
             expected_revisions=args.expected_revisions,
         )
         repositories = [
@@ -2667,6 +2745,9 @@ def execute(args: argparse.Namespace) -> int:
             torch,
             base_library=Path(base_record["path"]),
             flash_library=Path(flash_record["path"]),
+        )
+        document["native_attention_runtime_binding"] = verify_loaded_native_attention(
+            Path(native_attention_record["path"])
         )
         document["operator_schemas"] = schemas
         document["optional_features"] = {
@@ -2730,6 +2811,7 @@ def execute(args: argparse.Namespace) -> int:
         ending_libraries = {
             "base": stable_file_record(args.base_library),
             "flash": stable_file_record(args.flash_library),
+            "native_attention": stable_file_record(args.native_attention_library),
         }
         ending_repositories = [
             repository_state("vllm-xpu-nix", args.vllm_xpu_nix_repo),

@@ -82,8 +82,9 @@ def test_named_factory_ids_are_complete_and_stable() -> None:
         "q6_current_half_v_prefetch": 16,
         "q6_page_record_cursor": 17,
         "q6_prefetch_record_cursor": 18,
+        "q6_b1_short_last_producer": 19,
     }
-    assert set(factory.VARIANTS_BY_ID) == set(range(19)) - {5}
+    assert set(factory.VARIANTS_BY_ID) == set(range(20)) - {5}
     assert all(spec.dpas_layout for spec in factory.VARIANTS.values())
     assert all(spec.cache_layout == "xe2_dpas" for spec in factory.VARIANTS.values())
     assert all(
@@ -118,6 +119,7 @@ def test_named_factory_ids_are_complete_and_stable() -> None:
         "q6_current_half_v_prefetch",
         "q6_page_record_cursor",
         "q6_prefetch_record_cursor",
+        "q6_b1_short_last_producer",
     )
     assert factory.ALL_VARIANT_NAMES == tuple(factory.VARIANTS)
     assert factory.VARIANTS["q6_page_pair"].scheduling_variant == "paired_page_k128"
@@ -162,6 +164,10 @@ def test_named_factory_ids_are_complete_and_stable() -> None:
         factory.VARIANTS["q6_prefetch_record_cursor"].scheduling_variant
         == "tile64_next_page_current_half_v_prefetch_record_cursor"
     )
+    assert (
+        factory.VARIANTS["q6_b1_short_last_producer"].fusion_strategy
+        == "b1_short_last_producer_or_id18_split_reduction"
+    )
 
 
 def test_variant_parser_accepts_names_and_all_but_not_numeric_aliases() -> None:
@@ -190,6 +196,7 @@ def test_variant_parser_accepts_names_and_all_but_not_numeric_aliases() -> None:
         16,
         17,
         18,
+        19,
     ]
     with pytest.raises(factory.FactoryError, match="ID 5.*reserved"):
         factory.parse_variants("page128")
@@ -217,6 +224,7 @@ def test_focused_kill_suite_maps_every_variant_to_multisplit_and_262k() -> None:
         16: "q6-current-half-v-prefetch",
         17: "q6-page-record-cursor",
         18: "q6-prefetch-record-cursor",
+        19: "q6-prefetch-record-cursor",
     }
     assert set(expected_node_ids) == set(factory.VARIANTS_BY_ID)
     assert set(factory.FOCUSED_XPU_MULTISPLIT_TESTS) == set(factory.VARIANTS_BY_ID)
@@ -257,6 +265,68 @@ def test_focused_kill_suite_adds_id15_block_store_matrix_only_for_id15() -> None
 
     assert factory.FOCUSED_XPU_ID15_TEST not in without_id15
     assert factory.FOCUSED_XPU_ID15_TEST in with_id15
+
+
+def test_id19_matrix_records_narrow_activation_and_id18_fallback() -> None:
+    cases = factory.build_matrix(
+        batches=[1, 4],
+        contexts=[4096, 8192, 8193],
+        splits=[8],
+        variants=[factory.VARIANTS["q6_b1_short_last_producer"]],
+    )
+    evidence = [case.as_dict() for case in cases]
+
+    assert [item["selected_variant_active"] for item in evidence] == [
+        True,
+        False,
+        True,
+        False,
+        False,
+        False,
+    ]
+    assert [item["effective_variant_name"] for item in evidence] == [
+        "q6_b1_short_last_producer",
+        "q6_prefetch_record_cursor",
+        "q6_b1_short_last_producer",
+        "q6_prefetch_record_cursor",
+        "q6_prefetch_record_cursor",
+        "q6_prefetch_record_cursor",
+    ]
+    assert evidence[0]["kernel_variant_dispatch_contract"]["activation_scope"] == {
+        "kind": "b1_short_multisplit",
+        "decode_batch_size": 1,
+        "current_sequence_length_maximum_inclusive": 8192,
+        "num_kv_splits_minimum": 2,
+        "requires_unrotate_output": True,
+        "requires_initialized_completion_state": True,
+    }
+    selected = factory.focused_xpu_tests(
+        [factory.VARIANTS["q6_b1_short_last_producer"]]
+    )
+    assert set(factory.FOCUSED_ID19_TESTS) <= set(selected)
+    assert any("test_kvarn_id19_b70_xpu.py" in node for node in selected)
+
+
+def test_id19_focused_command_resolves_explicit_static_and_runtime_nodes(
+    tmp_path: Path,
+) -> None:
+    kernels_repo = tmp_path / "kernels"
+    variant = factory.VARIANTS["q6_b1_short_last_producer"]
+    selections = factory.focused_xpu_tests([variant])
+    for selection in selections:
+        relative, separator, test_name = selection.partition("::")
+        assert separator and test_name
+        source = kernels_repo / relative
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.touch()
+
+    command = factory.focused_xpu_test_command(kernels_repo, [variant])
+
+    assert len(factory.FOCUSED_ID19_STATIC_TESTS) == 7
+    assert len(factory.FOCUSED_XPU_ID19_RUNTIME_TESTS) == 4
+    for selection in factory.FOCUSED_XPU_ID19_RUNTIME_TESTS:
+        relative, _, test_name = selection.partition("::")
+        assert f"{(kernels_repo / relative).resolve()}::{test_name}" in command
 
 
 def test_focused_kill_suite_selects_writer_and_prefill_direct_op_gates() -> None:
@@ -792,6 +862,15 @@ def test_native_decode_invocation_uses_all_explicit_factory_args() -> None:
             "output",
         )
     }
+    id19_cases = factory.build_matrix(
+        batches=[1, 4],
+        contexts=[4_608],
+        splits=[16],
+        variants=[factory.VARIANTS["q6_b1_short_last_producer"]],
+    )
+    active_case = next(case for case in id19_cases if case.batch == 1)
+    fallback_case = next(case for case in id19_cases if case.batch == 4)
+
     factory.invoke_native_decode(
         operation,
         **values,
@@ -805,6 +884,87 @@ def test_native_decode_invocation_uses_all_explicit_factory_args() -> None:
     assert len(calls) == 1
     assert calls[0][-3:] == (24, 3, True)
     assert calls[0][-6:-3] == (factory.SOFTMAX_SCALE, True, True)
+
+    factory.invoke_native_decode(
+        operation,
+        **values,
+        context=4_608,
+        unrotate_output=True,
+        write_bf16_output=True,
+        num_kv_splits=16,
+        kernel_variant=19,
+        dpas_layout=True,
+        last_producer_state_initialized=factory.last_producer_state_ready(
+            active_case, 19
+        ),
+        supports_last_producer_state=True,
+    )
+    assert calls[1][-4:] == (16, 19, True, True)
+
+    factory.invoke_native_decode(
+        operation,
+        **values,
+        context=4_608,
+        unrotate_output=True,
+        write_bf16_output=True,
+        num_kv_splits=16,
+        kernel_variant=19,
+        dpas_layout=True,
+        last_producer_state_initialized=factory.last_producer_state_ready(
+            fallback_case, 19
+        ),
+        supports_last_producer_state=True,
+    )
+    assert calls[2][-4:] == (16, 19, True, False)
+    assert fallback_case.effective_variant().variant_id == 18
+
+    with pytest.raises(factory.FactoryError, match="completion-state ABI"):
+        factory.invoke_native_decode(
+            operation,
+            **values,
+            context=4_608,
+            unrotate_output=True,
+            write_bf16_output=True,
+            num_kv_splits=16,
+            kernel_variant=19,
+            dpas_layout=True,
+            last_producer_state_initialized=True,
+        )
+
+
+def test_id19_legacy_scratch_is_zero_initialized_once() -> None:
+    calls: list[tuple[str, tuple, dict]] = []
+
+    class FakeTorch:
+        float32 = "float32"
+
+        @staticmethod
+        def empty(*args, **kwargs):
+            calls.append(("empty", args, kwargs))
+            return "empty"
+
+        @staticmethod
+        def zeros(*args, **kwargs):
+            calls.append(("zeros", args, kwargs))
+            return "zeros"
+
+    assert factory.allocate_legacy_scratch(
+        FakeTorch,
+        batch=1,
+        splits=32,
+        initialize_completion_state=True,
+    ) == "zeros"
+    assert calls[-1] == (
+        "zeros",
+        ((1, factory.H_Q, 32),),
+        {"dtype": "float32", "device": "xpu:0"},
+    )
+    assert factory.allocate_legacy_scratch(
+        FakeTorch,
+        batch=4,
+        splits=8,
+        initialize_completion_state=False,
+    ) == "empty"
 
 
 class _Packet:
@@ -849,6 +1009,7 @@ def test_operator_loader_requires_explicit_abi_and_detects_fused_symbol(
         flash_library=flash,
     )
     assert operations.fused_qkv_scatter is not None
+    assert operations.native_decode_supports_last_producer_state is False
     assert "kernel_variant" in schemas["kvarn_decode_with_scratch"]
 
     legacy = _fake_torch_ops("kvarn_decode_with_scratch(...)", fused=False)
@@ -858,6 +1019,27 @@ def test_operator_loader_requires_explicit_abi_and_detects_fused_symbol(
             base_library=base,
             flash_library=flash,
         )
+
+    with pytest.raises(factory.FactoryError, match="ID19 requires.*initialized"):
+        factory.load_operators(
+            torch_module,
+            base_library=base,
+            flash_library=flash,
+            require_last_producer_state=True,
+        )
+
+    id19_torch = _fake_torch_ops(
+        "kvarn_decode_with_scratch(... num_kv_splits, kernel_variant, "
+        "dpas_layout, last_producer_state_initialized=False)",
+        fused=False,
+    )
+    id19_operations, _ = factory.load_operators(
+        id19_torch,
+        base_library=base,
+        flash_library=flash,
+        require_last_producer_state=True,
+    )
+    assert id19_operations.native_decode_supports_last_producer_state is True
 
 
 def test_distinct_layout_cache_guard_rejects_alias() -> None:

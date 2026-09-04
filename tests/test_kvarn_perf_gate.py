@@ -10,7 +10,7 @@ from scripts import kvarn_perf_gate as gate_module
 from scripts.kvarn_perf_gate import GateError, _load_correctness, compare
 
 
-def test_combined_library_matrix_registers_opt_in_variants_through_id18() -> None:
+def test_combined_library_matrix_registers_opt_in_variants_through_id19() -> None:
     assert [
         (item["kernel_variant"], item["kernel_variant_id"])
         for item in gate_module.COMBINED_LIBRARY_VARIANT_MATRIX
@@ -30,6 +30,7 @@ def test_combined_library_matrix_registers_opt_in_variants_through_id18() -> Non
         ("q6_current_half_v_prefetch", 16),
         ("q6_page_record_cursor", 17),
         ("q6_prefetch_record_cursor", 18),
+        ("q6_b1_short_last_producer", 19),
     ]
 
 
@@ -97,6 +98,14 @@ def _factory_result(
                 context_tokens=context,
                 fixed_splits=native_splits or None,
             )
+            effective_variant = (
+                gate_module.split_policy.effective_kernel_variant(
+                    native_kernel_variant,
+                    batch=batch,
+                    context_tokens=context,
+                    num_kv_splits=splits,
+                )
+            )
             case = {
                 "case_id": (
                     f"b{batch}-c{context}-s{splits}-v{variant_id}-"
@@ -108,6 +117,17 @@ def _factory_result(
                 "effective_num_kv_splits": splits,
                 "kernel_variant": variant_id,
                 "variant_name": native_kernel_variant,
+                "effective_kernel_variant": gate_module.NATIVE_KERNEL_VARIANTS[
+                    effective_variant
+                ],
+                "effective_variant_name": effective_variant,
+                "selected_variant_active": effective_variant
+                == native_kernel_variant,
+                "kernel_variant_dispatch_contract": (
+                    gate_module.split_policy.kernel_variant_dispatch_contract(
+                        native_kernel_variant
+                    )
+                ),
                 "dpas_layout": True,
                 "output_dtype": output_dtype,
                 "status": "correctness_passed_and_timed",
@@ -128,6 +148,12 @@ def _factory_result(
                     "natural_oracle": False,
                     "unrotate_output": True,
                     "write_bf16_output": output_dtype == "bf16",
+                    "last_producer_state_abi_available": True,
+                    "last_producer_state_initialized": (
+                        native_kernel_variant
+                        == "q6_b1_short_last_producer"
+                        and effective_variant == native_kernel_variant
+                    ),
                 },
                 "fixture": {
                     "fixture_mode": "matched-production",
@@ -157,6 +183,10 @@ def _factory_result(
         "effective_num_kv_splits",
         "kernel_variant",
         "variant_name",
+        "effective_kernel_variant",
+        "effective_variant_name",
+        "selected_variant_active",
+        "kernel_variant_dispatch_contract",
         "dpas_layout",
         "output_dtype",
     )
@@ -547,6 +577,9 @@ def _correctness(
                     "native_cache_layout_environment": effective_layout,
                     "native_kernel_variant": effective_kernel,
                     "native_kernel_variant_id": spec["native_kernel_variant_id"],
+                    "native_kernel_dispatch_contract": spec[
+                        "native_kernel_dispatch_contract"
+                    ],
                     "native_kernel_variant_environment": effective_kernel,
                     "native_max_splits": max_splits,
                     "native_nominal_splits": spec["nominal_decode_splits"],
@@ -763,6 +796,11 @@ def _correctness(
         "native_kernel_variant_id": gate_module.NATIVE_KERNEL_VARIANTS[
             native_kernel_variant
         ],
+        "native_kernel_dispatch_contract": (
+            gate_module.split_policy.kernel_variant_dispatch_contract(
+                native_kernel_variant
+            )
+        ),
         "native_nominal_splits_by_batch": (
             gate_module.split_policy.nominal_splits_by_batch(
                 native_split_policy, selected_splits or None
@@ -1103,6 +1141,40 @@ def _result(
         "kvarn_native_kernel_variant": selected_kernel,
         "kvarn_native_kernel_variant_id": str(
             gate_module.NATIVE_KERNEL_VARIANTS[selected_kernel]
+        ),
+        "kvarn_native_kernel_dispatch_scope": (
+            gate_module.split_policy.kernel_variant_dispatch_contract(
+                selected_kernel
+            )["activation_scope"]["kind"]
+        ),
+        "kvarn_effective_native_kernel_variant": (
+            gate_module.split_policy.effective_kernel_variant(
+                selected_kernel,
+                batch=4,
+                context_tokens=context + output_tokens,
+                num_kv_splits=effective_splits,
+            )
+        ),
+        "kvarn_effective_native_kernel_variant_id": str(
+            gate_module.NATIVE_KERNEL_VARIANTS[
+                gate_module.split_policy.effective_kernel_variant(
+                    selected_kernel,
+                    batch=4,
+                    context_tokens=context + output_tokens,
+                    num_kv_splits=effective_splits,
+                )
+            ]
+        ),
+        "kvarn_selected_native_kernel_variant_active": (
+            "1"
+            if gate_module.split_policy.effective_kernel_variant(
+                selected_kernel,
+                batch=4,
+                context_tokens=context + output_tokens,
+                num_kv_splits=effective_splits,
+            )
+            == selected_kernel
+            else "0"
         ),
         "kvarn_native_max_splits": str(max_splits),
         "kvarn_native_nominal_splits": str(effective_splits),
@@ -1497,6 +1569,36 @@ def test_gate_accepts_b70_q6_with_exact_factory_provenance(tmp_path: Path) -> No
     assert result["candidate"]["arm"]["kvarn_native_max_splits"] == "32"
     assert result["candidate"]["arm"]["kvarn_native_nominal_splits"] == "8"
     assert result["candidate"]["arm"]["kvarn_native_split_policy"] == "b70_q6"
+
+
+def test_formal_gate_keeps_id19_selector_but_attributes_b4_to_id18(
+    tmp_path: Path,
+) -> None:
+    arms = _arms(
+        tmp_path,
+        native_layout="xe2_dpas",
+        native_kernel_variant="q6_b1_short_last_producer",
+        native_split_policy="b70_q6",
+        native_splits={1: 32, 4: 8},
+    )
+
+    result = _compare(arms)
+
+    candidate = result["candidate"]["arm"]
+    assert candidate["kvarn_native_kernel_variant"] == (
+        "q6_b1_short_last_producer"
+    )
+    assert candidate["kvarn_effective_native_kernel_variant"] == (
+        "q6_prefetch_record_cursor"
+    )
+    assert candidate["kvarn_selected_native_kernel_variant_active"] == "0"
+    correctness_document = json.loads(arms[-1].read_text(encoding="utf-8"))
+    assert correctness_document["native_kernel_dispatch_contract"][
+        "activation_scope"
+    ]["current_sequence_length_maximum_inclusive"] == 8192
+    factory_cases = correctness_document["factory_qualification"]["cases"]
+    assert any(case["selected_variant_active"] is True for case in factory_cases)
+    assert any(case["selected_variant_active"] is False for case in factory_cases)
 
 
 def test_formal_gate_accepts_exact_b70_q6_v2_contract(tmp_path: Path) -> None:

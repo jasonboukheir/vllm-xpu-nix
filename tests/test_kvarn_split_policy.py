@@ -274,3 +274,31 @@ def test_correctness_and_formal_gate_phase_schema_do_not_invent_nominal_map() ->
         "native_split_policy_contract"
     ]
     assert runtime_spec["max_decode_splits"] == gate_spec["max_decode_splits"] == 32
+def test_id19_dispatch_contract_is_b1_short_and_fails_closed_to_id18() -> None:
+    contract = policy.kernel_variant_dispatch_contract(
+        "q6_b1_short_last_producer"
+    )
+    assert contract["selected_variant"] == {
+        "name": "q6_b1_short_last_producer",
+        "id": 19,
+    }
+    assert contract["activation_scope"][
+        "current_sequence_length_maximum_inclusive"
+    ] == 8192
+    assert contract["fallback_variant"] == {
+        "name": "q6_prefetch_record_cursor",
+        "id": 18,
+    }
+    assert policy.effective_kernel_variant(
+        "q6_b1_short_last_producer",
+        batch=1,
+        context_tokens=8192,
+        num_kv_splits=32,
+    ) == "q6_b1_short_last_producer"
+    for batch, context, splits in ((4, 4096, 8), (1, 8193, 32), (1, 4096, 1)):
+        assert policy.effective_kernel_variant(
+            "q6_b1_short_last_producer",
+            batch=batch,
+            context_tokens=context,
+            num_kv_splits=splits,
+        ) == "q6_prefetch_record_cursor"

@@ -346,7 +346,6 @@ def test_profile_command_and_dpas_launcher_provenance(
         "scheduler_max_num_batched_tokens": 2048,
         "scheduler_max_num_seqs": 4,
     }
-
     args.variant_id = None
     per_layer_variant = variant_provenance(run, args)
     args.flush_index_materialization = "shared"
@@ -384,6 +383,30 @@ def test_profile_command_and_dpas_launcher_provenance(
         "scheduler_max_num_batched_tokens": 2048,
         "scheduler_max_num_seqs": 4,
     }
+
+
+def test_id19_profile_provenance_is_runtime_scoped_to_b1_short() -> None:
+    run = perf.PlannedRun(
+        perf.Workload(4096, 1, 96, 1, 17), "candidate", 1
+    )
+    args = argparse.Namespace(
+        native_layout="xe2_dpas",
+        native_kernel_variant="q6_b1_short_last_producer",
+        native_split_policy="b70_q6",
+        native_splits={1: 32},
+        native_frontend="reference",
+        flush_index_materialization="per_layer",
+        max_num_batched_tokens=2048,
+        launcher_mode="runtime-factory",
+    )
+
+    assert perf.NATIVE_KERNEL_VARIANTS[args.native_kernel_variant] == 19
+    assert perf.effective_native_kernel_variant_for_run(run, args) == (
+        "q6_b1_short_last_producer"
+    )
+    assert perf.native_kernel_dispatch_contract_for_run(run, args)[
+        "fallback_variant"
+    ] == {"name": "q6_prefetch_record_cursor", "id": 18}
 
 
 def test_runtime_factory_profile_accepts_runtime_axes_without_named_launcher(
@@ -448,6 +471,93 @@ def test_runtime_factory_profile_accepts_runtime_axes_without_named_launcher(
         "KVARN_FACTORY_SPLITS": "17",
         "KVARN_FACTORY_SPLIT_POLICY": "fixed",
     }
+
+
+def test_id19_profile_cli_accepts_and_labels_active_and_fallback_cells(
+    tmp_path: Path,
+) -> None:
+    candidate = tmp_path / "candidate"
+    (candidate / "bin").mkdir(parents=True)
+    for executable in ("vllm", "python"):
+        (candidate / "bin" / executable).write_text("", encoding="utf-8")
+    config = tmp_path / "config"
+    config.mkdir()
+    common = [
+        "--candidate-env",
+        str(candidate),
+        "--allow-tmp",
+        "--config-repo",
+        str(config),
+        "--config-ref",
+        f"path:{config}",
+        "--launcher-mode",
+        "runtime-factory",
+        "--native-layout",
+        "xe2_dpas",
+        "--native-kernel-variant",
+        "q6_b1_short_last_producer",
+        "--native-split-policy",
+        "b70_q6",
+        "--context",
+        "4096",
+    ]
+    active = profile.parse_args(
+        [
+            *common,
+            "--runtime-cache",
+            str(tmp_path / "active-cache"),
+            "--output-dir",
+            str(tmp_path / "active"),
+        ]
+    )
+    assert active.native_kernel_variant == "q6_b1_short_last_producer"
+    assert active.native_splits == {1: 32}
+
+    b4 = profile.parse_args(
+        [
+            *common,
+            "--batch",
+            "4",
+            "--runtime-cache",
+            str(tmp_path / "b4-cache"),
+            "--output-dir",
+            str(tmp_path / "b4"),
+        ]
+    )
+    b4_run = perf.PlannedRun(
+        perf.Workload(b4.context, b4.batch, b4.output_tokens, b4.batch, b4.seed),
+        "candidate",
+        1,
+    )
+    assert perf.effective_native_kernel_variant_for_run(b4_run, b4) == (
+        "q6_prefetch_record_cursor"
+    )
+
+    crossing = profile.parse_args(
+        [
+            *common,
+            "--context",
+            "8192",
+            "--runtime-cache",
+            str(tmp_path / "crossing-cache"),
+            "--output-dir",
+            str(tmp_path / "crossing"),
+        ]
+    )
+    crossing_run = perf.PlannedRun(
+        perf.Workload(
+            crossing.context,
+            crossing.batch,
+            crossing.output_tokens,
+            crossing.batch,
+            crossing.seed,
+        ),
+        "candidate",
+        1,
+    )
+    assert perf.effective_native_kernel_variant_for_run(crossing_run, crossing) == (
+        "q6_prefetch_record_cursor"
+    )
 
 
 def test_candidate_profile_cli_rejects_fixed_round2_launcher_contract(

@@ -654,6 +654,19 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         "native_kernel_variant_id": perf.NATIVE_KERNEL_VARIANTS[
             perf.native_kernel_variant_for_run(run, args)
         ],
+        "native_kernel_dispatch_contract": (
+            perf.native_kernel_dispatch_contract_for_run(run, args)
+        ),
+        "effective_native_kernel_variant": (
+            perf.effective_native_kernel_variant_for_run(run, args)
+        ),
+        "effective_native_kernel_variant_id": perf.NATIVE_KERNEL_VARIANTS[
+            perf.effective_native_kernel_variant_for_run(run, args)
+        ],
+        "selected_native_kernel_variant_active": (
+            perf.effective_native_kernel_variant_for_run(run, args)
+            == perf.native_kernel_variant_for_run(run, args)
+        ),
         "native_frontend": native_frontend,
         "flush_writer": perf.flush_writer_for_run(run, args),
         "prefill_store": perf.prefill_store_for_run(run, args),
@@ -808,6 +821,19 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
                 "native_kernel_variant_id": perf.NATIVE_KERNEL_VARIANTS[
                     perf.native_kernel_variant_for_run(run, args)
                 ],
+                "native_kernel_dispatch_contract": (
+                    perf.native_kernel_dispatch_contract_for_run(run, args)
+                ),
+                "effective_native_kernel_variant": (
+                    perf.effective_native_kernel_variant_for_run(run, args)
+                ),
+                "effective_native_kernel_variant_id": perf.NATIVE_KERNEL_VARIANTS[
+                    perf.effective_native_kernel_variant_for_run(run, args)
+                ],
+                "selected_native_kernel_variant_active": (
+                    perf.effective_native_kernel_variant_for_run(run, args)
+                    == perf.native_kernel_variant_for_run(run, args)
+                ),
                 "native_kernel_variant_environment": service_profile[
                     "native_kernel_variant_environment"
                 ],
@@ -1107,6 +1133,16 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                 "immutable Round-2 profiling launchers require xe2_dpas, a Q6 "
                 "kernel variant, and b70_q6; use --launcher-mode runtime-factory "
                 "for other compatible compiled variants"
+            )
+        if (
+            args.arm == "candidate"
+            and args.native_kernel_variant
+            == perf.split_policy.Q6_B1_SHORT_LAST_PRODUCER_VARIANT
+            and perf.launcher_mode(args) != "runtime-factory"
+        ):
+            raise perf.RunnerError(
+                "q6_b1_short_last_producer (ID19) requires --launcher-mode "
+                "runtime-factory"
             )
         if (
             args.native_kernel_variant != perf.REFERENCE_NATIVE_KERNEL_VARIANT

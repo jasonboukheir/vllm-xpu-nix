@@ -435,6 +435,46 @@ def test_runtime_factory_supports_natural_baseline_fixed_split_candidate(
     assert axes["KVARN_FACTORY_SPLITS"] == "24"
 
 
+def test_id19_correctness_plan_preserves_full_suite_and_dispatch_contract(
+    tmp_path: Path,
+) -> None:
+    args = argparse.Namespace(
+        launcher_mode="runtime-factory",
+        native_layout="xe2_dpas",
+        native_kernel_variant="q6_b1_short_last_producer",
+        native_split_policy="b70_q6",
+        native_splits={1: 32, 4: 8},
+        native_output_dtype="bf16",
+        flush_index_materialization="per_layer",
+        native_frontend="reference",
+        max_num_batched_tokens=2048,
+        runtime_cache=tmp_path / "cache",
+        hf_home=tmp_path / "hf",
+    )
+
+    evidence = [
+        correctness.service_spec_evidence(spec, args)
+        for spec in correctness.SERVICE_PLAN
+    ]
+    assert len(evidence) == len(correctness.SERVICE_PLAN)
+    assert {item["max_model_len"] for item in evidence} == {65536, 262144}
+    native = [item for item in evidence if item["native"]]
+    assert all(
+        item["native_kernel_variant"] == "q6_b1_short_last_producer"
+        for item in native
+    )
+    assert all(item["native_kernel_variant_id"] == 19 for item in native)
+    assert all(
+        item["native_kernel_dispatch_contract"]["fallback_variant"]
+        == {"name": "q6_prefetch_record_cursor", "id": 18}
+        for item in native
+    )
+    assert all(
+        item["launcher"] == correctness.perf.RUNTIME_FACTORY_LAUNCHER
+        for item in native
+    )
+
+
 def test_qkv_frontend_is_native_only_and_reference_phase_is_unfused(
     tmp_path: Path,
 ) -> None:
@@ -917,6 +957,34 @@ def test_cli_binds_config_ref_and_keeps_mandatory_inactive_units(
         ]
     )
     assert b70.native_splits == {1: 32, 4: 8}
+
+    with pytest.raises(SystemExit):
+        correctness.parse_args(
+            [
+                *common,
+                "--config-ref",
+                f"path:{config}",
+                "--native-kernel-variant",
+                "q6_b1_short_last_producer",
+                "--output-dir",
+                str(tmp_path / "invalid-immutable-id19"),
+            ]
+        )
+    id19 = correctness.parse_args(
+        [
+            *common,
+            "--config-ref",
+            f"path:{config}",
+            "--launcher-mode",
+            "runtime-factory",
+            "--native-kernel-variant",
+            "q6_b1_short_last_producer",
+            "--output-dir",
+            str(tmp_path / "valid-runtime-id19"),
+        ]
+    )
+    assert id19.native_kernel_variant == "q6_b1_short_last_producer"
+    assert id19.native_splits == {1: 32, 4: 8}
 
     with pytest.raises(SystemExit):
         correctness.parse_args(

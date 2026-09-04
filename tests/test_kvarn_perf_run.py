@@ -1127,13 +1127,14 @@ def test_service_environment_pins_window_and_scrubs_full_defer(
         == "reference"
     )
     assert (
-        runner.service_environment(run, args)["KVARN_FORWARD_POOL_ENSURE"]
+        runner.service_environment(run, args)["KVARN_FACTORY_FORWARD_POOL_ENSURE"]
         == "fused_qkv_proof"
     )
     assert (
-        runner.service_environment(reference, args)["KVARN_FORWARD_POOL_ENSURE"]
+        runner.service_environment(reference, args)["KVARN_FACTORY_FORWARD_POOL_ENSURE"]
         == "always"
     )
+    assert "KVARN_FORWARD_POOL_ENSURE" not in runner.service_environment(run, args)
 
 
 def test_runtime_factory_environment_carries_exact_per_process_axes(
@@ -1161,6 +1162,7 @@ def test_runtime_factory_environment_carries_exact_per_process_axes(
         "KVARN_FACTORY_CACHE_LAYOUT": "xe2_dpas",
         "KVARN_FACTORY_FLUSH_INDEX_MATERIALIZATION": "shared",
         "KVARN_FACTORY_FLUSH_WRITER": "sinkhorn_pack_xe2",
+        "KVARN_FACTORY_FORWARD_POOL_ENSURE": "fused_qkv_proof",
         "KVARN_FACTORY_KERNEL_VARIANT": "q6_next_page_prefetch",
         "KVARN_FACTORY_KV_CACHE_DTYPE": runner.COMPACT_DTYPE,
         "KVARN_FACTORY_MAX_MODEL_LEN": "65536",
@@ -1175,7 +1177,10 @@ def test_runtime_factory_environment_carries_exact_per_process_axes(
     }
     candidate_environment = runner.service_environment(candidate, args)
     assert "KVARN_FACTORY_SPLITS" not in candidate_environment
-    assert candidate_environment["KVARN_FORWARD_POOL_ENSURE"] == "fused_qkv_proof"
+    assert (
+        candidate_environment["KVARN_FACTORY_FORWARD_POOL_ENSURE"] == "fused_qkv_proof"
+    )
+    assert "KVARN_FORWARD_POOL_ENSURE" not in candidate_environment
     assert (
         candidate_environment["KVARN_FACTORY_FLUSH_WRITER"]
         == "sinkhorn_pack_xe2"
@@ -1188,6 +1193,7 @@ def test_runtime_factory_environment_carries_exact_per_process_axes(
         "KVARN_FACTORY_CACHE_LAYOUT": "natural",
         "KVARN_FACTORY_FLUSH_INDEX_MATERIALIZATION": "per_layer",
         "KVARN_FACTORY_FLUSH_WRITER": "reference",
+        "KVARN_FACTORY_FORWARD_POOL_ENSURE": "always",
         "KVARN_FACTORY_KERNEL_VARIANT": "baseline",
         "KVARN_FACTORY_KV_CACHE_DTYPE": "auto",
         "KVARN_FACTORY_MAX_MODEL_LEN": "65536",

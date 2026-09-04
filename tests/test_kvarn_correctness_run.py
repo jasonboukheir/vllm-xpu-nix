@@ -373,6 +373,7 @@ def test_runtime_factory_reuses_generic_launcher_but_preserves_triton_reference(
         onednn_deterministic=False,
         flush_index_materialization="shared",
         native_frontend="qkv_scatter",
+        forward_pool_ensure="fused_qkv_proof",
         model="model",
         served_model="sunny-chat",
         model_revision="1" * 40,
@@ -399,12 +400,15 @@ def test_runtime_factory_reuses_generic_launcher_but_preserves_triton_reference(
     assert axes["KVARN_FACTORY_MAX_MODEL_LEN"] == "262144"
     assert axes["KVARN_FACTORY_MAX_NUM_SEQS"] == "1"
     assert axes["KVARN_FACTORY_CACHE_LAYOUT"] == "xe2_dpas"
+    assert axes["KVARN_FACTORY_FORWARD_POOL_ENSURE"] == "fused_qkv_proof"
     assert axes["KVARN_FACTORY_KERNEL_VARIANT"] == "q6_page_pair"
     assert axes["KVARN_FACTORY_SPLIT_POLICY"] == "b70_q6"
     assert axes["KVARN_FACTORY_SPLITS"] is None
     assert axes["KVARN_FACTORY_ONEDNN_DETERMINISTIC"] == "0"
     environment = correctness.service_environment(native_262k, args)
     assert environment["KVARN_FACTORY_NATIVE_XPU_FRONTEND"] == "qkv_scatter"
+    assert environment["KVARN_FACTORY_FORWARD_POOL_ENSURE"] == "fused_qkv_proof"
+    assert "KVARN_FORWARD_POOL_ENSURE" not in environment
     assert "KVARN_FACTORY_SPLITS" not in environment
     binding = correctness.launcher_binding_for_spec(native_262k, args)
     assert binding["resolved_launcher"] == "/nix/store/factory/bin/run"
@@ -484,6 +488,18 @@ def test_qkv_frontend_is_native_only_and_reference_phase_is_unfused(
             "KVARN_FACTORY_NATIVE_XPU_FRONTEND"
         ]
         == "reference"
+    )
+    assert (
+        correctness.service_environment(native, args)[
+            "KVARN_FACTORY_FORWARD_POOL_ENSURE"
+        ]
+        == "fused_qkv_proof"
+    )
+    assert (
+        correctness.service_environment(reference, args)[
+            "KVARN_FACTORY_FORWARD_POOL_ENSURE"
+        ]
+        == "always"
     )
     assert correctness.service_spec_evidence(native, args)["native_frontend"] == (
         "qkv_scatter"
@@ -595,6 +611,8 @@ def test_service_environment_pins_bounded_window_and_scrubs_full_defer(
     assert environment["KVARN_PREFILL_FP16_WINDOW_BLOCKS"] == "16"
     assert environment["KVARN_FACTORY_FLUSH_INDEX_MATERIALIZATION"] == "per_layer"
     assert environment["KVARN_FACTORY_NATIVE_XPU_FRONTEND"] == "reference"
+    assert environment["KVARN_FACTORY_FORWARD_POOL_ENSURE"] == "always"
+    assert "KVARN_FORWARD_POOL_ENSURE" not in environment
     assert "VLLM_KVARN_DEFER_PREFILL_FLUSH" not in environment
 
 

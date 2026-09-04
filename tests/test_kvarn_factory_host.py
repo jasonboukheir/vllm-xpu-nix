@@ -11,6 +11,10 @@ import pytest
 
 from scripts import kvarn_factory_host as host
 
+PROJECT_REVISION = "1" * 40
+VLLM_REVISION = "2" * 40
+KERNELS_REVISION = "3" * 40
+
 
 def test_closure_digest_matches_factory_convention() -> None:
     assert host.closure_digest(["/nix/store/z", "/nix/store/a", "/nix/store/z"]) == (
@@ -78,6 +82,11 @@ def test_package_closure_rejects_non_store_entries() -> None:
         (["/nix/store/hash-vllm/bin/vllm", "serve", "model"], True),
         (["/nix/store/hash-vllm/bin/.vllm-wrapped", "serve", "model"], True),
         (["python", "-m", "vllm.entrypoints.openai.api_server"], True),
+        (["python", "-m", "vllm.entrypoints.cli.main", "serve", "model"], True),
+        (["VLLM::APIServer_0"], True),
+        (["VLLM::EngineCore"], True),
+        (["tenant-prefix::Worker_TP0"], True),
+        (["custom::DPCoordinator"], True),
         (["python", "scripts/kvarn_factory_host.py", "result-vllm"], False),
         (["ninja", "vllm-kernel-target"], False),
     ],
@@ -111,7 +120,7 @@ def test_repository_check_rejects_dirty_tree(tmp_path: Path) -> None:
         host.require_clean_repository("repo", tmp_path, command_runner)
 
 
-def test_derivation_must_be_stamped_with_repository_head() -> None:
+def test_repository_and_derivation_must_match_full_expected_head() -> None:
     head = "abcdef0123456789abcdef0123456789abcdef01"
     artifact = host.NixArtifact(
         library=Path("/nix/store/" + "a" * 32 + "-vllm/lib/_C.abi3.so"),
@@ -123,17 +132,21 @@ def test_derivation_must_be_stamped_with_repository_head() -> None:
         ),
         closure_sha256="0" * 64,
     )
-    host.require_derivation_source(
-        "vLLM", artifact, Path("/src/vllm"), lambda _command: head
+    host.require_repository_revision(
+        "vLLM", Path("/src/vllm"), head, lambda _command: head
     )
+    with pytest.raises(host.HostLauncherError, match="source mismatch"):
+        host.require_repository_revision(
+            "vLLM", Path("/src/vllm"), "1" * 40, lambda _command: head
+        )
+    host.require_derivation_source("vLLM", artifact, head)
     with pytest.raises(host.HostLauncherError, match="source mismatch"):
         host.require_derivation_source(
             "vLLM",
             dataclasses.replace(
                 artifact, derivation=artifact.derivation.replace("gabcdef0", "g1234567")
             ),
-            Path("/src/vllm"),
-            lambda _command: head,
+            head,
         )
 
 
@@ -182,6 +195,9 @@ def test_runner_command_forwards_matrix_and_exact_attestations(tmp_path: Path) -
         splits="auto,24",
         contexts="4096,65023",
         batches="1,4",
+        expected_project_revision=PROJECT_REVISION,
+        expected_vllm_revision=VLLM_REVISION,
+        expected_kernels_revision=KERNELS_REVISION,
     )
     assert command[0] == host.sys.executable
     assert command[command.index("--base-derivation") + 1] == base.derivation
@@ -190,11 +206,24 @@ def test_runner_command_forwards_matrix_and_exact_attestations(tmp_path: Path) -
     assert command[command.index("--splits") + 1] == "auto,24"
     assert command[command.index("--contexts") + 1] == "4096,65023"
     assert command[command.index("--batches") + 1] == "1,4"
+    assert (
+        command[command.index("--expected-vllm-xpu-nix-revision") + 1]
+        == PROJECT_REVISION
+    )
+    assert command[command.index("--expected-vllm-revision") + 1] == VLLM_REVISION
+    assert command[command.index("--expected-kernels-revision") + 1] == KERNELS_REVISION
     assert command[command.index("--fixture-mode") + 1] == "matched-production"
 
 
 def test_default_cli_is_the_matched_b70_factory_matrix() -> None:
-    args = host.parse_args(["result-kvarn-factory"])
+    args = host.parse_args(
+        [
+            "result-kvarn-factory",
+            PROJECT_REVISION,
+            VLLM_REVISION,
+            KERNELS_REVISION,
+        ]
+    )
     assert args.variants == host.DEFAULT_VARIANTS
     assert args.splits == host.DEFAULT_SPLITS
     assert args.contexts == host.DEFAULT_CONTEXTS
@@ -230,6 +259,7 @@ def test_launch_executes_once_with_resolved_provenance(
     monkeypatch.setattr(
         host, "require_clean_repository", lambda _label, path, _runner: path.resolve()
     )
+    monkeypatch.setattr(host, "require_repository_revision", lambda *_args: None)
     monkeypatch.setattr(host, "resolve_package_output", lambda _path: package)
     monkeypatch.setattr(host, "query_closure", lambda _path, _runner: [package])
     libraries = iter((base_path, flash_path))
@@ -262,6 +292,9 @@ def test_launch_executes_once_with_resolved_provenance(
         splits=host.DEFAULT_SPLITS,
         contexts=host.DEFAULT_CONTEXTS,
         batches=host.DEFAULT_BATCHES,
+        expected_project_revision=PROJECT_REVISION,
+        expected_vllm_revision=VLLM_REVISION,
+        expected_kernels_revision=KERNELS_REVISION,
     )
     with pytest.raises(SystemExit, match="0"):
         host.launch(

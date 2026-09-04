@@ -10,6 +10,10 @@ import pytest
 
 from scripts import kvarn_factory_run as factory
 
+PROJECT_REVISION = "1" * 40
+VLLM_REVISION = "2" * 40
+KERNELS_REVISION = "3" * 40
+
 
 def _git(repo: Path, *args: str) -> str:
     return subprocess.run(
@@ -636,6 +640,12 @@ def test_matched_fixture_is_default_and_unmatched_is_explicit_diagnostic(
         derivation,
         "--flash-closure-sha256",
         "2" * 64,
+        "--expected-vllm-xpu-nix-revision",
+        PROJECT_REVISION,
+        "--expected-vllm-revision",
+        VLLM_REVISION,
+        "--expected-kernels-revision",
+        KERNELS_REVISION,
         "--output",
         str(tmp_path / "result.json"),
         "--allow-tmp",
@@ -699,6 +709,12 @@ def test_execution_failure_is_durable_and_nonzero(tmp_path: Path) -> None:
             derivation,
             "--flash-closure-sha256",
             "2" * 64,
+            "--expected-vllm-xpu-nix-revision",
+            PROJECT_REVISION,
+            "--expected-vllm-revision",
+            VLLM_REVISION,
+            "--expected-kernels-revision",
+            KERNELS_REVISION,
             "--output",
             str(output),
             "--allow-tmp",
@@ -710,6 +726,37 @@ def test_execution_failure_is_durable_and_nonzero(tmp_path: Path) -> None:
     assert document["status"] == "failed"
     assert document["error"]["type"] == "FileNotFoundError"
     assert document["results"] == []
+
+
+def test_repository_revisions_require_full_exact_commits() -> None:
+    repositories = [
+        {"name": "vllm-xpu-nix", "head": PROJECT_REVISION},
+        {"name": "vllm", "head": VLLM_REVISION},
+        {"name": "vllm-xpu-kernels", "head": KERNELS_REVISION},
+    ]
+    expected = {
+        "vllm-xpu-nix": PROJECT_REVISION,
+        "vllm": VLLM_REVISION,
+        "vllm-xpu-kernels": KERNELS_REVISION,
+    }
+    assert factory.require_expected_repository_revisions(repositories, expected) == (
+        expected
+    )
+    with pytest.raises(factory.FactoryError, match="revision mismatch"):
+        factory.require_expected_repository_revisions(
+            repositories, {**expected, "vllm": "4" * 40}
+        )
+
+
+def test_runtime_environment_contract_exposes_prefix_contamination(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("KVARN_RTN_QUANTILE", "0.99")
+    contract = factory.runtime_environment_contract()
+    assert contract["prefixed_environment_clean"] is False
+    assert contract["kvarn_or_vllm_prefixed_variables"] == {
+        "KVARN_RTN_QUANTILE": "0.99"
+    }
 
 
 def test_scope_can_never_be_mistaken_for_service_parity() -> None:

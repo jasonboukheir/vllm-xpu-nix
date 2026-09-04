@@ -247,7 +247,10 @@
           # package as its positional artifact, so the environment and the
           # attested shared objects cannot silently come from different
           # builds.
-          kvarnFactoryPython = pkgs.python312.withPackages (_: [ vllm-xpu-kvarn-factory ]);
+          kvarnFactoryPython = pkgs.python312.withPackages (_: [
+            vllm-xpu-kvarn-factory
+            pkgs.python312Packages.pytest
+          ]);
           kvarn-factory-host = pkgs.writeShellApplication {
             name = "kvarn-factory-host";
             runtimeInputs = [
@@ -255,9 +258,53 @@
               pkgs.nix
             ];
             text = ''
+              # Factory selectors and model-service settings must not leak
+              # into the direct primitive runner.  The runner passes every
+              # candidate selector explicitly to the native operators.
+              for variable in ''${!KVARN_@} ''${!VLLM_@}; do
+                unset "$variable"
+              done
+              unset \
+                PYTHONHOME PYTHONPATH PYTHONSTARTUP PYTHONUSERBASE \
+                PYTEST_ADDOPTS PYTEST_PLUGINS LD_AUDIT LD_PRELOAD \
+                LD_LIBRARY_PATH LIBRARY_PATH CC CXX CMPLR_ROOT \
+                LEVEL_ZERO_V1_SDK_PATH ONEAPI_ROOT SYCL_HOME \
+                ONEAPI_DEVICE_SELECTOR SYCL_DEVICE_FILTER ZE_AFFINITY_MASK \
+                CUDA_VISIBLE_DEVICES
+
+              export PYTHONNOUSERSITE=1
+              export PYTHONDONTWRITEBYTECODE=1
+              export PYTEST_DISABLE_PLUGIN_AUTOLOAD=1
+              export ONEAPI_ROOT=${intel-oneapi}
+              export SYCL_HOME=${intel-oneapi}/compiler/latest
+              export CMPLR_ROOT=${intel-oneapi}/compiler/latest
+              export LEVEL_ZERO_V1_SDK_PATH=${pkgs.level-zero}
+              export LIBRARY_PATH=${pkgs.level-zero}/lib
+              export LD_LIBRARY_PATH=${
+                pkgs.lib.makeLibraryPath [
+                  pkgs.level-zero
+                  pkgs.intel-graphics-compiler
+                  pkgs.intel-compute-runtime
+                  pkgs.intel-compute-runtime.drivers
+                ]
+              }
+              export CC=${pkgs.stdenv.cc}/bin/cc
+              export CXX=${pkgs.stdenv.cc}/bin/c++
+              export PATH=${
+                pkgs.lib.makeBinPath [
+                  pkgs.gitMinimal
+                  pkgs.nix
+                  pkgs.intel-compute-runtime
+                ]
+              }
+
               exec ${kvarnFactoryPython}/bin/python \
                 ${./scripts/kvarn_factory_host.py} \
-                ${vllm-xpu-kvarn-factory} "$@"
+                ${vllm-xpu-kvarn-factory} \
+                ${self.rev} \
+                ${vllm-xpu-unstable-src.rev} \
+                ${vllm-xpu-kernels-unstable-src.rev} \
+                "$@"
             '';
           };
 

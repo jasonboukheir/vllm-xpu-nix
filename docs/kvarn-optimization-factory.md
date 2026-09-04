@@ -108,10 +108,12 @@ nix run .#kvarn-factory -- \
 ```
 
 This realizes one BMG-AOT package, then tests all five kernel variants and the
-configured split sweep in one Python/XPU process. The launcher refuses to run
-beside a vLLM service, against dirty or source-mismatched repositories, with
-ambiguous shared libraries, or without exact Nix derivation and closure
-attestations. Evidence is written atomically under
+configured split sweep in one pinned Python/Torch/XPU process. Pytest is
+included for the mandatory native kill suite, and inherited Python, loader,
+service, and Kvarn-selector variables are scrubbed before launch. The launcher
+refuses to run beside a vLLM service, against dirty or source-mismatched
+repositories, with ambiguous shared libraries, or without exact Nix
+derivation and closure attestations. Evidence is written atomically under
 `benchmark-results/kvarn/`; `/tmp` and overwrites are rejected.
 
 ## Evidence entering round 1

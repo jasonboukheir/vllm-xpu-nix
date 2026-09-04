@@ -28,6 +28,11 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+try:
+    from scripts import kvarn_split_policy as split_policy
+except ImportError:
+    import kvarn_split_policy as split_policy
+
 EXPECTED_DEVICE_NAME = "Intel(R) Arc(TM) Pro B70 Graphics"
 H_Q = 24
 H_KV = 4
@@ -1040,6 +1045,28 @@ def parse_split_tokens(value: str) -> list[int | None]:
     return result
 
 
+def resolve_factory_split_tokens(
+    selector: str, value: str | None
+) -> list[int | None]:
+    """Resolve one factory selector into an explicit, ordered split sweep."""
+    if selector not in split_policy.FACTORY_SPLIT_POLICIES:
+        raise FactoryError(f"unknown factory split policy: {selector}")
+    if selector == split_policy.FACTORY_SPLIT_POLICY_EXPLICIT:
+        return parse_split_tokens("auto" if value is None else value)
+
+    expected = list(split_policy.B70_WAVE_SWEEP_SPLITS)
+    expected_text = ",".join(str(item) for item in expected)
+    # The host resolves the named policy before exec and forwards the exact
+    # expansion. Direct runner invocations may omit --splits. Anything else
+    # would make the selector label disagree with the measured matrix.
+    if value not in (None, expected_text):
+        raise FactoryError(
+            f"{selector} owns --splits={expected_text}; do not combine it "
+            "with a different explicit split list"
+        )
+    return expected
+
+
 def parse_output_dtypes(value: str) -> list[str]:
     names = value.split(",")
     if not names or any(not name for name in names):
@@ -1066,6 +1093,7 @@ def build_matrix(
     splits: Sequence[int | None],
     variants: Sequence[VariantSpec],
     output_dtypes: Sequence[str] = ("fp16",),
+    factory_split_policy: str = split_policy.FACTORY_SPLIT_POLICY_EXPLICIT,
 ) -> list[MatrixCase]:
     if any(batch not in (1, 4) for batch in batches):
         raise FactoryError("this factory runner supports only B1 and B4")
@@ -1076,6 +1104,22 @@ def build_matrix(
         dtype not in VALID_OUTPUT_DTYPES for dtype in output_dtypes
     ):
         raise FactoryError("output dtypes must be explicit fp16 or bf16 values")
+    if factory_split_policy not in split_policy.FACTORY_SPLIT_POLICIES:
+        raise FactoryError(f"unknown factory split policy: {factory_split_policy}")
+    if factory_split_policy == split_policy.FACTORY_SPLIT_POLICY_B70_WAVE_SWEEP:
+        if tuple(splits) != split_policy.B70_WAVE_SWEEP_SPLITS:
+            raise FactoryError(
+                "b70_wave_sweep must enumerate exactly "
+                + ",".join(str(item) for item in split_policy.B70_WAVE_SWEEP_SPLITS)
+            )
+        if not variants or any(
+            variant.name != split_policy.B70_WAVE_SWEEP_KERNEL_VARIANT
+            for variant in variants
+        ):
+            raise FactoryError(
+                "b70_wave_sweep is evidence-scoped to "
+                f"{split_policy.B70_WAVE_SWEEP_KERNEL_VARIANT} (ID18)"
+            )
     seen: set[tuple[int, int, int, int, str]] = set()
     for context in contexts:
         for batch in batches:
@@ -1085,11 +1129,17 @@ def build_matrix(
                     if requested_value is None
                     else requested_value
                 )
-                requested_split_policy = (
-                    "factory_auto_b1s24_b4s16"
-                    if requested_value is None
-                    else "fixed"
-                )
+                if (
+                    factory_split_policy
+                    == split_policy.FACTORY_SPLIT_POLICY_B70_WAVE_SWEEP
+                ):
+                    requested_split_policy = factory_split_policy
+                else:
+                    requested_split_policy = (
+                        "factory_auto_b1s24_b4s16"
+                        if requested_value is None
+                        else "fixed"
+                    )
                 for output_dtype in output_dtypes:
                     for variant in variants:
                         effective = effective_split_count(context, requested, variant)
@@ -4305,7 +4355,16 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default="reference",
         help="multi-token prefill store whose direct-op kill suite must pass",
     )
-    parser.add_argument("--splits", default="auto")
+    parser.add_argument(
+        "--factory-split-policy",
+        choices=split_policy.FACTORY_SPLIT_POLICIES,
+        default=split_policy.FACTORY_SPLIT_POLICY_EXPLICIT,
+        help=(
+            "factory-only split enumeration; b70_wave_sweep expands the "
+            "evidence-scoped ID18 candidate set without selecting a winner"
+        ),
+    )
+    parser.add_argument("--splits")
     parser.add_argument("--contexts", default="4096,16384,65023")
     parser.add_argument("--batches", default="1,4")
     parser.add_argument(
@@ -4342,7 +4401,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     args = parser.parse_args(argv)
     try:
         args.variant_specs = parse_variants(args.variants)
-        args.split_values = parse_split_tokens(args.splits)
+        args.split_values = resolve_factory_split_tokens(
+            args.factory_split_policy, args.splits
+        )
+        args.splits = ",".join(
+            "auto" if item is None else str(item) for item in args.split_values
+        )
         args.context_values = parse_int_list(args.contexts, label="--contexts")
         args.batch_values = parse_int_list(args.batches, label="--batches")
         args.output_dtype_values = parse_output_dtypes(args.output_dtypes)
@@ -4352,6 +4416,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             splits=args.split_values,
             variants=args.variant_specs,
             output_dtypes=args.output_dtype_values,
+            factory_split_policy=args.factory_split_policy,
+        )
+        args.factory_split_policy_contract = (
+            split_policy.factory_split_policy_contract(
+                args.factory_split_policy, args.split_values
+            )
         )
         args.output = ensure_durable_output(args.output, allow_tmp=args.allow_tmp)
         if args.auto_block_size <= 0:
@@ -4470,6 +4540,8 @@ def initial_document(args: argparse.Namespace) -> dict[str, Any]:
             "variants": [dataclasses.asdict(item) for item in args.variant_specs],
             "flush_writer": args.flush_writer,
             "prefill_store": args.prefill_store,
+            "factory_split_policy": args.factory_split_policy,
+            "factory_split_policy_contract": args.factory_split_policy_contract,
             "splits": args.splits,
             "contexts": args.context_values,
             "batches": args.batch_values,

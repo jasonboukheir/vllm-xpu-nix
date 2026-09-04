@@ -35,6 +35,17 @@ NIX_STORE_HASH = re.compile(r"^[0-9abcdfghijklmnpqrsvwxyz]{32}$")
 # Resolve ``all`` in the runner so every layout-compatible candidate compiled
 # into the shared library automatically participates in the default sweep.
 DEFAULT_VARIANTS = "all"
+FACTORY_SPLIT_POLICY_EXPLICIT = "explicit"
+FACTORY_SPLIT_POLICY_B70_WAVE_SWEEP = "b70_wave_sweep"
+FACTORY_SPLIT_POLICIES = (
+    FACTORY_SPLIT_POLICY_EXPLICIT,
+    FACTORY_SPLIT_POLICY_B70_WAVE_SWEEP,
+)
+# Mirror the canonical contract in kvarn_split_policy.py. The standalone host
+# is copied into the Nix store without sibling Python modules; the runner
+# revalidates both this expansion and the exact ID18 kernel scope after exec.
+B70_WAVE_SWEEP_SPLITS = (8, 16, 17, 24, 32)
+B70_WAVE_SWEEP_KERNEL_VARIANT = "q6_prefetch_record_cursor"
 FLUSH_WRITER_VARIANTS = ("reference", "native_xe2", "sinkhorn_pack_xe2")
 PREFILL_STORE_VARIANTS = ("reference", "hadamard_scatter")
 DEFAULT_FLUSH_WRITER = "reference"
@@ -487,6 +498,7 @@ def build_runner_command(
     warmup_rounds: int = DEFAULT_WARMUP_ROUNDS,
     sample_rounds: int = DEFAULT_SAMPLE_ROUNDS,
     service_layer_count: int = DEFAULT_SERVICE_LAYER_COUNT,
+    factory_split_policy: str = FACTORY_SPLIT_POLICY_EXPLICIT,
 ) -> list[str]:
     return [
         sys.executable,
@@ -547,6 +559,8 @@ def build_runner_command(
         flush_writer,
         "--prefill-store",
         prefill_store,
+        "--factory-split-policy",
+        factory_split_policy,
         "--splits",
         splits,
         "--contexts",
@@ -611,7 +625,16 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=DEFAULT_PREFILL_STORE,
         help="multi-token prefill store whose direct-op kill suite must pass",
     )
-    parser.add_argument("--splits", default=DEFAULT_SPLITS)
+    parser.add_argument(
+        "--factory-split-policy",
+        choices=FACTORY_SPLIT_POLICIES,
+        default=FACTORY_SPLIT_POLICY_EXPLICIT,
+        help=(
+            "factory-only split enumeration; b70_wave_sweep is restricted "
+            "to q6_prefetch_record_cursor (ID18)"
+        ),
+    )
+    parser.add_argument("--splits")
     parser.add_argument("--contexts", default=DEFAULT_CONTEXTS)
     parser.add_argument("--batches", default=DEFAULT_BATCHES)
     parser.add_argument("--output-dtypes", default=DEFAULT_OUTPUT_DTYPES)
@@ -623,7 +646,22 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         choices=VALID_SERVICE_LAYER_COUNTS,
         default=DEFAULT_SERVICE_LAYER_COUNT,
     )
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if (
+        args.factory_split_policy == FACTORY_SPLIT_POLICY_B70_WAVE_SWEEP
+    ):
+        if args.splits is not None:
+            parser.error("b70_wave_sweep owns --splits; do not pass both selectors")
+        variants = args.variants.split(",")
+        if variants != [B70_WAVE_SWEEP_KERNEL_VARIANT]:
+            parser.error(
+                "b70_wave_sweep requires --variants "
+                + B70_WAVE_SWEEP_KERNEL_VARIANT
+            )
+        args.splits = ",".join(str(item) for item in B70_WAVE_SWEEP_SPLITS)
+    else:
+        args.splits = DEFAULT_SPLITS if args.splits is None else args.splits
+    return args
 
 
 def launch(
@@ -716,6 +754,11 @@ def launch(
         warmup_rounds=args.warmup_rounds,
         sample_rounds=args.sample_rounds,
         service_layer_count=args.service_layer_count,
+        factory_split_policy=getattr(
+            args,
+            "factory_split_policy",
+            FACTORY_SPLIT_POLICY_EXPLICIT,
+        ),
         expected_project_revision=args.expected_project_revision,
         expected_vllm_revision=args.expected_vllm_revision,
         expected_kernels_revision=args.expected_kernels_revision,

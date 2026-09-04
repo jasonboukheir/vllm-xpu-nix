@@ -109,6 +109,17 @@ one-row block-2D output stores from all of those changes. IDs `16` through `18`
 retain ID13 as the reader control and independently select current-half V
 prefetch, page-record address reuse, or their composition.
 
+For the next ID18 scheduling pass, select
+`--factory-split-policy b70_wave_sweep --variants q6_prefetch_record_cursor`.
+This factory-only selector expands to splits `8,16,17,24,32` in one warmed B70
+run. It is deliberately an enumeration, not a context/batch lookup or a
+declared winner. Every matrix row records `split_policy=b70_wave_sweep`, and
+the top-level requested settings record the immutable selector contract,
+candidate list, exact kernel ID, and SHA-256 identities of the B70 artifacts
+that motivated the sweep. The selector rejects `--splits`, every kernel except
+ID18, and never enters `NATIVE_SPLIT_POLICIES`; service/runtime defaults and
+the existing `b70_q6`/`b70_q6_v2` policies therefore remain unchanged.
+
 Build `.#vllm-xpu-kvarn-factory` for the complete current-layout matrix. It
 compiles every implemented decode specialization through ID18 plus the
 fused-QKV operator into one BMG-AOT attention library. Runtime selection

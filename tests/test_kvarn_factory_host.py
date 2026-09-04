@@ -479,6 +479,7 @@ def test_runner_command_forwards_matrix_and_exact_attestations(tmp_path: Path) -
     assert command[command.index("--variants") + 1] == "baseline,q8_vector"
     assert command[command.index("--flush-writer") + 1] == "native_xe2"
     assert command[command.index("--prefill-store") + 1] == "hadamard_scatter"
+    assert command[command.index("--factory-split-policy") + 1] == "explicit"
     assert command[command.index("--splits") + 1] == "auto,24"
     assert command[command.index("--contexts") + 1] == "4096,65023"
     assert command[command.index("--batches") + 1] == "1,4"
@@ -517,6 +518,7 @@ def test_default_cli_is_the_matched_b70_factory_matrix() -> None:
     assert args.flush_writer == "reference"
     assert args.prefill_store == host.DEFAULT_PREFILL_STORE
     assert args.prefill_store == "reference"
+    assert args.factory_split_policy == "explicit"
     assert args.splits == host.DEFAULT_SPLITS
     assert args.contexts == host.DEFAULT_CONTEXTS
     assert args.batches == host.DEFAULT_BATCHES
@@ -539,6 +541,34 @@ def test_default_cli_is_the_matched_b70_factory_matrix() -> None:
     assert selected.flush_writer == "native_xe2"
     assert selected.prefill_store == "hadamard_scatter"
     assert selected.service_layer_count == 16
+
+    wave = host.parse_args(
+        [
+            *argv,
+            "--variants",
+            "q6_prefetch_record_cursor",
+            "--factory-split-policy",
+            "b70_wave_sweep",
+        ]
+    )
+    assert wave.factory_split_policy == "b70_wave_sweep"
+    assert wave.splits == "8,16,17,24,32"
+    with pytest.raises(SystemExit):
+        host.parse_args(
+            [
+                *argv,
+                "--variants",
+                "q6_prefetch_record_cursor",
+                "--factory-split-policy",
+                "b70_wave_sweep",
+                "--splits",
+                "8,32",
+            ]
+        )
+    with pytest.raises(SystemExit):
+        host.parse_args(
+            [*argv, "--factory-split-policy", "b70_wave_sweep"]
+        )
 
     sinkhorn = host.parse_args(
         [*argv, "--flush-writer", "sinkhorn_pack_xe2"]

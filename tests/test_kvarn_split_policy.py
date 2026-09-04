@@ -28,6 +28,37 @@ def _runtime_args() -> argparse.Namespace:
     )
 
 
+def test_b70_wave_sweep_is_factory_only_and_records_evidence() -> None:
+    contract = policy.factory_split_policy_contract("b70_wave_sweep")
+
+    assert policy.NATIVE_SPLIT_POLICIES == ("fixed", "b70_q6", "b70_q6_v2")
+    assert "b70_wave_sweep" not in policy.NATIVE_SPLIT_POLICIES
+    assert contract["selector"] == "b70_wave_sweep"
+    assert contract["selection_mode"] == "enumerate_all_candidates_no_winner"
+    assert contract["candidate_num_kv_splits"] == [8, 16, 17, 24, 32]
+    assert contract["winner"] is None
+    assert contract["kernel_compatibility"] == {
+        "kind": "exact_variant",
+        "name": "q6_prefetch_record_cursor",
+        "id": 18,
+    }
+    assert [item["sha256"] for item in contract["evidence"]] == [
+        "eb307d22aba29adf68556013bf4bf1d8cf4e31e69e40967d35d56c04a0c07869",
+        "ec92e73b7b1dd8aceae818dcfd32d5fff4024aa5059e5b9f52a4ff923df6c9aa",
+        "034feed1e2d15a149573cd5f2cfec905be8bc4da24d6b8e6be2048c290a21a52",
+    ]
+
+
+def test_explicit_factory_contract_does_not_claim_a_winner() -> None:
+    contract = policy.factory_split_policy_contract("explicit", [None, 8, 32])
+
+    assert contract["selection_mode"] == "caller_explicit"
+    assert contract["candidate_num_kv_splits"] == ["auto", 8, 32]
+    assert contract["winner"] is None
+    with pytest.raises(ValueError, match="requires split selections"):
+        policy.factory_split_policy_contract("explicit")
+
+
 def test_b70_q6_v2_contract_is_context_explicit_and_boundary_exact() -> None:
     contract = policy.split_policy_contract("b70_q6_v2")
 

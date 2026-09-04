@@ -230,6 +230,7 @@ def _correctness(
     native_split_policy: str = "b70_q6",
     native_splits: dict[int, int] | None = None,
     flush_index_materialization: str = "per_layer",
+    native_frontend: str = "reference",
 ) -> Path:
     selected_splits = (
         dict(gate_module.B70_Q6_SPLITS) if native_splits is None else native_splits
@@ -323,10 +324,12 @@ def _correctness(
                     "flush_index_materialization_environment": (
                         flush_index_materialization
                     ),
+                    "native_frontend_environment": native_frontend,
                     "redacted_environment": {
                         "KVARN_FLUSH_INDEX_MATERIALIZATION": (
                             flush_index_materialization
                         ),
+                        "KVARN_NATIVE_XPU_FRONTEND": native_frontend,
                         "KVARN_NATIVE_XPU_DPAS_LAYOUT": gate_module.NATIVE_LAYOUT_ENV[
                             effective_layout
                         ],
@@ -359,6 +362,11 @@ def _correctness(
                 "INFO " + gate_module.NATIVE_DISPATCH + " (direct bf16 output=True)\n"
                 if spec["native"]
                 else "INFO reference reader\n"
+            )
+            + (
+                f"INFO {gate_module.NATIVE_FRONTEND_ACTIVE_MARKER} layer=test\n"
+                if spec["native"] and native_frontend == "qkv_scatter"
+                else ""
             ),
             encoding="utf-8",
         )
@@ -373,6 +381,10 @@ def _correctness(
                         gate_module.NATIVE_DIRECT_BF16_MARKER
                         if spec["native"]
                         else "not_applicable"
+                    ),
+                    "native_frontend_expected": native_frontend,
+                    "native_frontend_active_verified": (
+                        spec["native"] and native_frontend == "qkv_scatter"
                     ),
                 }
             ),
@@ -412,6 +424,15 @@ def _correctness(
                         else "captured-process-environment-plus-factory-marker"
                     ),
                     "flush_index_materialization": flush_index_materialization,
+                    "native_frontend": native_frontend,
+                    "native_frontend_active_verified": (
+                        spec["native"] and native_frontend == "qkv_scatter"
+                    ),
+                    "native_frontend_log_marker": (
+                        gate_module.NATIVE_FRONTEND_ACTIVE_MARKER
+                        if spec["native"] and native_frontend == "qkv_scatter"
+                        else "not_applicable"
+                    ),
                     "profile": _artifact(profile),
                     "identity": _artifact(identity),
                     "engine_log": _artifact(engine_log),
@@ -591,8 +612,10 @@ def _correctness(
         "native_output_dtype": "bf16",
         "native_split_policy": native_split_policy,
         "flush_index_materialization": flush_index_materialization,
+        "native_frontend": native_frontend,
         "service_controls": {
             "kvarn_flush_index_materialization": flush_index_materialization,
+            "kvarn_native_frontend": native_frontend,
             "kvarn_onednn_deterministic": "1",
             "vllm_use_v2_model_runner": "0",
         },
@@ -665,6 +688,7 @@ def _result(
     native_split_policy: str = "b70_q6",
     native_split_map: dict[int, int] | None = None,
     flush_index_materialization: str = "per_layer",
+    native_frontend: str = "reference",
 ) -> Path:
     completed = 8
     context = 4096
@@ -832,6 +856,7 @@ def _result(
         "kvarn_candidate_closure_sha256": "b" * 64,
         "kvarn_max_num_batched_tokens": "2048",
         "kvarn_flush_index_materialization": flush_index_materialization,
+        "kvarn_native_frontend": native_frontend,
         "kvarn_onednn_deterministic": "1",
         "kvarn_vllm_use_v2_model_runner": "0",
         "kvarn_matched_profile_sha256": "c" * 64,

@@ -49,6 +49,8 @@ NATIVE_KERNEL_VARIANTS = {
 }
 NATIVE_SPLIT_POLICIES = ("fixed", "b70_q6")
 FLUSH_INDEX_MATERIALIZATION_VARIANTS = ("per_layer", "shared")
+NATIVE_FRONTEND_VARIANTS = ("reference", "qkv_scatter")
+NATIVE_FRONTEND_ACTIVE_MARKER = "[KVARN_FRONTEND] active=qkv_scatter;"
 DEFAULT_NATIVE_SPLITS = {1: 24, 4: 16}
 B70_Q6_SPLITS = {1: 32, 4: 8}
 B70_Q6_MAX_SPLITS = 32
@@ -307,6 +309,7 @@ COMMON_PROVENANCE_FIELDS = (
     "kvarn_hardware_preflight_sha256",
     "kvarn_evidence_mode",
     "kvarn_flush_index_materialization",
+    "kvarn_native_frontend",
     "kvarn_onednn_deterministic",
     "kvarn_vllm_use_v2_model_runner",
 )
@@ -726,6 +729,7 @@ def _validate_correctness_phase(
     native_splits: Mapping[int, int],
     native_output_dtype: str,
     flush_index_materialization: str,
+    native_frontend: str,
     *,
     owner: Path,
 ) -> dict[str, Any]:
@@ -784,6 +788,15 @@ def _validate_correctness_phase(
         or phase.get("native_layout_log_marker") != expected_marker
         or phase.get("native_layout_evidence") != expected_layout_evidence
         or phase.get("flush_index_materialization") != flush_index_materialization
+        or phase.get("native_frontend") != native_frontend
+        or phase.get("native_frontend_active_verified")
+        is not (expected_spec["native"] and native_frontend == "qkv_scatter")
+        or phase.get("native_frontend_log_marker")
+        != (
+            NATIVE_FRONTEND_ACTIVE_MARKER
+            if expected_spec["native"] and native_frontend == "qkv_scatter"
+            else "not_applicable"
+        )
         or not isinstance(phase.get("workload"), dict)
     ):
         raise GateError(f"{owner}: invalid {phase_name} phase evidence")
@@ -803,6 +816,7 @@ def _validate_correctness_phase(
         or profile.get("native_split_policy_environment") != expected_policy
         or profile.get("flush_index_materialization_environment")
         != flush_index_materialization
+        or profile.get("native_frontend_environment") != native_frontend
         or not isinstance(captured_environment, dict)
         or captured_environment.get("KVARN_NATIVE_XPU_DPAS_LAYOUT")
         != NATIVE_LAYOUT_ENV[expected_layout]
@@ -814,6 +828,7 @@ def _validate_correctness_phase(
         or captured_environment.get("KVARN_NATIVE_XPU_SPLIT_POLICY") != expected_policy
         or captured_environment.get("KVARN_FLUSH_INDEX_MATERIALIZATION")
         != flush_index_materialization
+        or captured_environment.get("KVARN_NATIVE_XPU_FRONTEND") != native_frontend
         or captured_environment.get("KVARN_ONEDNN_DETERMINISTIC") != "1"
         or captured_environment.get("VLLM_USE_V2_MODEL_RUNNER") != "0"
         or profile.get("variant_provenance") != expected_variant
@@ -843,6 +858,11 @@ def _validate_correctness_phase(
     direct_bf16_verified = NATIVE_DIRECT_BF16_MARKER in final_decoder_line
     if expected_spec["native"] and not direct_bf16_verified:
         raise GateError(f"{owner}: {phase_name} lacks direct BF16 runtime proof")
+    frontend_active = NATIVE_FRONTEND_ACTIVE_MARKER in log_text
+    if expected_spec["native"] and (
+        frontend_active != (native_frontend == "qkv_scatter")
+    ):
+        raise GateError(f"{owner}: {phase_name} frontend runtime proof differs")
     if expected_marker not in log_text:
         raise GateError(f"{owner}: {phase_name} lacks the exact factory marker")
     _scan_path, log_scan = _json_artifact(
@@ -853,6 +873,9 @@ def _validate_correctness_phase(
         or log_scan.get("fatal_findings") != []
         or log_scan.get("native_direct_bf16_verified") is not expected_spec["native"]
         or log_scan.get("native_direct_bf16_log_marker") != expected_direct_bf16_marker
+        or log_scan.get("native_frontend_expected") != native_frontend
+        or log_scan.get("native_frontend_active_verified")
+        is not (expected_spec["native"] and native_frontend == "qkv_scatter")
     ):
         raise GateError(f"{owner}: {phase_name} log scan is not clean")
     return phase["workload"]
@@ -871,6 +894,7 @@ def validate_correctness_gate_evidence(
     native_splits: Mapping[int, int] | None = None,
     native_output_dtype: str = "bf16",
     flush_index_materialization: str = "per_layer",
+    native_frontend: str = "reference",
 ) -> None:
     """Validate the meaning of one hashed correctness-gate artifact."""
     selected_splits = DEFAULT_NATIVE_SPLITS if native_splits is None else native_splits
@@ -981,6 +1005,7 @@ def validate_correctness_gate_evidence(
             selected_splits,
             native_output_dtype,
             flush_index_materialization,
+            native_frontend,
             owner=path,
         )
 
@@ -1760,8 +1785,12 @@ def _load_correctness(path: Path) -> tuple[dict[str, Any], str]:
     flush_index_materialization = document.get("flush_index_materialization")
     if flush_index_materialization not in FLUSH_INDEX_MATERIALIZATION_VARIANTS:
         raise GateError(f"{path}: flush-index materialization is unsupported")
+    native_frontend = document.get("native_frontend")
+    if native_frontend not in NATIVE_FRONTEND_VARIANTS:
+        raise GateError(f"{path}: native frontend is unsupported")
     expected_service_controls = {
         "kvarn_flush_index_materialization": flush_index_materialization,
+        "kvarn_native_frontend": native_frontend,
         "kvarn_onednn_deterministic": "1",
         "vllm_use_v2_model_runner": "0",
     }
@@ -1877,6 +1906,7 @@ def _load_correctness(path: Path) -> tuple[dict[str, Any], str]:
             native_splits=native_splits,
             native_output_dtype=native_output_dtype,
             flush_index_materialization=flush_index_materialization,
+            native_frontend=native_frontend,
         )
         if name.startswith("native_decode_"):
             library_path, library_sha256 = _artifact_reference(
@@ -2187,6 +2217,7 @@ def compare(
         "kvarn_flush_index_materialization": first_cand.provenance[
             "kvarn_flush_index_materialization"
         ],
+        "kvarn_native_frontend": first_cand.provenance["kvarn_native_frontend"],
         "kvarn_onednn_deterministic": first_cand.provenance[
             "kvarn_onednn_deterministic"
         ],

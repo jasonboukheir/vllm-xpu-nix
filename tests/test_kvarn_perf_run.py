@@ -66,6 +66,7 @@ PROFILE = {
     "native_split_policy_environment": "fixed",
     "onednn_deterministic_environment": "1",
     "flush_index_materialization_environment": "per_layer",
+    "native_frontend_environment": "reference",
     "vllm_use_v2_model_runner_environment": "0",
     "variant_provenance": {
         "kernel_strategy": "vllm_auto",
@@ -107,6 +108,7 @@ def _args(tmp_path: Path) -> argparse.Namespace:
         max_num_batched_tokens=2048,
         onednn_deterministic=True,
         flush_index_materialization="per_layer",
+        native_frontend="reference",
         model=MODEL,
         model_revision=REVISION,
         native_splits={1: 24, 4: 16},
@@ -366,6 +368,7 @@ def test_exploratory_plan_session_has_no_formal_claims(
     assert session["formal_gates_skipped"] is True
     assert session["service_controls"] == {
         "kvarn_flush_index_materialization": "per_layer",
+        "kvarn_native_frontend": "reference",
         "kvarn_onednn_deterministic": "1",
         "vllm_use_v2_model_runner": "0",
     }
@@ -803,6 +806,7 @@ def test_profile_verification_uses_actual_argv_and_environment(tmp_path: Path) -
         "KVARN_NATIVE_XPU_DECODE": "1",
         "KVARN_NATIVE_XPU_DPAS_LAYOUT": "0",
         "KVARN_FLUSH_INDEX_MATERIALIZATION": "per_layer",
+        "KVARN_NATIVE_XPU_FRONTEND": "reference",
         "KVARN_NATIVE_XPU_KERNEL_VARIANT": "baseline",
         "KVARN_NATIVE_XPU_MATERIALIZE": "1",
         "KVARN_NATIVE_XPU_PERSISTENT_SCRATCH": "1",
@@ -1057,6 +1061,40 @@ def test_native_log_rejects_disabled_direct_bf16_after_proof(
 
     with pytest.raises(RunnerError, match="direct BF16 decoder path"):
         runner.validate_engine_log(engine_log, native=True)
+
+
+def test_native_log_attests_selected_frontend(tmp_path: Path) -> None:
+    engine_log = tmp_path / "engine.log"
+    base = (
+        "INFO config: device_config=xpu\n"
+        "INFO Actual usage is 17.54 GiB for consumed memory. "
+        "Current kv cache memory in use is 10.92 GiB.\n"
+        f"INFO {runner.NATIVE_DISPATCH} (direct bf16 output=True)\n"
+    )
+
+    engine_log.write_text(
+        base + f"INFO {runner.NATIVE_FRONTEND_ACTIVE_MARKER} layer=0\n",
+        encoding="utf-8",
+    )
+    scan = runner.validate_engine_log(
+        engine_log, native=True, expected_frontend="qkv_scatter"
+    )
+    assert scan["native_frontend_active_verified"] is True
+
+    engine_log.write_text(base, encoding="utf-8")
+    with pytest.raises(RunnerError, match="must execute the fused QKV frontend"):
+        runner.validate_engine_log(
+            engine_log, native=True, expected_frontend="qkv_scatter"
+        )
+
+    engine_log.write_text(
+        base + f"INFO {runner.NATIVE_FRONTEND_ACTIVE_MARKER} layer=0\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(RunnerError, match="must not execute the fused QKV frontend"):
+        runner.validate_engine_log(
+            engine_log, native=True, expected_frontend="reference"
+        )
 
 
 def test_execute_rejects_correctness_from_another_candidate(tmp_path: Path) -> None:

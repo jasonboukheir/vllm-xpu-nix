@@ -254,6 +254,7 @@ def _service_environment(
         "KVARN_FLUSH_INDEX_MATERIALIZATION": (
             correctness.perf.flush_index_materialization_environment(args)
         ),
+        "KVARN_NATIVE_XPU_FRONTEND": correctness.perf.native_frontend_environment(args),
         "KVARN_NATIVE_XPU_KERNEL_VARIANT": (
             correctness.native_kernel_variant_for_spec(spec, args)
         ),
@@ -387,6 +388,8 @@ def test_service_environment_pins_bounded_window_and_scrubs_full_defer(
     environment = correctness.service_environment(args)
 
     assert environment["KVARN_PREFILL_FP16_WINDOW_BLOCKS"] == "16"
+    assert environment["KVARN_FACTORY_FLUSH_INDEX_MATERIALIZATION"] == "per_layer"
+    assert environment["KVARN_FACTORY_NATIVE_XPU_FRONTEND"] == "reference"
     assert "VLLM_KVARN_DEFER_PREFILL_FLUSH" not in environment
 
 

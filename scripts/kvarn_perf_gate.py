@@ -19,8 +19,10 @@ from pathlib import Path
 from typing import Any
 
 try:
+    from scripts import kvarn_split_policy as split_policy
     from scripts.kvarn_scan_engine_log import scan, xpu_runtime_evidence
 except ModuleNotFoundError:  # Direct execution from the scripts directory.
+    import kvarn_split_policy as split_policy
     from kvarn_scan_engine_log import scan, xpu_runtime_evidence
 
 NATIVE_DISPATCH = "Using the native Xe2 KVarN qlen=1 decoder"
@@ -50,15 +52,15 @@ NATIVE_KERNEL_VARIANTS = {
     "q6_simd_unpack": 14,
     "q6_block_output_store": 15,
 }
-NATIVE_SPLIT_POLICIES = ("fixed", "b70_q6")
+NATIVE_SPLIT_POLICIES = split_policy.NATIVE_SPLIT_POLICIES
 FLUSH_INDEX_MATERIALIZATION_VARIANTS = ("per_layer", "shared")
 NATIVE_FRONTEND_VARIANTS = ("reference", "qkv_scatter")
 NATIVE_FRONTEND_ACTIVE_MARKER = "[KVARN_FRONTEND] active=qkv_scatter;"
 FILTERED_SOURCE_SCHEME = "nix-filtered-source-store-hash-v1"
 NIX_STORE_HASH = re.compile(r"^[0-9abcdfghijklmnpqrsvwxyz]{32}$")
 DEFAULT_NATIVE_SPLITS = {1: 24, 4: 16}
-B70_Q6_SPLITS = {1: 32, 4: 8}
-B70_Q6_MAX_SPLITS = 32
+B70_Q6_SPLITS = split_policy.B70_Q6_SPLITS
+B70_Q6_MAX_SPLITS = split_policy.B70_Q6_MAX_SPLITS
 B70_Q6_KERNEL_VARIANTS = frozenset(
     {
         "q6_scalar",
@@ -243,13 +245,32 @@ def _correctness_phase_spec(
     spec["native_layout"] = effective_layout
     selected_kernel = native_kernel_variant if spec["native"] else "baseline"
     selected_policy = native_split_policy if spec["native"] else "fixed"
-    effective_splits = selected_splits[spec["batch"]] if spec["native"] else 1
-    max_splits = B70_Q6_MAX_SPLITS if selected_policy == "b70_q6" else effective_splits
+    context_dependent = selected_policy == "b70_q6_v2"
+    effective_splits = (
+        None
+        if spec["native"] and context_dependent
+        else selected_splits[spec["batch"]]
+        if spec["native"]
+        else 1
+    )
+    policy_contract = (
+        split_policy.split_policy_contract(
+            selected_policy, selected_splits or None
+        )
+        if spec["native"]
+        else None
+    )
+    max_splits = (
+        int(policy_contract["scratch_max_splits"])
+        if policy_contract is not None
+        else effective_splits
+    )
     spec.update(
         native_kernel_variant=selected_kernel,
         native_kernel_variant_id=NATIVE_KERNEL_VARIANTS[selected_kernel],
         native_frontend=effective_frontend,
         native_split_policy=selected_policy,
+        native_split_policy_contract=policy_contract,
         max_decode_splits=max_splits,
         nominal_decode_splits=effective_splits,
     )
@@ -292,6 +313,7 @@ CORRECTNESS_RUNNER_SOURCES = {
     "scripts/kvarn_perf_run.py",
     "scripts/kvarn_scan_engine_log.py",
     "scripts/kvarn_service_gate.py",
+    "scripts/kvarn_split_policy.py",
 }
 CORRECTNESS_NATIVE_SOURCES = {
     "tests/flash_attn/test_kvarn_decode_xpu.py",
@@ -411,8 +433,25 @@ def validate_factory_qualification(
         raise GateError(f"{path}: selected factory split policy is unsupported")
     if output_dtype not in {"fp16", "bf16"}:
         raise GateError(f"{path}: selected factory output dtype is unsupported")
-    if set(native_splits) != {1, 4}:
+    if native_split_policy == "b70_q6_v2":
+        if native_splits:
+            raise GateError(
+                f"{path}: context-dependent policy must not use a batch-only "
+                "split map"
+            )
+    elif set(native_splits) != {1, 4}:
         raise GateError(f"{path}: selected factory split map must cover B1 and B4")
+    try:
+        split_policy.validate_kernel_compatibility(
+            native_split_policy,
+            native_kernel_variant,
+            q6_variants=B70_Q6_KERNEL_VARIANTS,
+        )
+        policy_contract = split_policy.split_policy_contract(
+            native_split_policy, native_splits or None
+        )
+    except ValueError as exc:
+        raise GateError(f"{path}: invalid split policy selection: {exc}") from exc
 
     source_revisions = document.get("source_revisions")
     expected_sources = dict(expected_revisions)
@@ -653,7 +692,16 @@ def validate_factory_qualification(
 
     variant_id = NATIVE_KERNEL_VARIANTS[native_kernel_variant]
     required_keys = {
-        (batch, context, native_splits[batch])
+        (
+            batch,
+            context,
+            split_policy.effective_splits(
+                native_split_policy,
+                batch=batch,
+                context_tokens=context,
+                fixed_splits=native_splits or None,
+            ),
+        )
         for batch in (1, 4)
         for context in FACTORY_QUALIFICATION_CONTEXTS
     }
@@ -761,8 +809,24 @@ def validate_factory_qualification(
             "kernel_variant": native_kernel_variant,
             "kernel_variant_id": variant_id,
             "split_policy": native_split_policy,
-            "effective_splits_by_batch": {
-                str(batch): native_splits[batch] for batch in (1, 4)
+            "split_policy_contract": policy_contract,
+            "nominal_splits_by_batch": split_policy.nominal_splits_by_batch(
+                native_split_policy, native_splits or None
+            ),
+            "effective_splits_by_batch": split_policy.nominal_splits_by_batch(
+                native_split_policy, native_splits or None
+            ),
+            "effective_splits_by_context_and_batch": {
+                str(context): {
+                    str(batch): split_policy.effective_splits(
+                        native_split_policy,
+                        batch=batch,
+                        context_tokens=context,
+                        fixed_splits=native_splits or None,
+                    )
+                    for batch in (1, 4)
+                }
+                for context in FACTORY_QUALIFICATION_CONTEXTS
             },
             "output_dtype": output_dtype,
         },
@@ -893,7 +957,8 @@ def _validate_correctness_phase(
     expected_nominal_splits = expected_spec["nominal_decode_splits"]
     expected_splits_environment = (
         None
-        if expected_spec["native"] and expected_policy == "b70_q6"
+        if expected_spec["native"]
+        and split_policy.owns_runtime_selection(expected_policy)
         else str(expected_max_splits)
     )
     expected_marker = _factory_marker(
@@ -932,6 +997,8 @@ def _validate_correctness_phase(
         or phase.get("native_nominal_splits") != expected_nominal_splits
         or phase.get("native_max_splits_environment") != expected_splits_environment
         or phase.get("native_split_policy") != expected_variant["split_policy"]
+        or phase.get("native_split_policy_contract")
+        != expected_spec["native_split_policy_contract"]
         or phase.get("native_split_policy_environment") != expected_policy
         or phase.get("native_layout_log_marker") != expected_marker
         or phase.get("native_layout_evidence") != expected_layout_evidence
@@ -1956,23 +2023,44 @@ def _load_correctness(path: Path) -> tuple[dict[str, Any], str]:
     if service_controls != expected_service_controls:
         raise GateError(f"{path}: correctness service controls are inconsistent")
     raw_native_splits = document.get("native_nominal_splits_by_batch")
-    if not isinstance(raw_native_splits, dict) or set(raw_native_splits) != {"1", "4"}:
-        raise GateError(f"{path}: native_nominal_splits_by_batch is incomplete")
-    if any(
-        isinstance(value, bool)
-        or not isinstance(value, int)
-        or value not in {1, 2, 4, 8, 16, 17, 24, 32}
-        for value in raw_native_splits.values()
-    ):
-        raise GateError(f"{path}: native nominal split count is unsupported")
-    native_splits = {int(batch): splits for batch, splits in raw_native_splits.items()}
-    expected_scratch_max = max(native_splits.values())
-    if native_split_policy == "b70_q6":
-        if native_kernel_variant not in B70_Q6_KERNEL_VARIANTS:
-            raise GateError(f"{path}: b70_q6 requires a Q6 native kernel variant")
-        if native_splits != B70_Q6_SPLITS:
-            raise GateError(f"{path}: b70_q6 nominal split map differs")
-        expected_scratch_max = B70_Q6_MAX_SPLITS
+    if native_split_policy == "b70_q6_v2":
+        if raw_native_splits is not None:
+            raise GateError(
+                f"{path}: context-dependent split policy must not declare a "
+                "batch-only nominal map"
+            )
+        native_splits: dict[int, int] = {}
+    else:
+        if not isinstance(raw_native_splits, dict) or set(raw_native_splits) != {
+            "1",
+            "4",
+        }:
+            raise GateError(f"{path}: native_nominal_splits_by_batch is incomplete")
+        if any(
+            isinstance(value, bool)
+            or not isinstance(value, int)
+            or value not in {1, 2, 4, 8, 16, 17, 24, 32}
+            for value in raw_native_splits.values()
+        ):
+            raise GateError(f"{path}: native nominal split count is unsupported")
+        native_splits = {
+            int(batch): splits for batch, splits in raw_native_splits.items()
+        }
+    try:
+        split_policy.validate_kernel_compatibility(
+            native_split_policy,
+            native_kernel_variant,
+            q6_variants=B70_Q6_KERNEL_VARIANTS,
+        )
+        expected_policy_contract = split_policy.split_policy_contract(
+            native_split_policy, native_splits or None
+        )
+    except ValueError as exc:
+        raise GateError(f"{path}: invalid split policy selection: {exc}") from exc
+    observed_policy_contract = document.get("native_split_policy_contract")
+    if observed_policy_contract != expected_policy_contract:
+        raise GateError(f"{path}: native split-policy contract differs")
+    expected_scratch_max = int(expected_policy_contract["scratch_max_splits"])
     if document.get("native_scratch_max_splits") != expected_scratch_max:
         raise GateError(f"{path}: native scratch split ceiling is inconsistent")
     expected_service_plan = [
@@ -2405,12 +2493,24 @@ def compare(
     correctness_kernel_variant = correctness["native_kernel_variant"]
     correctness_kernel_variant_id = correctness["native_kernel_variant_id"]
     correctness_split_policy = correctness["native_split_policy"]
-    correctness_nominal_splits = correctness["native_nominal_splits_by_batch"][
-        str(concurrency)
-    ]
+    correctness_nominal_splits = split_policy.effective_splits(
+        correctness_split_policy,
+        batch=concurrency,
+        context_tokens=first_ref.input_lens[0],
+        fixed_splits=(
+            {
+                int(batch): splits
+                for batch, splits in correctness[
+                    "native_nominal_splits_by_batch"
+                ].items()
+            }
+            if correctness["native_nominal_splits_by_batch"] is not None
+            else None
+        ),
+    )
     correctness_max_splits = (
         correctness["native_scratch_max_splits"]
-        if correctness_split_policy == "b70_q6"
+        if split_policy.owns_runtime_selection(correctness_split_policy)
         else correctness_nominal_splits
     )
 

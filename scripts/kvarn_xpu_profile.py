@@ -625,6 +625,8 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         ],
         "native_cache_layout_environment": perf.native_layout_for_run(run, args),
         "native_nominal_splits": perf.native_splits_for_run(run, args),
+        "native_effective_splits": perf.native_splits_for_run(run, args),
+        "native_split_policy_contract": perf.native_split_policy_contract(args),
         "native_splits_environment": perf.native_splits_environment_for_run(run, args),
         "native_split_policy": perf.native_split_policy_for_run(run, args),
         "native_split_policy_selector": perf.native_split_policy_name_for_run(
@@ -774,6 +776,10 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
                     "native_cache_layout_environment"
                 ],
                 "native_nominal_splits": perf.native_splits_for_run(run, args),
+                "native_effective_splits": perf.native_splits_for_run(run, args),
+                "native_split_policy_contract": perf.native_split_policy_contract(
+                    args
+                ),
                 "native_split_policy": perf.native_split_policy_for_run(run, args),
                 "native_split_policy_selector": perf.native_split_policy_name_for_run(
                     run, args
@@ -1059,18 +1065,26 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             raise perf.RunnerError(
                 "variant id must be a lowercase slug of at most 128 characters"
             )
-        if args.native_split_policy == "b70_q6":
+        if perf.split_policy.owns_runtime_selection(args.native_split_policy):
             if args.arm != "candidate":
                 raise perf.RunnerError("the auto reference split policy must be fixed")
             if args.native_splits is not None:
                 raise perf.RunnerError(
-                    "--native-splits must be absent with --native-split-policy b70_q6"
+                    "--native-splits must be absent with named split policies"
                 )
-            if args.native_kernel_variant not in perf.B70_Q6_KERNEL_VARIANTS:
-                raise perf.RunnerError(
-                    "b70_q6 split policy requires a q6 native kernel variant"
+            try:
+                perf.split_policy.validate_kernel_compatibility(
+                    args.native_split_policy,
+                    args.native_kernel_variant,
+                    q6_variants=perf.B70_Q6_KERNEL_VARIANTS,
                 )
-            selected_splits = perf.B70_Q6_SPLITS[args.batch]
+                selected_splits = perf.split_policy.effective_splits(
+                    args.native_split_policy,
+                    batch=args.batch,
+                    context_tokens=args.context,
+                )
+            except ValueError as exc:
+                raise perf.RunnerError(str(exc)) from exc
         else:
             default_splits = (
                 perf.REFERENCE_NATIVE_SPLITS
@@ -1087,7 +1101,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             and selected_splits not in perf.SUPPORTED_NATIVE_SPLITS
         ):
             raise perf.RunnerError(f"unsupported native split count {selected_splits}")
-        args.native_splits = {args.batch: selected_splits}
+        args.native_splits = (
+            {}
+            if args.native_split_policy == "b70_q6_v2"
+            else {args.batch: selected_splits}
+        )
         if (
             args.startup_attempts < 1
             or min(

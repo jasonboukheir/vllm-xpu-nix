@@ -78,6 +78,7 @@ def _factory_result(
     revisions: dict[str, str],
     native_kernel_variant: str,
     native_splits: dict[int, int],
+    native_split_policy: str = "b70_q6",
     output_dtype: str = "bf16",
     explicit_factory_axes: bool = False,
 ) -> Path:
@@ -85,7 +86,12 @@ def _factory_result(
     cases: list[dict[str, object]] = []
     for batch in (1, 4):
         for context in gate_module.FACTORY_QUALIFICATION_CONTEXTS:
-            splits = native_splits[batch]
+            splits = gate_module.split_policy.effective_splits(
+                native_split_policy,
+                batch=batch,
+                context_tokens=context,
+                fixed_splits=native_splits or None,
+            )
             case = {
                 "case_id": (
                     f"b{batch}-c{context}-s{splits}-v{variant_id}-"
@@ -395,7 +401,10 @@ def _correctness(
         effective_frontend = spec["native_frontend"]
         max_splits = spec["max_decode_splits"]
         splits_environment = (
-            None if spec["native"] and effective_policy == "b70_q6" else str(max_splits)
+            None
+            if spec["native"]
+            and gate_module.split_policy.owns_runtime_selection(effective_policy)
+            else str(max_splits)
         )
         marker = gate_module._factory_marker(
             effective_layout, effective_kernel, max_splits, effective_policy
@@ -515,6 +524,9 @@ def _correctness(
                     ),
                     "native_max_splits_environment": splits_environment,
                     "native_split_policy": variant["split_policy"],
+                    "native_split_policy_contract": spec[
+                        "native_split_policy_contract"
+                    ],
                     "native_split_policy_environment": effective_policy,
                     "native_layout_log_marker": marker,
                     "native_layout_evidence": (
@@ -680,6 +692,7 @@ def _correctness(
         revisions=revisions,
         native_kernel_variant=native_kernel_variant,
         native_splits=selected_splits,
+        native_split_policy=native_split_policy,
     )
     factory_qualification = gate_module.validate_factory_qualification(
         factory_path,
@@ -705,9 +718,14 @@ def _correctness(
         "native_kernel_variant_id": gate_module.NATIVE_KERNEL_VARIANTS[
             native_kernel_variant
         ],
-        "native_nominal_splits_by_batch": {
-            str(batch): splits for batch, splits in sorted(selected_splits.items())
-        },
+        "native_nominal_splits_by_batch": (
+            gate_module.split_policy.nominal_splits_by_batch(
+                native_split_policy, selected_splits or None
+            )
+        ),
+        "native_split_policy_contract": gate_module.split_policy.split_policy_contract(
+            native_split_policy, selected_splits or None
+        ),
         "native_output_dtype": "bf16",
         "native_split_policy": native_split_policy,
         "flush_index_materialization": flush_index_materialization,
@@ -718,11 +736,9 @@ def _correctness(
             "kvarn_onednn_deterministic": "1",
             "vllm_use_v2_model_runner": "0",
         },
-        "native_scratch_max_splits": (
-            gate_module.B70_Q6_MAX_SPLITS
-            if native_split_policy == "b70_q6"
-            else max(selected_splits.values())
-        ),
+        "native_scratch_max_splits": gate_module.split_policy.split_policy_contract(
+            native_split_policy, selected_splits or None
+        )["scratch_max_splits"],
         **gate_module._candidate_variant_provenance(
             native_layout,
             native_frontend,
@@ -907,11 +923,23 @@ def _result(
     effective_splits = (
         native_splits
         if native_splits is not None
-        else (1 if arm == "reference" else selected_split_map[4])
+        else (
+            1
+            if arm == "reference"
+            else gate_module.split_policy.effective_splits(
+                selected_policy,
+                batch=4,
+                context_tokens=context,
+                fixed_splits=selected_split_map or None,
+            )
+        )
     )
     max_splits = (
-        gate_module.B70_Q6_MAX_SPLITS
-        if arm == "candidate" and selected_policy == "b70_q6"
+        gate_module.split_policy.split_policy_contract(
+            selected_policy, selected_split_map or None
+        )["scratch_max_splits"]
+        if arm == "candidate"
+        and gate_module.split_policy.owns_runtime_selection(selected_policy)
         else effective_splits
     )
     marker = (
@@ -1114,8 +1142,12 @@ def _arms(
             native_kernel_variant=native_kernel_variant,
             native_split_policy=native_split_policy,
             native_max_splits=(
-                gate_module.B70_Q6_MAX_SPLITS
-                if native_split_policy == "b70_q6"
+                gate_module.split_policy.split_policy_contract(
+                    native_split_policy, selected_splits or None
+                )["scratch_max_splits"]
+                if gate_module.split_policy.owns_runtime_selection(
+                    native_split_policy
+                )
                 else selected_splits[4]
             ),
             native_frontend=native_frontend,
@@ -1322,6 +1354,73 @@ def test_gate_accepts_b70_q6_with_exact_factory_provenance(tmp_path: Path) -> No
     assert result["candidate"]["arm"]["kvarn_native_max_splits"] == "32"
     assert result["candidate"]["arm"]["kvarn_native_nominal_splits"] == "8"
     assert result["candidate"]["arm"]["kvarn_native_split_policy"] == "b70_q6"
+
+
+def test_formal_gate_accepts_exact_b70_q6_v2_contract(tmp_path: Path) -> None:
+    arms = _arms(
+        tmp_path,
+        native_layout="xe2_dpas",
+        native_kernel_variant="q6_next_page_prefetch",
+        native_split_policy="b70_q6_v2",
+        native_splits={},
+    )
+
+    result = _compare(arms)
+
+    assert result["status"] == "passed"
+    assert result["candidate"]["arm"]["kvarn_native_max_splits"] == "32"
+    assert result["candidate"]["arm"]["kvarn_native_nominal_splits"] == "8"
+    assert result["candidate"]["arm"]["kvarn_native_split_policy"] == "b70_q6_v2"
+
+
+def test_factory_qualification_binds_context_dependent_b70_q6_v2(
+    tmp_path: Path,
+) -> None:
+    library = tmp_path / "native.so"
+    library.write_bytes(b"selected native library")
+    revisions = {
+        "vllm-xpu-release": "1" * 40,
+        "vllm-xpu-unstable-src": "2" * 40,
+        "vllm-xpu-kernels-unstable-src": "3" * 40,
+    }
+    factory = _factory_result(
+        tmp_path / "factory.json",
+        native_library=library,
+        revisions=revisions,
+        native_kernel_variant="q6_next_page_prefetch",
+        native_splits={},
+        native_split_policy="b70_q6_v2",
+    )
+
+    qualification = gate_module.validate_factory_qualification(
+        factory,
+        native_layout="xe2_dpas",
+        native_kernel_variant="q6_next_page_prefetch",
+        native_split_policy="b70_q6_v2",
+        native_splits={},
+        output_dtype="bf16",
+        expected_revisions={
+            "vllm-xpu-nix": revisions["vllm-xpu-release"],
+            "vllm": revisions["vllm-xpu-unstable-src"],
+            "vllm-xpu-kernels": revisions["vllm-xpu-kernels-unstable-src"],
+        },
+        expected_package="/nix/store/package",
+        expected_native_library=str(library.resolve()),
+        expected_native_library_sha256=hashlib.sha256(library.read_bytes()).hexdigest(),
+    )
+
+    selection = qualification["selection"]
+    assert selection["nominal_splits_by_batch"] is None
+    assert selection["effective_splits_by_context_and_batch"] == {
+        "4096": {"1": 32, "4": 8},
+        "16384": {"1": 32, "4": 8},
+        "65023": {"1": 32, "4": 32},
+    }
+    assert selection["split_policy_contract"]["kernel_compatibility"] == {
+        "kind": "exact_variant",
+        "name": "q6_next_page_prefetch",
+        "id": 12,
+    }
 
 
 @pytest.mark.parametrize(

@@ -89,6 +89,7 @@ RUNNER_SOURCES = (
     "scripts/kvarn_perf_run.py",
     "scripts/kvarn_scan_engine_log.py",
     "scripts/kvarn_service_gate.py",
+    "scripts/kvarn_split_policy.py",
 )
 REQUIRED_INACTIVE_UNITS = (
     "vllm-xpu-chat.service",
@@ -178,9 +179,11 @@ def native_kernel_variant_for_spec(spec: ServiceSpec, args: argparse.Namespace) 
     )
 
 
-def native_splits_for_spec(spec: ServiceSpec, args: argparse.Namespace) -> int:
+def native_splits_for_spec(spec: ServiceSpec, args: argparse.Namespace) -> int | None:
     if not spec.native:
         return perf.REFERENCE_NATIVE_SPLITS
+    if args.native_split_policy == "b70_q6_v2":
+        return None
     try:
         return int(args.native_splits[spec.batch])
     except (KeyError, TypeError, ValueError) as exc:
@@ -194,15 +197,21 @@ def native_split_policy_for_spec(spec: ServiceSpec, args: argparse.Namespace) ->
 
 
 def native_max_splits_for_spec(spec: ServiceSpec, args: argparse.Namespace) -> int:
-    if native_split_policy_for_spec(spec, args) == "b70_q6":
-        return perf.B70_Q6_MAX_SPLITS
-    return native_splits_for_spec(spec, args)
+    selected_policy = native_split_policy_for_spec(spec, args)
+    if perf.split_policy.owns_runtime_selection(selected_policy):
+        return int(perf.native_split_policy_contract(args)["scratch_max_splits"])
+    splits = native_splits_for_spec(spec, args)
+    if splits is None:
+        raise CorrectnessError("fixed split policy lacks a nominal split count")
+    return splits
 
 
 def native_splits_environment_for_spec(
     spec: ServiceSpec, args: argparse.Namespace
 ) -> str | None:
-    if native_split_policy_for_spec(spec, args) == "b70_q6":
+    if perf.split_policy.owns_runtime_selection(
+        native_split_policy_for_spec(spec, args)
+    ):
         return None
     return str(native_max_splits_for_spec(spec, args))
 
@@ -293,7 +302,7 @@ def runtime_factory_axes_for_spec(
         "KVARN_FACTORY_ONEDNN_DETERMINISTIC": onednn_deterministic_for_spec(spec, args),
         "KVARN_FACTORY_SPLITS": (
             None
-            if split_policy == "b70_q6"
+            if perf.split_policy.owns_runtime_selection(split_policy)
             else native_splits_environment_for_spec(spec, args)
         ),
         "KVARN_FACTORY_SPLIT_POLICY": split_policy,
@@ -338,6 +347,9 @@ def service_spec_evidence(
         "max_decode_splits": native_max_splits_for_spec(spec, args),
         "nominal_decode_splits": native_splits_for_spec(spec, args),
         "native_split_policy": native_split_policy_for_spec(spec, args),
+        "native_split_policy_contract": (
+            perf.native_split_policy_contract(args) if spec.native else None
+        ),
         **service_variant_provenance(spec, args),
     }
 
@@ -1271,6 +1283,9 @@ def run_service_phase(
             native_kernel_variant_environment=captured_kernel_variant_environment,
             native_max_splits=native_max_splits_for_spec(spec, args),
             native_nominal_splits=native_splits_for_spec(spec, args),
+            native_split_policy_contract=(
+                perf.native_split_policy_contract(args) if spec.native else None
+            ),
             native_max_splits_environment=captured_max_splits_environment,
             native_split_policy=service_variant_provenance(spec, args)["split_policy"],
             native_split_policy_environment=captured_split_policy_environment,
@@ -1973,9 +1988,8 @@ def build_manifest(
         "native_kernel_variant_id": perf.NATIVE_KERNEL_VARIANTS[
             args.native_kernel_variant
         ],
-        "native_nominal_splits_by_batch": {
-            str(batch): splits for batch, splits in sorted(args.native_splits.items())
-        },
+        "native_nominal_splits_by_batch": perf.native_nominal_splits_by_batch(args),
+        "native_split_policy_contract": perf.native_split_policy_contract(args),
         "native_output_dtype": args.native_output_dtype,
         "native_split_policy": args.native_split_policy,
         "flush_index_materialization": (
@@ -1990,11 +2004,9 @@ def build_manifest(
             "kvarn_native_frontend": perf.native_frontend_environment(args),
             "vllm_use_v2_model_runner": perf.VLLM_USE_V2_MODEL_RUNNER,
         },
-        "native_scratch_max_splits": (
-            perf.B70_Q6_MAX_SPLITS
-            if args.native_split_policy == "b70_q6"
-            else max(args.native_splits.values())
-        ),
+        "native_scratch_max_splits": perf.native_split_policy_contract(args)[
+            "scratch_max_splits"
+        ],
         **candidate_variant_provenance(args),
         "service_start_plan": [
             service_spec_evidence(spec, args) for spec in SERVICE_PLAN
@@ -2074,9 +2086,8 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         "native_kernel_variant_id": perf.NATIVE_KERNEL_VARIANTS[
             args.native_kernel_variant
         ],
-        "native_nominal_splits_by_batch": {
-            str(batch): splits for batch, splits in sorted(args.native_splits.items())
-        },
+        "native_nominal_splits_by_batch": perf.native_nominal_splits_by_batch(args),
+        "native_split_policy_contract": perf.native_split_policy_contract(args),
         "native_output_dtype": args.native_output_dtype,
         "native_split_policy": args.native_split_policy,
         "launcher_mode": perf.launcher_mode(args),
@@ -2092,11 +2103,9 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             "kvarn_native_frontend": perf.native_frontend_environment(args),
             "vllm_use_v2_model_runner": perf.VLLM_USE_V2_MODEL_RUNNER,
         },
-        "native_scratch_max_splits": (
-            perf.B70_Q6_MAX_SPLITS
-            if args.native_split_policy == "b70_q6"
-            else max(args.native_splits.values())
-        ),
+        "native_scratch_max_splits": perf.native_split_policy_contract(args)[
+            "scratch_max_splits"
+        ],
         **candidate_variant_provenance(args),
         "service_start_plan": [
             service_spec_evidence(spec, args) for spec in SERVICE_PLAN
@@ -2296,16 +2305,24 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             raise CorrectnessError(
                 "non-baseline native kernel variants require --native-layout xe2_dpas"
             )
-        if args.native_split_policy == "b70_q6":
+        if perf.split_policy.owns_runtime_selection(args.native_split_policy):
             if args.native_splits:
                 raise CorrectnessError(
-                    "--native-splits must be absent with --native-split-policy b70_q6"
+                    "--native-splits must be absent with named split policies"
                 )
-            if args.native_kernel_variant not in perf.B70_Q6_KERNEL_VARIANTS:
-                raise CorrectnessError(
-                    "b70_q6 split policy requires a q6 native kernel variant"
+            try:
+                perf.split_policy.validate_kernel_compatibility(
+                    args.native_split_policy,
+                    args.native_kernel_variant,
+                    q6_variants=perf.B70_Q6_KERNEL_VARIANTS,
                 )
-            args.native_splits = dict(perf.B70_Q6_SPLITS)
+            except ValueError as exc:
+                raise CorrectnessError(str(exc)) from exc
+            args.native_splits = (
+                dict(perf.B70_Q6_SPLITS)
+                if args.native_split_policy == "b70_q6"
+                else {}
+            )
         else:
             args.native_splits = perf._parse_native_splits(args.native_splits, (1, 4))
         args.candidate_env = args.candidate_env.expanduser().resolve()

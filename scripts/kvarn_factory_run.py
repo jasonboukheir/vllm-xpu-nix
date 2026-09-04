@@ -391,6 +391,8 @@ FOCUSED_XPU_SINKHORN_WRITER_TESTS = (
     "tests/flash_attn/test_kvarn_sinkhorn_writer_xpu.py::test_sinkhorn_writer_preserves_rtn_halfway_ties",
     "tests/flash_attn/test_kvarn_sinkhorn_writer_xpu.py::test_sinkhorn_writer_masks_ragged_ownership",
     "tests/flash_attn/test_kvarn_sinkhorn_writer_xpu.py::test_sinkhorn_writer_uses_int64_long_context_record_addressing",
+    "tests/flash_attn/test_kvarn_sinkhorn_writer_xpu.py::test_sinkhorn_writer_handles_multiple_valid_blocks_at_iteration16",
+    "tests/flash_attn/test_kvarn_sinkhorn_writer_xpu.py::test_sinkhorn_writer_empty_schedule_is_noop",
     "tests/flash_attn/test_kvarn_sinkhorn_writer_xpu.py::test_sinkhorn_writer_rejects_non_abi_inputs",
 )
 FOCUSED_XPU_VLLM_SINKHORN_WRITER_TESTS = (

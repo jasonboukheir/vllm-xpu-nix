@@ -35,10 +35,10 @@ from typing import Any, TextIO
 
 try:
     from scripts.kvarn_perf_gate import GateError, compare
-    from scripts.kvarn_scan_engine_log import scan
+    from scripts.kvarn_scan_engine_log import scan, xpu_runtime_evidence
 except ModuleNotFoundError:  # Direct execution from the scripts directory.
     from kvarn_perf_gate import GateError, compare
-    from kvarn_scan_engine_log import scan
+    from kvarn_scan_engine_log import scan, xpu_runtime_evidence
 
 
 NATIVE_DISPATCH = "Using the native Xe2 KVarN qlen=1 decoder"
@@ -48,6 +48,11 @@ DEFAULT_BATCHES = (1, 4)
 DEFAULT_NATIVE_SPLITS = {1: 24, 4: 16}
 DEFAULT_MAX_NUM_BATCHED_TOKENS = 2048
 DEFAULT_PREFILL_WINDOW_BLOCKS = 16
+EXPECTED_XPU_DEVICE_NAME = "Intel(R) Arc(TM) Pro B70 Graphics"
+DEFAULT_MODEL = (
+    "jasonboukheir/Qwen3.8-27B-AEON-Ultimate-Uncensored-BF16-W4A16-AutoRound"
+)
+DEFAULT_MODEL_REVISION = "6b0622f4354481d5d04577d48ba0db844efc1330"
 REFERENCE_NATIVE_SPLITS = 1
 SUPPORTED_NATIVE_SPLITS = frozenset({1, 2, 4, 8, 16, 17, 24, 32})
 ARM_ORDER = ("reference", "candidate", "candidate", "reference")
@@ -100,7 +105,10 @@ SCRUBBED_ENVIRONMENT = (
     "VLLM_KVARN_DEFER_PREFILL_FLUSH",
     "VLLM_XPU_ENABLE_XPU_GRAPH",
 )
-FALLBACK_PATTERN = re.compile(r"(?i)(?:kvarn.{0,80}fallback|falling back)")
+FALLBACK_PATTERN = re.compile(
+    r"(?i)(?:\bkvarn\b[^\n]{0,120}\b(?:fallback|falling back)\b|"
+    r"\b(?:fallback|falling back)\b[^\n]{0,120}\bkvarn\b)"
+)
 RUNNING_METRIC = "vllm:num_requests_running"
 PARITY_METRICS = (
     "output_throughput",
@@ -242,6 +250,32 @@ class ServiceProcess:
     supervisor: ProcessSupervisor
 
 
+XPU_PREFLIGHT_CODE = """
+import json
+import torch
+
+available = bool(torch.xpu.is_available())
+count = int(torch.xpu.device_count()) if available else 0
+names = [torch.xpu.get_device_name(index) for index in range(count)]
+probe_device = None
+probe_value = None
+if available and count:
+    value = torch.arange(4, dtype=torch.float32, device="xpu:0")
+    torch.xpu.synchronize()
+    probe_device = str(value.device)
+    probe_value = float(value.sum().cpu().item())
+print(json.dumps({
+    "schema_version": 1,
+    "torch_version": torch.__version__,
+    "xpu_available": available,
+    "xpu_device_count": count,
+    "xpu_device_names": names,
+    "probe_device": probe_device,
+    "probe_value": probe_value,
+}, sort_keys=True))
+"""
+
+
 def utc_timestamp() -> str:
     return dt.datetime.now(tz=dt.UTC).isoformat().replace("+00:00", "Z")
 
@@ -333,7 +367,9 @@ def native_splits_for_run(run: PlannedRun, args: argparse.Namespace) -> int:
         ) from exc
 
 
-def load_correctness(path: Path, explicit_candidate_id: str | None) -> tuple[str, str]:
+def load_correctness(
+    path: Path, explicit_candidate_id: str | None
+) -> tuple[str, str, dict[str, str]]:
     try:
         raw = path.read_bytes()
         document = json.loads(raw)
@@ -346,7 +382,24 @@ def load_correctness(path: Path, explicit_candidate_id: str | None) -> tuple[str
         raise RunnerError("correctness artifact candidate_id must be non-empty")
     if explicit_candidate_id is not None and explicit_candidate_id != candidate_id:
         raise RunnerError("--candidate-id differs from the correctness artifact")
-    return candidate_id, hashlib.sha256(raw).hexdigest()
+    raw_identity = document.get("candidate_identity")
+    if not isinstance(raw_identity, dict):
+        raise RunnerError("correctness artifact candidate_identity must be an object")
+    identity: dict[str, str] = {}
+    for field in (
+        "process_package",
+        "candidate_closure_sha256",
+        "process_closure_sha256",
+    ):
+        value = raw_identity.get(field)
+        if not isinstance(value, str) or not value:
+            raise RunnerError(f"correctness artifact candidate_identity lacks {field}")
+        if field.endswith("_sha256") and not re.fullmatch(r"[0-9a-f]{64}", value):
+            raise RunnerError(
+                f"correctness artifact candidate_identity {field} is not SHA-256"
+            )
+        identity[field] = value
+    return candidate_id, hashlib.sha256(raw).hexdigest(), identity
 
 
 def _git(repo: Path, *arguments: str) -> str:
@@ -391,6 +444,62 @@ def service_environment(args: argparse.Namespace) -> dict[str, str]:
     environment = runner_environment(args)
     environment["KVARN_PREFILL_FP16_WINDOW_BLOCKS"] = str(DEFAULT_PREFILL_WINDOW_BLOCKS)
     return environment
+
+
+def validate_xpu_preflight(probe: Mapping[str, Any]) -> None:
+    expected = {
+        "xpu_available": True,
+        "xpu_device_count": 1,
+        "xpu_device_names": [EXPECTED_XPU_DEVICE_NAME],
+        "probe_device": "xpu:0",
+        "probe_value": 6.0,
+    }
+    mismatches = {
+        name: {"actual": probe.get(name), "expected": value}
+        for name, value in expected.items()
+        if probe.get(name) != value
+    }
+    if probe.get("xpu_available") is not True:
+        mismatches["xpu_available"] = {
+            "actual": probe.get("xpu_available"),
+            "expected": True,
+        }
+    if isinstance(probe.get("xpu_device_count"), bool):
+        mismatches["xpu_device_count"] = {
+            "actual": probe.get("xpu_device_count"),
+            "expected": 1,
+        }
+    if isinstance(probe.get("probe_value"), bool):
+        mismatches["probe_value"] = {
+            "actual": probe.get("probe_value"),
+            "expected": 6.0,
+        }
+    if mismatches:
+        raise RunnerError(
+            "performance qualification requires one Intel Arc Pro B70 XPU: "
+            + json.dumps(mismatches, sort_keys=True)
+        )
+
+
+def probe_xpu_hardware(args: argparse.Namespace) -> dict[str, Any]:
+    """Run a real XPU tensor operation using the candidate's pinned Torch."""
+    python = args.candidate_env / "bin" / "python"
+    try:
+        completed = subprocess.run(
+            [str(python), "-c", XPU_PREFLIGHT_CODE],
+            cwd=args.packaging_repo,
+            env=runner_environment(args),
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        probe = json.loads(completed.stdout)
+    except (OSError, subprocess.CalledProcessError, json.JSONDecodeError) as exc:
+        raise RunnerError(f"Intel XPU compute preflight failed: {exc}") from exc
+    if not isinstance(probe, dict):
+        raise RunnerError("Intel XPU compute preflight returned a non-object")
+    validate_xpu_preflight(probe)
+    return probe
 
 
 def launcher_name(run: PlannedRun) -> str:
@@ -695,6 +804,11 @@ def _arg_after(argv: Sequence[str], name: str) -> str | None:
     return argv[index + 1] if index + 1 < len(argv) else None
 
 
+def _argument_present(argv: Sequence[str], name: str) -> bool:
+    """Recognize both argparse's ``--flag value`` and ``--flag=value`` forms."""
+    return any(argument == name or argument.startswith(f"{name}=") for argument in argv)
+
+
 def _redact_argv(argv: Sequence[str]) -> list[str]:
     redacted: list[str] = []
     redact_next = False
@@ -812,8 +926,21 @@ def verify_service_profile(
     missing_flags = sorted(required_flags - set(argv))
     forbidden_flags = sorted(
         flag
-        for flag in ("--speculative-config", "--compilation-config")
-        if flag in argv
+        for flag in (
+            "--compilation-config",
+            "--cpu-offload-gb",
+            "--cpu-offload-params",
+            "--kv-offloading-backend",
+            "--kv-offloading-size",
+            "--kv-transfer-config",
+            "--offload-backend",
+            "--offload-group-size",
+            "--offload-num-in-group",
+            "--offload-params",
+            "--offload-prefetch-step",
+            "--speculative-config",
+        )
+        if _argument_present(argv, flag)
     )
     native = ARM_SETTINGS[run.arm]["native_xpu"]
     expected_environment = {
@@ -909,6 +1036,24 @@ def verify_candidate_identity(
         "process_closure_paths": sorted(set(process_closure)),
         "process_closure_sha256": closure_digest(process_closure),
     }
+
+
+def verify_correctness_candidate_identity(
+    actual_identity: Mapping[str, Any], expected_identity: Mapping[str, str]
+) -> None:
+    actual = {
+        field: actual_identity.get(field)
+        for field in (
+            "process_package",
+            "candidate_closure_sha256",
+            "process_closure_sha256",
+        )
+    }
+    if actual != expected_identity:
+        raise RunnerError(
+            "correctness artifact and running service identify different candidate "
+            "builds"
+        )
 
 
 def _signal_process_group(process_group: int, selected_signal: signal.Signals) -> None:
@@ -1107,15 +1252,22 @@ def scheduler_summary(
 
 def validate_engine_log(path: Path, *, native: bool) -> dict[str, Any]:
     text = path.read_text(encoding="utf-8", errors="replace")
-    result = scan(text.splitlines())
+    lines = text.splitlines()
+    result = scan(lines)
     if result["status"] != "passed":
         raise RunnerError("engine log contains fatal findings")
+    xpu = xpu_runtime_evidence(lines)
+    if not xpu["device_config_xpu"]:
+        raise RunnerError("engine log does not report device_config=xpu")
+    if not xpu["positive_residency"]:
+        raise RunnerError("engine log does not report positive XPU model/KV residency")
     dispatched = NATIVE_DISPATCH in text
     if dispatched != native:
         expectation = "contain" if native else "not contain"
         raise RunnerError(f"engine log must {expectation} native dispatch evidence")
     if native and FALLBACK_PATTERN.search(text):
         raise RunnerError("native engine log reports a Kvarn fallback")
+    result["xpu_runtime"] = xpu
     return result
 
 
@@ -1167,19 +1319,44 @@ def load_and_validate_benchmark_result(
 
 
 def persist_warmup_result(
-    *, raw_result: Path, output: Path, workload: Workload, argv: Sequence[str]
+    *,
+    raw_result: Path,
+    output: Path,
+    workload: Workload,
+    argv: Sequence[str],
+    arm: str,
+    run_uuid: str,
+    identity: Mapping[str, Any],
+    profile: Mapping[str, Any],
 ) -> dict[str, Any]:
     document = load_and_validate_benchmark_result(raw_result, workload)
+    observed_concurrency = document.get("max_concurrent_requests")
+    if (
+        isinstance(observed_concurrency, bool)
+        or not isinstance(observed_concurrency, int)
+        or observed_concurrency < workload.batch
+    ):
+        raise RunnerError(
+            "warmup did not reach full width: "
+            f"observed={observed_concurrency!r}, required={workload.batch}"
+        )
     result = {
         "schema_version": 1,
         "status": "passed",
         "validated_at": utc_timestamp(),
+        "arm": arm,
+        "run_uuid": run_uuid,
         "workload": dataclasses.asdict(workload),
         "argv": _redact_argv(argv),
-        "raw_result": str(raw_result),
+        "raw_result": str(raw_result.resolve()),
         "raw_result_sha256": sha256_file(raw_result),
         "completed": document["completed"],
         "failed": document["failed"],
+        "max_concurrent_requests": observed_concurrency,
+        "process_package": identity["process_package"],
+        "process_closure_sha256": identity["process_closure_sha256"],
+        "candidate_closure_sha256": identity["candidate_closure_sha256"],
+        "matched_profile_sha256": profile["canonical_matched_profile_sha256"],
     }
     write_json_atomic(output, result)
     return result
@@ -1199,6 +1376,7 @@ def seal_benchmark_result(
     started_at: str,
     identity: Mapping[str, Any],
     profile: Mapping[str, Any],
+    warmup_result: Path | None,
 ) -> dict[str, Any]:
     workload = run.workload
     document = load_and_validate_benchmark_result(raw_result, workload)
@@ -1211,6 +1389,22 @@ def seal_benchmark_result(
             "verified service profile lost max_num_batched_tokens: "
             f"expected {args.max_num_batched_tokens}, got {max_num_batched_tokens!r}"
         )
+
+    hardware_path = Path(args.hardware_preflight_path).resolve()
+    try:
+        hardware = json.loads(hardware_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RunnerError(f"cannot read XPU hardware preflight: {exc}") from exc
+    if not isinstance(hardware, dict):
+        raise RunnerError("XPU hardware preflight must be an object")
+    validate_xpu_preflight(hardware)
+    xpu = xpu_runtime_evidence(
+        engine_log.read_text(encoding="utf-8", errors="replace").splitlines()
+    )
+    if not xpu["device_config_xpu"] or not xpu["positive_residency"]:
+        raise RunnerError("engine log lacks positive XPU runtime evidence")
+    if not args.exploratory and warmup_result is None:
+        raise RunnerError("formal performance evidence requires a full-width warmup")
 
     metadata: dict[str, Any] = {
         "kvarn_evidence_mode": "exploratory" if args.exploratory else "formal",
@@ -1240,7 +1434,20 @@ def seal_benchmark_result(
         "kvarn_process_closure_sha256": identity["process_closure_sha256"],
         "kvarn_candidate_closure_sha256": identity["candidate_closure_sha256"],
         "kvarn_matched_profile_sha256": profile["canonical_matched_profile_sha256"],
+        "kvarn_accelerator": "xpu",
+        "kvarn_xpu_available": "1",
+        "kvarn_xpu_device_count": "1",
+        "kvarn_xpu_device_name": EXPECTED_XPU_DEVICE_NAME,
+        "kvarn_xpu_compute_probe": "passed",
+        "kvarn_hardware_preflight_path": str(hardware_path),
+        "kvarn_hardware_preflight_sha256": sha256_file(hardware_path),
+        "kvarn_xpu_consumed_memory_gib": xpu["consumed_memory_gib"],
+        "kvarn_xpu_kv_cache_memory_gib": xpu["kv_cache_memory_gib"],
     }
+    if warmup_result is not None:
+        warmup_path = warmup_result.resolve()
+        metadata["kvarn_warmup_path"] = str(warmup_path)
+        metadata["kvarn_warmup_sha256"] = sha256_file(warmup_path)
     if candidate_id is not None:
         metadata["kvarn_candidate_id"] = candidate_id
     if correctness_sha256 is not None:
@@ -1268,6 +1475,7 @@ def run_one(
     args: argparse.Namespace,
     candidate_id: str | None,
     correctness_sha256: str | None,
+    correctness_identity: Mapping[str, str] | None,
 ) -> dict[str, Any]:
     run_uuid = str(uuid.uuid4())
     started_at = utc_timestamp()
@@ -1277,6 +1485,7 @@ def run_one(
     warmup_raw_result = run_dir / "warmup.raw.json"
     sealed_result = run_dir / "benchmark.json"
     benchmark_stdout = run_dir / "benchmark.stdout.log"
+    warmup_result: Path | None = None
     service: ServiceProcess | None = None
     manifest: dict[str, Any] = {
         "schema_version": 1,
@@ -1296,6 +1505,8 @@ def run_one(
             run_dir / "service-environment.json", profile["redacted_environment"]
         )
         identity = verify_candidate_identity(service.argv, args.candidate_env)
+        if correctness_identity is not None:
+            verify_correctness_candidate_identity(identity, correctness_identity)
         write_json_atomic(run_dir / "candidate-identity.json", identity)
         write_json_atomic(run_dir / "matched-service-profile.json", profile)
         benchmark_argv = benchmark_command(run, args, raw_result)
@@ -1321,11 +1532,16 @@ def run_one(
             warmup_workload = dataclasses.replace(
                 run.workload, num_prompts=warmup_prompts
             )
+            warmup_result = run_dir / "warmup.json"
             persist_warmup_result(
                 raw_result=warmup_raw_result,
-                output=run_dir / "warmup.json",
+                output=warmup_result,
                 workload=warmup_workload,
                 argv=warmup_argv,
+                arm=run.arm,
+                run_uuid=run_uuid,
+                identity=identity,
+                profile=profile,
             )
             wait_for_scheduler_idle(args)
 
@@ -1385,6 +1601,7 @@ def run_one(
             started_at=started_at,
             identity=identity,
             profile=profile,
+            warmup_result=warmup_result,
         )
         manifest.update(
             status="passed",
@@ -1596,6 +1813,13 @@ def validate_matched_results(documents: Sequence[Mapping[str, Any]]) -> None:
         "kvarn_candidate_closure_sha256",
         "kvarn_max_num_batched_tokens",
         "kvarn_matched_profile_sha256",
+        "kvarn_accelerator",
+        "kvarn_xpu_available",
+        "kvarn_xpu_device_count",
+        "kvarn_xpu_device_name",
+        "kvarn_xpu_compute_probe",
+        "kvarn_hardware_preflight_path",
+        "kvarn_hardware_preflight_sha256",
     )
     for field in fields:
         values = {document.get(field) for document in documents}
@@ -1735,10 +1959,15 @@ def write_checksums(root: Path) -> None:
 def execute(args: argparse.Namespace) -> dict[str, Any]:
     candidate_id = args.candidate_id
     correctness_sha256: str | None = None
+    correctness_identity: dict[str, str] | None = None
     if args.correctness is not None:
-        candidate_id, correctness_sha256 = load_correctness(
+        candidate_id, correctness_sha256, correctness_identity = load_correctness(
             args.correctness, args.candidate_id
         )
+        if candidate_id != str(args.candidate_env):
+            raise RunnerError(
+                "correctness artifact candidate_id differs from --candidate-env"
+            )
     plan = build_plan(
         contexts=args.context,
         batches=args.batch,
@@ -1802,6 +2031,16 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
     if args.plan_only:
         return session
 
+    hardware_preflight = probe_xpu_hardware(args)
+    hardware_preflight_path = args.output_dir / "hardware-preflight.json"
+    write_json_atomic(hardware_preflight_path, hardware_preflight)
+    args.hardware_preflight_path = hardware_preflight_path
+    session["hardware_preflight"] = {
+        "path": str(hardware_preflight_path.resolve()),
+        "sha256": sha256_file(hardware_preflight_path),
+    }
+    write_json_atomic(args.output_dir / "session.json", session)
+
     records: list[dict[str, Any]] = []
     try:
         for run in plan:
@@ -1811,6 +2050,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
                     args=args,
                     candidate_id=candidate_id,
                     correctness_sha256=correctness_sha256,
+                    correctness_identity=correctness_identity,
                 )
             )
     except BaseException as exc:
@@ -2036,11 +2276,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--model",
-        default="jasonboukheir/Qwen3.8-27B-AEON-Ultimate-Uncensored-BF16-W4A16-AutoRound",
+        default=DEFAULT_MODEL,
     )
-    parser.add_argument(
-        "--model-revision", default="6b0622f4354481d5d04577d48ba0db844efc1330"
-    )
+    parser.add_argument("--model-revision", default=DEFAULT_MODEL_REVISION)
     parser.add_argument("--served-model", default="sunny-chat")
     parser.add_argument("--base-url", default="http://127.0.0.1:8000")
     parser.add_argument("--config-ref", default="path:/home/jasonbk/.config/nix")
@@ -2094,6 +2332,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         args.config_repo = args.config_repo.expanduser().resolve()
         if not (args.candidate_env / "bin" / "vllm").is_file():
             raise RunnerError("--candidate-env must contain bin/vllm")
+        if not (args.candidate_env / "bin" / "python").is_file():
+            raise RunnerError("--candidate-env must contain bin/python for XPU proof")
         if not args.exploratory and args.correctness is None:
             raise RunnerError("--correctness is required unless --exploratory is set")
         if args.correctness is not None and not args.correctness.is_file():
@@ -2102,6 +2342,37 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             raise RunnerError("the current auto/native foreground launchers are 65,536")
         if args.max_num_batched_tokens < 1:
             raise RunnerError("max num batched tokens must be positive")
+        if not args.exploratory and (
+            set(args.context) != set(DEFAULT_CONTEXTS)
+            or set(args.batch) != set(DEFAULT_BATCHES)
+        ):
+            raise RunnerError(
+                "formal performance qualification requires the complete B1/B4 "
+                "4K/16K/32K/65K matrix"
+            )
+        if not args.exploratory and (
+            args.model != DEFAULT_MODEL
+            or args.model_revision != DEFAULT_MODEL_REVISION
+            or args.served_model != "sunny-chat"
+        ):
+            raise RunnerError(
+                "formal performance qualification requires the pinned Brutus model"
+            )
+        if not args.exploratory and (
+            args.output_tokens != 512 or args.waves_per_run < 2
+        ):
+            raise RunnerError(
+                "formal performance qualification requires 512 output tokens and "
+                "at least two measured waves"
+            )
+        if (
+            not args.exploratory
+            and args.num_warmups is not None
+            and args.num_warmups < max(args.batch)
+        ):
+            raise RunnerError(
+                "formal performance qualification requires a full-width warmup"
+            )
         if (
             args.startup_attempts < 1
             or args.num_warmups is not None
@@ -2114,6 +2385,21 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             raise RunnerError("parity ratio must be in [0.5, 1.0]")
         if args.min_parity_pairs < 2:
             raise RunnerError("minimum parity pairs must be at least two")
+        if not args.exploratory and (
+            args.min_throughput_ratio < 0.95
+            or args.min_request_decode_ratio < 0.95
+            or args.max_latency_ratio > 1.10
+            or args.parity_ratio < 0.98
+            or args.min_parity_pairs < 4
+        ):
+            raise RunnerError(
+                "formal thresholds must be at least 0.95 throughput/decode, "
+                "0.98 parity with four pairs, and no more than 1.10 latency"
+            )
+        if not args.exploratory and args.repeats < 2 * args.min_parity_pairs:
+            raise RunnerError(
+                "formal repeats must provide at least the requested ABBA pairs"
+            )
         if (
             min(
                 args.startup_timeout,

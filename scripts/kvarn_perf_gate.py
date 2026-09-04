@@ -18,13 +18,18 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from scripts.kvarn_scan_engine_log import scan
+    from scripts.kvarn_scan_engine_log import scan, xpu_runtime_evidence
 except ModuleNotFoundError:  # Direct execution from the scripts directory.
-    from kvarn_scan_engine_log import scan
+    from kvarn_scan_engine_log import scan, xpu_runtime_evidence
 
 NATIVE_DISPATCH = "Using the native Xe2 KVarN qlen=1 decoder"
-FALLBACK_PATTERN = re.compile(r"(?i)(?:kvarn.{0,80}fallback|falling back)")
+FALLBACK_PATTERN = re.compile(
+    r"(?i)(?:\bkvarn\b[^\n]{0,120}\b(?:fallback|falling back)\b|"
+    r"\b(?:fallback|falling back)\b[^\n]{0,120}\bkvarn\b)"
+)
 COMPACT_DTYPE = "kvarn_k4v4_g128_compact"
+EXPECTED_XPU_DEVICE_NAME = "Intel(R) Arc(TM) Pro B70 Graphics"
+FORMAL_CONTEXTS = frozenset({4096, 16384, 32768, 65023})
 REQUIRED_GATES = (
     "native_decode_short",
     "native_decode_262k",
@@ -125,6 +130,19 @@ COMMON_PROVENANCE_FIELDS = (
     "kvarn_xpu_graph",
     "kvarn_scheduler_peak_running",
     "kvarn_correctness_sha256",
+    "kvarn_process_package",
+    "kvarn_process_closure_sha256",
+    "kvarn_candidate_closure_sha256",
+    "kvarn_max_num_batched_tokens",
+    "kvarn_matched_profile_sha256",
+    "kvarn_accelerator",
+    "kvarn_xpu_available",
+    "kvarn_xpu_device_count",
+    "kvarn_xpu_device_name",
+    "kvarn_xpu_compute_probe",
+    "kvarn_hardware_preflight_path",
+    "kvarn_hardware_preflight_sha256",
+    "kvarn_evidence_mode",
 )
 ARM_PROVENANCE_FIELDS = (
     "kvarn_arm",
@@ -669,6 +687,166 @@ def _required_text(document: dict[str, Any], name: str, path: Path) -> str:
     return value.strip()
 
 
+def _required_sha256(document: dict[str, Any], name: str, path: Path) -> str:
+    value = _required_text(document, name, path)
+    if not re.fullmatch(r"[0-9a-f]{64}", value):
+        raise GateError(f"{path}: {name} must be lowercase SHA-256")
+    return value
+
+
+def _validate_hardware_preflight(raw_path: str, digest: str, *, owner: Path) -> None:
+    path = Path(raw_path).expanduser().resolve()
+    try:
+        raw = path.read_bytes()
+        document = json.loads(raw)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise GateError(f"{owner}: cannot read XPU hardware preflight: {exc}") from exc
+    if hashlib.sha256(raw).hexdigest() != digest:
+        raise GateError(f"{owner}: XPU hardware preflight SHA-256 differs")
+    expected = {
+        "xpu_available": True,
+        "xpu_device_count": 1,
+        "xpu_device_names": [EXPECTED_XPU_DEVICE_NAME],
+        "probe_device": "xpu:0",
+        "probe_value": 6.0,
+    }
+    if (
+        not isinstance(document, dict)
+        or any(document.get(name) != value for name, value in expected.items())
+        or document.get("xpu_available") is not True
+        or isinstance(document.get("xpu_device_count"), bool)
+        or isinstance(document.get("probe_value"), bool)
+    ):
+        raise GateError(f"{owner}: XPU hardware preflight is not an exact B70 proof")
+
+
+def _validate_warmup(
+    raw_path: str,
+    digest: str,
+    *,
+    owner: Path,
+    batch: int,
+    context: int,
+    output_tokens: int,
+    seed: str,
+    arm: str,
+    run_uuid: str,
+    process_package: str,
+    process_closure_sha256: str,
+    candidate_closure_sha256: str,
+    matched_profile_sha256: str,
+) -> None:
+    path = Path(raw_path).expanduser().resolve()
+    try:
+        raw = path.read_bytes()
+        document = json.loads(raw)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise GateError(f"{owner}: cannot read warmup evidence: {exc}") from exc
+    if hashlib.sha256(raw).hexdigest() != digest:
+        raise GateError(f"{owner}: warmup evidence SHA-256 differs")
+    if path.parent != owner.expanduser().resolve().parent:
+        raise GateError(
+            f"{owner}: warmup evidence is not in the measured run directory"
+        )
+    expected_identity = {
+        "schema_version": 1,
+        "arm": arm,
+        "run_uuid": run_uuid,
+        "process_package": process_package,
+        "process_closure_sha256": process_closure_sha256,
+        "candidate_closure_sha256": candidate_closure_sha256,
+        "matched_profile_sha256": matched_profile_sha256,
+    }
+    if (
+        not isinstance(document, dict)
+        or any(document.get(name) != value for name, value in expected_identity.items())
+        or document.get("status") != "passed"
+        or document.get("failed") != 0
+        or isinstance(document.get("completed"), bool)
+        or not isinstance(document.get("completed"), int)
+        or document["completed"] < batch
+        or isinstance(document.get("max_concurrent_requests"), bool)
+        or not isinstance(document.get("max_concurrent_requests"), int)
+        or document["max_concurrent_requests"] < batch
+    ):
+        raise GateError(f"{owner}: warmup evidence is not full-width and passed")
+
+    try:
+        numeric_seed = int(seed)
+    except ValueError as exc:
+        raise GateError(f"{owner}: benchmark seed is not an integer") from exc
+    workload = document.get("workload")
+    if (
+        not isinstance(workload, dict)
+        or workload.get("context") != context
+        or workload.get("batch") != batch
+        or workload.get("output_tokens") != output_tokens
+        or workload.get("seed") != numeric_seed
+        or workload.get("num_prompts") != document["completed"]
+    ):
+        raise GateError(f"{owner}: warmup workload differs from the measured run")
+
+    raw_result_text = document.get("raw_result")
+    raw_result_sha256 = document.get("raw_result_sha256")
+    if not isinstance(raw_result_text, str) or not re.fullmatch(
+        r"[0-9a-f]{64}", str(raw_result_sha256)
+    ):
+        raise GateError(f"{owner}: warmup raw-result identity is invalid")
+    raw_result = Path(raw_result_text).expanduser().resolve()
+    if raw_result.parent != path.parent:
+        raise GateError(
+            f"{owner}: warmup raw result is not in the measured run directory"
+        )
+    try:
+        raw_result_bytes = raw_result.read_bytes()
+        raw_document = json.loads(raw_result_bytes)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise GateError(f"{owner}: cannot read warmup raw result: {exc}") from exc
+    if hashlib.sha256(raw_result_bytes).hexdigest() != raw_result_sha256:
+        raise GateError(f"{owner}: warmup raw-result SHA-256 differs")
+    completed = document["completed"]
+    raw_max_concurrent = (
+        raw_document.get("max_concurrent_requests")
+        if isinstance(raw_document, dict)
+        else None
+    )
+    if (
+        not isinstance(raw_document, dict)
+        or raw_document.get("completed") != completed
+        or raw_document.get("num_prompts") != completed
+        or raw_document.get("failed") != 0
+        or raw_document.get("max_concurrency") != batch
+        or isinstance(raw_max_concurrent, bool)
+        or not isinstance(raw_max_concurrent, int)
+        or raw_max_concurrent < batch
+        or raw_document.get("input_lens") != [context] * completed
+        or raw_document.get("output_lens") != [output_tokens] * completed
+    ):
+        raise GateError(f"{owner}: warmup raw-result workload is invalid")
+
+    argv = document.get("argv")
+    if not isinstance(argv, list) or any(not isinstance(item, str) for item in argv):
+        raise GateError(f"{owner}: warmup argv is invalid")
+
+    def argument(name: str) -> str | None:
+        try:
+            index = argv.index(name)
+        except ValueError:
+            return None
+        return argv[index + 1] if index + 1 < len(argv) else None
+
+    expected_arguments = {
+        "--random-input-len": str(context),
+        "--random-output-len": str(output_tokens),
+        "--num-prompts": str(completed),
+        "--num-warmups": "0",
+        "--max-concurrency": str(batch),
+        "--seed": seed,
+    }
+    if any(argument(name) != value for name, value in expected_arguments.items()):
+        raise GateError(f"{owner}: warmup argv differs from the measured run")
+
+
 def _percentile(values: list[float], percentile: float) -> float:
     if not values:
         raise GateError("cannot compute a percentile from an empty sample")
@@ -689,6 +867,8 @@ def _load_run(path: Path) -> Run:
         raise GateError(f"{path}: cannot read benchmark JSON: {exc}") from exc
     if not isinstance(document, dict):
         raise GateError(f"{path}: benchmark JSON must be an object")
+    if document.get("kvarn_promotable") is not True:
+        raise GateError(f"{path}: formal performance evidence must be promotable")
 
     completed = _positive_integer(
         document.get("completed"), name="completed", path=path
@@ -719,11 +899,19 @@ def _load_run(path: Path) -> Run:
             f"{path}: observed concurrency {max_concurrent_requests} is below "
             f"configured max_concurrency={max_concurrency}"
         )
+    if completed < 2 * max_concurrency:
+        raise GateError(f"{path}: formal benchmark must contain two measured waves")
 
     input_lens = _integer_list(document.get("input_lens"), name="input_lens", path=path)
     output_lens = _integer_list(
         document.get("output_lens"), name="output_lens", path=path
     )
+    if len(set(input_lens)) != 1 or input_lens[0] not in FORMAL_CONTEXTS:
+        raise GateError(
+            f"{path}: formal benchmark context is not a required matrix cell"
+        )
+    if len(set(output_lens)) != 1 or output_lens[0] != 512:
+        raise GateError(f"{path}: formal benchmark must decode exactly 512 tokens")
     ttfts = document.get("ttfts")
     itls = document.get("itls")
     if not isinstance(ttfts, list) or not isinstance(itls, list):
@@ -804,13 +992,57 @@ def _load_run(path: Path) -> Run:
     for name in ARM_PROVENANCE_FIELDS:
         provenance[name] = _required_text(document, name, path)
 
+    for name in (
+        "kvarn_process_closure_sha256",
+        "kvarn_candidate_closure_sha256",
+        "kvarn_matched_profile_sha256",
+        "kvarn_hardware_preflight_sha256",
+    ):
+        provenance[name] = _required_sha256(document, name, path)
+    _validate_hardware_preflight(
+        provenance["kvarn_hardware_preflight_path"],
+        provenance["kvarn_hardware_preflight_sha256"],
+        owner=path,
+    )
+    warmup_path = str(
+        Path(_required_text(document, "kvarn_warmup_path", path)).expanduser().resolve()
+    )
+    warmup_sha256 = _required_sha256(document, "kvarn_warmup_sha256", path)
+    run_uuid = _required_text(document, "kvarn_run_uuid", path)
+    _validate_warmup(
+        warmup_path,
+        warmup_sha256,
+        owner=path,
+        batch=max_concurrency,
+        context=input_lens[0],
+        output_tokens=output_lens[0],
+        seed=provenance["kvarn_seed"],
+        arm=provenance["kvarn_arm"],
+        run_uuid=run_uuid,
+        process_package=provenance["kvarn_process_package"],
+        process_closure_sha256=provenance["kvarn_process_closure_sha256"],
+        candidate_closure_sha256=provenance["kvarn_candidate_closure_sha256"],
+        matched_profile_sha256=provenance["kvarn_matched_profile_sha256"],
+    )
+    provenance["kvarn_warmup_path"] = warmup_path
+    provenance["kvarn_warmup_sha256"] = warmup_sha256
+    provenance["kvarn_xpu_consumed_memory_gib"] = _positive_number(
+        document.get("kvarn_xpu_consumed_memory_gib"),
+        name="kvarn_xpu_consumed_memory_gib",
+        path=path,
+    )
+    provenance["kvarn_xpu_kv_cache_memory_gib"] = _positive_number(
+        document.get("kvarn_xpu_kv_cache_memory_gib"),
+        name="kvarn_xpu_kv_cache_memory_gib",
+        path=path,
+    )
+
     try:
         run_order = int(_required_text(document, "kvarn_run_order", path))
     except ValueError as exc:
         raise GateError(f"{path}: kvarn_run_order must be an integer") from exc
     if run_order < 1:
         raise GateError(f"{path}: kvarn_run_order must be positive")
-    run_uuid = _required_text(document, "kvarn_run_uuid", path)
     engine_log_sha256 = _required_text(document, "kvarn_engine_log_sha256", path)
     if not re.fullmatch(r"[0-9a-f]{64}", engine_log_sha256):
         raise GateError(f"{path}: kvarn_engine_log_sha256 must be lowercase SHA-256")
@@ -843,8 +1075,10 @@ def _load_run(path: Path) -> Run:
 
 
 def _load_arm(paths: list[Path], name: str) -> list[Run]:
-    if len(paths) < 4:
-        raise GateError(f"at least four {name} repeats are required")
+    if len(paths) < 8:
+        raise GateError(
+            f"at least eight {name} repeats are required for four ABBA pairs"
+        )
     resolved = [path.resolve() for path in paths]
     if len(set(resolved)) != len(resolved):
         raise GateError(f"{name} result paths must be unique")
@@ -864,6 +1098,9 @@ def _load_arm(paths: list[Path], name: str) -> list[Run]:
             f"{first.path}: kvarn_arm must be {name!r}, got "
             f"{first.provenance['kvarn_arm']!r}"
         )
+    warmup_paths = [run.provenance["kvarn_warmup_path"] for run in runs]
+    if len(set(warmup_paths)) != len(warmup_paths):
+        raise GateError(f"{name} runs must have distinct warmup evidence")
     return runs
 
 
@@ -961,11 +1198,13 @@ def _verify_artifact_references(path: Path, *, owner: Path, seen: set[Path]) -> 
     visit(document)
 
 
-def _validate_logs(paths: list[Path], arm: str, *, expect_native: bool) -> list[str]:
+def _validate_logs(
+    paths: list[Path], arm: str, *, expect_native: bool
+) -> list[dict[str, Any]]:
     resolved = [path.resolve() for path in paths]
     if len(set(resolved)) != len(resolved):
         raise GateError(f"{arm} engine-log paths must be unique")
-    digests: list[str] = []
+    evidence: list[dict[str, Any]] = []
     for path in paths:
         try:
             raw = path.read_bytes()
@@ -974,14 +1213,19 @@ def _validate_logs(paths: list[Path], arm: str, *, expect_native: bool) -> list[
         text = raw.decode("utf-8", errors="replace")
         if scan(text.splitlines())["status"] != "passed":
             raise GateError(f"{path}: engine log contains fatal findings")
+        xpu = xpu_runtime_evidence(text.splitlines())
+        if not xpu["device_config_xpu"]:
+            raise GateError(f"{path}: {arm} log does not report device_config=xpu")
+        if not xpu["positive_residency"]:
+            raise GateError(f"{path}: {arm} log lacks positive XPU model/KV residency")
         dispatched = NATIVE_DISPATCH in text
         if dispatched != expect_native:
             expectation = "contain" if expect_native else "not contain"
             raise GateError(f"{path}: {arm} log must {expectation} native dispatch")
         if expect_native and FALLBACK_PATTERN.search(text):
             raise GateError(f"{path}: native candidate log reports fallback")
-        digests.append(hashlib.sha256(raw).hexdigest())
-    return digests
+        evidence.append({"sha256": hashlib.sha256(raw).hexdigest(), **xpu})
+    return evidence
 
 
 def _aggregate(runs: list[Run]) -> dict[str, float]:
@@ -1048,8 +1292,22 @@ def compare(
         upper=1.0,
     )
     _validate_ratio(max_latency_ratio, name="max_latency_ratio", lower=1.0, upper=2.0)
+    if (
+        min_throughput_ratio < 0.95
+        or min_request_decode_ratio < 0.95
+        or max_latency_ratio > 1.10
+    ):
+        raise GateError(
+            "formal comparison thresholds must be at least 0.95 throughput/decode "
+            "and no more than 1.10 latency"
+        )
     reference = _load_arm(reference_paths, "reference")
     candidate = _load_arm(candidate_paths, "candidate")
+    warmup_paths = [
+        run.provenance["kvarn_warmup_path"] for run in (*reference, *candidate)
+    ]
+    if len(set(warmup_paths)) != len(warmup_paths):
+        raise GateError("every reference/candidate run needs distinct warmup evidence")
     _validate_balanced_order(reference, candidate)
     if len(reference_logs) != len(reference) or len(candidate_logs) != len(candidate):
         raise GateError("each result must have one engine log in the same arm order")
@@ -1068,6 +1326,7 @@ def compare(
     expected_profile = {
         "backend": "openai",
         "model_id": "sunny-chat",
+        "tokenizer_id": "jasonboukheir/Qwen3.8-27B-AEON-Ultimate-Uncensored-BF16-W4A16-AutoRound",
         "request_rate": "inf",
         "kvarn_model_revision": "6b0622f4354481d5d04577d48ba0db844efc1330",
         "kvarn_max_model_len": "65536",
@@ -1075,6 +1334,12 @@ def compare(
         "kvarn_prefix_caching": "0",
         "kvarn_mtp": "0",
         "kvarn_xpu_graph": "0",
+        "kvarn_accelerator": "xpu",
+        "kvarn_xpu_available": "1",
+        "kvarn_xpu_device_count": "1",
+        "kvarn_xpu_device_name": EXPECTED_XPU_DEVICE_NAME,
+        "kvarn_xpu_compute_probe": "passed",
+        "kvarn_evidence_mode": "formal",
     }
     for field, expected_value in expected_profile.items():
         if first_ref.provenance[field] != expected_value:
@@ -1107,6 +1372,25 @@ def compare(
         raise GateError(
             "benchmark correctness SHA-256 does not match the supplied artifact"
         )
+    correctness_identity = {
+        field: correctness["candidate_identity"][field]
+        for field in (
+            "process_package",
+            "candidate_closure_sha256",
+            "process_closure_sha256",
+        )
+    }
+    benchmark_identity = {
+        "process_package": first_cand.provenance["kvarn_process_package"],
+        "candidate_closure_sha256": first_cand.provenance[
+            "kvarn_candidate_closure_sha256"
+        ],
+        "process_closure_sha256": first_cand.provenance["kvarn_process_closure_sha256"],
+    }
+    if correctness_identity != benchmark_identity:
+        raise GateError(
+            "correctness and performance evidence identify different candidate builds"
+        )
 
     ref_dtype = first_ref.provenance["kvarn_kv_cache_dtype"]
     cand_dtype = first_cand.provenance["kvarn_kv_cache_dtype"]
@@ -1132,18 +1416,37 @@ def compare(
     else:
         raise GateError(f"unsupported comparison kind {comparison_kind!r}")
 
-    reference_log_sha256 = _validate_logs(
+    reference_log_evidence = _validate_logs(
         reference_logs, "reference", expect_native=False
     )
-    candidate_log_sha256 = _validate_logs(
+    candidate_log_evidence = _validate_logs(
         candidate_logs, "candidate", expect_native=True
     )
-    for run, digest in zip(reference, reference_log_sha256):
-        if run.engine_log_sha256 != digest:
+    for run, evidence in zip(reference, reference_log_evidence):
+        if run.engine_log_sha256 != evidence["sha256"]:
             raise GateError(f"{run.path}: reference engine-log SHA-256 differs")
-    for run, digest in zip(candidate, candidate_log_sha256):
-        if run.engine_log_sha256 != digest:
+        if not math.isclose(
+            run.provenance["kvarn_xpu_consumed_memory_gib"],
+            evidence["consumed_memory_gib"],
+        ) or not math.isclose(
+            run.provenance["kvarn_xpu_kv_cache_memory_gib"],
+            evidence["kv_cache_memory_gib"],
+        ):
+            raise GateError(f"{run.path}: reference XPU residency evidence differs")
+    for run, evidence in zip(candidate, candidate_log_evidence):
+        if run.engine_log_sha256 != evidence["sha256"]:
             raise GateError(f"{run.path}: candidate engine-log SHA-256 differs")
+        if not math.isclose(
+            run.provenance["kvarn_xpu_consumed_memory_gib"],
+            evidence["consumed_memory_gib"],
+        ) or not math.isclose(
+            run.provenance["kvarn_xpu_kv_cache_memory_gib"],
+            evidence["kv_cache_memory_gib"],
+        ):
+            raise GateError(f"{run.path}: candidate XPU residency evidence differs")
+
+    reference_log_sha256 = [item["sha256"] for item in reference_log_evidence]
+    candidate_log_sha256 = [item["sha256"] for item in candidate_log_evidence]
 
     ref = _aggregate(reference)
     cand = _aggregate(candidate)

@@ -223,7 +223,8 @@ candidate closure and warmed compilation cache. Preserve the detailed
 benchmark JSON, engine log, redacted command line, source revisions, actual
 process package, and order-independent Nix closure digest for every run.
 
-Use two primary workloads:
+For quick manual probes, use two primary workloads. These do not replace the
+complete automated formal matrix below:
 
 - latency/B1: fixed 16,384-token input, 512-token output, concurrency 1;
 - aggregate/B4: fixed 8,192-token input, 512-token output, concurrency 4.
@@ -345,11 +346,39 @@ comparison. It refuses to start while the loopback service port is occupied,
 uses the fixed-seed random workload, and restarts the service for every entry
 in each repeated ABBA sequence. The defaults cover B1 and B4 at prompt lengths
 4,096, 16,384, 32,768, and 65,023 with 512 output tokens and eight repeats per
-arm. Each service start gets one separate full-width warmup wave and two
-measured waves; all of those values are configurable without changing the
-matched service profile. The scheduler sampler starts only after the warmup
-process finishes and the engine returns to idle, so its peak is evidence from
-the measured requests.
+arm. Formal qualification requires that complete matrix; context or batch
+subsets are available only in explicitly non-promotable exploratory mode. Each
+service start gets one separate full-width warmup wave and two measured waves.
+An explicit formal warmup count must be at least four so the B4 warmup remains
+full-width. The scheduler sampler starts only after the warmup process finishes
+and the engine returns to idle, so its peak is evidence from the measured
+requests. Formal mode fixes the decode at 512 output tokens and requires at
+least two measured waves. Its command-line acceptance values may be made
+stricter, but cannot weaken the 95% throughput/per-request floor, 110% p99
+latency ceiling, 98% paired parity target, or four-pair minimum. The repeat
+count must supply every requested ABBA pair.
+
+Before starting the matrix, the runner uses the candidate's pinned Python and
+Torch to allocate, synchronize, and read back an XPU tensor. Formal or
+exploratory measurements proceed only when exactly one visible device is
+`Intel(R) Arc(TM) Pro B70 Graphics`. Every sealed run references the hashed
+hardware preflight and its own hashed warmup. Its final engine log must report
+`device_config=xpu`, positive consumed-model memory, and positive KV-cache
+memory; native candidates must additionally report the Xe2 KVarN decoder
+dispatch. Therefore CPU measurements, another accelerator model, a cold run,
+or an XPU-configured process without resident model/KV state cannot enter a
+performance or parity result.
+
+The enforced GPU proof is the candidate-Torch B70 compute operation plus the
+resident XPU service and, for Kvarn, native decoder dispatch. Per-run Level Zero
+Sysman utilization is intentionally not an acceptance input yet: it commonly
+requires elevated permissions, and high-frequency sampling can perturb the
+latencies being measured. Do not describe the artifacts as sampled engine
+utilization. Model-weight offload and KV-cache offload/transfer options are
+rejected so positive XPU residency cannot hide an offloaded comparison.
+
+CPU-only checks may still be useful as correctness diagnostics, but they are
+not promotable performance evidence and cannot satisfy the parity gate.
 
 Launcher realization and evaluation explicitly use the daemon store. On
 Determinate Nix installations, raw app metadata can retain a contextual logical
@@ -358,7 +387,10 @@ the physical output reported by `nix build --json`. It also requires the app
 string context and built package to name the same derivation and output, so a
 same-named executable from an unrelated package cannot satisfy resolution.
 Benchmark manifests always retain that verified physical immutable program
-path.
+path. The supplied 262K correctness manifest must identify that same candidate
+environment, process package, process-closure digest, and candidate-closure
+digest; performance from a rebuilt or substituted candidate cannot inherit an
+older correctness result.
 
 ```bash
 run_stamp=$(date -u +%Y%m%dT%H%M%SZ)
@@ -417,11 +449,14 @@ For every recorded trial the runner:
    bounded prefill window, disabled full-defer diagnostic, model revision,
    model length, and sequence limit;
 3. validates and retains the detailed result and digest for the separate
-   warmup wave, then waits for scheduler idle;
+   full-width warmup wave, binding it to the run UUID, arm, workload, raw
+   result, process/candidate closures, and matched service profile, then waits
+   for scheduler idle;
 4. polls `vllm:num_requests_running` only until the requested B1/B4 overlap is
    observed, avoiding continuous metrics traffic during the measurement;
 5. stops the complete foreground process group and waits for every log writer;
-6. scans the final engine log and then hashes it; and
+6. scans the final engine log, requires positive XPU residency, and then hashes
+   it; and
 7. leaves vLLM's `benchmark.raw.json` unchanged while atomically writing the
    provenance-augmented `benchmark.json` consumed by `kvarn_perf_gate.py`.
 

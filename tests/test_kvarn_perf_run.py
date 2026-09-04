@@ -29,6 +29,7 @@ from scripts.kvarn_perf_run import (
     parse_running_metric,
     persist_warmup_result,
     pooled_tail_latency,
+    probe_xpu_hardware,
     resolve_launchers,
     result_exit_code,
     run_managed_process,
@@ -39,22 +40,32 @@ from scripts.kvarn_perf_run import (
     summarize_exploratory_workload,
     validate_matched_results,
     verify_candidate_identity,
+    verify_correctness_candidate_identity,
     verify_service_profile,
     warmup_command,
 )
 from tests.test_kvarn_perf_gate import _correctness as _valid_correctness
 
-MODEL = "model-repo"
+MODEL = "jasonboukheir/Qwen3.8-27B-AEON-Ultimate-Uncensored-BF16-W4A16-AutoRound"
 REVISION = "6b0622f4354481d5d04577d48ba0db844efc1330"
 IDENTITY = {
     "process_executable": "/nix/store/package/bin/.vllm-wrapped",
     "process_package": "/nix/store/package",
-    "process_closure_sha256": "1" * 64,
-    "candidate_closure_sha256": "2" * 64,
+    "process_closure_sha256": "a" * 64,
+    "candidate_closure_sha256": "b" * 64,
 }
 PROFILE = {
     "max_num_batched_tokens": "2048",
     "canonical_matched_profile_sha256": "3" * 64,
+}
+HARDWARE_PREFLIGHT = {
+    "schema_version": 1,
+    "torch_version": "test",
+    "xpu_available": True,
+    "xpu_device_count": 1,
+    "xpu_device_names": ["Intel(R) Arc(TM) Pro B70 Graphics"],
+    "probe_device": "xpu:0",
+    "probe_value": 6.0,
 }
 
 
@@ -62,11 +73,15 @@ def _args(tmp_path: Path) -> argparse.Namespace:
     candidate = tmp_path / "candidate"
     (candidate / "bin").mkdir(parents=True)
     (candidate / "bin" / "vllm").write_text("", encoding="utf-8")
+    (candidate / "bin" / "python").write_text("", encoding="utf-8")
+    hardware_preflight = tmp_path / "hardware-preflight.json"
+    hardware_preflight.write_text(json.dumps(HARDWARE_PREFLIGHT), encoding="utf-8")
     return argparse.Namespace(
         base_url="http://127.0.0.1:8000",
         candidate_env=candidate,
         config_ref="path:/config",
         config_repo=tmp_path / "config",
+        packaging_repo=tmp_path,
         exploratory=False,
         max_model_len=65536,
         max_num_batched_tokens=2048,
@@ -77,6 +92,7 @@ def _args(tmp_path: Path) -> argparse.Namespace:
         hf_home=Path("/var/cache/huggingface"),
         runtime_cache=tmp_path / "runtime-cache",
         served_model="sunny-chat",
+        hardware_preflight_path=hardware_preflight,
     )
 
 
@@ -176,6 +192,7 @@ def test_correctness_is_optional_only_for_exploratory_cli(tmp_path: Path) -> Non
     candidate = tmp_path / "candidate"
     (candidate / "bin").mkdir(parents=True)
     (candidate / "bin" / "vllm").write_text("", encoding="utf-8")
+    (candidate / "bin" / "python").write_text("", encoding="utf-8")
     common = [
         "--candidate-env",
         str(candidate),
@@ -213,6 +230,7 @@ def test_exploratory_plan_session_has_no_formal_claims(
     candidate = tmp_path / "candidate"
     (candidate / "bin").mkdir(parents=True)
     (candidate / "bin" / "vllm").write_text("", encoding="utf-8")
+    (candidate / "bin" / "python").write_text("", encoding="utf-8")
     args = runner.parse_args(
         [
             "--candidate-env",
@@ -314,6 +332,7 @@ def test_scheduler_budget_cli_defaults_overrides_and_rejects_zero(
     candidate = tmp_path / "candidate"
     (candidate / "bin").mkdir(parents=True)
     (candidate / "bin" / "vllm").write_text("", encoding="utf-8")
+    (candidate / "bin" / "python").write_text("", encoding="utf-8")
     correctness = tmp_path / "correctness.json"
     correctness.write_text("{}\n", encoding="utf-8")
     common = [
@@ -352,6 +371,173 @@ def test_scheduler_budget_cli_defaults_overrides_and_rejects_zero(
                 "0",
             ]
         )
+
+
+def test_formal_cli_requires_complete_matrix_and_full_width_warmup(
+    tmp_path: Path,
+) -> None:
+    candidate = tmp_path / "candidate"
+    (candidate / "bin").mkdir(parents=True)
+    for name in ("vllm", "python"):
+        (candidate / "bin" / name).write_text("", encoding="utf-8")
+    correctness = tmp_path / "correctness.json"
+    correctness.write_text("{}\n", encoding="utf-8")
+    common = [
+        "--candidate-env",
+        str(candidate),
+        "--correctness",
+        str(correctness),
+        "--allow-tmp",
+        "--plan-only",
+        "--runtime-cache",
+        str(tmp_path / "runtime-cache"),
+    ]
+
+    with pytest.raises(SystemExit):
+        runner.parse_args(
+            [
+                *common,
+                "--context",
+                "4096",
+                "--output-dir",
+                str(tmp_path / "subset-output"),
+            ]
+        )
+    with pytest.raises(SystemExit):
+        runner.parse_args(
+            [
+                *common,
+                "--num-warmups",
+                "0",
+                "--output-dir",
+                str(tmp_path / "cold-output"),
+            ]
+        )
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        ["--min-throughput-ratio", "0.94"],
+        ["--min-request-decode-ratio", "0.94"],
+        ["--max-latency-ratio", "1.11"],
+        ["--parity-ratio", "0.97"],
+        ["--min-parity-pairs", "3"],
+        ["--repeats", "6"],
+        ["--output-tokens", "2"],
+        ["--waves-per-run", "1"],
+    ],
+)
+def test_formal_cli_cannot_weaken_acceptance_or_decode_shape(
+    tmp_path: Path, extra: list[str]
+) -> None:
+    candidate = tmp_path / "candidate"
+    (candidate / "bin").mkdir(parents=True)
+    for name in ("vllm", "python"):
+        (candidate / "bin" / name).write_text("", encoding="utf-8")
+    correctness = tmp_path / "correctness.json"
+    correctness.write_text("{}\n", encoding="utf-8")
+
+    with pytest.raises(SystemExit):
+        runner.parse_args(
+            [
+                "--candidate-env",
+                str(candidate),
+                "--correctness",
+                str(correctness),
+                "--allow-tmp",
+                "--plan-only",
+                "--runtime-cache",
+                str(tmp_path / "runtime-cache"),
+                "--output-dir",
+                str(tmp_path / "output"),
+                *extra,
+            ]
+        )
+
+
+def test_exploratory_cli_retains_flexible_non_promotable_shape(
+    tmp_path: Path,
+) -> None:
+    candidate = tmp_path / "candidate"
+    (candidate / "bin").mkdir(parents=True)
+    for name in ("vllm", "python"):
+        (candidate / "bin" / name).write_text("", encoding="utf-8")
+
+    args = runner.parse_args(
+        [
+            "--candidate-env",
+            str(candidate),
+            "--exploratory",
+            "--allow-tmp",
+            "--plan-only",
+            "--runtime-cache",
+            str(tmp_path / "runtime-cache"),
+            "--output-dir",
+            str(tmp_path / "output"),
+            "--context",
+            "4096",
+            "--batch",
+            "1",
+            "--repeats",
+            "2",
+            "--output-tokens",
+            "2",
+            "--waves-per-run",
+            "1",
+            "--parity-ratio",
+            "0.50",
+            "--min-parity-pairs",
+            "2",
+        ]
+    )
+
+    assert args.exploratory is True
+    assert args.output_tokens == 2
+    assert args.waves_per_run == 1
+
+
+def test_xpu_preflight_requires_an_exact_b70_compute_probe(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    args = _args(tmp_path)
+
+    def completed(probe: dict[str, object]) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess([], 0, stdout=json.dumps(probe), stderr="")
+
+    monkeypatch.setattr(
+        runner.subprocess,
+        "run",
+        lambda *_args, **_kwargs: completed(HARDWARE_PREFLIGHT),
+    )
+    assert probe_xpu_hardware(args)["xpu_device_names"] == [
+        "Intel(R) Arc(TM) Pro B70 Graphics"
+    ]
+
+    wrong_device = {**HARDWARE_PREFLIGHT, "xpu_device_names": ["Intel Arc A770"]}
+    monkeypatch.setattr(
+        runner.subprocess,
+        "run",
+        lambda *_args, **_kwargs: completed(wrong_device),
+    )
+    with pytest.raises(RunnerError, match="requires one Intel Arc Pro B70"):
+        probe_xpu_hardware(args)
+
+    unavailable = {
+        **HARDWARE_PREFLIGHT,
+        "xpu_available": False,
+        "xpu_device_count": 0,
+        "xpu_device_names": [],
+        "probe_device": None,
+        "probe_value": None,
+    }
+    monkeypatch.setattr(
+        runner.subprocess,
+        "run",
+        lambda *_args, **_kwargs: completed(unavailable),
+    )
+    with pytest.raises(RunnerError, match="requires one Intel Arc Pro B70"):
+        probe_xpu_hardware(args)
 
 
 def test_scheduler_metric_sums_labeled_workers() -> None:
@@ -444,6 +630,16 @@ def test_profile_verification_uses_actual_argv_and_environment(tmp_path: Path) -
         verify_service_profile(argv, environment, run, args)
     environment["KVARN_PREFILL_FP16_WINDOW_BLOCKS"] = "16"
 
+    for offload in (
+        ["--cpu-offload-gb", "4"],
+        ["--cpu-offload-gb=4"],
+        ["--kv-offloading-size", "4"],
+        ['--kv-transfer-config={"kv_connector":"LMCacheConnectorV1"}'],
+        ["--offload-group-size", "8"],
+    ):
+        with pytest.raises(RunnerError, match="profile mismatch"):
+            verify_service_profile([*argv, *offload], environment, run, args)
+
     reference = PlannedRun(run.workload, "reference", 3)
     argv[argv.index("--kv-cache-dtype") + 1] = "auto"
     for name in (
@@ -516,13 +712,66 @@ def test_service_environment_pins_window_and_scrubs_full_defer(
     assert environment["PYTHONNOUSERSITE"] == "1"
 
 
+def test_native_log_allows_unrelated_fallback_but_rejects_kvarn_fallback(
+    tmp_path: Path,
+) -> None:
+    engine_log = tmp_path / "engine.log"
+    base = (
+        "INFO config: device_config=xpu\n"
+        "INFO Actual usage is 17.54 GiB for consumed memory (weights + non-torch), "
+        "0.31 GiB for peak activation, and 0.0 GiB for CUDAGraph memory. "
+        "Current kv cache memory in use is 10.92 GiB.\n"
+        "INFO Falling back to the Triton GDN decode path\n"
+        "WARNING sampler is Falling back to PyTorch-native implementation\n"
+        "INFO Using the native Xe2 KVarN qlen=1 decoder\n"
+    )
+    engine_log.write_text(base, encoding="utf-8")
+
+    assert runner.validate_engine_log(engine_log, native=True)["status"] == "passed"
+
+    for kvarn_fallback in (
+        "WARNING Kvarn decoder used a fallback path\n",
+        "WARNING Falling back from Kvarn to a generic decoder\n",
+    ):
+        engine_log.write_text(base + kvarn_fallback, encoding="utf-8")
+        with pytest.raises(RunnerError, match="Kvarn fallback"):
+            runner.validate_engine_log(engine_log, native=True)
+
+
+def test_execute_rejects_correctness_from_another_candidate(tmp_path: Path) -> None:
+    args = _args(tmp_path)
+    args.candidate_id = None
+    args.correctness = _correctness(
+        tmp_path / "correctness.json", "/nix/store/another-candidate"
+    )
+
+    with pytest.raises(RunnerError, match="differs from --candidate-env"):
+        runner.execute(args)
+
+
+def test_runner_binds_correctness_to_actual_service_closures() -> None:
+    expected = {
+        field: IDENTITY[field]
+        for field in (
+            "process_package",
+            "candidate_closure_sha256",
+            "process_closure_sha256",
+        )
+    }
+    verify_correctness_candidate_identity(IDENTITY, expected)
+
+    stale = {**expected, "process_closure_sha256": "c" * 64}
+    with pytest.raises(RunnerError, match="different candidate builds"):
+        verify_correctness_candidate_identity(IDENTITY, stale)
+
+
 def test_sealed_results_are_directly_perf_gate_compatible(tmp_path: Path) -> None:
     args = _args(tmp_path)
     candidate_id = "candidate-store-path"
     correctness = _correctness(tmp_path / "correctness.json", candidate_id)
     correctness_sha256 = hashlib.sha256(correctness.read_bytes()).hexdigest()
-    workload = Workload(4096, 4, 4, 4, 17)
-    arms = ARM_ORDER * 2
+    workload = Workload(4096, 4, 512, 8, 17)
+    arms = ARM_ORDER * 4
     references: list[Path] = []
     candidates: list[Path] = []
     reference_logs: list[Path] = []
@@ -535,14 +784,47 @@ def test_sealed_results_are_directly_perf_gate_compatible(tmp_path: Path) -> Non
         native = arm == "candidate"
         engine_log = run_dir / "engine.log"
         engine_log.write_text(
-            "INFO engine ready\n"
+            "INFO config: device_config=xpu\n"
+            "INFO Actual usage is 17.54 GiB for consumed memory. "
+            "Current kv cache memory in use is 10.92 GiB.\n"
             + ("INFO Using the native Xe2 KVarN qlen=1 decoder\n" if native else ""),
             encoding="utf-8",
         )
         raw = _raw_result(
             run_dir / "benchmark.raw.json",
-            throughput=97.0 if native else 100.0,
+            throughput=99.0 if native else 100.0,
             workload=workload,
+        )
+        warmup_workload = Workload(4096, 4, 512, 4, 17)
+        warmup_raw = _raw_result(
+            run_dir / "warmup.raw.json",
+            throughput=100.0,
+            workload=warmup_workload,
+        )
+        warmup_result = run_dir / "warmup.json"
+        persist_warmup_result(
+            raw_result=warmup_raw,
+            output=warmup_result,
+            workload=warmup_workload,
+            argv=[
+                "vllm",
+                "--random-input-len",
+                "4096",
+                "--random-output-len",
+                "512",
+                "--num-prompts",
+                "4",
+                "--num-warmups",
+                "0",
+                "--max-concurrency",
+                "4",
+                "--seed",
+                "17",
+            ],
+            arm=arm,
+            run_uuid=f"run-{order}",
+            identity=IDENTITY,
+            profile=PROFILE,
         )
         output = run_dir / "benchmark.json"
         sealed = seal_benchmark_result(
@@ -558,6 +840,7 @@ def test_sealed_results_are_directly_perf_gate_compatible(tmp_path: Path) -> Non
             started_at=f"2026-08-31T00:00:{order:02d}Z",
             identity=IDENTITY,
             profile=PROFILE,
+            warmup_result=warmup_result,
         )
         assert (
             sealed["kvarn_engine_log_sha256"]
@@ -595,7 +878,7 @@ def test_sealed_results_are_directly_perf_gate_compatible(tmp_path: Path) -> Non
 
     assert result["status"] == "passed"
     assert result["candidate_over_reference"]["output_throughput"] == pytest.approx(
-        0.97
+        0.99
     )
     args.correctness = correctness
     args.min_throughput_ratio = 0.95
@@ -605,7 +888,7 @@ def test_sealed_results_are_directly_perf_gate_compatible(tmp_path: Path) -> Non
     args.min_parity_pairs = 4
     hardened = gate_workload(records, args)
     assert hardened["hard_floor"]["status"] == "passed"
-    assert hardened["statistical_parity"]["status"] == "insufficient_evidence"
+    assert hardened["statistical_parity"]["status"] == "passed"
 
 
 def test_exploratory_seal_omits_formal_correctness_provenance(
@@ -618,7 +901,12 @@ def test_exploratory_seal_omits_formal_correctness_provenance(
         tmp_path / "benchmark.raw.json", throughput=100.0, workload=workload
     )
     engine_log = tmp_path / "engine.log"
-    engine_log.write_text("INFO engine ready\n", encoding="utf-8")
+    engine_log.write_text(
+        "INFO config: device_config=xpu\n"
+        "INFO Actual usage is 17.54 GiB for consumed memory. "
+        "Current kv cache memory in use is 10.92 GiB.\n",
+        encoding="utf-8",
+    )
 
     sealed = seal_benchmark_result(
         raw_result=raw,
@@ -633,6 +921,7 @@ def test_exploratory_seal_omits_formal_correctness_provenance(
         started_at="2026-09-03T00:00:00Z",
         identity=IDENTITY,
         profile=PROFILE,
+        warmup_result=None,
     )
 
     assert sealed["kvarn_evidence_mode"] == "exploratory"
@@ -705,6 +994,13 @@ def _parity_document(
         "kvarn_candidate_closure_sha256": "2" * 64,
         "kvarn_max_num_batched_tokens": "2048",
         "kvarn_matched_profile_sha256": "3" * 64,
+        "kvarn_accelerator": "xpu",
+        "kvarn_xpu_available": "1",
+        "kvarn_xpu_device_count": "1",
+        "kvarn_xpu_device_name": "Intel(R) Arc(TM) Pro B70 Graphics",
+        "kvarn_xpu_compute_probe": "passed",
+        "kvarn_hardware_preflight_path": "/evidence/hardware.json",
+        "kvarn_hardware_preflight_sha256": "4" * 64,
     }
 
 
@@ -988,10 +1284,15 @@ def test_warmup_result_is_validated_and_persisted(tmp_path: Path) -> None:
         output=output,
         workload=workload,
         argv=["vllm", "--api-key", "secret"],
+        arm="reference",
+        run_uuid="warmup-run",
+        identity=IDENTITY,
+        profile=PROFILE,
     )
 
     assert result["status"] == "passed"
     assert result["raw_result_sha256"] == hashlib.sha256(raw.read_bytes()).hexdigest()
+    assert result["process_closure_sha256"] == IDENTITY["process_closure_sha256"]
     assert "secret" not in output.read_text(encoding="utf-8")
 
 

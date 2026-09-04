@@ -490,10 +490,15 @@ the neutral value `1`, and a mismatch in either arm aborts the trial before a
 measurement is accepted.
 
 `--native-frontend qkv_scatter_inline` requires two independent runtime proofs:
-the existing fused-QKV active marker and the inline-specific configured marker.
+the existing fused-QKV active marker and
+`[KVARN_FRONTEND_INLINE] active=qkv_scatter_inline; wrapper=unified_qkv_attention_with_output;`,
+which is emitted only when the combined wrapper executes.
 The service-only `--forward-pool-ensure always|fused_qkv_proof` selector is
-captured in service profiles and sealed provenance; it is deliberately absent
-from direct primitive results.
+captured in service profiles and sealed provenance. `fused_qkv_proof` requires
+a fused QKV frontend and the runtime marker
+`[KVARN_FORWARD_POOL_ENSURE] active=fused_qkv_proof; action=elide_ensure_pool;`.
+Both service-only axes are deliberately absent from direct primitive results;
+reference and inapplicable paths must not emit their active markers.
 
 Use `--plan-only` to realize immutable launcher programs and materialize and
 inspect `session.json` without starting a service. `--context` and `--batch`

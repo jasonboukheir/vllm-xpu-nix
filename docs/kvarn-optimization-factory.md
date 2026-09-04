@@ -81,8 +81,10 @@ run whose forward path can prove the fused QKV allocation. The performance,
 correctness, and XPU-profile runners expose it as
 `--forward-pool-ensure fused_qkv_proof`, capture the child-process value, and
 include it in candidate provenance. Their auto/non-native reference phases
-always use `reference` plus `always`. Direct primitive factory results neither
-accept nor report this service-only axis.
+always use `reference` plus `always`. The proof selector is accepted only with
+`qkv_scatter` or `qkv_scatter_inline`, and a result counts only when the engine
+reports the exact active pool-elision marker. Direct primitive factory results
+neither accept nor report this service-only axis.
 
 `b70_q6` allocates for 32 and selects B1=32, B2=16, B3--4=8,
 B5--8=4, and B9--12=2. It is valid only with a Q6 DPAS reader. The named

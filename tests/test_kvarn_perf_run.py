@@ -1409,6 +1409,59 @@ def test_native_log_attests_selected_frontend(tmp_path: Path) -> None:
         )
 
 
+def test_native_log_attests_fused_pool_check_elision(tmp_path: Path) -> None:
+    engine_log = tmp_path / "engine.log"
+    base = (
+        "INFO config: device_config=xpu\n"
+        "INFO Actual usage is 17.54 GiB for consumed memory. "
+        "Current kv cache memory in use is 10.92 GiB.\n"
+        f"INFO {runner.NATIVE_DISPATCH} (direct bf16 output=True)\n"
+        f"INFO {runner.NATIVE_FRONTEND_ACTIVE_MARKER} layer=0\n"
+    )
+    engine_log.write_text(
+        base + f"INFO {runner.FORWARD_POOL_ENSURE_ACTIVE_MARKER} layer=0\n",
+        encoding="utf-8",
+    )
+
+    scan = runner.validate_engine_log(
+        engine_log,
+        native=True,
+        expected_frontend="qkv_scatter",
+        expected_forward_pool_ensure="fused_qkv_proof",
+    )
+    assert scan["forward_pool_ensure_active_verified"] is True
+    assert (
+        scan["forward_pool_ensure_log_marker"]
+        == runner.FORWARD_POOL_ENSURE_ACTIVE_MARKER
+    )
+
+    with pytest.raises(RunnerError, match="must not execute.*pool-check elision"):
+        runner.validate_engine_log(
+            engine_log,
+            native=True,
+            expected_frontend="qkv_scatter",
+            expected_forward_pool_ensure="always",
+        )
+
+    engine_log.write_text(base, encoding="utf-8")
+    with pytest.raises(RunnerError, match="must execute.*pool-check elision"):
+        runner.validate_engine_log(
+            engine_log,
+            native=True,
+            expected_frontend="qkv_scatter",
+            expected_forward_pool_ensure="fused_qkv_proof",
+        )
+
+
+def test_fused_pool_proof_requires_fused_frontend(tmp_path: Path) -> None:
+    args = _args(tmp_path)
+    args.native_frontend = "reference"
+    args.forward_pool_ensure = "fused_qkv_proof"
+
+    with pytest.raises(RunnerError, match="requires --native-frontend"):
+        runner.forward_pool_ensure_environment(args)
+
+
 def test_non_native_log_rejects_frontend_contamination(tmp_path: Path) -> None:
     engine_log = tmp_path / "engine.log"
     base = (

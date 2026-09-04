@@ -64,9 +64,14 @@ PREFILL_STORE_VARIANTS = ("reference", "hadamard_scatter")
 NATIVE_FRONTEND_VARIANTS = ("reference", "qkv_scatter", "qkv_scatter_inline")
 NATIVE_FRONTEND_ACTIVE_MARKER = "[KVARN_FRONTEND] active=qkv_scatter;"
 NATIVE_FRONTEND_INLINE_ACTIVE_MARKER = (
-    "[KVARN_FRONTEND_INLINE] configured=qkv_scatter_inline;"
+    "[KVARN_FRONTEND_INLINE] active=qkv_scatter_inline; "
+    "wrapper=unified_qkv_attention_with_output;"
 )
 FORWARD_POOL_ENSURE_VARIANTS = ("always", "fused_qkv_proof")
+FORWARD_POOL_ENSURE_ACTIVE_MARKER = (
+    "[KVARN_FORWARD_POOL_ENSURE] active=fused_qkv_proof; "
+    "action=elide_ensure_pool;"
+)
 FILTERED_SOURCE_SCHEME = "nix-filtered-source-store-hash-v1"
 NIX_STORE_HASH = re.compile(r"^[0-9abcdfghijklmnpqrsvwxyz]{32}$")
 DEFAULT_NATIVE_SPLITS = {1: 24, 4: 16}
@@ -1080,6 +1085,10 @@ def _validate_correctness_phase(
     expected_frontend_inline_active = (
         expected_spec["native"] and effective_frontend == "qkv_scatter_inline"
     )
+    expected_forward_pool_ensure_active = (
+        expected_spec["native"]
+        and effective_forward_pool_ensure == "fused_qkv_proof"
+    )
     if (
         phase.get("status") != "passed"
         or phase.get("spec") != expected_spec
@@ -1124,6 +1133,14 @@ def _validate_correctness_phase(
         != (
             NATIVE_FRONTEND_INLINE_ACTIVE_MARKER
             if expected_frontend_inline_active
+            else "not_applicable"
+        )
+        or phase.get("forward_pool_ensure_active_verified")
+        is not expected_forward_pool_ensure_active
+        or phase.get("forward_pool_ensure_log_marker")
+        != (
+            FORWARD_POOL_ENSURE_ACTIVE_MARKER
+            if expected_forward_pool_ensure_active
             else "not_applicable"
         )
         or not isinstance(phase.get("workload"), dict)
@@ -1218,6 +1235,11 @@ def _validate_correctness_phase(
     frontend_inline_active = NATIVE_FRONTEND_INLINE_ACTIVE_MARKER in log_text
     if frontend_inline_active != expected_frontend_inline_active:
         raise GateError(f"{owner}: {phase_name} inline frontend runtime proof differs")
+    forward_pool_ensure_active = FORWARD_POOL_ENSURE_ACTIVE_MARKER in log_text
+    if forward_pool_ensure_active != expected_forward_pool_ensure_active:
+        raise GateError(
+            f"{owner}: {phase_name} forward-pool runtime proof differs"
+        )
     if expected_marker not in log_text:
         raise GateError(f"{owner}: {phase_name} lacks the exact factory marker")
     _scan_path, log_scan = _json_artifact(
@@ -1243,6 +1265,16 @@ def _validate_correctness_phase(
         != (
             NATIVE_FRONTEND_INLINE_ACTIVE_MARKER
             if expected_frontend_inline_active
+            else "not_applicable"
+        )
+        or log_scan.get("forward_pool_ensure_expected")
+        != effective_forward_pool_ensure
+        or log_scan.get("forward_pool_ensure_active_verified")
+        is not expected_forward_pool_ensure_active
+        or log_scan.get("forward_pool_ensure_log_marker")
+        != (
+            FORWARD_POOL_ENSURE_ACTIVE_MARKER
+            if expected_forward_pool_ensure_active
             else "not_applicable"
         )
     ):
@@ -1280,6 +1312,11 @@ def validate_correctness_gate_evidence(
         raise GateError(f"{path}: prefill store is unsupported")
     if forward_pool_ensure not in FORWARD_POOL_ENSURE_VARIANTS:
         raise GateError(f"{path}: forward pool ensure is unsupported")
+    if forward_pool_ensure == "fused_qkv_proof" and native_frontend not in {
+        "qkv_scatter",
+        "qkv_scatter_inline",
+    }:
+        raise GateError(f"{path}: fused pool proof requires a fused QKV frontend")
     if request_stable_projection_rows not in {"0", "1"}:
         raise GateError(f"{path}: projection-row selector is unsupported")
     if request_stable_rmsnorm not in {"0", "1"}:
@@ -2191,6 +2228,11 @@ def _load_correctness(path: Path) -> tuple[dict[str, Any], str]:
     forward_pool_ensure = document.get("forward_pool_ensure")
     if forward_pool_ensure not in FORWARD_POOL_ENSURE_VARIANTS:
         raise GateError(f"{path}: forward pool ensure is unsupported")
+    if forward_pool_ensure == "fused_qkv_proof" and native_frontend not in {
+        "qkv_scatter",
+        "qkv_scatter_inline",
+    }:
+        raise GateError(f"{path}: fused pool proof requires a fused QKV frontend")
     service_controls = document.get("service_controls")
     correctness_onednn = (
         service_controls.get("kvarn_onednn_deterministic")
@@ -2459,6 +2501,7 @@ def _validate_logs(
     expected_max_splits: int | None = None,
     expected_split_policy: str | None = None,
     expected_frontend: str,
+    expected_forward_pool_ensure: str,
 ) -> list[dict[str, Any]]:
     if expected_layout not in NATIVE_LAYOUTS or (
         not expect_native and expected_layout != "natural"
@@ -2489,6 +2532,16 @@ def _validate_logs(
     }
     expected_frontend_inline_active = (
         expect_native and expected_frontend == "qkv_scatter_inline"
+    )
+    if expected_forward_pool_ensure not in FORWARD_POOL_ENSURE_VARIANTS:
+        raise GateError(f"{arm} has an invalid forward-pool log expectation")
+    if expected_forward_pool_ensure == "fused_qkv_proof" and expected_frontend not in {
+        "qkv_scatter",
+        "qkv_scatter_inline",
+    }:
+        raise GateError(f"{arm} fused pool proof requires a fused QKV frontend")
+    expected_forward_pool_ensure_active = (
+        expect_native and expected_forward_pool_ensure == "fused_qkv_proof"
     )
     resolved = [path.resolve() for path in paths]
     if len(set(resolved)) != len(resolved):
@@ -2532,6 +2585,9 @@ def _validate_logs(
         frontend_inline_active = NATIVE_FRONTEND_INLINE_ACTIVE_MARKER in text
         if frontend_inline_active != expected_frontend_inline_active:
             raise GateError(f"{path}: {arm} inline frontend runtime proof differs")
+        forward_pool_ensure_active = FORWARD_POOL_ENSURE_ACTIVE_MARKER in text
+        if forward_pool_ensure_active != expected_forward_pool_ensure_active:
+            raise GateError(f"{path}: {arm} forward-pool runtime proof differs")
         evidence.append(
             {
                 "sha256": hashlib.sha256(raw).hexdigest(),
@@ -2554,6 +2610,13 @@ def _validate_logs(
                 "native_frontend_inline_log_marker": (
                     NATIVE_FRONTEND_INLINE_ACTIVE_MARKER
                     if expected_frontend_inline_active
+                    else "not_applicable"
+                ),
+                "forward_pool_ensure_expected": expected_forward_pool_ensure,
+                "forward_pool_ensure_active_verified": forward_pool_ensure_active,
+                "forward_pool_ensure_log_marker": (
+                    FORWARD_POOL_ENSURE_ACTIVE_MARKER
+                    if expected_forward_pool_ensure_active
                     else "not_applicable"
                 ),
                 **xpu,
@@ -2926,6 +2989,7 @@ def compare(
         expect_native=False,
         expected_layout=ref_layout,
         expected_frontend="reference",
+        expected_forward_pool_ensure="always",
     )
     candidate_log_evidence = _validate_logs(
         candidate_logs,
@@ -2933,6 +2997,7 @@ def compare(
         expect_native=True,
         expected_layout=cand_layout,
         expected_frontend=correctness["native_frontend"],
+        expected_forward_pool_ensure=correctness["forward_pool_ensure"],
         expected_kernel_variant=correctness_kernel_variant,
         expected_max_splits=correctness_max_splits,
         expected_split_policy=correctness_split_policy,

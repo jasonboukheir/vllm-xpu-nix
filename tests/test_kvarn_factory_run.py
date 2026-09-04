@@ -167,8 +167,7 @@ def test_variant_parser_accepts_names_and_all_but_not_numeric_aliases() -> None:
         factory.parse_variants("3")
 
 
-def test_focused_kill_suite_has_262k_coverage_for_every_variant() -> None:
-    selected = "\n".join(factory.FOCUSED_XPU_TESTS)
+def test_focused_kill_suite_maps_every_variant_to_multisplit_and_262k() -> None:
     expected_node_ids = {
         0: "dpas-split24",
         1: "dpas-qk-i8u4-split24",
@@ -187,11 +186,44 @@ def test_focused_kill_suite_has_262k_coverage_for_every_variant() -> None:
         15: "q6-block-output-store",
     }
     assert set(expected_node_ids) == set(factory.VARIANTS_BY_ID)
-    for node_id in expected_node_ids.values():
+    assert set(factory.FOCUSED_XPU_MULTISPLIT_TESTS) == set(factory.VARIANTS_BY_ID)
+    assert set(factory.FOCUSED_XPU_262K_TESTS) == set(factory.VARIANTS_BY_ID)
+    selected = factory.focused_xpu_tests(list(factory.VARIANTS.values()))
+    for variant_id, node_id in expected_node_ids.items():
+        assert factory.FOCUSED_XPU_MULTISPLIT_TESTS[variant_id] in selected
+        assert factory.FOCUSED_XPU_262K_TESTS[variant_id] in selected
         assert (
             "test_long_context_ragged_b4_matches_structured_oracle["
-            f"{node_id}]" in selected
+            f"{node_id}]" in "\n".join(selected)
         )
+
+
+def test_focused_kill_suite_limits_attributable_gates_to_requested_variants() -> None:
+    survivors = [
+        factory.VARIANTS["q6_next_page_prefetch"],
+        factory.VARIANTS["q6_next_page_prefetch_split_reducer"],
+    ]
+    selected = factory.focused_xpu_tests(survivors)
+    joined = "\n".join(selected)
+
+    assert set(factory.FOCUSED_XPU_INVARIANT_TESTS) <= set(selected)
+    for variant in survivors:
+        assert factory.FOCUSED_XPU_MULTISPLIT_TESTS[variant.variant_id] in selected
+        assert factory.FOCUSED_XPU_262K_TESTS[variant.variant_id] in selected
+    assert "test_factory_dpas_variants_match_canonical" in joined
+    assert "test_q6_multisplit_lse_owns_all_six_distinct_query_rows[15]" not in joined
+    assert "q6-block-output-store" not in joined
+    assert factory.FOCUSED_XPU_ID15_TEST not in selected
+
+
+def test_focused_kill_suite_adds_id15_block_store_matrix_only_for_id15() -> None:
+    without_id15 = factory.focused_xpu_tests([factory.VARIANTS["q6_scalar"]])
+    with_id15 = factory.focused_xpu_tests(
+        [factory.VARIANTS["q6_scalar"], factory.VARIANTS["q6_block_output_store"]]
+    )
+
+    assert factory.FOCUSED_XPU_ID15_TEST not in without_id15
+    assert factory.FOCUSED_XPU_ID15_TEST in with_id15
 
 
 def test_matrix_expands_auto_and_explicit_split_sweeps() -> None:
@@ -932,7 +964,13 @@ def test_focused_xpu_kill_suite_is_bound_to_library_and_fail_closed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repo = tmp_path / "kernels"
-    for selection in factory.FOCUSED_XPU_TESTS:
+    variants = [
+        factory.VARIANTS["q6_next_page_prefetch"],
+        factory.VARIANTS["q6_next_page_prefetch_split_reducer"],
+    ]
+    selections = factory.focused_xpu_tests(variants)
+    minimum_passed = len(selections)
+    for selection in selections:
         relative = selection.partition("::")[0]
         source = repo / relative
         source.parent.mkdir(parents=True, exist_ok=True)
@@ -946,17 +984,23 @@ def test_focused_xpu_kill_suite_is_bound_to_library_and_fail_closed(
         captured.update(kwargs)
         return SimpleNamespace(
             returncode=0,
-            stdout=f"{factory.FOCUSED_XPU_MIN_PASSED} passed in 1.00s\n",
+            stdout=f"{minimum_passed} passed in 1.00s\n",
             stderr="",
         )
 
     monkeypatch.setattr(factory.subprocess, "run", passing_run)
     result = factory.run_focused_xpu_kill_suite(
-        kernels_repo=repo, flash_library=library
+        kernels_repo=repo, flash_library=library, variants=variants
     )
     factory.require_focused_xpu_kill_suite(result)
     assert result["passed"] is True
-    assert result["passed_count"] == factory.FOCUSED_XPU_MIN_PASSED
+    assert result["passed_count"] == minimum_passed
+    assert result["minimum_passed_required"] == minimum_passed
+    assert result["test_selections"] == list(selections)
+    assert result["selected_variants"] == [
+        {"variant_id": 12, "name": "q6_next_page_prefetch"},
+        {"variant_id": 13, "name": "q6_next_page_prefetch_split_reducer"},
+    ]
     assert captured["cwd"] == repo.resolve()
     assert captured["env"]["VLLM_XPU_KERNELS_LIBRARY"] == str(library.resolve())
     assert "no:cacheprovider" in captured["command"]
@@ -965,13 +1009,13 @@ def test_focused_xpu_kill_suite_is_bound_to_library_and_fail_closed(
     def skipped_run(_command, **_kwargs):
         return SimpleNamespace(
             returncode=0,
-            stdout=f"{factory.FOCUSED_XPU_MIN_PASSED} passed, 1 skipped in 1.00s\n",
+            stdout=f"{minimum_passed} passed, 1 skipped in 1.00s\n",
             stderr="",
         )
 
     monkeypatch.setattr(factory.subprocess, "run", skipped_run)
     skipped = factory.run_focused_xpu_kill_suite(
-        kernels_repo=repo, flash_library=library
+        kernels_repo=repo, flash_library=library, variants=variants
     )
     assert skipped["passed"] is False
     with pytest.raises(factory.FactoryError, match="kill suite failed"):

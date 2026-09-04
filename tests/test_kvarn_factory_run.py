@@ -50,7 +50,6 @@ def test_named_factory_ids_are_complete_and_stable() -> None:
         "q6_scalar": 2,
         "q8_vector": 3,
         "q6_vector": 4,
-        "page128": 5,
         "q6_cached_weights": 6,
         "q6_exact_rows": 7,
         "q6_cached_weights_exact_rows": 8,
@@ -59,8 +58,14 @@ def test_named_factory_ids_are_complete_and_stable() -> None:
         "q6_split_reducer_specialized": 11,
         "q6_next_page_prefetch": 12,
     }
-    assert set(factory.VARIANTS_BY_ID) == set(range(13))
+    assert set(factory.VARIANTS_BY_ID) == set(range(13)) - {5}
     assert all(spec.dpas_layout for spec in factory.VARIANTS.values())
+    assert factory.VARIANTS["q6_page_pair"].work_unit_tokens == 128
+    assert all(
+        spec.work_unit_tokens == 64
+        for name, spec in factory.VARIANTS.items()
+        if name != "q6_page_pair"
+    )
     assert factory.DEFAULT_VARIANT_NAMES == (
         "q6_scalar",
         "q6_vector",
@@ -93,7 +98,8 @@ def test_variant_parser_accepts_names_and_all_but_not_numeric_aliases() -> None:
         11,
         12,
     ]
-    assert factory.parse_variants("page128") == [factory.VARIANTS["page128"]]
+    with pytest.raises(factory.FactoryError, match="ID 5.*reserved"):
+        factory.parse_variants("page128")
     with pytest.raises(factory.FactoryError, match="unknown variant"):
         factory.parse_variants("3")
 
@@ -119,7 +125,7 @@ def test_matrix_expands_auto_and_explicit_split_sweeps() -> None:
     ]
     assert all(case.effective_splits == case.requested_splits for case in cases)
     assert all(case.output_dtype == "fp16" for case in cases)
-    assert factory.effective_split_count(64, 24) == 1
+    assert factory.effective_split_count(64, 24, factory.VARIANTS["baseline"]) == 1
     with pytest.raises(factory.FactoryError, match="only B1 and B4"):
         factory.build_matrix(
             batches=[2],
@@ -150,6 +156,37 @@ def test_output_dtype_is_an_explicit_runtime_matrix_axis() -> None:
         )
     with pytest.raises(factory.FactoryError, match="unsupported output dtype"):
         factory.parse_output_dtypes("tf32")
+
+
+def test_page_pair_split_collapse_uses_128_token_work_units() -> None:
+    baseline = factory.VARIANTS["baseline"]
+    page_pair = factory.VARIANTS["q6_page_pair"]
+
+    # With S=32 this is the lower edge of the range where a K64 calculation
+    # reports 32 live units but the paired-page kernel has only 16 K128 units.
+    assert factory.effective_split_count(1985, 32, baseline) == 32
+    assert factory.effective_split_count(1985, 32, page_pair) == 1
+
+    # The page-pair kernel reaches 32 work units immediately after 31 pages.
+    assert factory.effective_split_count(3968, 32, page_pair) == 1
+    assert factory.effective_split_count(3969, 32, page_pair) == 32
+
+    cases = factory.build_matrix(
+        batches=[1],
+        contexts=[1985],
+        splits=[32],
+        variants=[baseline, page_pair],
+        output_dtypes=["fp16"],
+    )
+    assert [case.effective_splits for case in cases] == [32, 1]
+    with pytest.raises(factory.FactoryError, match="multi-split"):
+        factory.build_matrix(
+            batches=[1],
+            contexts=[1985],
+            splits=[32],
+            variants=[page_pair],
+            output_dtypes=["bf16"],
+        )
 
 
 def test_split_parser_is_fail_closed() -> None:

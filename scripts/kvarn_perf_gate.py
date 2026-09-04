@@ -42,6 +42,10 @@ NATIVE_KERNEL_VARIANTS = {
     "q6_cached_weights": 6,
     "q6_exact_rows": 7,
     "q6_cached_weights_exact_rows": 8,
+    "q6_page_pair": 9,
+    "q6_main_grf128": 10,
+    "q6_split_reducer_specialized": 11,
+    "q6_next_page_prefetch": 12,
 }
 NATIVE_SPLIT_POLICIES = ("fixed", "b70_q6")
 DEFAULT_NATIVE_SPLITS = {1: 24, 4: 16}
@@ -54,6 +58,10 @@ B70_Q6_KERNEL_VARIANTS = frozenset(
         "q6_cached_weights",
         "q6_exact_rows",
         "q6_cached_weights_exact_rows",
+        "q6_page_pair",
+        "q6_main_grf128",
+        "q6_split_reducer_specialized",
+        "q6_next_page_prefetch",
     }
 )
 COMBINED_LIBRARY_VARIANT_MATRIX = [
@@ -68,6 +76,10 @@ COMBINED_LIBRARY_VARIANT_MATRIX = [
         "q6_cached_weights",
         "q6_exact_rows",
         "q6_cached_weights_exact_rows",
+        "q6_page_pair",
+        "q6_main_grf128",
+        "q6_split_reducer_specialized",
+        "q6_next_page_prefetch",
     )
 ]
 VARIANT_FIELDS = (

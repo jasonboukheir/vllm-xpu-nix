@@ -330,6 +330,10 @@ def test_default_cli_is_the_matched_b70_factory_matrix() -> None:
         ]
     )
     assert args.variants == host.DEFAULT_VARIANTS
+    assert args.variants == (
+        "q6_scalar,q6_vector,q6_cached_weights,q6_exact_rows,"
+        "q6_cached_weights_exact_rows"
+    )
     assert args.splits == host.DEFAULT_SPLITS
     assert args.contexts == host.DEFAULT_CONTEXTS
     assert args.batches == host.DEFAULT_BATCHES

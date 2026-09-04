@@ -273,6 +273,10 @@ def test_gzip_trace_loading(tmp_path: Path) -> None:
         ("q6_cached_weights", 6),
         ("q6_exact_rows", 7),
         ("q6_cached_weights_exact_rows", 8),
+        ("q6_page_pair", 9),
+        ("q6_main_grf128", 10),
+        ("q6_split_reducer_specialized", 11),
+        ("q6_next_page_prefetch", 12),
     ],
 )
 def test_profile_command_and_dpas_launcher_provenance(
@@ -294,6 +298,7 @@ def test_profile_command_and_dpas_launcher_provenance(
         native_kernel_variant=variant,
         native_split_policy="fixed",
         native_splits={4: 16},
+        onednn_deterministic=True,
         variant_id="factory-dpas-001",
         resolved_launchers={
             f"vllm-xpu-brutus-kvarn-native-dpas-{variant}-b4": (

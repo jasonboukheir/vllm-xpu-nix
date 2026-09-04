@@ -47,6 +47,7 @@ DEFAULT_CONTEXTS = (4096, 16384, 32768, 65023)
 DEFAULT_BATCHES = (1, 4)
 DEFAULT_NATIVE_SPLITS = {1: 24, 4: 16}
 DEFAULT_MAX_NUM_BATCHED_TOKENS = 2048
+DEFAULT_PREFILL_WINDOW_BLOCKS = 16
 REFERENCE_NATIVE_SPLITS = 1
 SUPPORTED_NATIVE_SPLITS = frozenset({1, 2, 4, 8, 16, 17, 24, 32})
 ARM_ORDER = ("reference", "candidate", "candidate", "reference")
@@ -75,8 +76,10 @@ CAPTURED_ENVIRONMENT = (
     "KVARN_NATIVE_XPU_MATERIALIZE",
     "KVARN_NATIVE_XPU_PERSISTENT_SCRATCH",
     "KVARN_NATIVE_XPU_SPLITS",
+    "KVARN_PREFILL_FP16_WINDOW_BLOCKS",
     "VLLM_CACHE_ROOT",
     "VLLM_TARGET_DEVICE",
+    "VLLM_KVARN_DEFER_PREFILL_FLUSH",
     "VLLM_XPU_ENABLE_XPU_GRAPH",
     "XDG_CACHE_HOME",
 )
@@ -87,8 +90,14 @@ SCRUBBED_ENVIRONMENT = (
     "LD_LIBRARY_PATH",
     "LEVEL_ZERO_V1_SDK_PATH",
     "LIBRARY_PATH",
+    "LD_PRELOAD",
     "ONEAPI_ROOT",
+    "PYTHONHOME",
+    "PYTHONPATH",
+    "PYTHONSTARTUP",
+    "PYTHONUSERBASE",
     "SYCL_HOME",
+    "VLLM_KVARN_DEFER_PREFILL_FLUSH",
     "VLLM_XPU_ENABLE_XPU_GRAPH",
 )
 FALLBACK_PATTERN = re.compile(r"(?i)(?:kvarn.{0,80}fallback|falling back)")
@@ -370,10 +379,17 @@ def repository_state(name: str, path: Path) -> dict[str, Any]:
 def runner_environment(args: argparse.Namespace) -> dict[str, str]:
     environment = dict(os.environ)
     for name in list(environment):
-        if name.startswith("KVARN_") or name in SCRUBBED_ENVIRONMENT:
+        if name.startswith(("KVARN_", "VLLM_")) or name in SCRUBBED_ENVIRONMENT:
             environment.pop(name, None)
+    environment["PYTHONNOUSERSITE"] = "1"
     environment["XDG_CACHE_HOME"] = str(args.runtime_cache)
     environment["HF_HOME"] = str(args.hf_home)
+    return environment
+
+
+def service_environment(args: argparse.Namespace) -> dict[str, str]:
+    environment = runner_environment(args)
+    environment["KVARN_PREFILL_FP16_WINDOW_BLOCKS"] = str(DEFAULT_PREFILL_WINDOW_BLOCKS)
     return environment
 
 
@@ -813,8 +829,10 @@ def verify_service_profile(
         "KVARN_NATIVE_XPU_MATERIALIZE": native,
         "KVARN_NATIVE_XPU_PERSISTENT_SCRATCH": native,
         "KVARN_NATIVE_XPU_SPLITS": str(native_splits_for_run(run, args)),
+        "KVARN_PREFILL_FP16_WINDOW_BLOCKS": str(DEFAULT_PREFILL_WINDOW_BLOCKS),
         "VLLM_CACHE_ROOT": str(args.runtime_cache / "vllm-xpu-brutus-kvarn"),
         "VLLM_TARGET_DEVICE": "xpu",
+        "VLLM_KVARN_DEFER_PREFILL_FLUSH": None,
         "XDG_CACHE_HOME": str(args.runtime_cache),
     }
     environment_mismatches = {
@@ -992,7 +1010,7 @@ def start_service(
         process = subprocess.Popen(
             command,
             cwd=args.config_repo,
-            env=runner_environment(args),
+            env=service_environment(args),
             stdout=log_stream,
             stderr=subprocess.STDOUT,
             start_new_session=True,

@@ -25,11 +25,11 @@ identically to both arms.
 
 1. Build the narrowed BMG kernel package. Run the native primitive suite,
    including packed K-column-scale coverage across every token subgroup and
-   the 262K ragged B4 decoder oracle at split counts 1 and 16.
-2. Start native Kvarn at 65,536/B1 with split count 1. Require the native Xe2
-   dispatch log and reject any fallback, exception, non-finite value, or device
-   assertion. Replay the short and boundary fixtures twice and require exact
-   token IDs.
+   the 262K ragged B4 decoder oracle at split counts 1, 16, and 24.
+2. Start native Kvarn at 65,536/B1 with the selected split count 24. Require
+   the native Xe2 dispatch log and reject any fallback, exception, non-finite
+   value, or device assertion. Replay the short and boundary fixtures twice
+   and require exact token IDs.
 3. Restart the same B1 service and replay the fixtures. Exercise cancellation,
    immediate slot reuse, and another exact replay.
 4. Repeat at 65,536/B4 with distinct concurrent prompts. Require each request
@@ -46,8 +46,9 @@ identically to both arms.
    for each slot.
 7. Only after correctness, run the kernel-isolating compact
    non-native/native trials, followed by BF16-auto/native end-system trials at
-   65,536. Establish split 1 first. Other split counts are eligible only after
-   their long primitive and all service gates pass.
+   65,536. The current selected split counts, B1=24 and B4=16, are eligible
+   only after their long primitive and all service gates pass; split 1 remains
+   the primitive oracle/control.
 
 The Brutus flake exposes isolated foreground launchers for these phases:
 
@@ -68,6 +69,147 @@ The native launchers explicitly set the decode, materializer, persistent
 scratch, natural-layout, and split-count switches. The auto launchers
 explicitly disable them. That makes an inherited shell variable unable to
 silently change one arm.
+
+## Automated correctness manifest
+
+`kvarn_correctness_run.py` produces the eight-gate manifest consumed by the
+formal performance runner. It runs two native primitive pytest phases and six
+foreground service starts, in this fixed order:
+
+1. native 65K/B1 first pass: four exact-length fixtures, same-process replay,
+   and cancellation/reuse at the 65,023-token boundary;
+2. native 65K/B1 restart: exact comparison with the first process;
+3. native 65K/B4: one full-width concurrent wave, observed scheduler overlap,
+   and exact comparison of every stream with its B1 result;
+4. compact non-native 262K/B1: one 261,631 + 512 reference completion;
+5. native 262K/B1: one completion compared exactly with the reference; and
+6. restarted native 262K/B1: one completion compared with both prior results.
+
+The long prompt is generated deterministically in memory from the checked-in,
+SHA-pinned reasoning fixture. Its length and token-ID SHA-256 are retained,
+but the 261,631 prompt IDs are not copied into result JSON. The HTTP request
+necessarily contains the IDs. Output token IDs, comparison results, redacted service
+profile, actual process package, candidate/process closure digests, engine log,
+and engine-log scan remain durable.
+Every completion must also report OpenAI usage matching the exact prompt
+length and 512 generated tokens, terminate for `length`, and return exactly
+512 token IDs.
+
+The runner independently resolves `vllm-xpu-brutus` from the pinned
+configuration, requires that exact package in the supplied candidate
+environment's closure, and then requires every captured engine process to use
+that exact package. A look-alike environment containing a different vLLM build
+therefore fails before a manifest can pass. `--config-ref` must resolve to the
+same local tree as `--config-repo`; the runner will not verify one checkout and
+evaluate another. That configuration checkout must be clean; its HEAD and
+complete tracked-tree digest are captured and rechecked around every package
+or launcher resolution and once more before manifest emission.
+
+The correctness harness is a separate identity from the candidate packaging
+input pinned in that lock. Its own checkout must be clean, and the manifest
+records and rechecks that checkout's actual HEAD and complete tracked-tree
+digest. It also snapshots the flake lock, correctness runner,
+performance-gate and performance-runner helpers, service helper, and
+engine-log scanner into the result tree and retains their SHA-256 values. The
+harness HEAD is deliberately not required to equal the older
+`vllm-xpu-release` candidate revision.
+
+For every service phase it also pins the bounded continuation-prefill window
+to 16 fp16 blocks and removes the unbounded
+`VLLM_KVARN_DEFER_PREFILL_FLUSH` diagnostic from the inherited environment.
+The captured process environment must prove both conditions.
+
+The primitive Python must contain pytest, Transformers, the candidate vLLM
+package, and the candidate kernel extension, while retaining the package's
+pinned Level Zero/oneAPI wrapper. This expression builds such an environment
+from the exact Brutus package without running the GPU:
+
+```bash
+candidate_env="$(
+  nix build --store daemon --no-link --print-out-paths --impure --expr '
+    let
+      config = builtins.getFlake "path:/home/jasonbk/.config/nix";
+      pkgs = config.inputs.nixpkgs.legacyPackages.x86_64-linux;
+      package = config.packages.x86_64-linux.vllm-xpu-brutus;
+      pythonEnv = package.pythonModule.withPackages (ps: [ package ps.pytest ]);
+      wrapperArgs = builtins.filter
+        (arg: !(pkgs.lib.hasPrefix "--prefix PYTHONPATH " arg))
+        package.makeWrapperArgs;
+    in pkgs.symlinkJoin {
+      name = "vllm-kvarn-correctness-env";
+      paths = [ pythonEnv ];
+      nativeBuildInputs = [ pkgs.makeWrapper ];
+      postBuild =
+        "rm -f \"$out/bin/python\" \"$out/bin/python3\" \"$out/bin/python3.12\"\n"
+        + "makeWrapper ${pythonEnv}/bin/python \"$out/bin/python\" "
+        + builtins.concatStringsSep " " wrapperArgs
+        + "\nln -s python \"$out/bin/python3\""
+        + "\nln -s python \"$out/bin/python3.12\"";
+    }
+  '
+)"
+test -x "$candidate_env/bin/vllm"
+test -x "$candidate_env/bin/python"
+```
+
+Wait for that build to finish before starting any correctness phase. A
+CPU-only plan resolves and seals all immutable launchers and package-import
+origins without initializing an XPU or starting a service:
+
+```bash
+run_stamp=$(date -u +%Y%m%dT%H%M%SZ)
+scripts/kvarn_correctness_run.py \
+  --candidate-env "$candidate_env" \
+  --primitive-python "$candidate_env/bin/python" \
+  --plan-only \
+  --output-dir "benchmark-results/kvarn/${run_stamp}-correctness-plan"
+```
+
+The real run owns the foreground processes and refuses to begin unless the
+loopback API port is free and both deployed vLLM units are inactive:
+
+```bash
+sudo systemctl stop vllm-xpu-chat.service vllm-xpu-embedding.service
+test "$(systemctl is-active vllm-xpu-chat.service)" = inactive
+test "$(systemctl is-active vllm-xpu-embedding.service)" = inactive
+
+run_stamp=$(date -u +%Y%m%dT%H%M%SZ)
+scripts/kvarn_correctness_run.py \
+  --candidate-env "$candidate_env" \
+  --primitive-python "$candidate_env/bin/python" \
+  --output-dir "benchmark-results/kvarn/${run_stamp}-native-correctness"
+```
+
+The command exits zero only after writing
+`native-correctness.json`, whose `candidate_id` is the resolved correctness
+environment store path. Use that same `candidate_env` for formal performance
+trials. An all-skipped primitive suite, mismatched flake lock, modified native
+oracle source, extension outside the candidate closure, service/profile/closure
+mismatch, missing native dispatch, fallback, fatal log finding, missed B4
+overlap, or token mismatch prevents a passing manifest. Interrupt signals are
+forwarded to the complete primitive or service process group, and partial
+phase evidence is retained without a passing manifest.
+
+Primitive phases disable external pytest plugins and scrub Python/pytest path
+injection, probe every imported package origin, and hash the complete tracked
+kernel checkout before and after pytest. The two deployed units remain
+mandatory even when extra inactive units are requested and are rechecked
+before every primitive or service process; a startup failure is not retried.
+Cancellation closes after exactly 257 returned delta token IDs, then requires
+running, waiting, and KV-cache-usage gauges all to reach zero before reuse.
+Before emission—and again during performance-gate loading—every nested JSON
+artifact reference is recursively re-read and rehashed. Both producer and
+consumer also validate each gate-specific evidence schema: primitive JUnit
+counts and source references; exact replay/restart comparisons; the exact
+257-token cancellation checkpoint and zero idle gauges; four-way B4 overlap;
+and the reference/native/restarted near-262K results. A correctly hashed but
+empty, incomplete, or mislabeled gate file is not accepted.
+
+The separate mixed 262K/B4 cancellation scenario in step 6 remains extended
+release evidence. The current performance-gate schema has no ninth field for
+it; the eight-gate manifest therefore does not silently claim that scenario
+ran. Its 262K B4 coverage is the native ragged primitive oracle, while exact
+service equivalence is B1.
 
 ## Matched performance trials
 
@@ -159,6 +301,13 @@ decode, DPAS layout, materialize, and persistent scratch), and exactly
 `KVARN_NATIVE_XPU_SPLITS`. Any other argument or effective
 performance-environment difference invalidates the cell. Secret-looking
 argument values are redacted before argv or profile evidence is written.
+The runner pins `KVARN_PREFILL_FP16_WINDOW_BLOCKS=16` identically in both
+arms, removes `VLLM_KVARN_DEFER_PREFILL_FLUSH` from its launch environment,
+and captures both variables from `/proc`; either a different window or an
+active full-defer diagnostic invalidates the trial.
+It also removes ambient `VLLM_*`, Python path/startup/user-base variables, and
+`LD_PRELOAD`, and disables the Python user site. The foreground launcher then
+restores its declared vLLM environment, which is what the runner captures.
 
 Both arms must keep the beta's validated natural layout. The auto reference
 uses the neutral split value `1`; the native candidate uses the empirically
@@ -265,7 +414,8 @@ For every recorded trial the runner:
 1. resolves each mutable flake app once to an immutable Nix store program;
 2. verifies the actual API-process argv and allowlisted environment, including
    KV dtype, native switches, eager mode, graph/MTP/prefix-cache exclusions,
-   model revision, model length, and sequence limit;
+   bounded prefill window, disabled full-defer diagnostic, model revision,
+   model length, and sequence limit;
 3. validates and retains the detailed result and digest for the separate
    warmup wave, then waits for scheduler idle;
 4. polls `vllm:num_requests_running` only until the requested B1/B4 overlap is

@@ -316,7 +316,8 @@ def test_cancellation_keeps_full_generation_budget(monkeypatch):
     def urlopen(request, timeout):
         captured["payload"] = json.loads(request.data)
         captured["timeout"] = timeout
-        return StreamingResponse([b"data: {}\n"] * 257)
+        chunk = b'data: {"choices":[{"token_ids":[7]}]}\n'
+        return StreamingResponse([chunk] * 257)
 
     monkeypatch.setattr(MODULE.urllib.request, "urlopen", urlopen)
 
@@ -331,6 +332,7 @@ def test_cancellation_keeps_full_generation_budget(monkeypatch):
 
     assert observed == 257
     assert captured["payload"]["max_tokens"] == 2048
+    assert captured["payload"]["return_token_ids"] is True
     assert captured["timeout"] == 30
 
 

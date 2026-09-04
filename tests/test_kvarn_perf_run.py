@@ -3,8 +3,11 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import signal
 import subprocess
+import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -39,6 +42,7 @@ from scripts.kvarn_perf_run import (
     verify_service_profile,
     warmup_command,
 )
+from tests.test_kvarn_perf_gate import _correctness as _valid_correctness
 
 MODEL = "model-repo"
 REVISION = "6b0622f4354481d5d04577d48ba0db844efc1330"
@@ -77,37 +81,7 @@ def _args(tmp_path: Path) -> argparse.Namespace:
 
 
 def _correctness(path: Path, candidate_id: str) -> Path:
-    names = (
-        "native_decode_short",
-        "native_decode_262k",
-        "b1_replay",
-        "b1_restart",
-        "cancel_reuse",
-        "b4_isolation",
-        "near_262k_reference_equivalence",
-        "near_262k_restart",
-    )
-    gates = {}
-    for name in names:
-        evidence = path.parent / f"{name}.json"
-        evidence.write_text('{"status":"passed"}\n', encoding="utf-8")
-        gates[name] = {
-            "status": "passed",
-            "path": str(evidence),
-            "sha256": hashlib.sha256(evidence.read_bytes()).hexdigest(),
-        }
-    path.write_text(
-        json.dumps(
-            {
-                "status": "passed",
-                "candidate_id": candidate_id,
-                "native_dispatch_verified": True,
-                "gates": gates,
-            }
-        ),
-        encoding="utf-8",
-    )
-    return path
+    return _valid_correctness(path, candidate_id)
 
 
 def _raw_result(path: Path, *, throughput: float, workload: Workload) -> Path:
@@ -207,6 +181,8 @@ def test_correctness_is_optional_only_for_exploratory_cli(tmp_path: Path) -> Non
         str(candidate),
         "--allow-tmp",
         "--plan-only",
+        "--runtime-cache",
+        str(tmp_path / "runtime-cache"),
         "--context",
         "4096",
         "--batch",
@@ -250,6 +226,8 @@ def test_exploratory_plan_session_has_no_formal_claims(
             "--repeats",
             "2",
             "--allow-tmp",
+            "--runtime-cache",
+            str(tmp_path / "runtime-cache"),
             "--output-dir",
             str(tmp_path / "plan-output"),
         ]
@@ -345,6 +323,8 @@ def test_scheduler_budget_cli_defaults_overrides_and_rejects_zero(
         str(correctness),
         "--allow-tmp",
         "--plan-only",
+        "--runtime-cache",
+        str(tmp_path / "runtime-cache"),
     ]
 
     default = runner.parse_args(
@@ -429,8 +409,10 @@ def test_profile_verification_uses_actual_argv_and_environment(tmp_path: Path) -
         "KVARN_NATIVE_XPU_MATERIALIZE": "1",
         "KVARN_NATIVE_XPU_PERSISTENT_SCRATCH": "1",
         "KVARN_NATIVE_XPU_SPLITS": "16",
+        "KVARN_PREFILL_FP16_WINDOW_BLOCKS": "16",
         "VLLM_CACHE_ROOT": str(args.runtime_cache / "vllm-xpu-brutus-kvarn"),
         "VLLM_TARGET_DEVICE": "xpu",
+        "VLLM_KVARN_DEFER_PREFILL_FLUSH": None,
         "VLLM_XPU_ENABLE_XPU_GRAPH": None,
         "XDG_CACHE_HOME": str(args.runtime_cache),
     }
@@ -452,6 +434,15 @@ def test_profile_verification_uses_actual_argv_and_environment(tmp_path: Path) -
     environment["KVARN_NATIVE_XPU_DECODE"] = "0"
     with pytest.raises(RunnerError, match="profile mismatch"):
         verify_service_profile(argv, environment, run, args)
+    environment["KVARN_NATIVE_XPU_DECODE"] = "1"
+    environment["VLLM_KVARN_DEFER_PREFILL_FLUSH"] = "1"
+    with pytest.raises(RunnerError, match="profile mismatch"):
+        verify_service_profile(argv, environment, run, args)
+    environment["VLLM_KVARN_DEFER_PREFILL_FLUSH"] = None
+    environment["KVARN_PREFILL_FP16_WINDOW_BLOCKS"] = "0"
+    with pytest.raises(RunnerError, match="profile mismatch"):
+        verify_service_profile(argv, environment, run, args)
+    environment["KVARN_PREFILL_FP16_WINDOW_BLOCKS"] = "16"
 
     reference = PlannedRun(run.workload, "reference", 3)
     argv[argv.index("--kv-cache-dtype") + 1] = "auto"
@@ -468,6 +459,61 @@ def test_profile_verification_uses_actual_argv_and_environment(tmp_path: Path) -
     environment["KVARN_NATIVE_XPU_SPLITS"] = "16"
     with pytest.raises(RunnerError, match="profile mismatch"):
         verify_service_profile(argv, environment, reference, args)
+
+
+def test_process_capture_includes_bounded_window_and_full_defer_state() -> None:
+    environment = dict(os.environ)
+    environment["KVARN_PREFILL_FP16_WINDOW_BLOCKS"] = "16"
+    environment["VLLM_KVARN_DEFER_PREFILL_FLUSH"] = "0"
+    process = subprocess.Popen(
+        [sys.executable, "-c", "import time; time.sleep(30)"],
+        env=environment,
+    )
+    try:
+        for _attempt in range(100):
+            captured = runner._process_environment(process.pid)
+            if captured["KVARN_PREFILL_FP16_WINDOW_BLOCKS"] == "16":
+                break
+            time.sleep(0.01)
+    finally:
+        process.terminate()
+        process.wait(timeout=5)
+
+    assert captured["KVARN_PREFILL_FP16_WINDOW_BLOCKS"] == "16"
+    assert captured["VLLM_KVARN_DEFER_PREFILL_FLUSH"] == "0"
+
+
+def test_service_environment_pins_window_and_scrubs_full_defer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("KVARN_PREFILL_FP16_WINDOW_BLOCKS", "999")
+    monkeypatch.setenv("VLLM_KVARN_DEFER_PREFILL_FLUSH", "1")
+    monkeypatch.setenv("VLLM_UNPINNED_BEHAVIOR", "1")
+    for name in (
+        "LD_PRELOAD",
+        "PYTHONHOME",
+        "PYTHONPATH",
+        "PYTHONSTARTUP",
+        "PYTHONUSERBASE",
+    ):
+        monkeypatch.setenv(name, "/tmp/injected")
+
+    environment = runner.service_environment(_args(tmp_path))
+
+    assert environment["KVARN_PREFILL_FP16_WINDOW_BLOCKS"] == "16"
+    assert "VLLM_KVARN_DEFER_PREFILL_FLUSH" not in environment
+    assert "VLLM_UNPINNED_BEHAVIOR" not in environment
+    assert all(
+        name not in environment
+        for name in (
+            "LD_PRELOAD",
+            "PYTHONHOME",
+            "PYTHONPATH",
+            "PYTHONSTARTUP",
+            "PYTHONUSERBASE",
+        )
+    )
+    assert environment["PYTHONNOUSERSITE"] == "1"
 
 
 def test_sealed_results_are_directly_perf_gate_compatible(tmp_path: Path) -> None:

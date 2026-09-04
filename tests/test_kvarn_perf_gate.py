@@ -6,34 +6,303 @@ from pathlib import Path
 
 import pytest
 
-from scripts.kvarn_perf_gate import GateError, compare
+from scripts import kvarn_perf_gate as gate_module
+from scripts.kvarn_perf_gate import GateError, _load_correctness, compare
+
+
+def _artifact(path: Path) -> dict[str, str]:
+    return {
+        "path": str(path.resolve()),
+        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+    }
+
+
+def _correctness_result(fixture_id: str) -> dict[str, object]:
+    prompt_tokens = gate_module.CORRECTNESS_FIXTURE_LENGTHS[fixture_id]
+    token_ids = list(range(512))
+    encoded = json.dumps(token_ids, separators=(",", ":")).encode()
+    return {
+        "id": fixture_id,
+        "prompt_token_count": prompt_tokens,
+        "prompt_token_ids_sha256": "1" * 64,
+        "max_tokens": 512,
+        "finish_reason": "length",
+        "token_ids": token_ids,
+        "token_ids_sha256": hashlib.sha256(encoded).hexdigest(),
+        "quality_findings": [],
+        "usage": {
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": 512,
+            "total_tokens": prompt_tokens + 512,
+        },
+    }
+
+
+def _correctness_comparison(fixture_id: str) -> dict[str, object]:
+    digest = _correctness_result(fixture_id)["token_ids_sha256"]
+    return {
+        "status": "passed",
+        "fixture_id": fixture_id,
+        "same_fixture": True,
+        "same_prompt_token_ids": True,
+        "token_ids_identical": True,
+        "expected_token_ids_sha256": digest,
+        "actual_token_ids_sha256": digest,
+    }
 
 
 def _correctness(path: Path, candidate_id: str = "candidate-store-path") -> Path:
-    gate_names = (
-        "native_decode_short",
-        "native_decode_262k",
-        "b1_replay",
-        "b1_restart",
-        "cancel_reuse",
-        "b4_isolation",
-        "near_262k_reference_equivalence",
-        "near_262k_restart",
+    root = path.parent / "correctness-evidence"
+    root.mkdir()
+    short = gate_module.CORRECTNESS_SHORT_FIXTURES
+    short_results = [_correctness_result(name) for name in short]
+    short_comparisons = [_correctness_comparison(name) for name in short]
+    long_result = _correctness_result("reasoning-261631")
+    long_comparison = _correctness_comparison("reasoning-261631")
+    idle = {
+        "vllm:num_requests_running": 0.0,
+        "vllm:num_requests_waiting": 0.0,
+        "vllm:kv_cache_usage_perc": 0.0,
+    }
+    cancellation = {
+        "requested_generated_token_checkpoint": 257,
+        "generated_token_ids_before_close": 257,
+        "idle_metrics_before_replacement": idle,
+        "replacement": _correctness_result("reasoning-65023"),
+        "comparison": _correctness_comparison("reasoning-65023"),
+    }
+    overlap = {
+        "required_running": 4,
+        "peak_running": 4.0,
+        "required_overlap_observed": True,
+    }
+    workloads = {
+        "native-65k-b1-first": {
+            "first": short_results,
+            "replay": short_results,
+            "replay_comparisons": short_comparisons,
+            "cancellation": cancellation,
+        },
+        "native-65k-b1-restart": {
+            "results": short_results,
+            "comparisons": short_comparisons,
+        },
+        "native-65k-b4": {
+            "results": short_results,
+            "comparisons": short_comparisons,
+            "overlap": overlap,
+        },
+        "reference-262k-b1": {"result": long_result},
+        "native-262k-b1-first": {
+            "result": long_result,
+            "reference_comparison": long_comparison,
+        },
+        "native-262k-b1-restart": {
+            "result": long_result,
+            "reference_comparison": long_comparison,
+            "native_restart_comparison": long_comparison,
+        },
+    }
+
+    phases: dict[str, dict[str, str]] = {}
+    for phase_name, spec in gate_module.CORRECTNESS_PHASE_SPECS.items():
+        phase_dir = root / phase_name
+        phase_dir.mkdir()
+        profile = phase_dir / "profile.json"
+        profile.write_text("{}\n", encoding="utf-8")
+        identity = phase_dir / "identity.json"
+        identity.write_text(
+            json.dumps(
+                {
+                    "candidate_env": candidate_id,
+                    "process_package": "/nix/store/package",
+                }
+            ),
+            encoding="utf-8",
+        )
+        engine_log = phase_dir / "engine.log"
+        engine_log.write_text(
+            "INFO " + gate_module.NATIVE_DISPATCH + "\n"
+            if spec["native"]
+            else "INFO reference reader\n",
+            encoding="utf-8",
+        )
+        log_scan = phase_dir / "log-scan.json"
+        log_scan.write_text(
+            json.dumps({"status": "passed", "fatal_findings": []}),
+            encoding="utf-8",
+        )
+        phase = phase_dir / "phase.json"
+        phase.write_text(
+            json.dumps(
+                {
+                    "status": "passed",
+                    "spec": spec,
+                    "native_dispatch_verified": spec["native"],
+                    "profile": _artifact(profile),
+                    "identity": _artifact(identity),
+                    "engine_log": _artifact(engine_log),
+                    "engine_log_scan": _artifact(log_scan),
+                    "workload": workloads[phase_name],
+                }
+            ),
+            encoding="utf-8",
+        )
+        phases[phase_name] = _artifact(phase)
+
+    primitive_files = {}
+    for filename in (
+        "native.so",
+        "test.py",
+        "helper.py",
+        "utils.py",
+        "pytest.log",
+        "pytest.xml",
+    ):
+        primitive_file = root / filename
+        primitive_file.write_text("evidence\n", encoding="utf-8")
+        primitive_files[filename] = _artifact(primitive_file)
+    junit = root / "pytest.xml"
+    junit.write_text(
+        '<testsuite tests="1" failures="0" errors="0" skipped="0"/>\n',
+        encoding="utf-8",
     )
-    gates = {}
-    for name in gate_names:
-        evidence = path.parent / f"{name}.json"
-        evidence.write_text(json.dumps({"status": "passed"}), encoding="utf-8")
-        gates[name] = {
+    primitive_files["pytest.xml"] = _artifact(junit)
+    gates: dict[str, dict[str, str]] = {}
+    gate_documents: dict[str, dict[str, object]] = {
+        name: {
             "status": "passed",
-            "path": str(evidence),
-            "sha256": hashlib.sha256(evidence.read_bytes()).hexdigest(),
+            "gate": name,
+            "candidate_id": candidate_id,
+            "command": [
+                "/nix/store/python/bin/python",
+                "-m",
+                "pytest",
+                primitive_files["test.py"]["path"],
+                "-k",
+                (
+                    "not long_context_ragged_b4_matches_structured_oracle"
+                    if name == "native_decode_short"
+                    else "long_context_ragged_b4_matches_structured_oracle"
+                ),
+            ],
+            "junit_counts": {"tests": 1, "failures": 0, "errors": 0, "skipped": 0},
+            "native_library": primitive_files["native.so"],
+            "test_source": primitive_files["test.py"],
+            "helper_sources": {
+                "benchmark/check_kvarn_decode.py": primitive_files["helper.py"],
+                "benchmark/kvarn_utils.py": primitive_files["utils.py"],
+            },
+            "pytest_log": primitive_files["pytest.log"],
+            "junit": primitive_files["pytest.xml"],
         }
+        for name in ("native_decode_short", "native_decode_262k")
+    }
+    gate_documents.update(
+        {
+            "b1_replay": {
+                "status": "passed",
+                "gate": "b1_replay",
+                "service_phase": phases["native-65k-b1-first"],
+                "comparisons": short_comparisons,
+            },
+            "cancel_reuse": {
+                "status": "passed",
+                "gate": "cancel_reuse",
+                "service_phase": phases["native-65k-b1-first"],
+                **cancellation,
+            },
+            "b1_restart": {
+                "status": "passed",
+                "gate": "b1_restart",
+                "original_service_phase": phases["native-65k-b1-first"],
+                "restarted_service_phase": phases["native-65k-b1-restart"],
+                "comparisons": short_comparisons,
+            },
+            "b4_isolation": {
+                "status": "passed",
+                "gate": "b4_isolation",
+                "b1_service_phase": phases["native-65k-b1-first"],
+                "b4_service_phase": phases["native-65k-b4"],
+                "comparisons": short_comparisons,
+                "overlap": overlap,
+            },
+            "near_262k_reference_equivalence": {
+                "status": "passed",
+                "gate": "near_262k_reference_equivalence",
+                "reference_service_phase": phases["reference-262k-b1"],
+                "native_service_phase": phases["native-262k-b1-first"],
+                "comparison": long_comparison,
+            },
+            "near_262k_restart": {
+                "status": "passed",
+                "gate": "near_262k_restart",
+                "reference_service_phase": phases["reference-262k-b1"],
+                "first_native_service_phase": phases["native-262k-b1-first"],
+                "restarted_native_service_phase": phases["native-262k-b1-restart"],
+                "reference_comparison": long_comparison,
+                "native_restart_comparison": long_comparison,
+            },
+        }
+    )
+    for name in gate_module.REQUIRED_GATES:
+        evidence = root / f"{name}.json"
+        evidence.write_text(json.dumps(gate_documents[name]), encoding="utf-8")
+        gates[name] = {"status": "passed", **_artifact(evidence)}
+    runner_sources = {}
+    for name in gate_module.CORRECTNESS_RUNNER_SOURCES:
+        source = root / "runner" / name
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_text(f"# {name}\n", encoding="utf-8")
+        runner_sources[name] = _artifact(source)
+    revisions = {
+        "vllm-xpu-release": "1" * 40,
+        "vllm-xpu-unstable-src": "2" * 40,
+        "vllm-xpu-kernels-unstable-src": "3" * 40,
+    }
+    lock = root / "flake.lock"
+    lock.write_text(
+        json.dumps(
+            {
+                "nodes": {
+                    name: {"locked": {"rev": revision}}
+                    for name, revision in revisions.items()
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    clean_checkout = {
+        "head": "4" * 40,
+        "files": 1,
+        "sha256": "5" * 64,
+        "unexpected_changes": [],
+    }
     document = {
         "status": "passed",
         "candidate_id": candidate_id,
         "native_dispatch_verified": True,
         "gates": gates,
+        "candidate_identity": {
+            "process_package": "/nix/store/package",
+            "candidate_closure_sha256": "6" * 64,
+            "process_closure_sha256": "7" * 64,
+        },
+        "source_identity": {
+            "lock_path": str(lock),
+            "lock_sha256": hashlib.sha256(lock.read_bytes()).hexdigest(),
+            "revisions": revisions,
+            "config_checkout": clean_checkout,
+            "runner_checkout": clean_checkout,
+            "kernel_tracked_checkout": {
+                **clean_checkout,
+                "head": revisions["vllm-xpu-kernels-unstable-src"],
+            },
+            "runner_sources": runner_sources,
+            "native_source_sha256": {
+                name: "8" * 64 for name in gate_module.CORRECTNESS_NATIVE_SOURCES
+            },
+        },
     }
     path.write_text(json.dumps(document), encoding="utf-8")
     return path
@@ -315,6 +584,73 @@ def test_gate_rejects_correctness_evidence_hash_mismatch(tmp_path: Path) -> None
 
     with pytest.raises(GateError, match="evidence SHA differs"):
         _compare(arms)
+
+
+def test_gate_rejects_mismatched_correctness_evidence_identity(tmp_path: Path) -> None:
+    correctness_path = _correctness(tmp_path / "correctness.json")
+    correctness = json.loads(correctness_path.read_text(encoding="utf-8"))
+    gate = correctness["gates"]["b4_isolation"]
+    evidence = Path(gate["path"])
+    document = json.loads(evidence.read_text(encoding="utf-8"))
+    document["gate"] = "b1_replay"
+    evidence.write_text(json.dumps(document), encoding="utf-8")
+    gate["sha256"] = hashlib.sha256(evidence.read_bytes()).hexdigest()
+    correctness_path.write_text(json.dumps(correctness), encoding="utf-8")
+
+    with pytest.raises(GateError, match="gate identity/status differs"):
+        _load_correctness(correctness_path)
+
+
+def test_gate_requires_complete_runner_source_identity(tmp_path: Path) -> None:
+    correctness_path = _correctness(tmp_path / "correctness.json")
+    correctness = json.loads(correctness_path.read_text(encoding="utf-8"))
+    correctness["source_identity"]["runner_sources"].pop(
+        "scripts/kvarn_service_gate.py"
+    )
+    correctness_path.write_text(json.dumps(correctness), encoding="utf-8")
+
+    with pytest.raises(GateError, match="runner source evidence is incomplete"):
+        _load_correctness(correctness_path)
+
+
+def test_gate_binds_service_phase_to_exact_candidate(tmp_path: Path) -> None:
+    correctness_path = _correctness(tmp_path / "correctness.json")
+    correctness = json.loads(correctness_path.read_text(encoding="utf-8"))
+    outer_gate = correctness["gates"]["b4_isolation"]
+    gate_path = Path(outer_gate["path"])
+    gate = json.loads(gate_path.read_text(encoding="utf-8"))
+    phase_path = Path(gate["b4_service_phase"]["path"])
+    phase = json.loads(phase_path.read_text(encoding="utf-8"))
+    identity_path = Path(phase["identity"]["path"])
+    identity = json.loads(identity_path.read_text(encoding="utf-8"))
+    identity["candidate_env"] = "different-candidate"
+    identity_path.write_text(json.dumps(identity), encoding="utf-8")
+    phase["identity"]["sha256"] = hashlib.sha256(identity_path.read_bytes()).hexdigest()
+    phase_path.write_text(json.dumps(phase), encoding="utf-8")
+    gate["b4_service_phase"]["sha256"] = hashlib.sha256(
+        phase_path.read_bytes()
+    ).hexdigest()
+    gate_path.write_text(json.dumps(gate), encoding="utf-8")
+    outer_gate["sha256"] = hashlib.sha256(gate_path.read_bytes()).hexdigest()
+    correctness_path.write_text(json.dumps(correctness), encoding="utf-8")
+
+    with pytest.raises(GateError, match="identity differs from the candidate"):
+        _load_correctness(correctness_path)
+
+
+def test_gate_recursively_rehashes_nested_correctness_evidence(tmp_path: Path) -> None:
+    correctness_path = _correctness(tmp_path / "correctness.json")
+    correctness = json.loads(correctness_path.read_text(encoding="utf-8"))
+    gate = correctness["gates"]["b4_isolation"]
+    gate_path = Path(gate["path"])
+    gate_document = json.loads(gate_path.read_text(encoding="utf-8"))
+    phase_path = Path(gate_document["b4_service_phase"]["path"])
+    phase = json.loads(phase_path.read_text(encoding="utf-8"))
+    nested = Path(phase["profile"]["path"])
+    nested.write_text('{"tampered":true}\n', encoding="utf-8")
+
+    with pytest.raises(GateError, match="artifact SHA differs"):
+        _load_correctness(correctness_path)
 
 
 def test_gate_rejects_claimed_throughput_inconsistent_with_counts(

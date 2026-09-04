@@ -289,6 +289,7 @@ def cancel_stream(
         "max_tokens": max_tokens,
         "temperature": 0,
         "ignore_eos": True,
+        "return_token_ids": True,
         "stream": True,
     }
     request = urllib.request.Request(
@@ -297,17 +298,35 @@ def cancel_stream(
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    observed = 0
+    observed_token_ids: list[int] = []
     with urllib.request.urlopen(request, timeout=timeout) as response:
         for raw_line in response:
             line = raw_line.decode().strip()
             if line.startswith("data: ") and line != "data: [DONE]":
-                observed += 1
-                if observed >= after_events:
+                try:
+                    chunk = json.loads(line.removeprefix("data: "))
+                    token_ids = chunk["choices"][0]["token_ids"]
+                except (json.JSONDecodeError, KeyError, IndexError, TypeError) as exc:
+                    raise ValueError(
+                        "cancellation stream did not expose delta token IDs"
+                    ) from exc
+                if not isinstance(token_ids, list) or any(
+                    isinstance(token_id, bool) or not isinstance(token_id, int)
+                    for token_id in token_ids
+                ):
+                    raise ValueError(
+                        "cancellation stream returned invalid delta token IDs"
+                    )
+                observed_token_ids.extend(token_ids)
+                if len(observed_token_ids) >= after_events:
                     break
-    if observed < after_events:
+    if len(observed_token_ids) != after_events:
+        if len(observed_token_ids) > after_events:
+            raise AssertionError(
+                "a streamed token chunk crossed the exact cancellation checkpoint"
+            )
         raise AssertionError("stream ended before the cancellation checkpoint")
-    return observed
+    return len(observed_token_ids)
 
 
 def concurrent_fixture_waves(

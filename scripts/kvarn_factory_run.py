@@ -259,33 +259,83 @@ DEFAULT_VARIANT_NAMES = (
 # the shared attention DSO participates.  DEFAULT_VARIANT_NAMES remains the
 # current Q6 optimization-round shortlist for callers that want it explicitly.
 ALL_VARIANT_NAMES = tuple(VARIANTS)
-FOCUSED_XPU_TESTS = (
+_XPU_DECODE_TEST = "tests/flash_attn/test_kvarn_decode_xpu.py"
+_XPU_LONG_CONTEXT_TEST = (
+    f"{_XPU_DECODE_TEST}::test_long_context_ragged_b4_matches_structured_oracle"
+)
+_XPU_Q6_MULTISPLIT_TEST = (
+    f"{_XPU_DECODE_TEST}::"
+    "test_q6_multisplit_lse_owns_all_six_distinct_query_rows"
+)
+FOCUSED_XPU_INVARIANT_TESTS = (
     "tests/flash_attn/test_kvarn_decode_xpu.py::test_structured_permuted_pages",
-    "tests/flash_attn/test_kvarn_decode_xpu.py::test_nonuniform_kvarn_factors_across_page_boundary",
-    "tests/flash_attn/test_kvarn_decode_xpu.py::test_factory_dpas_variants_match_canonical_ragged_and_hybrid",
-    "tests/flash_attn/test_kvarn_decode_xpu.py::test_q6_multisplit_lse_owns_all_six_distinct_query_rows",
-    "tests/flash_attn/test_kvarn_decode_xpu.py::test_q6_block_output_store_matches_scalar_across_reducers",
+    (
+        f"{_XPU_DECODE_TEST}::"
+        "test_nonuniform_kvarn_factors_across_page_boundary"
+        "[natural-baseline-35072]"
+    ),
+    (
+        f"{_XPU_DECODE_TEST}::"
+        "test_nonuniform_kvarn_factors_across_page_boundary"
+        "[natural-baseline-65536]"
+    ),
+    (
+        f"{_XPU_DECODE_TEST}::"
+        "test_nonuniform_kvarn_factors_across_page_boundary"
+        "[dpas-baseline-35072]"
+    ),
+    (
+        f"{_XPU_DECODE_TEST}::"
+        "test_nonuniform_kvarn_factors_across_page_boundary"
+        "[dpas-baseline-65536]"
+    ),
+    # This source revision exposes its ragged/hybrid-plus-tail smoke only as
+    # one all-compiled-variant test. Keep that invariant coverage for now;
+    # a future kernel-test parametrization should make it variant-granular.
+    (
+        f"{_XPU_DECODE_TEST}::"
+        "test_factory_dpas_variants_match_canonical_ragged_and_hybrid"
+    ),
     "tests/flash_attn/test_kvarn_decode_xpu.py::test_full_precision_tail_and_packed_history_share_softmax",
-    "tests/flash_attn/test_kvarn_decode_xpu.py::test_long_context_ragged_b4_matches_structured_oracle[natural-split24]",
-    "tests/flash_attn/test_kvarn_decode_xpu.py::test_long_context_ragged_b4_matches_structured_oracle[dpas-split1]",
-    "tests/flash_attn/test_kvarn_decode_xpu.py::test_long_context_ragged_b4_matches_structured_oracle[dpas-split24]",
-    "tests/flash_attn/test_kvarn_decode_xpu.py::test_long_context_ragged_b4_matches_structured_oracle[dpas-qk-i8u4-split24]",
-    "tests/flash_attn/test_kvarn_decode_xpu.py::test_long_context_ragged_b4_matches_structured_oracle[r1-p2-dpas-q6]",
-    "tests/flash_attn/test_kvarn_decode_xpu.py::test_long_context_ragged_b4_matches_structured_oracle[r1-p5-dpas-vector-load]",
-    "tests/flash_attn/test_kvarn_decode_xpu.py::test_long_context_ragged_b4_matches_structured_oracle[r1-p2-p5-dpas-q6-vector-load]",
-    "tests/flash_attn/test_kvarn_decode_xpu.py::test_long_context_ragged_b4_matches_structured_oracle[r2-q6-cached-weights]",
-    "tests/flash_attn/test_kvarn_decode_xpu.py::test_long_context_ragged_b4_matches_structured_oracle[r2-q6-exact-rows]",
-    "tests/flash_attn/test_kvarn_decode_xpu.py::test_long_context_ragged_b4_matches_structured_oracle[r2-q6-cached-weights-exact-rows]",
-    "tests/flash_attn/test_kvarn_decode_xpu.py::test_long_context_ragged_b4_matches_structured_oracle[q6-page-pair]",
-    "tests/flash_attn/test_kvarn_decode_xpu.py::test_long_context_ragged_b4_matches_structured_oracle[q6_main_grf128]",
-    "tests/flash_attn/test_kvarn_decode_xpu.py::test_long_context_ragged_b4_matches_structured_oracle[q6-split-reducer-specialized]",
-    "tests/flash_attn/test_kvarn_decode_xpu.py::test_long_context_ragged_b4_matches_structured_oracle[q6-next-page-prefetch]",
-    "tests/flash_attn/test_kvarn_decode_xpu.py::test_long_context_ragged_b4_matches_structured_oracle[q6-next-page-prefetch-split-reducer]",
-    "tests/flash_attn/test_kvarn_decode_xpu.py::test_long_context_ragged_b4_matches_structured_oracle[q6-simd-unpack]",
-    "tests/flash_attn/test_kvarn_decode_xpu.py::test_long_context_ragged_b4_matches_structured_oracle[q6-block-output-store]",
+    f"{_XPU_LONG_CONTEXT_TEST}[natural-split24]",
+    f"{_XPU_LONG_CONTEXT_TEST}[dpas-split1]",
+    f"{_XPU_LONG_CONTEXT_TEST}[dpas-split24]",
     "tests/flash_attn/test_kvarn_hadamard_scatter_xpu.py::test_kvarn_fused_qkv_hadamard_scatter_matches_separate_ops",
 )
-FOCUSED_XPU_MIN_PASSED = 48
+FOCUSED_XPU_262K_TESTS = {
+    0: f"{_XPU_LONG_CONTEXT_TEST}[dpas-split24]",
+    1: f"{_XPU_LONG_CONTEXT_TEST}[dpas-qk-i8u4-split24]",
+    2: f"{_XPU_LONG_CONTEXT_TEST}[r1-p2-dpas-q6]",
+    3: f"{_XPU_LONG_CONTEXT_TEST}[r1-p5-dpas-vector-load]",
+    4: f"{_XPU_LONG_CONTEXT_TEST}[r1-p2-p5-dpas-q6-vector-load]",
+    6: f"{_XPU_LONG_CONTEXT_TEST}[r2-q6-cached-weights]",
+    7: f"{_XPU_LONG_CONTEXT_TEST}[r2-q6-exact-rows]",
+    8: f"{_XPU_LONG_CONTEXT_TEST}[r2-q6-cached-weights-exact-rows]",
+    9: f"{_XPU_LONG_CONTEXT_TEST}[q6-page-pair]",
+    10: f"{_XPU_LONG_CONTEXT_TEST}[q6_main_grf128]",
+    11: f"{_XPU_LONG_CONTEXT_TEST}[q6-split-reducer-specialized]",
+    12: f"{_XPU_LONG_CONTEXT_TEST}[q6-next-page-prefetch]",
+    13: f"{_XPU_LONG_CONTEXT_TEST}[q6-next-page-prefetch-split-reducer]",
+    14: f"{_XPU_LONG_CONTEXT_TEST}[q6-simd-unpack]",
+    15: f"{_XPU_LONG_CONTEXT_TEST}[q6-block-output-store]",
+}
+# The Q8-family variants (0, 1, and 3) use a direct split-24 262K case as
+# both gates. Q6 variants also get the query-row/LSE multisplit attribution.
+FOCUSED_XPU_MULTISPLIT_TESTS = {
+    0: FOCUSED_XPU_262K_TESTS[0],
+    1: FOCUSED_XPU_262K_TESTS[1],
+    2: f"{_XPU_Q6_MULTISPLIT_TEST}[2]",
+    3: FOCUSED_XPU_262K_TESTS[3],
+    4: f"{_XPU_Q6_MULTISPLIT_TEST}[4]",
+    **{
+        variant_id: f"{_XPU_Q6_MULTISPLIT_TEST}[{variant_id}]"
+        for variant_id in (6, 7, 8, 9, 10, 11, 12, 13, 14, 15)
+    },
+}
+FOCUSED_XPU_ID15_TEST = (
+    f"{_XPU_DECODE_TEST}::"
+    "test_q6_block_output_store_matches_scalar_across_reducers"
+)
 UNMATCHED_FIXTURE_WARNING = (
     "The auto BF16 cache and Kvarn packed cache have identical model shapes, "
     "batch/context, query seed, and warmed execution, but do not yet originate "
@@ -1259,10 +1309,34 @@ def preflight_xpu(torch_module: Any) -> dict[str, Any]:
     }
 
 
-def focused_xpu_test_command(kernels_repo: Path) -> list[str]:
+def focused_xpu_tests(variants: Sequence[VariantSpec]) -> tuple[str, ...]:
+    """Select invariant tests and direct gates for only requested variants."""
+    if not variants:
+        raise FactoryError("focused XPU kill suite requires at least one variant")
+    selected: list[str] = list(FOCUSED_XPU_INVARIANT_TESTS)
+    selected_ids: set[int] = set()
+    for variant in variants:
+        registered = VARIANTS_BY_ID.get(variant.variant_id)
+        if registered != variant:
+            raise FactoryError(
+                f"focused XPU kill suite received unknown variant {variant.name!r}"
+            )
+        if variant.variant_id in selected_ids:
+            continue
+        selected_ids.add(variant.variant_id)
+        selected.append(FOCUSED_XPU_MULTISPLIT_TESTS[variant.variant_id])
+        selected.append(FOCUSED_XPU_262K_TESTS[variant.variant_id])
+    if 15 in selected_ids:
+        selected.append(FOCUSED_XPU_ID15_TEST)
+    return tuple(dict.fromkeys(selected))
+
+
+def focused_xpu_test_command(
+    kernels_repo: Path, variants: Sequence[VariantSpec]
+) -> list[str]:
     resolved = kernels_repo.expanduser().resolve(strict=True)
     node_ids: list[str] = []
-    for selection in FOCUSED_XPU_TESTS:
+    for selection in focused_xpu_tests(variants):
         relative, separator, test_name = selection.partition("::")
         if not separator:
             raise FactoryError(f"invalid focused XPU test selection: {selection}")
@@ -1283,11 +1357,20 @@ def focused_xpu_test_command(kernels_repo: Path) -> list[str]:
 
 
 def run_focused_xpu_kill_suite(
-    *, kernels_repo: Path, flash_library: Path
+    *,
+    kernels_repo: Path,
+    flash_library: Path,
+    variants: Sequence[VariantSpec],
 ) -> dict[str, Any]:
     resolved_repo = kernels_repo.expanduser().resolve(strict=True)
     resolved_library = flash_library.expanduser().resolve(strict=True)
-    command = focused_xpu_test_command(resolved_repo)
+    selections = focused_xpu_tests(variants)
+    command = focused_xpu_test_command(resolved_repo, variants)
+    selected_variants = [
+        {"variant_id": variant.variant_id, "name": variant.name}
+        for variant in dict.fromkeys(variants)
+    ]
+    minimum_passed = len(selections)
     environment = os.environ.copy()
     environment["VLLM_XPU_KERNELS_LIBRARY"] = str(resolved_library)
     environment["PYTHONDONTWRITEBYTECODE"] = "1"
@@ -1312,6 +1395,9 @@ def run_focused_xpu_kill_suite(
             "command": command,
             "cwd": str(resolved_repo),
             "library": str(resolved_library),
+            "selected_variants": selected_variants,
+            "test_selections": list(selections),
+            "minimum_passed_required": minimum_passed,
             "error": str(error),
         }
     combined_output = f"{completed.stdout}\n{completed.stderr}"
@@ -1321,7 +1407,7 @@ def run_focused_xpu_kill_suite(
     skipped_count = max((int(value) for value in skipped_matches), default=0)
     passed = (
         completed.returncode == 0
-        and passed_count >= FOCUSED_XPU_MIN_PASSED
+        and passed_count >= minimum_passed
         and skipped_count == 0
     )
     return {
@@ -1334,7 +1420,9 @@ def run_focused_xpu_kill_suite(
         "cwd": str(resolved_repo),
         "library": str(resolved_library),
         "library_environment": "VLLM_XPU_KERNELS_LIBRARY",
-        "minimum_passed_required": FOCUSED_XPU_MIN_PASSED,
+        "selected_variants": selected_variants,
+        "test_selections": list(selections),
+        "minimum_passed_required": minimum_passed,
         "passed_count": passed_count,
         "skipped_count": skipped_count,
         "returncode": completed.returncode,
@@ -3197,6 +3285,7 @@ def execute(args: argparse.Namespace) -> int:
         document["kernel_kill_suite"] = run_focused_xpu_kill_suite(
             kernels_repo=args.kernels_repo,
             flash_library=Path(flash_record["path"]),
+            variants=args.variant_specs,
         )
         write_json_atomic(args.output, document)
         require_focused_xpu_kill_suite(document["kernel_kill_suite"])

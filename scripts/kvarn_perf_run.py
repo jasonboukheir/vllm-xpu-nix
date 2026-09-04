@@ -43,6 +43,15 @@ except ModuleNotFoundError:  # Direct execution from the scripts directory.
 
 NATIVE_DISPATCH = "Using the native Xe2 KVarN qlen=1 decoder"
 COMPACT_DTYPE = "kvarn_k4v4_g128_compact"
+NATIVE_LAYOUTS = ("natural", "xe2_dpas")
+NATIVE_LAYOUT_ENV = {"natural": "0", "xe2_dpas": "1"}
+VARIANT_FIELDS = (
+    "kernel_strategy",
+    "split_policy",
+    "fusion_strategy",
+    "scheduling_variant",
+    "variant_id",
+)
 DEFAULT_CONTEXTS = (4096, 16384, 32768, 65023)
 DEFAULT_BATCHES = (1, 4)
 DEFAULT_NATIVE_SPLITS = {1: 24, 4: 16}
@@ -367,9 +376,38 @@ def native_splits_for_run(run: PlannedRun, args: argparse.Namespace) -> int:
         ) from exc
 
 
+def native_layout_for_run(run: PlannedRun, args: argparse.Namespace) -> str:
+    """The auto reference is always natural; only the native candidate varies."""
+    return "natural" if run.arm == "reference" else args.native_layout
+
+
+def variant_provenance_for_run(
+    run: PlannedRun, args: argparse.Namespace
+) -> dict[str, str]:
+    scheduling = f"eager_mnbt{args.max_num_batched_tokens}"
+    if run.arm == "reference":
+        return {
+            "kernel_strategy": "vllm_auto",
+            "split_policy": "neutral_1",
+            "fusion_strategy": "vllm_auto",
+            "scheduling_variant": scheduling,
+            "variant_id": f"auto-control-{scheduling}",
+        }
+    split_policy = "fixed_" + "_".join(
+        f"b{batch}s{splits}" for batch, splits in sorted(args.native_splits.items())
+    )
+    return {
+        "kernel_strategy": "native_xe2_qlen1",
+        "split_policy": split_policy,
+        "fusion_strategy": "native_materializer_persistent_scratch",
+        "scheduling_variant": scheduling,
+        "variant_id": f"native-xe2-{args.native_layout}-{split_policy}-{scheduling}",
+    }
+
+
 def load_correctness(
     path: Path, explicit_candidate_id: str | None
-) -> tuple[str, str, dict[str, str]]:
+) -> tuple[str, str, dict[str, str], str, dict[str, str]]:
     try:
         raw = path.read_bytes()
         document = json.loads(raw)
@@ -399,7 +437,24 @@ def load_correctness(
                 f"correctness artifact candidate_identity {field} is not SHA-256"
             )
         identity[field] = value
-    return candidate_id, hashlib.sha256(raw).hexdigest(), identity
+    native_layout = document.get("native_layout")
+    if native_layout not in NATIVE_LAYOUTS:
+        raise RunnerError(
+            "correctness artifact native_layout must be natural or xe2_dpas"
+        )
+    variant_provenance: dict[str, str] = {}
+    for field in VARIANT_FIELDS:
+        value = document.get(field)
+        if not isinstance(value, str) or not value:
+            raise RunnerError(f"correctness artifact lacks {field}")
+        variant_provenance[field] = value
+    return (
+        candidate_id,
+        hashlib.sha256(raw).hexdigest(),
+        identity,
+        native_layout,
+        variant_provenance,
+    )
 
 
 def _git(repo: Path, *arguments: str) -> str:
@@ -502,7 +557,9 @@ def probe_xpu_hardware(args: argparse.Namespace) -> dict[str, Any]:
     return probe
 
 
-def launcher_name(run: PlannedRun) -> str:
+def launcher_name(run: PlannedRun, args: argparse.Namespace) -> str:
+    if run.arm == "candidate" and args.native_layout == "xe2_dpas":
+        return f"vllm-xpu-brutus-kvarn-native-dpas-b{run.workload.batch}"
     return ARM_SETTINGS[run.arm]["launcher"].format(batch=run.workload.batch)
 
 
@@ -511,7 +568,7 @@ def resolve_launchers(
 ) -> dict[str, str]:
     """Resolve mutable flake apps to verified physical daemon-store programs."""
     resolved: dict[str, str] = {}
-    for launcher in dict.fromkeys(launcher_name(run) for run in plan):
+    for launcher in dict.fromkeys(launcher_name(run, args) for run in plan):
         installable = f"{args.config_ref}#{launcher}"
         app_installable = f"{args.config_ref}#apps.x86_64-linux.{launcher}"
         try:
@@ -554,7 +611,15 @@ def resolve_launchers(
             build_result = json.loads(build.stdout)
             app_result = json.loads(app.stdout)
         except (OSError, subprocess.CalledProcessError, json.JSONDecodeError) as exc:
-            raise RunnerError(f"cannot resolve launcher {installable}: {exc}") from exc
+            hint = (
+                "; xe2_dpas requires dedicated Brutus native-dpas launcher "
+                "outputs that export KVARN_NATIVE_XPU_DPAS_LAYOUT=1"
+                if "native-dpas" in launcher
+                else ""
+            )
+            raise RunnerError(
+                f"cannot resolve launcher {installable}{hint}: {exc}"
+            ) from exc
 
         if not isinstance(build_result, list) or len(build_result) != 1:
             raise RunnerError(
@@ -610,7 +675,7 @@ def resolve_launchers(
 
 
 def service_command(run: PlannedRun, args: argparse.Namespace) -> list[str]:
-    launcher = launcher_name(run)
+    launcher = launcher_name(run, args)
     immutable = getattr(args, "resolved_launchers", {}).get(launcher)
     scheduler_arguments = [
         "--max-num-batched-tokens",
@@ -850,7 +915,10 @@ def _canonical_argv(argv: Sequence[str]) -> list[str]:
 
 
 def service_profile_evidence(
-    argv: Sequence[str], environment: Mapping[str, str | None]
+    argv: Sequence[str],
+    environment: Mapping[str, str | None],
+    *,
+    variant_provenance: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     redacted_environment = {
         name: "<redacted>" if SENSITIVE_NAME.search(name) and value else value
@@ -863,12 +931,20 @@ def service_profile_evidence(
     canonical = {
         "argv": _canonical_argv(argv),
         "environment": canonical_environment,
+        "variant_provenance": {field: "<ARM_VALUE>" for field in VARIANT_FIELDS},
     }
     encoded = json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode()
+    raw_layout = environment.get("KVARN_NATIVE_XPU_DPAS_LAYOUT")
+    native_layout = {value: name for name, value in NATIVE_LAYOUT_ENV.items()}.get(
+        raw_layout
+    )
     return {
         "redacted_argv": _redact_argv(argv),
         "redacted_environment": redacted_environment,
         "max_num_batched_tokens": _arg_after(argv, "--max-num-batched-tokens"),
+        "native_layout": native_layout,
+        "native_layout_environment": raw_layout,
+        "variant_provenance": dict(variant_provenance or {}),
         "canonical_matched_profile": canonical,
         "canonical_matched_profile_sha256": hashlib.sha256(encoded).hexdigest(),
         "allowed_arm_argument_differences": sorted(ARM_ARGUMENTS),
@@ -952,7 +1028,9 @@ def verify_service_profile(
         "HOME": str(args.runtime_cache / "vllm-xpu-brutus-kvarn"),
         "KVARN_NATIVE_XPU": native,
         "KVARN_NATIVE_XPU_DECODE": native,
-        "KVARN_NATIVE_XPU_DPAS_LAYOUT": "0",
+        "KVARN_NATIVE_XPU_DPAS_LAYOUT": NATIVE_LAYOUT_ENV[
+            native_layout_for_run(run, args)
+        ],
         "KVARN_NATIVE_XPU_MATERIALIZE": native,
         "KVARN_NATIVE_XPU_PERSISTENT_SCRATCH": native,
         "KVARN_NATIVE_XPU_SPLITS": str(native_splits_for_run(run, args)),
@@ -1250,7 +1328,15 @@ def scheduler_summary(
     }
 
 
-def validate_engine_log(path: Path, *, native: bool) -> dict[str, Any]:
+def validate_engine_log(
+    path: Path, *, native: bool, expected_layout: str = "natural"
+) -> dict[str, Any]:
+    if (
+        expected_layout not in NATIVE_LAYOUTS
+        or not native
+        and expected_layout != "natural"
+    ):
+        raise RunnerError("invalid native-layout engine-log expectation")
     text = path.read_text(encoding="utf-8", errors="replace")
     lines = text.splitlines()
     result = scan(lines)
@@ -1268,6 +1354,13 @@ def validate_engine_log(path: Path, *, native: bool) -> dict[str, Any]:
     if native and FALLBACK_PATTERN.search(text):
         raise RunnerError("native engine log reports a Kvarn fallback")
     result["xpu_runtime"] = xpu
+    result["native_layout_expected"] = expected_layout
+    result["native_layout_log_marker"] = "unavailable"
+    result["native_layout_evidence"] = (
+        "captured-process-environment-plus-native-dispatch"
+        if native
+        else "captured-process-environment"
+    )
     return result
 
 
@@ -1357,6 +1450,9 @@ def persist_warmup_result(
         "process_closure_sha256": identity["process_closure_sha256"],
         "candidate_closure_sha256": identity["candidate_closure_sha256"],
         "matched_profile_sha256": profile["canonical_matched_profile_sha256"],
+        "native_layout": profile["native_layout"],
+        "native_layout_environment": profile["native_layout_environment"],
+        "variant_provenance": profile["variant_provenance"],
     }
     write_json_atomic(output, result)
     return result
@@ -1388,6 +1484,17 @@ def seal_benchmark_result(
         raise RunnerError(
             "verified service profile lost max_num_batched_tokens: "
             f"expected {args.max_num_batched_tokens}, got {max_num_batched_tokens!r}"
+        )
+    expected_layout = native_layout_for_run(run, args)
+    expected_variant = variant_provenance_for_run(run, args)
+    if (
+        profile.get("native_layout") != expected_layout
+        or profile.get("native_layout_environment")
+        != NATIVE_LAYOUT_ENV[expected_layout]
+        or profile.get("variant_provenance") != expected_variant
+    ):
+        raise RunnerError(
+            "verified service profile lost the selected native cache layout"
         )
 
     hardware_path = Path(args.hardware_preflight_path).resolve()
@@ -1424,6 +1531,15 @@ def seal_benchmark_result(
         "kvarn_arm": run.arm,
         "kvarn_kv_cache_dtype": ARM_SETTINGS[run.arm]["kv_cache_dtype"],
         "kvarn_native_xpu": ARM_SETTINGS[run.arm]["native_xpu"],
+        "kvarn_native_layout": expected_layout,
+        "kvarn_native_layout_environment": NATIVE_LAYOUT_ENV[expected_layout],
+        "kvarn_native_layout_log_marker": "unavailable",
+        "kvarn_native_layout_evidence": (
+            "captured-process-environment-plus-native-dispatch"
+            if run.arm == "candidate"
+            else "captured-process-environment"
+        ),
+        **{f"kvarn_{field}": value for field, value in expected_variant.items()},
         "kvarn_native_splits": str(native_splits_for_run(run, args)),
         "kvarn_run_order": str(run.order),
         "kvarn_run_uuid": run_uuid,
@@ -1499,7 +1615,11 @@ def run_one(
     write_json_atomic(run_dir / "run.json", manifest)
     try:
         service = start_service(run, run_dir, args)
-        profile = service_profile_evidence(service.argv, service.environment)
+        profile = service_profile_evidence(
+            service.argv,
+            service.environment,
+            variant_provenance=variant_provenance_for_run(run, args),
+        )
         write_json_atomic(run_dir / "service-argv.json", profile["redacted_argv"])
         write_json_atomic(
             run_dir / "service-environment.json", profile["redacted_environment"]
@@ -1585,7 +1705,9 @@ def run_one(
         stop_service(service, args.shutdown_timeout)
         service = None
         log_scan = validate_engine_log(
-            run_dir / "engine.log", native=run.arm == "candidate"
+            run_dir / "engine.log",
+            native=run.arm == "candidate",
+            expected_layout=native_layout_for_run(run, args),
         )
         write_json_atomic(run_dir / "engine-log-scan.json", log_scan)
         sealed = seal_benchmark_result(
@@ -1960,13 +2082,22 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
     candidate_id = args.candidate_id
     correctness_sha256: str | None = None
     correctness_identity: dict[str, str] | None = None
+    correctness_variant: dict[str, str] | None = None
     if args.correctness is not None:
-        candidate_id, correctness_sha256, correctness_identity = load_correctness(
-            args.correctness, args.candidate_id
-        )
+        (
+            candidate_id,
+            correctness_sha256,
+            correctness_identity,
+            correctness_layout,
+            correctness_variant,
+        ) = load_correctness(args.correctness, args.candidate_id)
         if candidate_id != str(args.candidate_env):
             raise RunnerError(
                 "correctness artifact candidate_id differs from --candidate-env"
+            )
+        if correctness_layout != args.native_layout:
+            raise RunnerError(
+                "correctness artifact native_layout differs from --native-layout"
             )
     plan = build_plan(
         contexts=args.context,
@@ -1978,6 +2109,14 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         max_model_len=args.max_model_len,
         minimum_repeats=2 if args.exploratory else 4,
     )
+    selected_variant = variant_provenance_for_run(
+        next(run for run in plan if run.arm == "candidate"), args
+    )
+    if correctness_variant is not None and correctness_variant != selected_variant:
+        raise RunnerError(
+            "correctness artifact variant provenance differs from the selected "
+            "performance candidate"
+        )
     args.resolved_launchers = resolve_launchers(plan, args)
     repositories = [
         repository_state("vllm-xpu-nix", args.packaging_repo),
@@ -1995,6 +2134,8 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         "candidate_native_splits_by_batch": {
             str(batch): splits for batch, splits in sorted(args.native_splits.items())
         },
+        "native_layout": args.native_layout,
+        **selected_variant,
         "max_num_batched_tokens": args.max_num_batched_tokens,
         "resolved_launchers": args.resolved_launchers,
         "repositories": repositories,
@@ -2255,6 +2396,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--seed", type=int, default=17)
     parser.add_argument("--num-warmups", type=int)
+    parser.add_argument(
+        "--native-layout",
+        choices=NATIVE_LAYOUTS,
+        default="natural",
+        help=(
+            "native candidate cache layout; xe2_dpas requires dedicated Brutus "
+            "native-dpas launcher outputs (default: natural)"
+        ),
+    )
     parser.add_argument(
         "--native-splits",
         action="append",

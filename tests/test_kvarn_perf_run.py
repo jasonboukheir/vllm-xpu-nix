@@ -39,6 +39,7 @@ from scripts.kvarn_perf_run import (
     statistical_parity,
     summarize_exploratory_workload,
     validate_matched_results,
+    variant_provenance_for_run,
     verify_candidate_identity,
     verify_correctness_candidate_identity,
     verify_service_profile,
@@ -57,6 +58,15 @@ IDENTITY = {
 PROFILE = {
     "max_num_batched_tokens": "2048",
     "canonical_matched_profile_sha256": "3" * 64,
+    "native_layout": "natural",
+    "native_layout_environment": "0",
+    "variant_provenance": {
+        "kernel_strategy": "vllm_auto",
+        "split_policy": "neutral_1",
+        "fusion_strategy": "vllm_auto",
+        "scheduling_variant": "eager_mnbt2048",
+        "variant_id": "auto-control-eager_mnbt2048",
+    },
 }
 HARDWARE_PREFLIGHT = {
     "schema_version": 1,
@@ -83,6 +93,7 @@ def _args(tmp_path: Path) -> argparse.Namespace:
         config_repo=tmp_path / "config",
         packaging_repo=tmp_path,
         exploratory=False,
+        native_layout="natural",
         max_model_len=65536,
         max_num_batched_tokens=2048,
         model=MODEL,
@@ -219,6 +230,7 @@ def test_correctness_is_optional_only_for_exploratory_cli(tmp_path: Path) -> Non
     assert exploratory.exploratory is True
     assert exploratory.correctness is None
     assert exploratory.repeats == 2
+    assert exploratory.native_layout == "natural"
 
     with pytest.raises(SystemExit):
         runner.parse_args([*common, "--output-dir", str(tmp_path / "formal-output")])
@@ -310,6 +322,27 @@ def test_commands_pin_launcher_and_deterministic_workload(tmp_path: Path) -> Non
     assert warmup.count("--result-dir") == 1
     assert warmup[warmup.index("--result-dir") + 1] == str(warmup_raw.parent)
     assert warmup[warmup.index("--result-filename") + 1] == warmup_raw.name
+
+    args.native_layout = "xe2_dpas"
+    assert (
+        service_command(run, args)[3]
+        == "path:/config#vllm-xpu-brutus-kvarn-native-dpas-b4"
+    )
+    reference = PlannedRun(run.workload, "reference", 1)
+    assert service_command(reference, args)[3] == (
+        "path:/config#vllm-xpu-brutus-auto-b4"
+    )
+
+    candidate_variant = variant_provenance_for_run(run, args)
+    reference_variant = variant_provenance_for_run(reference, args)
+    assert candidate_variant == {
+        "kernel_strategy": "native_xe2_qlen1",
+        "split_policy": "fixed_b1s24_b4s16",
+        "fusion_strategy": "native_materializer_persistent_scratch",
+        "scheduling_variant": "eager_mnbt2048",
+        "variant_id": ("native-xe2-xe2_dpas-fixed_b1s24_b4s16-eager_mnbt2048"),
+    }
+    assert reference_variant["variant_id"] == "auto-control-eager_mnbt2048"
 
 
 @pytest.mark.parametrize("arm", ["reference", "candidate"])
@@ -489,12 +522,15 @@ def test_exploratory_cli_retains_flexible_non_promotable_shape(
             "0.50",
             "--min-parity-pairs",
             "2",
+            "--native-layout",
+            "xe2_dpas",
         ]
     )
 
     assert args.exploratory is True
     assert args.output_tokens == 2
     assert args.waves_per_run == 1
+    assert args.native_layout == "xe2_dpas"
 
 
 def test_xpu_preflight_requires_an_exact_b70_compute_probe(
@@ -608,6 +644,9 @@ def test_profile_verification_uses_actual_argv_and_environment(tmp_path: Path) -
     environment["KVARN_NATIVE_XPU_DPAS_LAYOUT"] = "1"
     with pytest.raises(RunnerError, match="profile mismatch"):
         verify_service_profile(argv, environment, run, args)
+    args.native_layout = "xe2_dpas"
+    verify_service_profile(argv, environment, run, args)
+    args.native_layout = "natural"
     environment["KVARN_NATIVE_XPU_DPAS_LAYOUT"] = "0"
     argv[argv.index("--max-num-batched-tokens") + 1] = "8192"
     with pytest.raises(RunnerError, match="profile mismatch"):
@@ -727,7 +766,15 @@ def test_native_log_allows_unrelated_fallback_but_rejects_kvarn_fallback(
     )
     engine_log.write_text(base, encoding="utf-8")
 
-    assert runner.validate_engine_log(engine_log, native=True)["status"] == "passed"
+    scan = runner.validate_engine_log(
+        engine_log, native=True, expected_layout="xe2_dpas"
+    )
+    assert scan["status"] == "passed"
+    assert scan["native_layout_expected"] == "xe2_dpas"
+    assert scan["native_layout_log_marker"] == "unavailable"
+    assert scan["native_layout_evidence"] == (
+        "captured-process-environment-plus-native-dispatch"
+    )
 
     for kvarn_fallback in (
         "WARNING Kvarn decoder used a fallback path\n",
@@ -746,6 +793,20 @@ def test_execute_rejects_correctness_from_another_candidate(tmp_path: Path) -> N
     )
 
     with pytest.raises(RunnerError, match="differs from --candidate-env"):
+        runner.execute(args)
+
+
+def test_execute_rejects_correctness_from_another_native_layout(
+    tmp_path: Path,
+) -> None:
+    args = _args(tmp_path)
+    args.native_layout = "xe2_dpas"
+    args.candidate_id = None
+    args.correctness = _correctness(
+        tmp_path / "correctness.json", str(args.candidate_env)
+    )
+
+    with pytest.raises(RunnerError, match="native_layout differs"):
         runner.execute(args)
 
 
@@ -802,6 +863,11 @@ def test_sealed_results_are_directly_perf_gate_compatible(tmp_path: Path) -> Non
             workload=warmup_workload,
         )
         warmup_result = run_dir / "warmup.json"
+        planned_run = PlannedRun(workload, arm, order)
+        profile = {
+            **PROFILE,
+            "variant_provenance": variant_provenance_for_run(planned_run, args),
+        }
         persist_warmup_result(
             raw_result=warmup_raw,
             output=warmup_result,
@@ -824,14 +890,14 @@ def test_sealed_results_are_directly_perf_gate_compatible(tmp_path: Path) -> Non
             arm=arm,
             run_uuid=f"run-{order}",
             identity=IDENTITY,
-            profile=PROFILE,
+            profile=profile,
         )
         output = run_dir / "benchmark.json"
         sealed = seal_benchmark_result(
             raw_result=raw,
             output=output,
             engine_log=engine_log,
-            run=PlannedRun(workload, arm, order),
+            run=planned_run,
             args=args,
             candidate_id=candidate_id,
             correctness_sha256=correctness_sha256,
@@ -839,7 +905,7 @@ def test_sealed_results_are_directly_perf_gate_compatible(tmp_path: Path) -> Non
             run_uuid=f"run-{order}",
             started_at=f"2026-08-31T00:00:{order:02d}Z",
             identity=IDENTITY,
-            profile=PROFILE,
+            profile=profile,
             warmup_result=warmup_result,
         )
         assert (
@@ -908,11 +974,12 @@ def test_exploratory_seal_omits_formal_correctness_provenance(
         encoding="utf-8",
     )
 
+    planned_run = PlannedRun(workload, "reference", 1)
     sealed = seal_benchmark_result(
         raw_result=raw,
         output=tmp_path / "benchmark.json",
         engine_log=engine_log,
-        run=PlannedRun(workload, "reference", 1),
+        run=planned_run,
         args=args,
         candidate_id=None,
         correctness_sha256=None,
@@ -920,7 +987,10 @@ def test_exploratory_seal_omits_formal_correctness_provenance(
         run_uuid="exploratory-run",
         started_at="2026-09-03T00:00:00Z",
         identity=IDENTITY,
-        profile=PROFILE,
+        profile={
+            **PROFILE,
+            "variant_provenance": variant_provenance_for_run(planned_run, args),
+        },
         warmup_result=None,
     )
 
@@ -1088,11 +1158,21 @@ def test_matched_profile_normalizes_only_declared_arm_differences(
     )
     assert "do-not-persist" not in json.dumps(reference)
     assert reference["max_num_batched_tokens"] == "2048"
+    assert reference["native_layout"] == "natural"
+    assert candidate["native_layout"] == "natural"
     assert "2048" in reference["redacted_argv"]
     assert "KVARN_NATIVE_XPU_SPLITS" in reference["allowed_arm_environment_differences"]
     assert (
         "KVARN_NATIVE_XPU_DPAS_LAYOUT"
         in reference["allowed_arm_environment_differences"]
+    )
+
+    environment["KVARN_NATIVE_XPU_DPAS_LAYOUT"] = "1"
+    dpas_candidate = service_profile_evidence(argv, environment)
+    assert dpas_candidate["native_layout"] == "xe2_dpas"
+    assert (
+        dpas_candidate["canonical_matched_profile_sha256"]
+        == reference["canonical_matched_profile_sha256"]
     )
 
     argv.extend(["--block-size", "64"])

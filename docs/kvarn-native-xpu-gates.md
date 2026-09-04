@@ -59,16 +59,23 @@ vllm-xpu-brutus-kvarn-b1
 vllm-xpu-brutus-kvarn-b4
 vllm-xpu-brutus-kvarn-native-b1
 vllm-xpu-brutus-kvarn-native-b4
+vllm-xpu-brutus-kvarn-native-dpas-b1
+vllm-xpu-brutus-kvarn-native-dpas-b4
 vllm-xpu-brutus-kvarn-262k-b1
 vllm-xpu-brutus-kvarn-262k-b4
 vllm-xpu-brutus-kvarn-native-262k-b1
 vllm-xpu-brutus-kvarn-native-262k-b4
+vllm-xpu-brutus-kvarn-native-dpas-262k-b1
+vllm-xpu-brutus-kvarn-native-dpas-262k-b4
 ```
 
-The native launchers explicitly set the decode, materializer, persistent
-scratch, natural-layout, and split-count switches. The auto launchers
-explicitly disable them. That makes an inherited shell variable unable to
-silently change one arm.
+The natural and DPAS native launchers explicitly set the decode, materializer,
+persistent-scratch, layout, and split-count switches. The auto launchers
+explicitly disable native execution and keep the natural layout. Dedicated
+`native-dpas` launcher outputs are required because the foreground wrapper
+scrubs inherited Kvarn behavior variables before exporting its own values; a
+runner environment override cannot select DPAS honestly. That makes an
+inherited shell variable unable to silently change one arm.
 
 ## Automated correctness manifest
 
@@ -180,6 +187,14 @@ scripts/kvarn_correctness_run.py \
   --output-dir "benchmark-results/kvarn/${run_stamp}-native-correctness"
 ```
 
+The production/formal default is `--native-layout natural`. To validate the
+separate Xe2 DPAS cache layout, add `--native-layout xe2_dpas`; this selects
+the dedicated `native-dpas-b1`, `native-dpas-b4`, and
+`native-dpas-262k-b1` launchers while the non-native reference remains
+natural. The correctness manifest seals the selected layout, every service
+phase seals its actual launcher and captured
+`KVARN_NATIVE_XPU_DPAS_LAYOUT`, and primitive evidence records the selection.
+
 The command exits zero only after writing
 `native-correctness.json`, whose `candidate_id` is the resolved correctness
 environment store path. Use that same `candidate_env` for formal performance
@@ -287,13 +302,29 @@ declare a win by trading latency for throughput, or throughput for latency.
 Each detailed benchmark JSON must carry the gate's `kvarn_*` provenance
 metadata: candidate/store identity, model revision, service and workload IDs,
 seed, model length, sequence limit, eager/prefix/MTP/graph settings, cache
-dtype, native switch, split count, arm, scheduler peak-running evidence,
+dtype, native switch, explicit cache layout and effective layout environment,
+split count, arm, scheduler peak-running evidence,
 unique run UUID, timezone-qualified start time, global ABBA run order, the
 engine-log SHA-256, and the SHA-256 of the passed correctness artifact.
 It also seals the executable and package observed in `/proc`, the actual
 process-package closure digest, the candidate closure digest, and the
 canonical matched-profile digest. Closure paths are sorted and deduplicated
 before hashing, so Nix query order cannot alter the identity.
+
+Optimization evidence also carries explicit `kernel_strategy`, `split_policy`,
+`fusion_strategy`, `scheduling_variant`, and `variant_id` fields. These values
+are derived from the selected harness settings rather than accepted as free-form
+labels. The current native identity records the Xe2 qlen=1 reader, fixed
+B1=24/B4=16 split policy, native materializer with persistent scratch, and the
+eager MNBT=2048 schedule; the auto arm is labeled separately as the performance
+control. This is deliberately a small provenance record, not a generalized
+experiment framework.
+
+Use focused exploratory cells to screen optimization variants. Only finalists
+should pay for the full selected-layout correctness suite and B70-only repeated
+ABBA timing matrix. In those final gates, natural-layout non-native Kvarn
+remains the correctness reference, and vLLM `auto` remains the performance
+control.
 
 The canonical profile comes from the actual service argv and effective
 allowlisted environment. The only normalized arm differences are
@@ -310,16 +341,28 @@ It also removes ambient `VLLM_*`, Python path/startup/user-base variables, and
 `LD_PRELOAD`, and disables the Python user site. The foreground launcher then
 restores its declared vLLM environment, which is what the runner captures.
 
-Both arms must keep the beta's validated natural layout. The auto reference
-uses the neutral split value `1`; the native candidate uses the empirically
-selected value `24` for B1 and `16` for B4. The split
+The auto reference always keeps natural layout. The native candidate uses the
+layout explicitly selected by `--native-layout`; natural remains the default,
+while `xe2_dpas` is a separate validation mode and must match the supplied
+correctness manifest. The auto reference uses the neutral split value `1`;
+the native candidate uses the empirically selected value `24` for B1 and `16`
+for B4. The split
 variable is unreachable when the native reader is disabled, so copying the
 candidate's tuning value into auto would add misleading provenance without
 making the execution more closely matched. The gate instead permits only this
 one named native-only difference and verifies both values exactly.
 
+Current vLLM emits the exact
+`Using the native Xe2 KVarN qlen=1 decoder` marker but does not emit a
+layout-specific marker. Accordingly, the harness verifies the exact native
+marker plus the effective layout variable captured from the engine process,
+and seals `native_layout_log_marker: unavailable`. This proves the selected
+configuration and native dispatch without pretending that the log itself
+distinguishes natural from DPAS. It does not establish that DPAS is the
+no-environment production default.
+
 Built-in model, tokenizer, backend, request-rate, prompt-count, duration,
-token totals, and concurrency fields must also match. The gate requires four
+token totals, and concurrency fields must also match. The gate requires eight
 unique results and logs per arm, full completion, observed B1 or B4
 concurrency, internally consistent throughput arithmetic, clean logs, and
 positive native-dispatch evidence in every candidate log.
@@ -400,6 +443,12 @@ scripts/kvarn_perf_run.py \
   --output-dir "benchmark-results/kvarn-perf/$run_stamp"
 ```
 
+For DPAS validation, pass `--native-layout xe2_dpas` to both the correctness
+and performance commands. The performance runner refuses a correctness
+manifest from another layout, uses the dedicated DPAS launchers only for the
+candidate, and restarts every reference and candidate service exactly as in
+natural mode.
+
 Before a current-build eight-gate correctness manifest exists, use the
 explicitly non-promotable exploratory mode rather than weakening or fabricating
 formal evidence:
@@ -476,3 +525,74 @@ If a native gate fails, stop the foreground process, start
 closure, wait for `/health`, replay one frozen B1 fixture, and scan the new
 engine log before restoring the systemd service. Do not replace the deployed
 non-native profile until that recovery sequence and all native gates pass.
+
+## GPU timeline diagnostics (not a performance gate)
+
+Use `kvarn_xpu_profile.py` to explain a gap found by the unprofiled parity
+runner. It captures a bounded 20–50-step Kineto device timeline from a fresh
+foreground service. The runner skips the conservative upper bound for chunked
+prefill plus four settled decode iterations, disables stacks, shapes, memory,
+FLOP accounting, and frontend tracing, and then summarizes only
+positive-duration XPU kernel events and per-stream idle gaps.
+
+This is intentionally separate from the performance gate. Kineto perturbs the
+workload, so neither the raw benchmark result nor any time in
+`profile-summary.json` is eligible for throughput, latency, parity, promotion,
+or acceptance conclusions. The summary repeats that restriction in machine
+readable fields. CPU annotations label steady decode steps and native Kvarn
+regions; CPU durations are not reported as GPU performance evidence.
+
+The command refuses to run unless the candidate's pinned Torch completes an
+XPU tensor operation on exactly one
+`Intel(R) Arc(TM) Pro B70 Graphics`. It also requires the final service log to
+show `device_config=xpu`, positive model and KV residency, and, for the
+candidate arm, native Xe2 dispatch with no fallback. A trace is valid only when
+it contains the requested number of all-generation B1/B4 steps and at least one
+positive XPU kernel in every step.
+
+Capture auto and natural-layout native diagnostics into separate durable
+directories:
+
+```bash
+stamp=$(date -u +%Y%m%dT%H%M%SZ)
+scripts/kvarn_xpu_profile.py \
+  --candidate-env /nix/store/CURRENT-BETA-CANDIDATE \
+  --arm reference --context 65023 --batch 1 --profile-steps 32 \
+  --variant-id auto-natural-b1 \
+  --launcher vllm-xpu-brutus-auto-b1 \
+  --output-dir "benchmark-results/kvarn-profile/${stamp}-auto-b1-65k"
+
+scripts/kvarn_xpu_profile.py \
+  --candidate-env /nix/store/CURRENT-BETA-CANDIDATE \
+  --arm candidate --context 65023 --batch 1 --profile-steps 32 \
+  --variant-id native-xe2-natural-split24-b1 \
+  --native-layout natural --native-splits 24 \
+  --launcher vllm-xpu-brutus-kvarn-native-b1 \
+  --output-dir "benchmark-results/kvarn-profile/${stamp}-native-b1-65k"
+```
+
+For the DPAS cache-layout experiment, make the layout and its dedicated
+launcher explicit. B4 currently uses split count 16:
+
+```bash
+stamp=$(date -u +%Y%m%dT%H%M%SZ)
+scripts/kvarn_xpu_profile.py \
+  --candidate-env /nix/store/CURRENT-BETA-CANDIDATE \
+  --arm candidate --context 65023 --batch 4 --profile-steps 32 \
+  --variant-id native-xe2-xe2_dpas-split16-b4 \
+  --native-layout xe2_dpas --native-splits 16 \
+  --launcher vllm-xpu-brutus-kvarn-native-dpas-b4 \
+  --output-dir "benchmark-results/kvarn-profile/${stamp}-dpas-b4-65k"
+```
+
+The explicit launcher is a provenance assertion, not an arbitrary override:
+it must match the selected arm, layout, and batch. The runner resolves it to a
+realized immutable Nix-store program and records both names, the captured
+layout environment, split count, process/candidate closure digests, engine-log
+digest, hardware-preflight digest, Kineto trace digest, profiler configuration,
+per-step device-kernel totals, top kernels by device time, and queue idle gaps.
+The variant block also records the cache layout, kernel strategy, split count,
+fusion selection, and scheduling selection. A compact GPU-only leaderboard
+block provides total device-kernel time, launch count, union-busy time, device
+span, and idle fraction. These are useful for ranking factory experiments
+inside the same profiler setup, but remain diagnostic and non-promotable.

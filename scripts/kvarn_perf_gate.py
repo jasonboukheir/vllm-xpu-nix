@@ -28,6 +28,15 @@ FALLBACK_PATTERN = re.compile(
     r"\b(?:fallback|falling back)\b[^\n]{0,120}\bkvarn\b)"
 )
 COMPACT_DTYPE = "kvarn_k4v4_g128_compact"
+NATIVE_LAYOUTS = ("natural", "xe2_dpas")
+NATIVE_LAYOUT_ENV = {"natural": "0", "xe2_dpas": "1"}
+VARIANT_FIELDS = (
+    "kernel_strategy",
+    "split_policy",
+    "fusion_strategy",
+    "scheduling_variant",
+    "variant_id",
+)
 EXPECTED_XPU_DEVICE_NAME = "Intel(R) Arc(TM) Pro B70 Graphics"
 FORMAL_CONTEXTS = frozenset({4096, 16384, 32768, 65023})
 REQUIRED_GATES = (
@@ -98,6 +107,56 @@ CORRECTNESS_PHASE_SPECS = {
         "splits": 24,
     },
 }
+
+
+def _candidate_variant_provenance(native_layout: str) -> dict[str, str]:
+    split_policy = "fixed_b1s24_b4s16"
+    scheduling = "eager_mnbt2048"
+    return {
+        "kernel_strategy": "native_xe2_qlen1",
+        "split_policy": split_policy,
+        "fusion_strategy": "native_materializer_persistent_scratch",
+        "scheduling_variant": scheduling,
+        "variant_id": f"native-xe2-{native_layout}-{split_policy}-{scheduling}",
+    }
+
+
+def _correctness_reference_variant_provenance() -> dict[str, str]:
+    return {
+        "kernel_strategy": "kvarn_non_native",
+        "split_policy": "neutral_1",
+        "fusion_strategy": "none",
+        "scheduling_variant": "eager_mnbt2048",
+        "variant_id": "natural-kvarn-correctness-reference-eager_mnbt2048",
+    }
+
+
+def _performance_reference_variant_provenance() -> dict[str, str]:
+    return {
+        "kernel_strategy": "vllm_auto",
+        "split_policy": "neutral_1",
+        "fusion_strategy": "vllm_auto",
+        "scheduling_variant": "eager_mnbt2048",
+        "variant_id": "auto-control-eager_mnbt2048",
+    }
+
+
+def _correctness_phase_spec(phase_name: str, native_layout: str) -> dict[str, Any]:
+    spec = dict(CORRECTNESS_PHASE_SPECS[phase_name])
+    effective_layout = native_layout if spec["native"] else "natural"
+    if spec["native"] and native_layout == "xe2_dpas":
+        spec["launcher"] = spec["launcher"].replace(
+            "kvarn-native", "kvarn-native-dpas", 1
+        )
+    spec["native_layout"] = effective_layout
+    spec.update(
+        _candidate_variant_provenance(native_layout)
+        if spec["native"]
+        else _correctness_reference_variant_provenance()
+    )
+    return spec
+
+
 CORRECTNESS_RUNNER_SOURCES = {
     "scripts/kvarn_correctness_run.py",
     "scripts/kvarn_perf_gate.py",
@@ -148,6 +207,15 @@ ARM_PROVENANCE_FIELDS = (
     "kvarn_arm",
     "kvarn_kv_cache_dtype",
     "kvarn_native_xpu",
+    "kvarn_native_layout",
+    "kvarn_native_layout_environment",
+    "kvarn_native_layout_log_marker",
+    "kvarn_native_layout_evidence",
+    "kvarn_kernel_strategy",
+    "kvarn_split_policy",
+    "kvarn_fusion_strategy",
+    "kvarn_scheduling_variant",
+    "kvarn_variant_id",
     "kvarn_native_splits",
 )
 
@@ -251,20 +319,46 @@ def _validate_correctness_phase(
     phase_name: str,
     candidate_id: str,
     process_package: str,
+    native_layout: str,
     *,
     owner: Path,
 ) -> dict[str, Any]:
     path, phase = _json_artifact(value, name=f"{phase_name} phase", owner=owner)
-    expected_spec = CORRECTNESS_PHASE_SPECS[phase_name]
+    expected_spec = _correctness_phase_spec(phase_name, native_layout)
+    expected_layout = expected_spec["native_layout"]
+    expected_variant = {field: expected_spec[field] for field in VARIANT_FIELDS}
+    expected_layout_evidence = (
+        "captured-process-environment-plus-native-dispatch"
+        if expected_spec["native"]
+        else "captured-process-environment"
+    )
     if (
         phase.get("status") != "passed"
         or phase.get("spec") != expected_spec
         or phase.get("native_dispatch_verified") is not expected_spec["native"]
+        or phase.get("native_layout") != expected_layout
+        or phase.get("native_layout_environment") != NATIVE_LAYOUT_ENV[expected_layout]
+        or phase.get("native_layout_log_marker") != "unavailable"
+        or phase.get("native_layout_evidence") != expected_layout_evidence
         or not isinstance(phase.get("workload"), dict)
     ):
         raise GateError(f"{owner}: invalid {phase_name} phase evidence")
     for name in ("profile", "identity", "engine_log", "engine_log_scan"):
         _artifact_reference(phase.get(name), name=f"{phase_name}.{name}", owner=path)
+    _profile_path, profile = _json_artifact(
+        phase["profile"], name=f"{phase_name}.profile", owner=path
+    )
+    captured_environment = profile.get("redacted_environment")
+    if (
+        profile.get("native_layout") != expected_layout
+        or profile.get("native_layout_environment")
+        != NATIVE_LAYOUT_ENV[expected_layout]
+        or not isinstance(captured_environment, dict)
+        or captured_environment.get("KVARN_NATIVE_XPU_DPAS_LAYOUT")
+        != NATIVE_LAYOUT_ENV[expected_layout]
+        or profile.get("variant_provenance") != expected_variant
+    ):
+        raise GateError(f"{owner}: {phase_name} layout profile differs")
     _identity_path, identity = _json_artifact(
         phase["identity"], name=f"{phase_name}.identity", owner=path
     )
@@ -297,6 +391,7 @@ def validate_correctness_gate_evidence(
     path: Path,
     candidate_id: str,
     process_package: str,
+    native_layout: str,
 ) -> None:
     """Validate the meaning of one hashed correctness-gate artifact."""
     if name not in REQUIRED_GATES:
@@ -319,6 +414,12 @@ def validate_correctness_gate_evidence(
                 counts.get(field) != 0 for field in ("failures", "errors", "skipped")
             )
             or evidence.get("candidate_id") != candidate_id
+            or evidence.get("native_layout") != native_layout
+            or any(
+                evidence.get(field)
+                != _candidate_variant_provenance(native_layout)[field]
+                for field in VARIANT_FIELDS
+            )
         ):
             raise GateError(f"{path}: primitive gate lacks an all-pass JUnit result")
         command = evidence.get("command")
@@ -383,6 +484,7 @@ def validate_correctness_gate_evidence(
             phase_name,
             candidate_id,
             process_package,
+            native_layout,
             owner=path,
         )
 
@@ -735,6 +837,9 @@ def _validate_warmup(
     process_closure_sha256: str,
     candidate_closure_sha256: str,
     matched_profile_sha256: str,
+    native_layout: str,
+    native_layout_environment: str,
+    variant_provenance: dict[str, str],
 ) -> None:
     path = Path(raw_path).expanduser().resolve()
     try:
@@ -756,6 +861,9 @@ def _validate_warmup(
         "process_closure_sha256": process_closure_sha256,
         "candidate_closure_sha256": candidate_closure_sha256,
         "matched_profile_sha256": matched_profile_sha256,
+        "native_layout": native_layout,
+        "native_layout_environment": native_layout_environment,
+        "variant_provenance": variant_provenance,
     }
     if (
         not isinstance(document, dict)
@@ -1023,6 +1131,11 @@ def _load_run(path: Path) -> Run:
         process_closure_sha256=provenance["kvarn_process_closure_sha256"],
         candidate_closure_sha256=provenance["kvarn_candidate_closure_sha256"],
         matched_profile_sha256=provenance["kvarn_matched_profile_sha256"],
+        native_layout=provenance["kvarn_native_layout"],
+        native_layout_environment=provenance["kvarn_native_layout_environment"],
+        variant_provenance={
+            field: provenance[f"kvarn_{field}"] for field in VARIANT_FIELDS
+        },
     )
     provenance["kvarn_warmup_path"] = warmup_path
     provenance["kvarn_warmup_sha256"] = warmup_sha256
@@ -1114,6 +1227,18 @@ def _load_correctness(path: Path) -> tuple[dict[str, Any], str]:
         raise GateError(f"{path}: correctness status must be passed")
     if document.get("native_dispatch_verified") is not True:
         raise GateError(f"{path}: native_dispatch_verified must be true")
+    native_layout = document.get("native_layout")
+    if native_layout not in NATIVE_LAYOUTS:
+        raise GateError(f"{path}: native_layout must be natural or xe2_dpas")
+    expected_service_plan = [
+        _correctness_phase_spec(phase_name, native_layout)
+        for phase_name in CORRECTNESS_PHASE_SPECS
+    ]
+    if document.get("service_start_plan") != expected_service_plan:
+        raise GateError(f"{path}: service_start_plan differs from native_layout")
+    expected_variant = _candidate_variant_provenance(native_layout)
+    if any(document.get(field) != value for field, value in expected_variant.items()):
+        raise GateError(f"{path}: correctness variant provenance is inconsistent")
     candidate_id = document.get("candidate_id")
     if not isinstance(candidate_id, str) or not candidate_id:
         raise GateError(f"{path}: candidate_id must be a non-empty string")
@@ -1154,6 +1279,7 @@ def _load_correctness(path: Path) -> tuple[dict[str, Any], str]:
             path=evidence,
             candidate_id=candidate_id,
             process_package=process_package,
+            native_layout=native_layout,
         )
     resolved = path.expanduser().resolve()
     _verify_artifact_references(resolved, owner=path, seen={resolved})
@@ -1199,8 +1325,12 @@ def _verify_artifact_references(path: Path, *, owner: Path, seen: set[Path]) -> 
 
 
 def _validate_logs(
-    paths: list[Path], arm: str, *, expect_native: bool
+    paths: list[Path], arm: str, *, expect_native: bool, expected_layout: str
 ) -> list[dict[str, Any]]:
+    if expected_layout not in NATIVE_LAYOUTS or (
+        not expect_native and expected_layout != "natural"
+    ):
+        raise GateError(f"{arm} has an invalid native-layout log expectation")
     resolved = [path.resolve() for path in paths]
     if len(set(resolved)) != len(resolved):
         raise GateError(f"{arm} engine-log paths must be unique")
@@ -1224,7 +1354,14 @@ def _validate_logs(
             raise GateError(f"{path}: {arm} log must {expectation} native dispatch")
         if expect_native and FALLBACK_PATTERN.search(text):
             raise GateError(f"{path}: native candidate log reports fallback")
-        evidence.append({"sha256": hashlib.sha256(raw).hexdigest(), **xpu})
+        evidence.append(
+            {
+                "sha256": hashlib.sha256(raw).hexdigest(),
+                "native_layout_expected": expected_layout,
+                "native_layout_log_marker": "unavailable",
+                **xpu,
+            }
+        )
     return evidence
 
 
@@ -1391,6 +1528,7 @@ def compare(
         raise GateError(
             "correctness and performance evidence identify different candidate builds"
         )
+    correctness_layout = correctness["native_layout"]
 
     ref_dtype = first_ref.provenance["kvarn_kv_cache_dtype"]
     cand_dtype = first_cand.provenance["kvarn_kv_cache_dtype"]
@@ -1398,6 +1536,42 @@ def compare(
     cand_native = first_cand.provenance["kvarn_native_xpu"]
     if (ref_native, cand_native) != ("0", "1"):
         raise GateError("reference must disable and candidate must enable native XPU")
+    ref_layout = first_ref.provenance["kvarn_native_layout"]
+    cand_layout = first_cand.provenance["kvarn_native_layout"]
+    if ref_layout != "natural" or cand_layout != correctness_layout:
+        raise GateError(
+            "candidate native layout must match correctness and reference must be "
+            "natural"
+        )
+    reference_variant = {
+        field: first_ref.provenance[f"kvarn_{field}"] for field in VARIANT_FIELDS
+    }
+    candidate_variant = {
+        field: first_cand.provenance[f"kvarn_{field}"] for field in VARIANT_FIELDS
+    }
+    correctness_variant = {field: correctness[field] for field in VARIANT_FIELDS}
+    if reference_variant != _performance_reference_variant_provenance():
+        raise GateError("reference variant provenance is not the auto control")
+    if candidate_variant != correctness_variant:
+        raise GateError(
+            "candidate variant provenance must match the correctness manifest"
+        )
+    for run, layout, native in (
+        (first_ref, ref_layout, False),
+        (first_cand, cand_layout, True),
+    ):
+        expected_evidence = (
+            "captured-process-environment-plus-native-dispatch"
+            if native
+            else "captured-process-environment"
+        )
+        if (
+            run.provenance["kvarn_native_layout_environment"]
+            != NATIVE_LAYOUT_ENV[layout]
+            or run.provenance["kvarn_native_layout_log_marker"] != "unavailable"
+            or run.provenance["kvarn_native_layout_evidence"] != expected_evidence
+        ):
+            raise GateError(f"{run.path}: native-layout evidence is inconsistent")
     try:
         ref_splits = int(first_ref.provenance["kvarn_native_splits"])
         cand_splits = int(first_cand.provenance["kvarn_native_splits"])
@@ -1417,10 +1591,16 @@ def compare(
         raise GateError(f"unsupported comparison kind {comparison_kind!r}")
 
     reference_log_evidence = _validate_logs(
-        reference_logs, "reference", expect_native=False
+        reference_logs,
+        "reference",
+        expect_native=False,
+        expected_layout=ref_layout,
     )
     candidate_log_evidence = _validate_logs(
-        candidate_logs, "candidate", expect_native=True
+        candidate_logs,
+        "candidate",
+        expect_native=True,
+        expected_layout=cand_layout,
     )
     for run, evidence in zip(reference, reference_log_evidence):
         if run.engine_log_sha256 != evidence["sha256"]:

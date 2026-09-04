@@ -60,7 +60,8 @@ def test_variant_parser_accepts_names_and_all_but_not_numeric_aliases() -> None:
         0,
         3,
     ]
-    assert [item.variant_id for item in factory.parse_variants("all")] == list(range(6))
+    assert [item.variant_id for item in factory.parse_variants("all")] == list(range(5))
+    assert factory.parse_variants("page128") == [factory.VARIANTS["page128"]]
     with pytest.raises(factory.FactoryError, match="unknown variant"):
         factory.parse_variants("3")
 
@@ -338,12 +339,17 @@ def test_build_and_source_provenance_is_exact(tmp_path: Path) -> None:
         )
 
     repo = _repo(tmp_path / "repo")
+    clean_state = factory.repository_state("kernels", repo)
+    assert len(clean_state["head"]) == 40
+    factory.require_clean_repositories([clean_state])
+
     (repo / "dirty").write_text("dirty\n", encoding="utf-8")
     state = factory.repository_state("kernels", repo)
-    assert len(state["head"]) == 40
     assert state["dirty"] is True
     assert state["status_porcelain"] == ["?? dirty"]
     assert state["status_sha256"] == hashlib.sha256(b"?? dirty").hexdigest()
+    with pytest.raises(factory.FactoryError, match="requires clean"):
+        factory.require_clean_repositories([state])
 
     libraries = {
         "base": {"path": "/base", "sha256": "1" * 64, "size_bytes": 1, "mtime_ns": 2},
@@ -358,6 +364,131 @@ def test_build_and_source_provenance_is_exact(tmp_path: Path) -> None:
     assert len(identity) == 64
     changed = {**libraries, "flash": {**libraries["flash"], "sha256": "3" * 64}}
     assert factory.evidence_identity(changed, [state]) != identity
+
+
+def test_nix_artifact_must_belong_to_attested_derivation_and_closure() -> None:
+    output = "/nix/store/0123456789abcdfghijklmnpqrsvwxyz-kernels"
+    library = Path(output) / "lib/python3.12/site-packages/kernels.so"
+    derivation = "/nix/store/zyxwvutsrqpnmlkjihgfdcba98765432-kernels.drv"
+    closure = [output, "/nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-torch"]
+    expected_digest = factory.closure_digest(closure)
+    attestation = factory.validate_build_attestation(
+        label="flash",
+        derivation=derivation,
+        closure_sha256=expected_digest,
+    )
+    calls: list[tuple[str, ...]] = []
+
+    def command_runner(command) -> str:
+        call = tuple(command)
+        calls.append(call)
+        if call == ("nix-store", "-q", "--outputs", derivation):
+            return output
+        if call == ("nix-store", "-q", "--deriver", output):
+            return derivation
+        if call == ("nix-store", "-qR", output):
+            return "\n".join(reversed(closure))
+        raise AssertionError(call)
+
+    verified = factory.verify_nix_artifact(
+        label="flash",
+        library=library,
+        attestation=attestation,
+        command_runner=command_runner,
+    )
+    assert verified["verified"] is True
+    assert verified["output_path"] == output
+    assert verified["closure_paths"] == sorted(closure)
+    assert verified["closure_sha256"] == expected_digest
+    assert len(calls) == 3
+
+    def wrong_deriver(command) -> str:
+        if "--outputs" in command:
+            return output
+        if "--deriver" in command:
+            return "/nix/store/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-wrong.drv"
+        return "\n".join(closure)
+
+    with pytest.raises(factory.FactoryError, match="deriver mismatch"):
+        factory.verify_nix_artifact(
+            label="flash",
+            library=library,
+            attestation=attestation,
+            command_runner=wrong_deriver,
+        )
+
+    bad_digest = {**attestation, "closure_sha256": "0" * 64}
+    with pytest.raises(factory.FactoryError, match="closure digest mismatch"):
+        factory.verify_nix_artifact(
+            label="flash",
+            library=library,
+            attestation=bad_digest,
+            command_runner=command_runner,
+        )
+
+
+def test_nix_artifact_rejects_non_store_library() -> None:
+    with pytest.raises(factory.FactoryError, match="not in the Nix store"):
+        factory.nix_store_root(Path("/tmp/kernel.so"))
+
+
+def test_focused_xpu_kill_suite_is_bound_to_library_and_fail_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "kernels"
+    for selection in factory.FOCUSED_XPU_TESTS:
+        relative = selection.partition("::")[0]
+        source = repo / relative
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.touch()
+    library = tmp_path / "flash.so"
+    library.touch()
+    captured: dict = {}
+
+    def passing_run(command, **kwargs):
+        captured["command"] = command
+        captured.update(kwargs)
+        return SimpleNamespace(
+            returncode=0,
+            stdout=f"{factory.FOCUSED_XPU_MIN_PASSED} passed in 1.00s\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr(factory.subprocess, "run", passing_run)
+    result = factory.run_focused_xpu_kill_suite(
+        kernels_repo=repo, flash_library=library
+    )
+    factory.require_focused_xpu_kill_suite(result)
+    assert result["passed"] is True
+    assert result["passed_count"] == factory.FOCUSED_XPU_MIN_PASSED
+    assert captured["cwd"] == repo.resolve()
+    assert captured["env"]["VLLM_XPU_KERNELS_LIBRARY"] == str(library.resolve())
+    assert "no:cacheprovider" in captured["command"]
+    assert all(str(repo.resolve()) in item for item in captured["command"][7:])
+
+    def skipped_run(_command, **_kwargs):
+        return SimpleNamespace(
+            returncode=0,
+            stdout=f"{factory.FOCUSED_XPU_MIN_PASSED} passed, 1 skipped in 1.00s\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr(factory.subprocess, "run", skipped_run)
+    skipped = factory.run_focused_xpu_kill_suite(
+        kernels_repo=repo, flash_library=library
+    )
+    assert skipped["passed"] is False
+    with pytest.raises(factory.FactoryError, match="kill suite failed"):
+        factory.require_focused_xpu_kill_suite(skipped)
+
+
+def test_fixture_and_fusion_results_cannot_claim_matched_parity() -> None:
+    source = Path(factory.__file__).read_text(encoding="utf-8")
+    assert 'logical_kv_payloads_matched_between_auto_and_kvarn": False' in source
+    assert 'matched_parity_eligible": False' in source
+    assert "candidate_separate_device_stage_over_auto" in source
+    assert "candidate_fused_device_stage_over_auto" in source
+    assert '"candidate_device_stage_over_auto"' not in source
 
 
 def test_library_hash_and_atomic_durable_output(tmp_path: Path) -> None:
@@ -408,4 +539,4 @@ def test_scope_can_never_be_mistaken_for_service_parity() -> None:
     assert "not service-performance or parity evidence" in factory.SCOPE_WARNING
     source = Path(factory.__file__).read_text(encoding="utf-8")
     assert "KVARN_NATIVE_XPU" not in source
-    assert "os.environ" not in source
+    assert "VLLM_XPU_KERNELS_LIBRARY" in source

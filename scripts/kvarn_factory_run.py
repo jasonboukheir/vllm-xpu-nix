@@ -74,6 +74,30 @@ DEFAULT_VARIANT_NAMES = (
     "q8_vector",
     "q6_vector",
 )
+FOCUSED_XPU_TESTS = (
+    "tests/flash_attn/test_kvarn_decode_xpu.py::test_structured_permuted_pages",
+    "tests/flash_attn/test_kvarn_decode_xpu.py::test_nonuniform_kvarn_factors_across_page_boundary",
+    "tests/flash_attn/test_kvarn_decode_xpu.py::test_round1_dpas_variants_match_canonical_ragged_and_hybrid",
+    "tests/flash_attn/test_kvarn_decode_xpu.py::test_q6_multisplit_lse_owns_all_six_distinct_query_rows",
+    "tests/flash_attn/test_kvarn_decode_xpu.py::test_full_precision_tail_and_packed_history_share_softmax",
+    "tests/flash_attn/test_kvarn_decode_xpu.py::test_long_context_ragged_b4_matches_structured_oracle[natural-split24]",
+    "tests/flash_attn/test_kvarn_decode_xpu.py::test_long_context_ragged_b4_matches_structured_oracle[dpas-split1]",
+    "tests/flash_attn/test_kvarn_decode_xpu.py::test_long_context_ragged_b4_matches_structured_oracle[dpas-split24]",
+    "tests/flash_attn/test_kvarn_decode_xpu.py::test_long_context_ragged_b4_matches_structured_oracle[dpas-qk-i8u4-split24]",
+    "tests/flash_attn/test_kvarn_decode_xpu.py::test_long_context_ragged_b4_matches_structured_oracle[r1-p2-dpas-q6]",
+    "tests/flash_attn/test_kvarn_decode_xpu.py::test_long_context_ragged_b4_matches_structured_oracle[r1-p5-dpas-vector-load]",
+    "tests/flash_attn/test_kvarn_decode_xpu.py::test_long_context_ragged_b4_matches_structured_oracle[r1-p2-p5-dpas-q6-vector-load]",
+    "tests/flash_attn/test_kvarn_hadamard_scatter_xpu.py::test_kvarn_fused_qkv_hadamard_scatter_matches_separate_ops",
+)
+FOCUSED_XPU_MIN_PASSED = 41
+UNMATCHED_FIXTURE_WARNING = (
+    "The auto BF16 cache and Kvarn packed cache have identical model shapes, "
+    "batch/context, query seed, and warmed execution, but do not yet originate "
+    "from one logical K/V corpus. Kvarn also repeats two packed records while "
+    "auto uses unique Gaussian storage. Ratios are candidate-ranking diagnostics "
+    "only and are not matched-parity evidence. A production Kvarn packer fixture "
+    "is required before promoting these ratios to a parity gate."
+)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -165,6 +189,76 @@ def _run(command: Sequence[str]) -> str:
     return result.stdout.strip()
 
 
+def closure_digest(paths: Sequence[str]) -> str:
+    canonical = "\n".join(sorted(set(paths))) + "\n"
+    return sha256_text(canonical)
+
+
+def nix_store_root(path: Path) -> Path:
+    parts = path.parts
+    if len(parts) < 4 or parts[:3] != ("/", "nix", "store"):
+        raise FactoryError(f"shared library is not in the Nix store: {path}")
+    return Path(*parts[:4])
+
+
+def verify_nix_artifact(
+    *,
+    label: str,
+    library: Path,
+    attestation: dict[str, str],
+    command_runner: Callable[[Sequence[str]], str] = _run,
+) -> dict[str, Any]:
+    # execute() has already opened and hashed this path with strict resolution.
+    # Keeping this helper syntactic also makes its Nix query contract testable
+    # without creating files under /nix/store.
+    resolved = library.expanduser().resolve()
+    output_path = nix_store_root(resolved)
+    derivation = attestation["derivation"]
+    try:
+        outputs = sorted(
+            set(
+                command_runner(
+                    ("nix-store", "-q", "--outputs", derivation)
+                ).splitlines()
+            )
+        )
+        actual_deriver = command_runner(
+            ("nix-store", "-q", "--deriver", str(output_path))
+        )
+        closure = sorted(
+            set(command_runner(("nix-store", "-qR", str(output_path))).splitlines())
+        )
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise FactoryError(f"cannot verify {label} Nix artifact: {error}") from error
+    if str(output_path) not in outputs:
+        raise FactoryError(
+            f"{label} library output {output_path} is not produced by {derivation}"
+        )
+    if actual_deriver != derivation:
+        raise FactoryError(
+            f"{label} output deriver mismatch: expected {derivation}, "
+            f"got {actual_deriver!r}"
+        )
+    if not closure:
+        raise FactoryError(f"{label} Nix output has an empty closure")
+    actual_digest = closure_digest(closure)
+    if actual_digest != attestation["closure_sha256"]:
+        raise FactoryError(
+            f"{label} closure digest mismatch: expected "
+            f"{attestation['closure_sha256']}, got {actual_digest}"
+        )
+    return {
+        **attestation,
+        "attestation_source": "verified_nix_store",
+        "library_path": str(resolved),
+        "output_path": str(output_path),
+        "actual_deriver": actual_deriver,
+        "closure_paths": closure,
+        "closure_sha256": actual_digest,
+        "verified": True,
+    }
+
+
 def repository_state(name: str, path: Path) -> dict[str, Any]:
     resolved = path.expanduser().resolve(strict=True)
     status = _run(
@@ -187,6 +281,15 @@ def repository_state(name: str, path: Path) -> dict[str, Any]:
         "status_sha256": sha256_text("\n".join(status)),
         "dirty": bool(status),
     }
+
+
+def require_clean_repositories(repositories: Sequence[dict[str, Any]]) -> None:
+    dirty = [value["name"] for value in repositories if value["dirty"]]
+    if dirty:
+        raise FactoryError(
+            "factory evidence requires clean source repositories; dirty: "
+            + ", ".join(dirty)
+        )
 
 
 def evidence_identity(
@@ -238,7 +341,7 @@ def parse_int_list(value: str, *, label: str) -> list[int]:
 
 
 def parse_variants(value: str) -> list[VariantSpec]:
-    names = list(VARIANTS) if value == "all" else value.split(",")
+    names = list(DEFAULT_VARIANT_NAMES) if value == "all" else value.split(",")
     if not names or any(not name for name in names):
         raise FactoryError("--variants must contain named candidate IDs")
     unknown = [name for name in names if name not in VARIANTS]
@@ -420,6 +523,100 @@ def preflight_xpu(torch_module: Any) -> dict[str, Any]:
         "tensor_op_result": value,
         "passed": True,
     }
+
+
+def focused_xpu_test_command(kernels_repo: Path) -> list[str]:
+    resolved = kernels_repo.expanduser().resolve(strict=True)
+    node_ids: list[str] = []
+    for selection in FOCUSED_XPU_TESTS:
+        relative, separator, test_name = selection.partition("::")
+        if not separator:
+            raise FactoryError(f"invalid focused XPU test selection: {selection}")
+        source = (resolved / relative).resolve(strict=True)
+        if not source.is_relative_to(resolved):
+            raise FactoryError(f"focused XPU test escapes kernel repository: {source}")
+        node_ids.append(f"{source}::{test_name}")
+    return [
+        sys.executable,
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "-rA",
+        *node_ids,
+    ]
+
+
+def run_focused_xpu_kill_suite(
+    *, kernels_repo: Path, flash_library: Path
+) -> dict[str, Any]:
+    resolved_repo = kernels_repo.expanduser().resolve(strict=True)
+    resolved_library = flash_library.expanduser().resolve(strict=True)
+    command = focused_xpu_test_command(resolved_repo)
+    environment = os.environ.copy()
+    environment["VLLM_XPU_KERNELS_LIBRARY"] = str(resolved_library)
+    environment["PYTHONDONTWRITEBYTECODE"] = "1"
+    started_at = utc_now()
+    monotonic_start = time.monotonic_ns()
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=resolved_repo,
+            env=environment,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError as error:
+        return {
+            "status": "failed",
+            "passed": False,
+            "started_at": started_at,
+            "finished_at": utc_now(),
+            "duration_seconds": (time.monotonic_ns() - monotonic_start) / 1e9,
+            "command": command,
+            "cwd": str(resolved_repo),
+            "library": str(resolved_library),
+            "error": str(error),
+        }
+    combined_output = f"{completed.stdout}\n{completed.stderr}"
+    passed_matches = re.findall(r"(?m)(\d+) passed(?:[, ]|$)", combined_output)
+    passed_count = max((int(value) for value in passed_matches), default=0)
+    skipped_matches = re.findall(r"(?m)(\d+) skipped(?:[, ]|$)", combined_output)
+    skipped_count = max((int(value) for value in skipped_matches), default=0)
+    passed = (
+        completed.returncode == 0
+        and passed_count >= FOCUSED_XPU_MIN_PASSED
+        and skipped_count == 0
+    )
+    return {
+        "status": "passed" if passed else "failed",
+        "passed": passed,
+        "started_at": started_at,
+        "finished_at": utc_now(),
+        "duration_seconds": (time.monotonic_ns() - monotonic_start) / 1e9,
+        "command": command,
+        "cwd": str(resolved_repo),
+        "library": str(resolved_library),
+        "library_environment": "VLLM_XPU_KERNELS_LIBRARY",
+        "minimum_passed_required": FOCUSED_XPU_MIN_PASSED,
+        "passed_count": passed_count,
+        "skipped_count": skipped_count,
+        "returncode": completed.returncode,
+        "stdout": completed.stdout,
+        "stderr": completed.stderr,
+    }
+
+
+def require_focused_xpu_kill_suite(result: dict[str, Any]) -> None:
+    if result.get("passed") is not True:
+        raise FactoryError(
+            "mandatory focused B70 XPU kernel kill suite failed; "
+            f"returncode={result.get('returncode')}, "
+            f"passed={result.get('passed_count')}, "
+            f"skipped={result.get('skipped_count')}"
+        )
 
 
 def _operator(torch_module: Any, namespace: str, name: str) -> tuple[Any, str]:
@@ -1072,15 +1269,17 @@ def run_case(
         name: metrics["device_median_us"]
         for name, metrics in frontend_timing["arms"].items()
     }
-    candidate_frontend_name = (
-        "kvarn_fused_qkv"
-        if operations.fused_qkv_scatter is not None
-        else "kvarn_separate_q_plus_kv"
-    )
-    candidate_stage = (
+    candidate_separate_stage = (
         decode_medians["candidate"]
-        + frontend_medians[candidate_frontend_name]
+        + frontend_medians["kvarn_separate_q_plus_kv"]
         + candidate_postprocess_us
+    )
+    candidate_fused_stage = (
+        decode_medians["candidate"]
+        + frontend_medians["kvarn_fused_qkv"]
+        + candidate_postprocess_us
+        if operations.fused_qkv_scatter is not None
+        else None
     )
     auto_stage = decode_medians["auto_control"] + frontend_medians["auto_cache_store"]
     result = {
@@ -1135,11 +1334,19 @@ def run_case(
             "candidate_decode_over_auto": (
                 decode_medians["candidate"] / decode_medians["auto_control"]
             ),
-            "candidate_device_stage_over_auto": candidate_stage / auto_stage,
-            "candidate_device_stage_us": candidate_stage,
+            "candidate_separate_device_stage_over_auto": (
+                candidate_separate_stage / auto_stage
+            ),
+            "candidate_fused_device_stage_over_auto": (
+                candidate_fused_stage / auto_stage
+                if candidate_fused_stage is not None
+                else None
+            ),
+            "candidate_separate_device_stage_us": candidate_separate_stage,
+            "candidate_fused_device_stage_us": candidate_fused_stage,
             "auto_device_stage_us": auto_stage,
             "candidate_output_postprocess_us": candidate_postprocess_us,
-            "candidate_frontend": candidate_frontend_name,
+            "fusion_selection": "reported_as_independent_axes",
             "fused_over_separate_frontend": (
                 frontend_medians["kvarn_fused_qkv"]
                 / frontend_medians["kvarn_separate_q_plus_kv"]
@@ -1155,6 +1362,9 @@ def run_case(
             "kvarn_record_stride": KVARN_RECORD_STRIDE,
             "auto_block_size": auto_block_size,
             "natural_and_dpas_caches_allocated_separately": True,
+            "logical_kv_payloads_matched_between_auto_and_kvarn": False,
+            "matched_parity_eligible": False,
+            "limitation": UNMATCHED_FIXTURE_WARNING,
         },
     }
     return result
@@ -1245,6 +1455,11 @@ def initial_document(args: argparse.Namespace) -> dict[str, Any]:
                 "Kvarn periodic packed-page flush",
             ],
         },
+        "fixture_matching": {
+            "logical_kv_payloads_matched_between_auto_and_kvarn": False,
+            "matched_parity_eligible": False,
+            "warning": UNMATCHED_FIXTURE_WARNING,
+        },
         "command": {"argv": sys.argv, "cwd": os.getcwd()},
         "requested_settings": {
             "variants": [dataclasses.asdict(item) for item in args.variant_specs],
@@ -1274,11 +1489,25 @@ def execute(args: argparse.Namespace) -> int:
         base_record = stable_file_record(args.base_library)
         flash_record = stable_file_record(args.flash_library)
         document["libraries"] = {"base": base_record, "flash": flash_record}
-        document["repositories"] = [
+        document["build_attestations"] = {
+            "base": verify_nix_artifact(
+                label="base",
+                library=Path(base_record["path"]),
+                attestation=args.base_build,
+            ),
+            "flash": verify_nix_artifact(
+                label="flash",
+                library=Path(flash_record["path"]),
+                attestation=args.flash_build,
+            ),
+        }
+        repositories = [
             repository_state("vllm-xpu-nix", args.vllm_xpu_nix_repo),
             repository_state("vllm", args.vllm_repo),
             repository_state("vllm-xpu-kernels", args.kernels_repo),
         ]
+        document["repositories"] = repositories
+        require_clean_repositories(repositories)
         starting_identity = evidence_identity(
             document["libraries"], document["repositories"]
         )
@@ -1289,6 +1518,12 @@ def execute(args: argparse.Namespace) -> int:
 
         document["software"] = {"python": sys.version, "torch": torch.__version__}
         document["hardware_preflight"] = preflight_xpu(torch)
+        document["kernel_kill_suite"] = run_focused_xpu_kill_suite(
+            kernels_repo=args.kernels_repo,
+            flash_library=Path(flash_record["path"]),
+        )
+        write_json_atomic(args.output, document)
+        require_focused_xpu_kill_suite(document["kernel_kill_suite"])
         operations, schemas = load_operators(
             torch,
             base_library=Path(base_record["path"]),

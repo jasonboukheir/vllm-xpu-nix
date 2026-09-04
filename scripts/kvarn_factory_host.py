@@ -45,6 +45,13 @@ class NixArtifact:
 
 
 @dataclasses.dataclass(frozen=True)
+class NixOutput:
+    output: Path
+    derivation: str
+    closure_sha256: str
+
+
+@dataclasses.dataclass(frozen=True)
 class RepositoryPaths:
     project: Path
     vllm: Path
@@ -153,8 +160,9 @@ def discover_library(closure: Sequence[Path], basename: str) -> Path:
     return library
 
 
-def attest_library(library: Path, command_runner: CommandRunner = _run) -> NixArtifact:
-    output = store_output_from_resolved(library)
+def attest_output(output: Path, command_runner: CommandRunner = _run) -> NixOutput:
+    if store_output_from_resolved(output) != output:
+        raise HostLauncherError(f"path is not an exact Nix store output: {output}")
     derivation = command_runner(("nix-store", "-q", "--deriver", str(output)))
     if not DERIVATION.fullmatch(derivation):
         raise HostLauncherError(
@@ -169,11 +177,20 @@ def attest_library(library: Path, command_runner: CommandRunner = _run) -> NixAr
             raise HostLauncherError(
                 f"artifact closure contains a non-output path: {candidate}"
             )
-    return NixArtifact(
-        library=library,
+    return NixOutput(
         output=output,
         derivation=derivation,
         closure_sha256=closure_digest(closure),
+    )
+
+
+def attest_library(library: Path, command_runner: CommandRunner = _run) -> NixArtifact:
+    build = attest_output(store_output_from_resolved(library), command_runner)
+    return NixArtifact(
+        library=library,
+        output=build.output,
+        derivation=build.derivation,
+        closure_sha256=build.closure_sha256,
     )
 
 
@@ -291,7 +308,7 @@ def require_repository_revision(
 
 def require_derivation_source(
     label: str,
-    artifact: NixArtifact,
+    artifact: NixArtifact | NixOutput,
     expected_revision: str,
 ) -> None:
     if not GIT_COMMIT.fullmatch(expected_revision):
@@ -305,6 +322,23 @@ def require_derivation_source(
             "is not stamped "
             f"into artifact derivation {artifact.derivation}"
         )
+
+
+def require_source_ownership(
+    *,
+    package: NixOutput,
+    base: NixArtifact,
+    flash: NixArtifact,
+    expected_vllm_revision: str,
+    expected_kernels_revision: str,
+) -> None:
+    require_derivation_source("vLLM package", package, expected_vllm_revision)
+    require_derivation_source(
+        "vllm-xpu-kernels base library", base, expected_kernels_revision
+    )
+    require_derivation_source(
+        "vllm-xpu-kernels attention library", flash, expected_kernels_revision
+    )
 
 
 def timestamped_output(output_dir: Path, *, now: dt.datetime | None = None) -> Path:
@@ -327,6 +361,7 @@ def build_runner_command(
     *,
     runner: Path,
     repositories: RepositoryPaths,
+    package: NixOutput,
     base: NixArtifact,
     flash: NixArtifact,
     output: Path,
@@ -341,6 +376,12 @@ def build_runner_command(
     return [
         sys.executable,
         str(runner),
+        "--package-output",
+        str(package.output),
+        "--package-derivation",
+        package.derivation,
+        "--package-closure-sha256",
+        package.closure_sha256,
         "--base-library",
         str(base.library),
         "--flash-library",
@@ -447,16 +488,22 @@ def launch(
         args.expected_kernels_revision,
         command_runner,
     )
-    package = resolve_package_output(args.package)
-    package_closure = query_closure(package, command_runner)
+    package_output = resolve_package_output(args.package)
+    package_closure = query_closure(package_output, command_runner)
+    package = attest_output(package_output, command_runner)
     base = attest_library(
         discover_library(package_closure, BASE_LIBRARY), command_runner
     )
     flash = attest_library(
         discover_library(package_closure, FLASH_LIBRARY), command_runner
     )
-    require_derivation_source("vLLM", base, args.expected_vllm_revision)
-    require_derivation_source("vllm-xpu-kernels", flash, args.expected_kernels_revision)
+    require_source_ownership(
+        package=package,
+        base=base,
+        flash=flash,
+        expected_vllm_revision=args.expected_vllm_revision,
+        expected_kernels_revision=args.expected_kernels_revision,
+    )
     output = timestamped_output(args.output_dir, now=now)
     runner = project / "scripts/kvarn_factory_run.py"
     if not runner.is_file():
@@ -464,6 +511,7 @@ def launch(
     command = build_runner_command(
         runner=runner,
         repositories=repositories,
+        package=package,
         base=base,
         flash=flash,
         output=output,

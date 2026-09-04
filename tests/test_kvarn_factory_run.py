@@ -393,6 +393,15 @@ def test_build_and_source_provenance_is_exact(tmp_path: Path) -> None:
     assert len(identity) == 64
     changed = {**libraries, "flash": {**libraries["flash"], "sha256": "3" * 64}}
     assert factory.evidence_identity(changed, [state]) != identity
+    builds = {
+        "package": {
+            "derivation": "/nix/store/package.drv",
+            "closure_sha256": "4" * 64,
+            "output_path": "/nix/store/package",
+            "actual_deriver": "/nix/store/package.drv",
+        }
+    }
+    assert factory.evidence_identity(libraries, [state], builds) != identity
 
 
 def test_nix_artifact_must_belong_to_attested_derivation_and_closure() -> None:
@@ -453,6 +462,95 @@ def test_nix_artifact_must_belong_to_attested_derivation_and_closure() -> None:
             library=library,
             attestation=bad_digest,
             command_runner=command_runner,
+        )
+
+
+def test_nix_package_output_must_belong_to_attested_derivation_and_closure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output = Path("/nix/store/0123456789abcdfghijklmnpqrsvwxyz-vllm")
+    derivation = "/nix/store/zyxwvutsrqpnmlkjihgfdcba98765432-vllm.drv"
+    closure = [str(output), "/nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-torch"]
+    attestation = factory.validate_build_attestation(
+        label="package",
+        derivation=derivation,
+        closure_sha256=factory.closure_digest(closure),
+    )
+    monkeypatch.setattr(Path, "resolve", lambda self, strict=False: self)
+
+    def command_runner(command) -> str:
+        call = tuple(command)
+        if call == ("nix-store", "-q", "--outputs", derivation):
+            return str(output)
+        if call == ("nix-store", "-q", "--deriver", str(output)):
+            return derivation
+        if call == ("nix-store", "-qR", str(output)):
+            return "\n".join(reversed(closure))
+        raise AssertionError(call)
+
+    verified = factory.verify_nix_output(
+        label="package",
+        output=output,
+        attestation=attestation,
+        command_runner=command_runner,
+    )
+    assert verified["verified"] is True
+    assert verified["output_path"] == str(output)
+
+
+def test_source_ownership_binds_package_and_kernel_outputs_to_correct_repos() -> None:
+    package_output = "/nix/store/" + "p" * 32 + "-vllm"
+    base_output = "/nix/store/" + "b" * 32 + "-base"
+    flash_output = "/nix/store/" + "f" * 32 + "-flash"
+    package = {
+        "derivation": "/nix/store/" + "d" * 32 + "-vllm.g" + VLLM_REVISION[:7] + ".drv",
+        "output_path": package_output,
+        "closure_paths": [package_output, base_output, flash_output],
+    }
+    base = {
+        "derivation": "/nix/store/"
+        + "e" * 32
+        + "-kernels.g"
+        + KERNELS_REVISION[:7]
+        + ".drv",
+        "output_path": base_output,
+    }
+    flash = {
+        "derivation": "/nix/store/"
+        + "a" * 32
+        + "-attention.g"
+        + KERNELS_REVISION[:7]
+        + ".drv",
+        "output_path": flash_output,
+    }
+    expected = {
+        "vllm-xpu-nix": PROJECT_REVISION,
+        "vllm": VLLM_REVISION,
+        "vllm-xpu-kernels": KERNELS_REVISION,
+    }
+    ownership = factory.verify_source_ownership(
+        package=package, base=base, flash=flash, expected_revisions=expected
+    )
+    assert ownership["verified"] is True
+    assert ownership["artifacts"]["base"]["repository"] == "vllm-xpu-kernels"
+    with pytest.raises(factory.FactoryError, match="base source ownership mismatch"):
+        factory.verify_source_ownership(
+            package=package,
+            base={
+                **base,
+                "derivation": base["derivation"].replace(
+                    KERNELS_REVISION[:7], VLLM_REVISION[:7]
+                ),
+            },
+            flash=flash,
+            expected_revisions=expected,
+        )
+    with pytest.raises(factory.FactoryError, match="absent from"):
+        factory.verify_source_ownership(
+            package={**package, "closure_paths": [package_output, flash_output]},
+            base=base,
+            flash=flash,
+            expected_revisions=expected,
         )
 
 
@@ -628,6 +726,12 @@ def test_matched_fixture_is_default_and_unmatched_is_explicit_diagnostic(
 ) -> None:
     derivation = "/nix/store/0123456789abcdfghijklmnpqrsvwxyz-test.drv"
     common = [
+        "--package-output",
+        str(tmp_path / "package"),
+        "--package-derivation",
+        derivation,
+        "--package-closure-sha256",
+        "0" * 64,
         "--base-library",
         str(tmp_path / "base.so"),
         "--flash-library",
@@ -692,11 +796,21 @@ def test_library_hash_and_atomic_durable_output(tmp_path: Path) -> None:
         factory.ensure_durable_output(Path("/tmp/factory-result.json"), allow_tmp=False)
 
 
-def test_execution_failure_is_durable_and_nonzero(tmp_path: Path) -> None:
+def test_execution_failure_is_durable_and_nonzero(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     output = tmp_path / "failed.json"
+    package = tmp_path / "package"
+    package.mkdir()
     derivation = "/nix/store/0123456789abcdfghijklmnpqrsvwxyz-test.drv"
     args = factory.parse_args(
         [
+            "--package-output",
+            str(package),
+            "--package-derivation",
+            derivation,
+            "--package-closure-sha256",
+            "0" * 64,
             "--base-library",
             str(tmp_path / "missing-base.so"),
             "--flash-library",
@@ -719,6 +833,12 @@ def test_execution_failure_is_durable_and_nonzero(tmp_path: Path) -> None:
             str(output),
             "--allow-tmp",
         ]
+    )
+
+    monkeypatch.setattr(
+        factory,
+        "verify_nix_output",
+        lambda **_kwargs: {"verified": True},
     )
 
     assert factory.execute(args) == 2

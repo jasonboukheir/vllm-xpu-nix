@@ -305,6 +305,57 @@ def verify_nix_artifact(
     }
 
 
+def verify_nix_output(
+    *,
+    label: str,
+    output: Path,
+    attestation: dict[str, str],
+    command_runner: Callable[[Sequence[str]], str] = _run,
+) -> dict[str, Any]:
+    resolved = output.expanduser().resolve(strict=True)
+    if nix_store_root(resolved) != resolved:
+        raise FactoryError(f"{label} must be an exact Nix store output: {resolved}")
+    derivation = attestation["derivation"]
+    try:
+        outputs = sorted(
+            set(
+                command_runner(
+                    ("nix-store", "-q", "--outputs", derivation)
+                ).splitlines()
+            )
+        )
+        actual_deriver = command_runner(("nix-store", "-q", "--deriver", str(resolved)))
+        closure = sorted(
+            set(command_runner(("nix-store", "-qR", str(resolved))).splitlines())
+        )
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise FactoryError(f"cannot verify {label} Nix output: {error}") from error
+    if str(resolved) not in outputs:
+        raise FactoryError(f"{label} output {resolved} is not produced by {derivation}")
+    if actual_deriver != derivation:
+        raise FactoryError(
+            f"{label} output deriver mismatch: expected {derivation}, "
+            f"got {actual_deriver!r}"
+        )
+    if not closure:
+        raise FactoryError(f"{label} Nix output has an empty closure")
+    actual_digest = closure_digest(closure)
+    if actual_digest != attestation["closure_sha256"]:
+        raise FactoryError(
+            f"{label} closure digest mismatch: expected "
+            f"{attestation['closure_sha256']}, got {actual_digest}"
+        )
+    return {
+        **attestation,
+        "attestation_source": "verified_nix_store",
+        "output_path": str(resolved),
+        "actual_deriver": actual_deriver,
+        "closure_paths": closure,
+        "closure_sha256": actual_digest,
+        "verified": True,
+    }
+
+
 def repository_state(name: str, path: Path) -> dict[str, Any]:
     resolved = path.expanduser().resolve(strict=True)
     status = _run(
@@ -373,7 +424,9 @@ def runtime_environment_contract() -> dict[str, Any]:
 
 
 def evidence_identity(
-    libraries: dict[str, dict[str, Any]], repositories: Sequence[dict[str, Any]]
+    libraries: dict[str, dict[str, Any]],
+    repositories: Sequence[dict[str, Any]],
+    build_attestations: dict[str, dict[str, Any]] | None = None,
 ) -> str:
     stable = {
         "libraries": {
@@ -392,6 +445,18 @@ def evidence_identity(
             }
             for value in repositories
         ],
+        "build_attestations": {
+            name: {
+                key: value[key]
+                for key in (
+                    "derivation",
+                    "closure_sha256",
+                    "output_path",
+                    "actual_deriver",
+                )
+            }
+            for name, value in sorted((build_attestations or {}).items())
+        },
     }
     return sha256_text(json.dumps(stable, sort_keys=True, separators=(",", ":")))
 
@@ -407,6 +472,51 @@ def validate_build_attestation(
         "derivation": derivation,
         "closure_sha256": closure_sha256,
         "attestation_source": "explicit_cli",
+    }
+
+
+def verify_source_ownership(
+    *,
+    package: dict[str, Any],
+    base: dict[str, Any],
+    flash: dict[str, Any],
+    expected_revisions: dict[str, str],
+) -> dict[str, Any]:
+    ownership = {
+        "package": (package, "vllm"),
+        "base": (base, "vllm-xpu-kernels"),
+        "flash": (flash, "vllm-xpu-kernels"),
+    }
+    records: dict[str, Any] = {}
+    for artifact_name, (artifact, repository_name) in ownership.items():
+        revision = expected_revisions[repository_name]
+        marker = f".g{revision[:7]}"
+        derivation = artifact["derivation"]
+        if marker not in Path(derivation).name:
+            raise FactoryError(
+                f"{artifact_name} source ownership mismatch: expected "
+                f"{repository_name} revision {revision}, derivation {derivation}"
+            )
+        records[artifact_name] = {
+            "repository": repository_name,
+            "expected_revision": revision,
+            "derivation": derivation,
+            "derivation_version_marker": marker,
+            "verified": True,
+        }
+    package_closure = set(package["closure_paths"])
+    for artifact_name, artifact in (("base", base), ("flash", flash)):
+        if artifact["output_path"] not in package_closure:
+            raise FactoryError(
+                f"{artifact_name} output {artifact['output_path']} is absent from "
+                "the verified vLLM package closure"
+            )
+        records[artifact_name]["member_of_package_closure"] = True
+    records["package"]["member_of_package_closure"] = True
+    return {
+        "contract": "package=vllm;base=vllm-xpu-kernels;flash=vllm-xpu-kernels",
+        "artifacts": records,
+        "verified": True,
     }
 
 
@@ -2243,6 +2353,9 @@ def run_case(
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     project = Path(__file__).resolve().parents[1]
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--package-output", type=Path, required=True)
+    parser.add_argument("--package-derivation", required=True)
+    parser.add_argument("--package-closure-sha256", required=True)
     parser.add_argument("--base-library", type=Path, required=True)
     parser.add_argument("--flash-library", type=Path, required=True)
     parser.add_argument("--base-derivation", required=True)
@@ -2301,6 +2414,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             raise FactoryError("warmup and sample rounds must be positive")
         if args.correctness_atol < 0 or args.correctness_rtol < 0:
             raise FactoryError("correctness tolerances must be non-negative")
+        args.package_build = validate_build_attestation(
+            label="package",
+            derivation=args.package_derivation,
+            closure_sha256=args.package_closure_sha256,
+        )
         args.base_build = validate_build_attestation(
             label="base",
             derivation=args.base_derivation,
@@ -2390,6 +2508,7 @@ def initial_document(args: argparse.Namespace) -> dict[str, Any]:
             "matrix": [case.as_dict() for case in args.matrix],
         },
         "build_attestations": {
+            "package": args.package_build,
             "base": args.base_build,
             "flash": args.flash_build,
         },
@@ -2401,10 +2520,16 @@ def execute(args: argparse.Namespace) -> int:
     document = initial_document(args)
     write_json_atomic(args.output, document)
     try:
+        package_build = verify_nix_output(
+            label="package",
+            output=args.package_output,
+            attestation=args.package_build,
+        )
         base_record = stable_file_record(args.base_library)
         flash_record = stable_file_record(args.flash_library)
         document["libraries"] = {"base": base_record, "flash": flash_record}
         document["build_attestations"] = {
+            "package": package_build,
             "base": verify_nix_artifact(
                 label="base",
                 library=Path(base_record["path"]),
@@ -2416,6 +2541,12 @@ def execute(args: argparse.Namespace) -> int:
                 attestation=args.flash_build,
             ),
         }
+        document["source_ownership"] = verify_source_ownership(
+            package=document["build_attestations"]["package"],
+            base=document["build_attestations"]["base"],
+            flash=document["build_attestations"]["flash"],
+            expected_revisions=args.expected_revisions,
+        )
         repositories = [
             repository_state("vllm-xpu-nix", args.vllm_xpu_nix_repo),
             repository_state("vllm", args.vllm_repo),
@@ -2436,7 +2567,9 @@ def execute(args: argparse.Namespace) -> int:
         )
         document["source_revisions"]["verified"] = True
         starting_identity = evidence_identity(
-            document["libraries"], document["repositories"]
+            document["libraries"],
+            document["repositories"],
+            document["build_attestations"],
         )
         document["evidence_identity_sha256"] = starting_identity
         write_json_atomic(args.output, document)
@@ -2524,7 +2657,11 @@ def execute(args: argparse.Namespace) -> int:
             repository_state("vllm", args.vllm_repo),
             repository_state("vllm-xpu-kernels", args.kernels_repo),
         ]
-        ending_identity = evidence_identity(ending_libraries, ending_repositories)
+        ending_identity = evidence_identity(
+            ending_libraries,
+            ending_repositories,
+            document["build_attestations"],
+        )
         document["ending_evidence_identity_sha256"] = ending_identity
         if ending_identity != starting_identity:
             raise FactoryError(

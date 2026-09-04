@@ -446,6 +446,59 @@ def test_service_sweep_normalization_preserves_raw_and_divides_every_sample() ->
     assert raw["arms"]["candidate"]["device_us"] == [160.0, 320.0]
 
 
+def test_service_pair_uses_sixteen_layers_inside_one_outer_event() -> None:
+    trace: list[tuple[str, int | None]] = []
+
+    class FakeEvent:
+        def record(self) -> None:
+            trace.append(("event", None))
+
+        def elapsed_time(self, _other) -> float:
+            return 0.16
+
+    class FakeXpu:
+        @staticmethod
+        def Event(*, enable_timing: bool) -> FakeEvent:
+            assert enable_timing is True
+            return FakeEvent()
+
+        @staticmethod
+        def synchronize() -> None:
+            trace.append(("sync", None))
+
+    candidate_layers: list[int] = []
+    auto_layers: list[int] = []
+    result = factory.measure_service_layer_pair(
+        SimpleNamespace(xpu=FakeXpu()),
+        candidate_name="candidate_frontend_plus_decode",
+        candidate_launch=lambda layer: candidate_layers.append(layer),
+        auto_launch=lambda layer: auto_layers.append(layer),
+        layer_count=16,
+        warmup_rounds=1,
+        sample_rounds=1,
+    )
+    assert result["arms_are_pairwise_isolated"] is True
+    assert result["start_offsets_by_arm_invocation"] == {
+        "candidate_frontend_plus_decode": [0, 1, 2, 3],
+        "auto_store_plus_decode": [0, 1, 2, 3],
+    }
+    assert len(candidate_layers) == len(auto_layers) == 64
+    for launches in (candidate_layers, auto_layers):
+        assert all(
+            set(launches[start : start + 16]) == set(range(16))
+            for start in range(0, len(launches), 16)
+        )
+    # Four measured arm sweeps each have exactly one start/end event pair.
+    assert [kind for kind, _ in trace].count("event") == 8
+    timing = result["timing"]
+    assert timing["raw_sweep"]["arms"]["candidate_frontend_plus_decode"][
+        "device_median_us"
+    ] == 160.0
+    assert timing["per_layer"]["arms"]["candidate_frontend_plus_decode"][
+        "device_median_us"
+    ] == 10.0
+
+
 def test_service_storage_pointer_guard_rejects_cross_group_aliases() -> None:
     evidence = factory.require_unique_storage_pointers(
         {"auto": [11, 12], "candidate": [21, 22], "tails": [31, 32]}
@@ -472,12 +525,27 @@ def test_service_allocation_estimator_and_budget_are_fail_closed() -> None:
     assert estimate["native_pages_per_request"] == 508
     assert estimate["tail_slots"] == 8
     assert estimate["service_layer_count"] == 16
-    assert estimate["estimated_new_device_bytes"] == sum(
-        estimate["components"].values()
+    assert estimate["resident_device_bytes"] == sum(estimate["components"].values())
+    assert estimate["estimated_new_device_bytes"] == max(
+        estimate["resident_device_bytes"],
+        estimate["construction_peak_device_bytes"],
     )
     assert estimate["components"]["auto_cache_replicas"] > estimate[
         "components"
     ]["candidate_cache_replicas"]
+    one_layer = factory.estimate_service_layer_allocation(
+        batch=4,
+        context=65_023,
+        auto_block_size=64,
+        num_kv_splits=8,
+        layer_count=1,
+    )
+    assert one_layer["construction_peak_device_bytes"] > one_layer[
+        "resident_device_bytes"
+    ]
+    assert one_layer["estimated_new_device_bytes"] == one_layer[
+        "construction_peak_device_bytes"
+    ]
 
     total = 32 << 30
     fits = factory.assess_service_memory_budget(
@@ -496,6 +564,17 @@ def test_service_allocation_estimator_and_budget_are_fail_closed() -> None:
     with pytest.raises(factory.FactoryError, match="totals are invalid"):
         factory.assess_service_memory_budget(
             estimated_bytes=1, free_bytes=33 << 30, total_bytes=total
+        )
+
+    observed = factory.validate_observed_service_allocation(
+        estimated_bytes=1 << 30,
+        observed_allocated_delta_bytes=(1 << 30) + (32 << 20),
+    )
+    assert observed["within_estimate"] is True
+    with pytest.raises(factory.FactoryError, match="exceeds its estimate"):
+        factory.validate_observed_service_allocation(
+            estimated_bytes=1 << 30,
+            observed_allocated_delta_bytes=(1 << 30) + (65 << 20),
         )
 
 

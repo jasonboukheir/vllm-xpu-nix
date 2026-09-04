@@ -48,6 +48,8 @@ VALID_SERVICE_LAYER_COUNTS = (1, 16)
 SERVICE_LAYER_SEED_OFFSET = 10_000_000
 SERVICE_MEMORY_MINIMUM_HEADROOM_BYTES = 1 << 30
 SERVICE_MEMORY_HEADROOM_FRACTION = 0.10
+SERVICE_ESTIMATE_TOLERANCE_BYTES = 64 << 20
+SERVICE_ESTIMATE_TOLERANCE_FRACTION = 0.01
 SCOPE_WARNING = (
     "Primitive/device-stage diagnostic only: these measurements exclude the "
     "vLLM scheduler, model layers, service transport, and Kvarn page flushes. "
@@ -1214,7 +1216,7 @@ def estimate_service_layer_allocation(
         + 2 * (batch + 1) * 4
         + 8
         # Per-layer correctness result clones coexist before comparison.
-        + layer_count * 3 * output_bytes
+        + layer_count * 4 * output_bytes
     )
     components = {
         "auto_cache_replicas": auto_cache_per_layer * layer_count,
@@ -1223,6 +1225,12 @@ def estimate_service_layer_allocation(
         "distinct_query_kv_inputs": inputs_per_layer * layer_count,
         "shared_decode_and_frontend_scratch": shared_scratch,
     }
+    resident_bytes = sum(components.values())
+    # index_select materializes one gathered auto cache while the first compact
+    # destination exists. It is released before any layer clones are made.
+    construction_workspace_bytes = auto_cache_per_layer
+    construction_peak_bytes = 2 * auto_cache_per_layer
+    estimated_peak_bytes = max(resident_bytes, construction_peak_bytes)
     return {
         "batch": batch,
         "context": context,
@@ -1234,7 +1242,10 @@ def estimate_service_layer_allocation(
         "service_layer_count": layer_count,
         "replicated_bytes_per_layer": replicated_per_layer,
         "components": components,
-        "estimated_new_device_bytes": sum(components.values()),
+        "resident_device_bytes": resident_bytes,
+        "construction_workspace_bytes": construction_workspace_bytes,
+        "construction_peak_device_bytes": construction_peak_bytes,
+        "estimated_new_device_bytes": estimated_peak_bytes,
         "estimator_scope": (
             "new service-shaped cache/tail/input replicas plus one shared "
             "scratch set; existing immutable corpus excluded"
@@ -1272,6 +1283,37 @@ def assess_service_memory_budget(
         "usable_device_bytes": usable_bytes,
         "projected_free_bytes_after": free_bytes - estimated_bytes,
         "fits": fits,
+    }
+
+
+def validate_observed_service_allocation(
+    *,
+    estimated_bytes: int,
+    observed_allocated_delta_bytes: int,
+    minimum_tolerance_bytes: int = SERVICE_ESTIMATE_TOLERANCE_BYTES,
+    tolerance_fraction: float = SERVICE_ESTIMATE_TOLERANCE_FRACTION,
+) -> dict[str, Any]:
+    """Reject live storage that materially exceeds the preflight estimate."""
+    if estimated_bytes < 0 or observed_allocated_delta_bytes < 0:
+        raise FactoryError("observed service allocation values must be non-negative")
+    if minimum_tolerance_bytes < 0 or tolerance_fraction < 0:
+        raise FactoryError("observed service allocation tolerance is invalid")
+    tolerance_bytes = max(
+        minimum_tolerance_bytes, math.ceil(estimated_bytes * tolerance_fraction)
+    )
+    limit_bytes = estimated_bytes + tolerance_bytes
+    within_estimate = observed_allocated_delta_bytes <= limit_bytes
+    if not within_estimate:
+        raise FactoryError(
+            "service-shaped observed XPU allocation exceeds its estimate: "
+            f"observed {observed_allocated_delta_bytes} bytes, limit {limit_bytes}"
+        )
+    return {
+        "estimated_peak_device_bytes": estimated_bytes,
+        "observed_allocated_delta_bytes": observed_allocated_delta_bytes,
+        "tolerance_bytes": tolerance_bytes,
+        "limit_bytes": limit_bytes,
+        "within_estimate": True,
     }
 
 
@@ -1568,6 +1610,49 @@ def measure_interleaved(
             name: timing_summary(values["device"], values["wall"])
             for name, values in samples.items()
         },
+    }
+
+
+def measure_service_layer_pair(
+    torch_module: Any,
+    *,
+    candidate_name: str,
+    candidate_launch: Callable[[int], None],
+    auto_launch: Callable[[int], None],
+    layer_count: int,
+    warmup_rounds: int,
+    sample_rounds: int,
+) -> dict[str, Any]:
+    """Measure one candidate and auto in an isolated pairwise ABBA group."""
+    auto_name = "auto_store_plus_decode"
+    if not candidate_name or candidate_name == auto_name:
+        raise FactoryError("service pair requires a distinct candidate arm name")
+    starts: dict[str, list[int]] = {candidate_name: [], auto_name: []}
+
+    def layer_sweep(name: str, launch: Callable[[int], None]) -> Callable[[], None]:
+        def sweep() -> None:
+            order = service_layer_order(layer_count, len(starts[name]))
+            starts[name].append(order[0])
+            for layer in order:
+                launch(layer)
+
+        return sweep
+
+    raw = measure_interleaved(
+        torch_module,
+        {
+            candidate_name: layer_sweep(candidate_name, candidate_launch),
+            auto_name: layer_sweep(auto_name, auto_launch),
+        },
+        warmup_rounds=warmup_rounds,
+        sample_rounds=sample_rounds,
+    )
+    return {
+        "comparison": f"{candidate_name}_vs_{auto_name}",
+        "arms_are_pairwise_isolated": True,
+        "shares_existing_layer_storages_without_replication": True,
+        "start_offsets_by_arm_invocation": starts,
+        "timing": normalize_service_sweep_timing(raw, layer_count=layer_count),
     }
 
 
@@ -2626,6 +2711,9 @@ def _build_service_layer_storage(
         )
         first_auto_key.copy_(selected_auto_key)
         first_auto_value.copy_(selected_auto_value)
+        # Keep the construction peak bounded: the gathered source pages must
+        # die before cloning the compact per-layer destination.
+        del selected_auto_key, selected_auto_value, auto_indices
         auto_bases = [first_auto_base]
         auto_key_caches = [first_auto_key]
         auto_value_caches = [first_auto_value]
@@ -2666,9 +2754,6 @@ def _build_service_layer_storage(
             block_to_slot_cpu[assignment["physical_page"]] = assignment["pool_slot"]
         block_to_slot = block_to_slot_cpu.to(device="xpu:0")
         del (
-            selected_auto_key,
-            selected_auto_value,
-            auto_indices,
             native_indices,
             block_to_slot_cpu,
         )
@@ -3113,6 +3198,7 @@ def _run_service_layer_diagnostic(
     # layer replicas exercise distinct queries and current-token payloads, but
     # intentionally share metadata/scratch just like the timed sequential sweep.
     candidate_outputs: list[Any] = []
+    fused_outputs: list[Any] = []
     natural_outputs: list[Any] = []
     auto_outputs: list[Any] = []
     natural_lookup = (
@@ -3127,6 +3213,31 @@ def _run_service_layer_diagnostic(
             candidate_buffers.output if unrotate_output else normalized_candidate
         )
         candidate_outputs.append(candidate_result.clone())
+        if operations.fused_qkv_scatter is not None:
+            candidate_frontend(layer, fused=True)
+            candidate_decode(layer)
+            fused_result = (
+                candidate_buffers.output if unrotate_output else normalized_candidate
+            )
+            fused_outputs.append(fused_result.clone())
+        # Rebuild the oracle inputs through the independent reference frontend.
+        # Otherwise a fused Q or K/V transform defect could be shared by the
+        # fused decode and the natural reader, masking the very bug this gate
+        # is intended to catch.
+        operations.hadamard(
+            queries[layer].reshape(-1, HEAD_DIM),
+            query_scratch.reshape(-1, HEAD_DIM),
+        )
+        operations.scatter(
+            keys[layer],
+            values[layer],
+            candidate_slots,
+            storage.block_to_slot,
+            storage.candidate_tail_keys[layer],
+            storage.candidate_tail_values[layer],
+            KVARN_PAGE,
+            False,
+        )
         native_decode(
             cache=source_natural_cache,
             table=source_native_block_table,
@@ -3151,6 +3262,7 @@ def _run_service_layer_diagnostic(
             auto_outputs.append(auto_output.clone())
     torch_module.xpu.synchronize()
     candidate_metrics: list[dict[str, Any]] = []
+    fused_metrics: list[dict[str, Any]] = []
     auto_metrics: list[dict[str, Any]] = []
     for layer, (candidate_result, natural_result) in enumerate(
         zip(candidate_outputs, natural_outputs, strict=True)
@@ -3167,6 +3279,22 @@ def _run_service_layer_diagnostic(
                 **_difference_metrics(torch_module, candidate_result, natural_result),
             }
         )
+        if operations.fused_qkv_scatter is not None:
+            fused_result = fused_outputs[layer]
+            torch_module.testing.assert_close(
+                fused_result.float().cpu(),
+                natural_result.float().cpu(),
+                atol=correctness_atol,
+                rtol=correctness_rtol,
+            )
+            fused_metrics.append(
+                {
+                    "layer": layer,
+                    **_difference_metrics(
+                        torch_module, fused_result, natural_result
+                    ),
+                }
+            )
         if fixture_mode == MATCHED_FIXTURE_MODE:
             auto_result = auto_outputs[layer]
             torch_module.testing.assert_close(
@@ -3182,7 +3310,7 @@ def _run_service_layer_diagnostic(
                 }
             )
 
-    del candidate_outputs, natural_outputs, auto_outputs
+    del candidate_outputs, fused_outputs, natural_outputs, auto_outputs
     del natural_buffers, normalized_natural
     gc.collect()
     torch_module.xpu.empty_cache()
@@ -3198,24 +3326,20 @@ def _run_service_layer_diagnostic(
             f"{required_headroom} required"
         )
     storage.allocation_evidence["memory_ready_for_timing"] = memory_ready
-    storage.allocation_evidence["observed_ready_torch_allocated_delta_bytes"] = (
+    observed_allocated_delta = max(
+        0,
         memory_ready["torch_allocated_bytes"]
-        - memory_before["torch_allocated_bytes"]
+        - memory_before["torch_allocated_bytes"],
     )
-
-    start_offsets: dict[str, list[int]] = {}
-
-    def layer_sweep(name: str, launch: Callable[[int], None]) -> Callable[[], None]:
-        starts: list[int] = []
-        start_offsets[name] = starts
-
-        def sweep() -> None:
-            order = service_layer_order(layer_count, len(starts))
-            starts.append(order[0])
-            for layer in order:
-                launch(layer)
-
-        return sweep
+    storage.allocation_evidence["observed_ready_torch_allocated_delta_bytes"] = (
+        observed_allocated_delta
+    )
+    storage.allocation_evidence["observed_allocation_validation"] = (
+        validate_observed_service_allocation(
+            estimated_bytes=estimate["estimated_new_device_bytes"],
+            observed_allocated_delta_bytes=observed_allocated_delta,
+        )
+    )
 
     def separate_layer(layer: int) -> None:
         candidate_frontend(layer, fused=False)
@@ -3225,40 +3349,47 @@ def _run_service_layer_diagnostic(
         candidate_frontend(layer, fused=True)
         candidate_decode(layer)
 
-    arms = {
-        "candidate_separate_frontend_plus_decode": layer_sweep(
-            "candidate_separate_frontend_plus_decode", separate_layer
-        ),
-        "auto_store_plus_decode": layer_sweep(
-            "auto_store_plus_decode", auto_store_and_decode
-        ),
-    }
-    if operations.fused_qkv_scatter is not None:
-        arms["candidate_fused_frontend_plus_decode"] = layer_sweep(
-            "candidate_fused_frontend_plus_decode", fused_layer
-        )
-    raw_timing = measure_interleaved(
+    separate_name = "candidate_separate_frontend_plus_decode"
+    separate_group = measure_service_layer_pair(
         torch_module,
-        arms,
+        candidate_name=separate_name,
+        candidate_launch=separate_layer,
+        auto_launch=auto_store_and_decode,
+        layer_count=layer_count,
         warmup_rounds=warmup_rounds,
         sample_rounds=sample_rounds,
     )
-    timing = normalize_service_sweep_timing(raw_timing, layer_count=layer_count)
-    medians = {
-        name: values["device_median_us"]
-        for name, values in timing["per_layer"]["arms"].items()
-    }
+    timing_groups = {"separate_vs_auto": separate_group}
+    if operations.fused_qkv_scatter is not None:
+        fused_name = "candidate_fused_frontend_plus_decode"
+        timing_groups["fused_vs_auto"] = measure_service_layer_pair(
+            torch_module,
+            candidate_name=fused_name,
+            candidate_launch=fused_layer,
+            auto_launch=auto_store_and_decode,
+            layer_count=layer_count,
+            warmup_rounds=warmup_rounds,
+            sample_rounds=sample_rounds,
+        )
+    separate_medians = separate_group["timing"]["per_layer"]["arms"]
+    separate_candidate_us = separate_medians[separate_name]["device_median_us"]
+    separate_auto_us = separate_medians["auto_store_plus_decode"][
+        "device_median_us"
+    ]
+    fused_group = timing_groups.get("fused_vs_auto")
     ratios = {
-        "candidate_separate_frontend_plus_decode": latency_speed_ratios(
-            medians["candidate_separate_frontend_plus_decode"],
-            medians["auto_store_plus_decode"],
+        separate_name: latency_speed_ratios(
+            separate_candidate_us,
+            separate_auto_us,
         ),
         "candidate_fused_frontend_plus_decode": (
             latency_speed_ratios(
-                medians["candidate_fused_frontend_plus_decode"],
-                medians["auto_store_plus_decode"],
+                fused_group["timing"]["per_layer"]["arms"]
+                ["candidate_fused_frontend_plus_decode"]["device_median_us"],
+                fused_group["timing"]["per_layer"]["arms"]
+                ["auto_store_plus_decode"]["device_median_us"],
             )
-            if "candidate_fused_frontend_plus_decode" in medians
+            if fused_group is not None
             else None
         ),
     }
@@ -3273,7 +3404,11 @@ def _run_service_layer_diagnostic(
             "tail_ownership": "one disjoint candidate K/V tail pool per layer",
             "metadata_and_scratch": "shared across sequential layer launches",
             "layer_order": "round-robin with a rotating first layer per sweep",
-            "start_offsets_by_arm_invocation": start_offsets,
+            "timing_groups": [*timing_groups],
+            "comparison_design": (
+                "separate pairwise candidate-vs-auto ABBA groups; candidate "
+                "frontend strategies never share one interleaving group"
+            ),
             "per_layer_synchronization": False,
         },
         "allocation_evidence": {
@@ -3308,11 +3443,32 @@ def _run_service_layer_diagnostic(
             "oracle": "existing natural-layout Kvarn reader",
             "thresholds": {"atol": correctness_atol, "rtol": correctness_rtol},
             "candidate_layers_vs_natural": candidate_metrics,
+            "candidate_separate_frontend_plus_decode": {
+                "available": True,
+                "status": "all_layers_passed",
+                "layers_vs_natural": candidate_metrics,
+            },
+            "candidate_fused_frontend_plus_decode": {
+                "available": operations.fused_qkv_scatter is not None,
+                "status": (
+                    "all_layers_passed"
+                    if operations.fused_qkv_scatter is not None
+                    else "not_available"
+                ),
+                "layers_vs_natural": (
+                    fused_metrics
+                    if operations.fused_qkv_scatter is not None
+                    else None
+                ),
+            },
             "matched_auto_layers_vs_natural": (
                 auto_metrics if fixture_mode == MATCHED_FIXTURE_MODE else None
             ),
         },
-        "timing": timing,
+        "timing": {
+            "design": "independent pairwise ABBA comparison groups",
+            "groups": timing_groups,
+        },
         "diagnostic_ratios": ratios,
     }
 

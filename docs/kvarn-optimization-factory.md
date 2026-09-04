@@ -253,6 +253,10 @@ and fails before timing if the estimated allocation does not fit. This remains
 a GPU primitive diagnostic: it does not run model projections, MLPs, the vLLM
 scheduler, transport, or packed-page flushes, and can never establish service
 parity.
+The separate and fused Kvarn frontends each run in their own pairwise ABBA
+comparison against auto, so the two candidate paths cannot warm each other
+inside one timing group. Both paths must independently match the natural-layout
+oracle before their timing is reported.
 
 The mandatory B70 kill suite is selector-scoped. A `native_xe2` writer run
 adds compact/padded byte-exact packing, ragged block IDs, arbitrary values,

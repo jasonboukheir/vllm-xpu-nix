@@ -138,9 +138,16 @@ FOCUSED_XPU_TESTS = (
     "tests/flash_attn/test_kvarn_decode_xpu.py::test_long_context_ragged_b4_matches_structured_oracle[r1-p2-dpas-q6]",
     "tests/flash_attn/test_kvarn_decode_xpu.py::test_long_context_ragged_b4_matches_structured_oracle[r1-p5-dpas-vector-load]",
     "tests/flash_attn/test_kvarn_decode_xpu.py::test_long_context_ragged_b4_matches_structured_oracle[r1-p2-p5-dpas-q6-vector-load]",
+    "tests/flash_attn/test_kvarn_decode_xpu.py::test_long_context_ragged_b4_matches_structured_oracle[r2-q6-cached-weights]",
+    "tests/flash_attn/test_kvarn_decode_xpu.py::test_long_context_ragged_b4_matches_structured_oracle[r2-q6-exact-rows]",
+    "tests/flash_attn/test_kvarn_decode_xpu.py::test_long_context_ragged_b4_matches_structured_oracle[r2-q6-cached-weights-exact-rows]",
+    "tests/flash_attn/test_kvarn_decode_xpu.py::test_long_context_ragged_b4_matches_structured_oracle[q6-page-pair]",
+    "tests/flash_attn/test_kvarn_decode_xpu.py::test_long_context_ragged_b4_matches_structured_oracle[q6_main_grf128]",
+    "tests/flash_attn/test_kvarn_decode_xpu.py::test_long_context_ragged_b4_matches_structured_oracle[q6-split-reducer-specialized]",
+    "tests/flash_attn/test_kvarn_decode_xpu.py::test_long_context_ragged_b4_matches_structured_oracle[q6-next-page-prefetch]",
     "tests/flash_attn/test_kvarn_hadamard_scatter_xpu.py::test_kvarn_fused_qkv_hadamard_scatter_matches_separate_ops",
 )
-FOCUSED_XPU_MIN_PASSED = 41
+FOCUSED_XPU_MIN_PASSED = 48
 UNMATCHED_FIXTURE_WARNING = (
     "The auto BF16 cache and Kvarn packed cache have identical model shapes, "
     "batch/context, query seed, and warmed execution, but do not yet originate "

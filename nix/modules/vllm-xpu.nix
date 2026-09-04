@@ -8,7 +8,10 @@ let
   cfg = config.services.vllm-xpu;
 
   effectivePackage =
-    if cfg.package ? withAotDevices then cfg.package.withAotDevices cfg.aotDevices else cfg.package;
+    if cfg.aotDevices != null && cfg.package ? withAotDevices then
+      cfg.package.withAotDevices cfg.aotDevices
+    else
+      cfg.package;
 
   bmgCclEnv = {
     CCL_PROCESS_LAUNCHER = "none";
@@ -25,14 +28,14 @@ let
         type = lib.types.package;
         default = effectivePackage;
         defaultText = lib.literalExpression ''
-          config.services.vllm-xpu.package, with .withAotDevices
-          services.vllm-xpu.aotDevices applied
+          config.services.vllm-xpu.package, with a non-null
+          services.vllm-xpu.aotDevices override applied
         '';
         description = ''
           vLLM-XPU package providing `bin/vllm`. Defaults to the
-          flake-level `services.vllm-xpu.package`, automatically
-          re-derived through `.withAotDevices
-          services.vllm-xpu.aotDevices`. Override per instance to
+          flake-level `services.vllm-xpu.package`, re-derived through
+          `.withAotDevices` when `services.vllm-xpu.aotDevices` is
+          non-null. Override per instance to
           e.g. mix the stable build for chat with the unstable fork
           for an experimental embedder.
         '';
@@ -746,14 +749,15 @@ in
     };
 
     aotDevices = lib.mkOption {
-      type = lib.types.listOf lib.types.str;
-      default = [ ];
+      type = lib.types.nullOr (lib.types.listOf lib.types.str);
+      default = null;
       example = lib.literalExpression ''[ "bmg" ]'';
       description = ''
-        SYCL AOT target list compiled into the kernel `.so`s. Passed
-        through to `cfg.package.withAotDevices`.
+        Optional SYCL AOT target-list override passed through to
+        `cfg.package.withAotDevices`.
 
-        - `[]` (default): JIT mode. Kernels ship as SPIR-V and IGC
+        - `null` (default): preserve the package's embedded AOT/JIT choice.
+        - `[]`: explicitly select JIT mode. Kernels ship as SPIR-V and IGC
           specializes them at first dispatch.
         - explicit list (`[ "bmg" ]`, `[ "bmg" "pvc" ]`): AOT for
           the listed devices using upstream device tuning (including

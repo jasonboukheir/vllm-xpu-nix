@@ -66,6 +66,22 @@ compatible cells to be swept in one process. Variant IDs are `0` through `4`
 in the order listed above. ID `5` is reserved for the page-128 experiment and
 fails closed in the round-1 library because that specialization is not ready.
 
+Build `.#vllm-xpu-kvarn-factory` for the complete round-1 matrix. It compiles
+all five decode variants and the fused-QKV operator into one BMG-AOT attention
+library. Runtime selection therefore does not start another Nix build. The
+package also freezes the generated upstream FA2 buildout to Brutus's text-only
+Qwen3.8 profile: two head-dimension-256 chunk-prefill policies and one
+qgroup-8, block-64 paged-decode policy. This reduces the attention target from
+663 Ninja actions to about 12 while retaining matched auto and Kvarn paths.
+
+That partial buildout is deliberately fail-narrow. It is valid for the frozen
+eager, no-MTP, no-prefix-cache, no-DCP Brutus profile and requires the startup
+log to report block size 64. A different model, effective block size, prefix
+caching/cascade attention, MTP, DCP, multimodal attention, sliding windows, or
+attention sinks requires a broader kernel package. The other split kernel
+libraries remain present in this round; pruning unrelated feature libraries is
+kept separate from kernel-performance experiments.
+
 ## Evidence entering round 1
 
 The direct-BF16 B70 device-stage checkpoint in

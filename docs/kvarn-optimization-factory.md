@@ -32,7 +32,7 @@ Every artifact records these axes explicitly:
 | `kernel_strategy` | `q8_bf16_dpas`, `q6_bf16_dpas` |
 | `split_policy` | `fixed16`, `fixed24`, `b70_context_bucket_v1` |
 | `fusion_strategy` | `reduce_h256`, `qkv_store_reduce_h256` |
-| `scheduling_variant` | `tile64`, `tile64_next_page_prefetch`, `tile64_vector_load_simd_unpack` |
+| `scheduling_variant` | `tile64`, `tile64_next_page_prefetch`, `tile64_next_page_current_half_v_prefetch`, `tile64_next_page_prefetch_record_cursor` |
 | provenance | source commits/diffs, derivations and closures, exact launcher |
 | workload | model revision, B1/B4, context, output length, seed, all serve args |
 | hardware | exact device name plus a successful candidate XPU tensor operation |
@@ -60,7 +60,7 @@ extension:
 | Selector | Values in the combined build | Lifetime |
 |---|---|---|
 | `KVARN_NATIVE_XPU_CACHE_LAYOUT` | `natural`, `xe2_dpas` | engine/cache ABI; restart and allocate a fresh cache to change |
-| `KVARN_NATIVE_XPU_KERNEL_VARIANT` | `baseline`, `qk_i8u4`, `q6_scalar`, `q8_vector`, `q6_vector`, `q6_cached_weights`, `q6_exact_rows`, `q6_cached_weights_exact_rows`, `q6_page_pair`, `q6_main_grf128`, `q6_split_reducer_specialized`, `q6_next_page_prefetch`, `q6_next_page_prefetch_split_reducer`, `q6_simd_unpack`, `q6_block_output_store` | startup selector; every listed specialization is in the same library |
+| `KVARN_NATIVE_XPU_KERNEL_VARIANT` | `baseline`, `qk_i8u4`, `q6_scalar`, `q8_vector`, `q6_vector`, `q6_cached_weights`, `q6_exact_rows`, `q6_cached_weights_exact_rows`, `q6_page_pair`, `q6_main_grf128`, `q6_split_reducer_specialized`, `q6_next_page_prefetch`, `q6_next_page_prefetch_split_reducer`, `q6_simd_unpack`, `q6_block_output_store`, `q6_current_half_v_prefetch`, `q6_page_record_cursor`, `q6_prefetch_record_cursor` | startup selector; every listed specialization is in the same library |
 | `KVARN_NATIVE_XPU_SPLIT_POLICY` | `fixed`, `b70_q6`, `b70_q6_v2` | startup policy; named policies select the effective count per decode call |
 | `KVARN_NATIVE_XPU_SPLITS` | `1`, `2`, `4`, `8`, `16`, `17`, `24`, `32` | scratch-allocation maximum; effective count may be selected per call |
 
@@ -95,10 +95,12 @@ subsequent independently dispatched experiments are ID `9` page-pair, ID `10`
 GRF128 main kernel, ID `11` specialized split reducer, and ID `12` next-page
 prefetch. IDs `13` and `14` are independently assigned to the combined
 prefetch/reducer and SIMD-unpack experiments; ID `15` isolates two-row plus
-one-row block-2D output stores from all of those changes.
+one-row block-2D output stores from all of those changes. IDs `16` through `18`
+retain ID13 as the reader control and independently select current-half V
+prefetch, page-record address reuse, or their composition.
 
 Build `.#vllm-xpu-kvarn-factory` for the complete current-layout matrix. It
-compiles every implemented decode specialization through ID15 plus the
+compiles every implemented decode specialization through ID18 plus the
 fused-QKV operator into one BMG-AOT attention library. Runtime selection
 therefore does not start another Nix build. The package also freezes the
 generated upstream FA2 buildout to Brutus's text-only Qwen3.8 profile: two

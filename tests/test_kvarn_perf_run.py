@@ -64,6 +64,8 @@ PROFILE = {
     "native_kernel_variant_environment": "baseline",
     "native_max_splits_environment": "1",
     "native_split_policy_environment": "fixed",
+    "onednn_deterministic_environment": "1",
+    "vllm_use_v2_model_runner_environment": "0",
     "variant_provenance": {
         "kernel_strategy": "vllm_auto",
         "split_policy": "neutral_1",
@@ -102,6 +104,7 @@ def _args(tmp_path: Path) -> argparse.Namespace:
         native_split_policy="fixed",
         max_model_len=65536,
         max_num_batched_tokens=2048,
+        onednn_deterministic=True,
         model=MODEL,
         model_revision=REVISION,
         native_splits={1: 24, 4: 16},
@@ -359,6 +362,10 @@ def test_exploratory_plan_session_has_no_formal_claims(
     assert session["evidence_mode"] == "exploratory"
     assert session["promotable"] is False
     assert session["formal_gates_skipped"] is True
+    assert session["service_controls"] == {
+        "kvarn_onednn_deterministic": "1",
+        "vllm_use_v2_model_runner": "0",
+    }
     assert len(session["plan"]) == 4
     assert "correctness_artifact" not in session
     assert "correctness_sha256" not in session
@@ -450,6 +457,29 @@ def test_perf_launcher_name_binds_each_factory_variant(
     assert runner.NATIVE_KERNEL_VARIANTS[variant] == variant_id
 
 
+@pytest.mark.parametrize(
+    ("arm", "expected"),
+    [
+        ("reference", "vllm-xpu-brutus-auto-b4-onednn-nondeterministic"),
+        (
+            "candidate",
+            "vllm-xpu-brutus-kvarn-native-dpas-q6_scalar-b4-onednn-nondeterministic",
+        ),
+    ],
+)
+def test_onednn_determinism_selects_distinct_matched_launchers(
+    tmp_path: Path, arm: str, expected: str
+) -> None:
+    args = _args(tmp_path)
+    args.native_layout = "xe2_dpas"
+    args.native_kernel_variant = "q6_scalar"
+    run = PlannedRun(Workload(4096, 4, 512, 4, 17), arm, 1)
+
+    assert runner.launcher_name(run, args).endswith("-b4")
+    args.onednn_deterministic = False
+    assert runner.launcher_name(run, args) == expected
+
+
 @pytest.mark.parametrize("arm", ["reference", "candidate"])
 @pytest.mark.parametrize("batch", [1, 4])
 def test_service_command_pins_scheduler_budget_for_every_arm(
@@ -502,9 +532,20 @@ def test_scheduler_budget_cli_defaults_overrides_and_rejects_zero(
             "4096",
         ]
     )
+    nondeterministic = runner.parse_args(
+        [
+            *common,
+            "--output-dir",
+            str(tmp_path / "nondeterministic-output"),
+            "--onednn-deterministic",
+            "0",
+        ]
+    )
 
     assert default.max_num_batched_tokens == 2048
+    assert default.onednn_deterministic is True
     assert explicit.max_num_batched_tokens == 4096
+    assert nondeterministic.onednn_deterministic is False
     with pytest.raises(SystemExit):
         runner.parse_args(
             [
@@ -513,6 +554,16 @@ def test_scheduler_budget_cli_defaults_overrides_and_rejects_zero(
                 str(tmp_path / "invalid-output"),
                 "--max-num-batched-tokens",
                 "0",
+            ]
+        )
+    with pytest.raises(SystemExit):
+        runner.parse_args(
+            [
+                *common,
+                "--output-dir",
+                str(tmp_path / "invalid-onednn-output"),
+                "--onednn-deterministic",
+                "2",
             ]
         )
 
@@ -749,10 +800,12 @@ def test_profile_verification_uses_actual_argv_and_environment(tmp_path: Path) -
         "KVARN_NATIVE_XPU_PERSISTENT_SCRATCH": "1",
         "KVARN_NATIVE_XPU_SPLITS": "16",
         "KVARN_NATIVE_XPU_SPLIT_POLICY": "fixed",
+        "KVARN_ONEDNN_DETERMINISTIC": "1",
         "KVARN_PREFILL_FP16_WINDOW_BLOCKS": "16",
         "VLLM_CACHE_ROOT": str(args.runtime_cache / "vllm-xpu-brutus-kvarn"),
         "VLLM_TARGET_DEVICE": "xpu",
         "VLLM_KVARN_DEFER_PREFILL_FLUSH": None,
+        "VLLM_USE_V2_MODEL_RUNNER": "0",
         "VLLM_XPU_ENABLE_XPU_GRAPH": None,
         "XDG_CACHE_HOME": str(args.runtime_cache),
     }
@@ -789,6 +842,14 @@ def test_profile_verification_uses_actual_argv_and_environment(tmp_path: Path) -
     with pytest.raises(RunnerError, match="profile mismatch"):
         verify_service_profile(argv, environment, run, args)
     environment["KVARN_PREFILL_FP16_WINDOW_BLOCKS"] = "16"
+    environment["KVARN_ONEDNN_DETERMINISTIC"] = "0"
+    with pytest.raises(RunnerError, match="profile mismatch"):
+        verify_service_profile(argv, environment, run, args)
+    environment["KVARN_ONEDNN_DETERMINISTIC"] = "1"
+    environment["VLLM_USE_V2_MODEL_RUNNER"] = "1"
+    with pytest.raises(RunnerError, match="profile mismatch"):
+        verify_service_profile(argv, environment, run, args)
+    environment["VLLM_USE_V2_MODEL_RUNNER"] = "0"
 
     for offload in (
         ["--cpu-offload-gb", "4"],
@@ -824,7 +885,9 @@ def test_profile_verification_uses_actual_argv_and_environment(tmp_path: Path) -
 def test_process_capture_includes_bounded_window_and_full_defer_state() -> None:
     environment = dict(os.environ)
     environment["KVARN_PREFILL_FP16_WINDOW_BLOCKS"] = "16"
+    environment["KVARN_ONEDNN_DETERMINISTIC"] = "1"
     environment["VLLM_KVARN_DEFER_PREFILL_FLUSH"] = "0"
+    environment["VLLM_USE_V2_MODEL_RUNNER"] = "0"
     process = subprocess.Popen(
         [sys.executable, "-c", "import time; time.sleep(30)"],
         env=environment,
@@ -840,14 +903,18 @@ def test_process_capture_includes_bounded_window_and_full_defer_state() -> None:
         process.wait(timeout=5)
 
     assert captured["KVARN_PREFILL_FP16_WINDOW_BLOCKS"] == "16"
+    assert captured["KVARN_ONEDNN_DETERMINISTIC"] == "1"
     assert captured["VLLM_KVARN_DEFER_PREFILL_FLUSH"] == "0"
+    assert captured["VLLM_USE_V2_MODEL_RUNNER"] == "0"
 
 
 def test_service_environment_pins_window_and_scrubs_full_defer(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("KVARN_PREFILL_FP16_WINDOW_BLOCKS", "999")
+    monkeypatch.setenv("KVARN_ONEDNN_DETERMINISTIC", "0")
     monkeypatch.setenv("VLLM_KVARN_DEFER_PREFILL_FLUSH", "1")
+    monkeypatch.setenv("VLLM_USE_V2_MODEL_RUNNER", "1")
     monkeypatch.setenv("VLLM_UNPINNED_BEHAVIOR", "1")
     for name in (
         "LD_PRELOAD",
@@ -861,7 +928,9 @@ def test_service_environment_pins_window_and_scrubs_full_defer(
     environment = runner.service_environment(_args(tmp_path))
 
     assert environment["KVARN_PREFILL_FP16_WINDOW_BLOCKS"] == "16"
+    assert "KVARN_ONEDNN_DETERMINISTIC" not in environment
     assert "VLLM_KVARN_DEFER_PREFILL_FLUSH" not in environment
+    assert "VLLM_USE_V2_MODEL_RUNNER" not in environment
     assert "VLLM_UNPINNED_BEHAVIOR" not in environment
     assert all(
         name not in environment
@@ -1361,9 +1430,11 @@ def test_matched_profile_normalizes_only_declared_arm_differences(
         "KVARN_NATIVE_XPU_CACHE_LAYOUT": "natural",
         "KVARN_NATIVE_XPU_DPAS_LAYOUT": "0",
         "KVARN_NATIVE_XPU_KERNEL_VARIANT": "baseline",
+        "KVARN_ONEDNN_DETERMINISTIC": "1",
         "KVARN_NATIVE_XPU_SPLITS": "1",
         "KVARN_NATIVE_XPU_SPLIT_POLICY": "fixed",
         "HF_HOME": str(args.hf_home),
+        "VLLM_USE_V2_MODEL_RUNNER": "0",
     }
     reference = service_profile_evidence(argv, environment)
     argv[argv.index("--kv-cache-dtype") + 1] = "kvarn_k4v4_g128_compact"
@@ -1380,6 +1451,8 @@ def test_matched_profile_normalizes_only_declared_arm_differences(
     assert reference["max_num_batched_tokens"] == "2048"
     assert reference["native_layout"] == "natural"
     assert candidate["native_layout"] == "natural"
+    assert reference["onednn_deterministic_environment"] == "1"
+    assert reference["vllm_use_v2_model_runner_environment"] == "0"
     assert "2048" in reference["redacted_argv"]
     assert "KVARN_NATIVE_XPU_SPLITS" in reference["allowed_arm_environment_differences"]
     assert (
@@ -1402,6 +1475,13 @@ def test_matched_profile_normalizes_only_declared_arm_differences(
         changed["canonical_matched_profile_sha256"]
         != candidate["canonical_matched_profile_sha256"]
     )
+    environment["KVARN_ONEDNN_DETERMINISTIC"] = "0"
+    changed_control = service_profile_evidence(argv[:-2], environment)
+    assert (
+        changed_control["canonical_matched_profile_sha256"]
+        != candidate["canonical_matched_profile_sha256"]
+    )
+    environment["KVARN_ONEDNN_DETERMINISTIC"] = "1"
     del argv[-2:]
     argv[argv.index("--max-num-batched-tokens") + 1] = "8192"
     changed = service_profile_evidence(argv, environment)

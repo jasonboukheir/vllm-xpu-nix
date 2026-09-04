@@ -59,7 +59,7 @@ variants and split counts do not require rebuilding the extension:
 | Selector | Values in the combined build | Lifetime |
 |---|---|---|
 | `KVARN_NATIVE_XPU_CACHE_LAYOUT` | `natural`, `xe2_dpas` | engine/cache ABI; restart and allocate a fresh cache to change |
-| `KVARN_NATIVE_XPU_KERNEL_VARIANT` | `baseline`, `qk_i8u4`, `q6_scalar`, `q8_vector`, `q6_vector`, `q6_cached_weights`, `q6_exact_rows`, `q6_cached_weights_exact_rows` | startup selector; every listed specialization is in the same library |
+| `KVARN_NATIVE_XPU_KERNEL_VARIANT` | `baseline`, `qk_i8u4`, `q6_scalar`, `q8_vector`, `q6_vector`, `q6_cached_weights`, `q6_exact_rows`, `q6_cached_weights_exact_rows`, `q6_page_pair`, `q6_main_grf128`, `q6_split_reducer_specialized`, `q6_next_page_prefetch` | startup selector; every listed specialization is in the same library |
 | `KVARN_NATIVE_XPU_SPLIT_POLICY` | `fixed`, `b70_q6` | startup policy; `b70_q6` selects the effective count per decode batch |
 | `KVARN_NATIVE_XPU_SPLITS` | `1`, `2`, `4`, `8`, `16`, `17`, `24`, `32` | scratch-allocation maximum; effective count may be selected per call |
 
@@ -74,7 +74,10 @@ compatible cells to be swept in one process. `--output-dtypes fp16,bf16`
 likewise exercises both output paths from that same binary; production BF16 is
 the default. Round-1 variant IDs are `0` through `4` in the order listed above;
 ID `5` is reserved for the page-128 experiment and fails closed. Round-2 IDs
-`6`, `7`, and `8` are cached weights, exact rows, and their combination.
+`6`, `7`, and `8` are cached weights, exact rows, and their combination. The
+subsequent independently dispatched experiments are ID `9` page-pair, ID `10`
+GRF128 main kernel, ID `11` specialized split reducer, and ID `12` next-page
+prefetch.
 
 Build `.#vllm-xpu-kvarn-factory` for the complete current-layout matrix. It
 compiles every implemented Round-1 and Round-2 decode specialization plus the
@@ -119,9 +122,11 @@ nix run .#kvarn-factory -- \
 ```
 
 This realizes one BMG-AOT package, then tests every selected kernel variant and
-the configured split sweep in one pinned Python/Torch/XPU process. Round-2
-defaults run the Q6 control, vector runner-up, and three new Q6 candidates at
-split 8 and 32 with direct BF16 output. Sixteen warmup rounds precede twenty
+the configured split sweep in one pinned Python/Torch/XPU process. The default
+`--variants all` is literal: it runs every compiled, runnable ID (`0`--`4` and
+`6`--`12`) at split 8 and 32 with direct BF16 output. Use an explicit named
+comma-separated shortlist when a smaller sweep is intended. Sixteen warmup
+rounds precede twenty
 measured rounds per arm because the first B70 sweep showed material
 short-context clock settling after four warmups. Override `--variants`,
 `--splits`, `--output-dtypes`, `--warmup-rounds`, or `--sample-rounds` to change
@@ -327,19 +332,37 @@ engine-lifetime layout, not a reader flag.
 
 ## Compact leaderboard
 
-Rows are appended from immutable JSON artifacts; `pending` is not a zero.
+The runner writes `primitive_leaderboard` after every completed cell and prints
+the final compact ordering. Each row contains only XPU-event measurements the
+primitive runner owns: candidate and auto decode device-median ranges,
+candidate/auto latency and speed ratios, the separately measured device-stage
+ratios, case counts, and primitive correctness status. It does not reserve
+columns for service throughput, decode tok/s, TTFT, ITL, launch count, or idle
+fraction. Those metrics appear only after their dedicated service or profiler
+runners actually measure them.
 
-| Variant | Correctness | B1 throughput | B1 decode tok/s | B4 throughput | B4 decode tok/s | p99 TTFT | p99 ITL | XPU kernel time | launches | idle | Decision |
-|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
-| `auto-control` | control | pending | pending | pending | pending | pending | pending | pending | pending | pending | performance control |
-| `natural-oracle` | 41/41 suite; reference | pending | pending | pending | pending | pending | pending | measured per cell | pending | pending | correctness only |
-| `r1-p0-dpas-q8-t64` | pass through 262K | pending | pending | pending | pending | pending | pending | 105--2572 us | pending | pending | eliminate: 70.2% geometric-mean primitive performance |
-| `r1-p1-dpas-qk-i8u4` | pass through 262K | pending | pending | pending | pending | pending | pending | 128--3302 us | pending | pending | eliminate: 58.3% geometric-mean primitive performance |
-| `r1-p2-dpas-q6-t64` | pass through 262K | pending | pending | pending | pending | pending | pending | 81.9--1205 us | pending | pending | finalist: 128.5% geometric mean; B1 split32/B4 split8 |
-| `r1-p3-dpas-fused-qkv-store` | 41/41 suite; exact boundary | pending | pending | pending | pending | pending | pending | 97.0--154.2% of auto with winning reader | pending | pending | retain with finalist |
-| `r1-p4-dpas-bucket-split` | all split cells pass | pending | pending | pending | pending | pending | pending | B1 split32/B4 split8 win | pending | pending | retain; validate service buckets |
-| `r1-p5-dpas-vector-load` | pass through 262K | pending | pending | pending | pending | pending | pending | 81.2--1259 us with q6 | pending | pending | runner-up for 4K/B4 only |
-| `r1-p6-dpas-page128` | not compiled | pending | pending | pending | pending | pending | pending | pending | pending | pending | defer to later round |
+Ratio directions are explicit. `candidate_latency_over_auto` and
+`auto_speed_over_candidate` are numerically equal and are lower-is-better for
+the candidate; `candidate_speed_over_auto` is their reciprocal and is
+higher-is-better. Legacy `candidate_*_over_auto` latency aliases remain in each
+case for existing consumers. The generated leaderboard ranks a complete fused
+device-stage measurement when available, otherwise the separate device stage.
+That rank is a screening decision signal only, never a service-parity result.
+
+The sealed round-1 artifact produced this historical primitive-only decision
+record:
+
+| Variant | Primitive correctness | Measured XPU device-stage evidence | Primitive decision |
+|---|---|---|---|
+| `auto-control` | control | measured per matched cell | performance control |
+| `natural-oracle` | 41/41 suite; reference | measured per cell | correctness only |
+| `r1-p0-dpas-q8-t64` | pass through 262K | 105--2572 us decode; 70.2% geometric-mean performance | eliminate |
+| `r1-p1-dpas-qk-i8u4` | pass through 262K | 128--3302 us decode; 58.3% geometric-mean performance | eliminate |
+| `r1-p2-dpas-q6-t64` | pass through 262K | 81.9--1205 us decode; 128.5% geometric mean | primitive finalist; B1 split32/B4 split8 |
+| `r1-p3-dpas-fused-qkv-store` | 41/41 suite; exact boundary | 97.0--154.2% of auto with winning reader | retain for finalist service testing |
+| `r1-p4-dpas-bucket-split` | all split cells pass | B1 split32/B4 split8 were the primitive winners | retain; validate service buckets |
+| `r1-p5-dpas-vector-load` | pass through 262K | 81.2--1259 us with q6 | runner-up for 4K/B4 only |
+| `r1-p6-dpas-page128` | not compiled | no measurement | defer |
 
 Final promotion still requires native Kvarn statistical parity or better with
 auto on the B70: paired ratio at least 98%, hard throughput and per-request

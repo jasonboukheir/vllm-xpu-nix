@@ -603,7 +603,7 @@ def validate_factory_qualification(
         or output_dtype not in settings["output_dtypes"]
     ):
         raise GateError(f"{path}: factory result matrix is incomplete")
-    matrix_fields = (
+    required_matrix_fields = (
         "batch",
         "context",
         "requested_num_kv_splits",
@@ -613,10 +613,32 @@ def validate_factory_qualification(
         "dpas_layout",
         "output_dtype",
     )
+    factory_axis_fields = (
+        "cache_layout",
+        "kernel_strategy",
+        "split_policy",
+        "fusion_strategy",
+        "scheduling_variant",
+    )
+    axis_presence = [
+        all(field in matrix for field in factory_axis_fields)
+        for matrix in settings["matrix"]
+        if isinstance(matrix, dict)
+    ]
     if any(
         not isinstance(result, dict)
-        or matrix != {field: result.get(field) for field in matrix_fields}
+        or not isinstance(matrix, dict)
+        or any(field not in matrix for field in required_matrix_fields)
+        or matrix != {field: result.get(field) for field in matrix}
         for matrix, result in zip(settings["matrix"], results, strict=True)
+    ) or axis_presence and not (all(axis_presence) or not any(axis_presence)):
+        raise GateError(f"{path}: requested factory matrix differs from its results")
+    if axis_presence and all(axis_presence) and any(
+        not all(
+            isinstance(result.get(field), str) and result[field]
+            for field in factory_axis_fields
+        )
+        for result in results
     ):
         raise GateError(f"{path}: requested factory matrix differs from its results")
 
@@ -658,6 +680,12 @@ def validate_factory_qualification(
             or result.get("status") != "correctness_passed_and_timed"
             or result.get("scope") != "xpu_primitive_device_stage"
             or result.get("matched_primitive_ratio_eligible") is not True
+            or all(axis_presence)
+            and (
+                result.get("cache_layout") != native_layout
+                or result.get("kernel_strategy")
+                != f"native_xe2_qlen1_{native_kernel_variant}"
+            )
             or not isinstance(correctness, dict)
             or correctness.get("matched_auto_vs_quantized_natural_passed") is not True
             or any(

@@ -45,6 +45,8 @@ DEFAULT_BATCHES = "1,4"
 DEFAULT_OUTPUT_DTYPES = "bf16"
 DEFAULT_WARMUP_ROUNDS = 16
 DEFAULT_SAMPLE_ROUNDS = 20
+VALID_SERVICE_LAYER_COUNTS = (1, 16)
+DEFAULT_SERVICE_LAYER_COUNT = 1
 STORE_NAME = re.compile(r"^[a-z0-9]{32}-.+")
 DERIVATION = re.compile(r"^/nix/store/[a-z0-9]{32}-.+\.drv$")
 GIT_COMMIT = re.compile(r"^[0-9a-f]{40}$")
@@ -484,6 +486,7 @@ def build_runner_command(
     output_dtypes: str = DEFAULT_OUTPUT_DTYPES,
     warmup_rounds: int = DEFAULT_WARMUP_ROUNDS,
     sample_rounds: int = DEFAULT_SAMPLE_ROUNDS,
+    service_layer_count: int = DEFAULT_SERVICE_LAYER_COUNT,
 ) -> list[str]:
     return [
         sys.executable,
@@ -556,6 +559,8 @@ def build_runner_command(
         str(warmup_rounds),
         "--sample-rounds",
         str(sample_rounds),
+        "--service-layer-count",
+        str(service_layer_count),
         "--fixture-mode",
         "matched-production",
         "--output",
@@ -612,6 +617,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--output-dtypes", default=DEFAULT_OUTPUT_DTYPES)
     parser.add_argument("--warmup-rounds", type=int, default=DEFAULT_WARMUP_ROUNDS)
     parser.add_argument("--sample-rounds", type=int, default=DEFAULT_SAMPLE_ROUNDS)
+    parser.add_argument(
+        "--service-layer-count",
+        type=int,
+        choices=VALID_SERVICE_LAYER_COUNTS,
+        default=DEFAULT_SERVICE_LAYER_COUNT,
+    )
     return parser.parse_args(argv)
 
 
@@ -704,6 +715,7 @@ def launch(
         output_dtypes=args.output_dtypes,
         warmup_rounds=args.warmup_rounds,
         sample_rounds=args.sample_rounds,
+        service_layer_count=args.service_layer_count,
         expected_project_revision=args.expected_project_revision,
         expected_vllm_revision=args.expected_vllm_revision,
         expected_kernels_revision=args.expected_kernels_revision,

@@ -44,6 +44,10 @@ UNMATCHED_FIXTURE_MODE = "unmatched-diagnostic"
 CORPUS_SEED = 20_260_903
 CORPUS_PACK_TILE_BATCH = 256
 CORPUS_ROTATE_ROW_BATCH = 8_192
+VALID_SERVICE_LAYER_COUNTS = (1, 16)
+SERVICE_LAYER_SEED_OFFSET = 10_000_000
+SERVICE_MEMORY_MINIMUM_HEADROOM_BYTES = 1 << 30
+SERVICE_MEMORY_HEADROOM_FRACTION = 0.10
 SCOPE_WARNING = (
     "Primitive/device-stage diagnostic only: these measurements exclude the "
     "vLLM scheduler, model layers, service transport, and Kvarn page flushes. "
@@ -421,6 +425,20 @@ class MatchedCorpus:
     max_context: int
     auto_block_size: int
     provenance: dict[str, Any]
+
+
+@dataclasses.dataclass(frozen=True)
+class ServiceLayerStorage:
+    auto_bases: list[Any]
+    auto_key_caches: list[Any]
+    auto_value_caches: list[Any]
+    candidate_caches: list[Any]
+    candidate_tail_keys: list[Any]
+    candidate_tail_values: list[Any]
+    auto_block_table: Any
+    native_block_table: Any
+    block_to_slot: Any
+    allocation_evidence: dict[str, Any]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -1095,6 +1113,198 @@ def interleaved_order(names: Sequence[str], round_index: int) -> tuple[str, ...]
     return (*rotated, *reversed(rotated))
 
 
+def service_layer_order(layer_count: int, sweep_index: int) -> tuple[int, ...]:
+    """Rotate the first layer while visiting every layer exactly once."""
+    if layer_count not in VALID_SERVICE_LAYER_COUNTS:
+        choices = ", ".join(str(value) for value in VALID_SERVICE_LAYER_COUNTS)
+        raise FactoryError(f"service layer count must be one of {choices}")
+    if sweep_index < 0:
+        raise FactoryError("service sweep index must be non-negative")
+    offset = sweep_index % layer_count
+    return (*range(offset, layer_count), *range(offset))
+
+
+def service_layer_seeds(
+    *, batch: int, context: int, layer_count: int
+) -> list[dict[str, int]]:
+    """Return stable, non-overlapping query/K/V seeds for each logical layer."""
+    if batch <= 0 or context <= 0:
+        raise FactoryError("service seed dimensions must be positive")
+    if layer_count not in VALID_SERVICE_LAYER_COUNTS:
+        raise FactoryError("unsupported service layer count")
+    case_offset = context * 256 + batch * 32
+    base = CORPUS_SEED + SERVICE_LAYER_SEED_OFFSET + case_offset
+    return [
+        {
+            "layer": layer,
+            "query_seed": base + layer * 3,
+            "key_seed": base + layer * 3 + 1,
+            "value_seed": base + layer * 3 + 2,
+        }
+        for layer in range(layer_count)
+    ]
+
+
+def estimate_service_layer_allocation(
+    *,
+    batch: int,
+    context: int,
+    auto_block_size: int,
+    num_kv_splits: int,
+    layer_count: int,
+) -> dict[str, Any]:
+    """Estimate every new XPU byte owned by the service-shaped diagnostic.
+
+    The estimate deliberately excludes the existing immutable corpus and shared
+    metadata tensors, but includes all replicated cache/tail/query storage and
+    the single set of sequentially reused decode/frontend scratch buffers.
+    """
+    values = (batch, context, auto_block_size, num_kv_splits)
+    if any(value <= 0 for value in values):
+        raise FactoryError("service allocation dimensions must be positive")
+    if layer_count not in VALID_SERVICE_LAYER_COUNTS:
+        raise FactoryError("unsupported service layer count")
+    auto_pages = math.ceil(context / auto_block_size)
+    native_pages = math.ceil(context / KVARN_PAGE)
+    tail_slots = len(
+        tail_page_assignments(
+            batch=batch,
+            context=context,
+            pages_per_request=native_pages,
+        )
+    )
+    # All model-facing inputs and cache values are BF16/FP16 (two bytes).
+    auto_cache_per_layer = (
+        batch
+        * auto_pages
+        * H_KV
+        * auto_block_size
+        * (2 * HEAD_DIM)
+        * 2
+    )
+    candidate_cache_per_layer = (
+        batch * native_pages * H_KV * KVARN_RECORD_STRIDE
+    )
+    candidate_tail_per_layer = (
+        2 * tail_slots * KVARN_PAGE * H_KV * HEAD_DIM * 2
+    )
+    inputs_per_layer = batch * (H_Q + 2 * H_KV) * HEAD_DIM * 2
+    replicated_per_layer = (
+        auto_cache_per_layer
+        + candidate_cache_per_layer
+        + candidate_tail_per_layer
+        + inputs_per_layer
+    )
+    one_native_scratch = (
+        batch * H_Q * num_kv_splits * HEAD_DIM * 2
+        + 2 * batch * H_Q * num_kv_splits * 4
+        + batch * H_Q * HEAD_DIM * 2
+    )
+    output_bytes = batch * H_Q * HEAD_DIM * 2
+    shared_scratch = (
+        # Candidate plus natural-oracle scratch coexist during correctness.
+        2 * one_native_scratch
+        # Rotated query, two normalized native outputs, and auto output.
+        + 4 * output_bytes
+        # Local auto/native tables, native tail lookup, slot vectors, cu_q/K,
+        # and the two scalar cache scales.
+        + batch * auto_pages * 4
+        + 2 * batch * native_pages * 4
+        + 2 * batch * 8
+        + 2 * (batch + 1) * 4
+        + 8
+        # Per-layer correctness result clones coexist before comparison.
+        + layer_count * 3 * output_bytes
+    )
+    components = {
+        "auto_cache_replicas": auto_cache_per_layer * layer_count,
+        "candidate_cache_replicas": candidate_cache_per_layer * layer_count,
+        "candidate_tail_replicas": candidate_tail_per_layer * layer_count,
+        "distinct_query_kv_inputs": inputs_per_layer * layer_count,
+        "shared_decode_and_frontend_scratch": shared_scratch,
+    }
+    return {
+        "batch": batch,
+        "context": context,
+        "auto_block_size": auto_block_size,
+        "auto_pages_per_request": auto_pages,
+        "native_pages_per_request": native_pages,
+        "tail_slots": tail_slots,
+        "num_kv_splits": num_kv_splits,
+        "service_layer_count": layer_count,
+        "replicated_bytes_per_layer": replicated_per_layer,
+        "components": components,
+        "estimated_new_device_bytes": sum(components.values()),
+        "estimator_scope": (
+            "new service-shaped cache/tail/input replicas plus one shared "
+            "scratch set; existing immutable corpus excluded"
+        ),
+    }
+
+
+def assess_service_memory_budget(
+    *,
+    estimated_bytes: int,
+    free_bytes: int,
+    total_bytes: int,
+    minimum_headroom_bytes: int = SERVICE_MEMORY_MINIMUM_HEADROOM_BYTES,
+    headroom_fraction: float = SERVICE_MEMORY_HEADROOM_FRACTION,
+) -> dict[str, Any]:
+    """Apply a conservative, deterministic allocation budget."""
+    if any(value < 0 for value in (estimated_bytes, free_bytes, total_bytes)):
+        raise FactoryError("service memory budget values must be non-negative")
+    if total_bytes == 0 or free_bytes > total_bytes:
+        raise FactoryError("service memory budget device totals are invalid")
+    if minimum_headroom_bytes < 0 or not 0 <= headroom_fraction < 1:
+        raise FactoryError("service memory headroom policy is invalid")
+    required_headroom = max(
+        minimum_headroom_bytes, math.ceil(total_bytes * headroom_fraction)
+    )
+    usable_bytes = max(0, free_bytes - required_headroom)
+    fits = estimated_bytes <= usable_bytes
+    return {
+        "estimated_new_device_bytes": estimated_bytes,
+        "free_device_bytes_before": free_bytes,
+        "total_device_bytes": total_bytes,
+        "minimum_headroom_bytes": minimum_headroom_bytes,
+        "headroom_fraction": headroom_fraction,
+        "required_headroom_bytes": required_headroom,
+        "usable_device_bytes": usable_bytes,
+        "projected_free_bytes_after": free_bytes - estimated_bytes,
+        "fits": fits,
+    }
+
+
+def require_unique_storage_pointers(
+    pointer_groups: dict[str, Sequence[int]],
+) -> dict[str, Any]:
+    """Reject aliases within or across all service-owned storage groups."""
+    owners: dict[int, str] = {}
+    serialized: dict[str, list[int]] = {}
+    for group, values in pointer_groups.items():
+        pointers = [int(value) for value in values]
+        if not pointers:
+            raise FactoryError(f"service storage group {group!r} is empty")
+        serialized[group] = pointers
+        for index, pointer in enumerate(pointers):
+            if pointer <= 0:
+                raise FactoryError(
+                    f"service storage group {group!r} has an invalid data pointer"
+                )
+            owner = f"{group}[{index}]"
+            if pointer in owners:
+                raise FactoryError(
+                    "service layer storages alias: "
+                    f"{owner} and {owners[pointer]} both use {pointer}"
+                )
+            owners[pointer] = owner
+    return {
+        "all_service_owned_storages_distinct": True,
+        "storage_count": len(owners),
+        "pointer_groups": serialized,
+    }
+
+
 def percentile(values: Sequence[float], fraction: float) -> float:
     if not values:
         raise FactoryError("cannot summarize an empty timing sample")
@@ -1111,6 +1321,45 @@ def timing_summary(device_us: list[float], wall_us: list[float]) -> dict[str, An
         "device_p10_us": percentile(device_us, 0.10),
         "device_p90_us": percentile(device_us, 0.90),
         "wall_median_us": statistics.median(wall_us),
+    }
+
+
+def normalize_service_sweep_timing(
+    raw_sweep: dict[str, Any], *, layer_count: int
+) -> dict[str, Any]:
+    """Preserve raw sweep samples and derive transparent per-layer values."""
+    if layer_count not in VALID_SERVICE_LAYER_COUNTS:
+        raise FactoryError("unsupported service layer count")
+    arms = raw_sweep.get("arms")
+    if not isinstance(arms, dict) or not arms:
+        raise FactoryError("service sweep timing contains no arms")
+    per_layer_arms: dict[str, Any] = {}
+    for name, values in arms.items():
+        device = values.get("device_us")
+        wall = values.get("wall_us")
+        if (
+            not isinstance(device, list)
+            or not isinstance(wall, list)
+            or not device
+            or len(device) != len(wall)
+        ):
+            raise FactoryError(f"service sweep arm {name!r} has invalid samples")
+        per_layer_arms[name] = timing_summary(
+            [float(value) / layer_count for value in device],
+            [float(value) / layer_count for value in wall],
+        )
+    return {
+        "scope": "service_shaped_multi_layer_primitive_diagnostic",
+        "service_parity_eligible": False,
+        "warning": SCOPE_WARNING,
+        "layer_count": layer_count,
+        "event_boundary": (
+            "one outer torch.xpu.Event pair around each complete layer sweep; "
+            "no per-layer synchronization"
+        ),
+        "normalization": "raw complete-sweep latency divided by layer_count",
+        "raw_sweep": raw_sweep,
+        "per_layer": {"arms": per_layer_arms},
     }
 
 
@@ -2284,6 +2533,200 @@ def ensure_distinct_storage(reference: Any, candidate: Any) -> None:
         raise FactoryError("natural and candidate layout caches alias")
 
 
+def _xpu_memory_snapshot(torch_module: Any) -> dict[str, int]:
+    """Read allocator and device memory counters, failing closed if unavailable."""
+    try:
+        free_bytes, total_bytes = torch_module.xpu.mem_get_info(0)
+        allocated_bytes = torch_module.xpu.memory_allocated(0)
+        reserved_bytes = torch_module.xpu.memory_reserved(0)
+    except Exception as error:
+        raise FactoryError(
+            f"cannot establish XPU memory headroom for service sweep: {error}"
+        ) from error
+    snapshot = {
+        "free_device_bytes": int(free_bytes),
+        "total_device_bytes": int(total_bytes),
+        "torch_allocated_bytes": int(allocated_bytes),
+        "torch_reserved_bytes": int(reserved_bytes),
+    }
+    if (
+        snapshot["total_device_bytes"] <= 0
+        or snapshot["free_device_bytes"] < 0
+        or snapshot["free_device_bytes"] > snapshot["total_device_bytes"]
+        or snapshot["torch_allocated_bytes"] < 0
+        or snapshot["torch_reserved_bytes"] < 0
+    ):
+        raise FactoryError(f"invalid XPU memory snapshot: {snapshot}")
+    return snapshot
+
+
+def _build_service_layer_storage(
+    torch_module: Any,
+    *,
+    batch: int,
+    context: int,
+    auto_block_size: int,
+    layer_count: int,
+    source_auto_key_cache: Any,
+    source_auto_value_cache: Any,
+    source_auto_block_table: Any,
+    source_candidate_cache: Any,
+    source_native_block_table: Any,
+    source_tail_key: Any,
+    source_tail_value: Any,
+    allocation_estimate: dict[str, Any],
+    memory_before: dict[str, int],
+) -> ServiceLayerStorage:
+    """Create compact, pairwise-disjoint layer caches from immutable sources."""
+    budget = assess_service_memory_budget(
+        estimated_bytes=allocation_estimate["estimated_new_device_bytes"],
+        free_bytes=memory_before["free_device_bytes"],
+        total_bytes=memory_before["total_device_bytes"],
+    )
+    if not budget["fits"]:
+        raise FactoryError(
+            "service-shaped allocation exceeds the fail-closed XPU budget: "
+            f"need {budget['estimated_new_device_bytes']} bytes with only "
+            f"{budget['usable_device_bytes']} usable bytes"
+        )
+
+    auto_pages = math.ceil(context / auto_block_size)
+    native_pages = math.ceil(context / KVARN_PAGE)
+    assignments = tail_page_assignments(
+        batch=batch,
+        context=context,
+        pages_per_request=native_pages,
+    )
+    tail_slots = len(assignments)
+    if source_tail_key.shape != source_tail_value.shape:
+        raise FactoryError("source service tail K/V shapes differ")
+    if source_tail_key.shape[0] < tail_slots:
+        raise FactoryError("source service tail pool has too few slots")
+
+    auto_indices = (
+        source_auto_block_table[:batch, :auto_pages]
+        .reshape(-1)
+        .to(dtype=torch_module.int64)
+    )
+    native_indices = (
+        source_native_block_table[:batch, :native_pages]
+        .reshape(-1)
+        .to(dtype=torch_module.int64)
+    )
+    try:
+        selected_auto_key = source_auto_key_cache.index_select(0, auto_indices)
+        selected_auto_value = source_auto_value_cache.index_select(0, auto_indices)
+        first_auto_base = torch_module.empty(
+            (batch * auto_pages, H_KV, auto_block_size, 2 * HEAD_DIM),
+            dtype=torch_module.bfloat16,
+            device="xpu:0",
+        )
+        first_auto_key, first_auto_value = first_auto_base.transpose(1, 2).split(
+            HEAD_DIM, dim=-1
+        )
+        first_auto_key.copy_(selected_auto_key)
+        first_auto_value.copy_(selected_auto_value)
+        auto_bases = [first_auto_base]
+        auto_key_caches = [first_auto_key]
+        auto_value_caches = [first_auto_value]
+        for _ in range(1, layer_count):
+            base = first_auto_base.clone()
+            key_cache, value_cache = base.transpose(1, 2).split(HEAD_DIM, dim=-1)
+            auto_bases.append(base)
+            auto_key_caches.append(key_cache)
+            auto_value_caches.append(value_cache)
+
+        first_candidate = source_candidate_cache.index_select(
+            0, native_indices
+        ).contiguous()
+        candidate_caches = [first_candidate]
+        candidate_caches.extend(
+            first_candidate.clone() for _ in range(1, layer_count)
+        )
+        first_tail_key = source_tail_key[:tail_slots].clone()
+        first_tail_value = source_tail_value[:tail_slots].clone()
+        candidate_tail_keys = [first_tail_key]
+        candidate_tail_values = [first_tail_value]
+        candidate_tail_keys.extend(
+            first_tail_key.clone() for _ in range(1, layer_count)
+        )
+        candidate_tail_values.extend(
+            first_tail_value.clone() for _ in range(1, layer_count)
+        )
+        auto_block_table = torch_module.arange(
+            batch * auto_pages, dtype=torch_module.int32, device="xpu:0"
+        ).view(batch, auto_pages)
+        native_block_table = torch_module.arange(
+            batch * native_pages, dtype=torch_module.int32, device="xpu:0"
+        ).view(batch, native_pages)
+        block_to_slot_cpu = torch_module.full(
+            (batch * native_pages,), -1, dtype=torch_module.int32
+        )
+        for assignment in assignments:
+            block_to_slot_cpu[assignment["physical_page"]] = assignment["pool_slot"]
+        block_to_slot = block_to_slot_cpu.to(device="xpu:0")
+        del (
+            selected_auto_key,
+            selected_auto_value,
+            auto_indices,
+            native_indices,
+            block_to_slot_cpu,
+        )
+        torch_module.xpu.synchronize()
+    except RuntimeError as error:
+        raise FactoryError(
+            f"service-shaped XPU storage allocation failed: {error}"
+        ) from error
+
+    pointer_evidence = require_unique_storage_pointers(
+        {
+            "auto_cache_bases": [value.data_ptr() for value in auto_bases],
+            "candidate_packed_caches": [
+                value.data_ptr() for value in candidate_caches
+            ],
+            "candidate_tail_keys": [
+                value.data_ptr() for value in candidate_tail_keys
+            ],
+            "candidate_tail_values": [
+                value.data_ptr() for value in candidate_tail_values
+            ],
+        }
+    )
+    memory_after = _xpu_memory_snapshot(torch_module)
+    allocation_evidence = {
+        "estimate": allocation_estimate,
+        "budget": budget,
+        "memory_before": memory_before,
+        "memory_after": memory_after,
+        "observed_torch_allocated_delta_bytes": (
+            memory_after["torch_allocated_bytes"]
+            - memory_before["torch_allocated_bytes"]
+        ),
+        "observed_device_free_delta_bytes": (
+            memory_before["free_device_bytes"]
+            - memory_after["free_device_bytes"]
+        ),
+        "pointer_uniqueness": pointer_evidence,
+        "auto_key_value_are_disjoint_views_of_each_layer_base": True,
+        "metadata_policy": (
+            "block tables, seq_lens, tail lookup, and decode scratch are shared "
+            "across sequential layer launches"
+        ),
+    }
+    return ServiceLayerStorage(
+        auto_bases=auto_bases,
+        auto_key_caches=auto_key_caches,
+        auto_value_caches=auto_value_caches,
+        candidate_caches=candidate_caches,
+        candidate_tail_keys=candidate_tail_keys,
+        candidate_tail_values=candidate_tail_values,
+        auto_block_table=auto_block_table,
+        native_block_table=native_block_table,
+        block_to_slot=block_to_slot,
+        allocation_evidence=allocation_evidence,
+    )
+
+
 def _make_interleaved_auto_cache(
     torch_module: Any, *, batch: int, context: int, block_size: int
 ) -> tuple[Any, Any, Any, Any]:
@@ -2390,6 +2833,490 @@ def _difference_metrics(torch_module: Any, candidate: Any, reference: Any) -> di
     }
 
 
+def _run_service_layer_diagnostic(
+    torch_module: Any,
+    operations: Any,
+    case: MatrixCase,
+    *,
+    layer_count: int,
+    fixture_mode: str,
+    auto_block_size: int,
+    source_auto_key_cache: Any,
+    source_auto_value_cache: Any,
+    source_auto_block_table: Any,
+    source_natural_cache: Any,
+    source_candidate_cache: Any,
+    source_native_block_table: Any,
+    source_natural_block_to_slot: Any,
+    source_tail_key: Any,
+    source_tail_value: Any,
+    seq_lens: Any,
+    logical_corpus_sha256: str | None,
+    warmup_rounds: int,
+    sample_rounds: int,
+    correctness_atol: float,
+    correctness_rtol: float,
+) -> dict[str, Any]:
+    """Measure a layer sweep without pretending to be a model/service run."""
+    batch = case.batch
+    context = case.context
+    splits = case.requested_splits
+    write_bf16_output = case.output_dtype == "bf16"
+    unrotate_output = case.effective_splits > 1
+    estimate = estimate_service_layer_allocation(
+        batch=batch,
+        context=context,
+        auto_block_size=auto_block_size,
+        num_kv_splits=splits,
+        layer_count=layer_count,
+    )
+    memory_before = _xpu_memory_snapshot(torch_module)
+    storage = _build_service_layer_storage(
+        torch_module,
+        batch=batch,
+        context=context,
+        auto_block_size=auto_block_size,
+        layer_count=layer_count,
+        source_auto_key_cache=source_auto_key_cache,
+        source_auto_value_cache=source_auto_value_cache,
+        source_auto_block_table=source_auto_block_table,
+        source_candidate_cache=source_candidate_cache,
+        source_native_block_table=source_native_block_table,
+        source_tail_key=source_tail_key,
+        source_tail_value=source_tail_value,
+        allocation_estimate=estimate,
+        memory_before=memory_before,
+    )
+
+    seed_records = service_layer_seeds(
+        batch=batch, context=context, layer_count=layer_count
+    )
+
+    def seeded_input(seed: int, shape: tuple[int, ...]) -> Any:
+        generator = torch_module.Generator(device="cpu").manual_seed(seed)
+        return torch_module.randn(
+            shape,
+            generator=generator,
+            dtype=torch_module.bfloat16,
+        ).to(device="xpu:0")
+
+    queries = [
+        seeded_input(record["query_seed"], (batch, H_Q, HEAD_DIM))
+        for record in seed_records
+    ]
+    keys = [
+        seeded_input(record["key_seed"], (batch, H_KV, HEAD_DIM))
+        for record in seed_records
+    ]
+    values = [
+        seeded_input(record["value_seed"], (batch, H_KV, HEAD_DIM))
+        for record in seed_records
+    ]
+    input_pointer_evidence = require_unique_storage_pointers(
+        {
+            "queries": [value.data_ptr() for value in queries],
+            "keys": [value.data_ptr() for value in keys],
+            "values": [value.data_ptr() for value in values],
+        }
+    )
+
+    def make_buffers() -> SimpleNamespace:
+        return SimpleNamespace(
+            temp=torch_module.empty(
+                (batch, H_Q * splits, HEAD_DIM),
+                dtype=torch_module.float16,
+                device="xpu:0",
+            ),
+            lse=torch_module.empty(
+                (batch, H_Q, splits),
+                dtype=torch_module.float32,
+                device="xpu:0",
+            ),
+            legacy=torch_module.empty(
+                (batch, H_Q, splits),
+                dtype=torch_module.float32,
+                device="xpu:0",
+            ),
+            output=torch_module.empty(
+                (batch, H_Q, HEAD_DIM),
+                dtype=(
+                    torch_module.bfloat16
+                    if write_bf16_output
+                    else torch_module.float16
+                ),
+                device="xpu:0",
+            ),
+        )
+
+    candidate_buffers = make_buffers()
+    natural_buffers = make_buffers()
+    query_scratch = torch_module.empty(
+        (batch, H_Q, HEAD_DIM), dtype=torch_module.float16, device="xpu:0"
+    )
+    normalized_candidate = torch_module.empty_like(candidate_buffers.output)
+    normalized_natural = torch_module.empty_like(natural_buffers.output)
+    auto_output = torch_module.empty_like(queries[0])
+    cu_q = torch_module.arange(batch + 1, dtype=torch_module.int32, device="xpu:0")
+    dummy_cu_k = torch_module.empty_like(cu_q)
+    auto_pages = math.ceil(context / auto_block_size)
+    native_pages = math.ceil(context / KVARN_PAGE)
+    auto_offset = (context - 1) % auto_block_size
+    native_offset = (context - 1) % KVARN_PAGE
+    auto_slots = (
+        (
+            torch_module.arange(batch, dtype=torch_module.int64, device="xpu:0")
+            * auto_pages
+            + auto_pages
+            - 1
+        )
+        * auto_block_size
+        + auto_offset
+    )
+    candidate_slots = (
+        (
+            torch_module.arange(batch, dtype=torch_module.int64, device="xpu:0")
+            * native_pages
+            + native_pages
+            - 1
+        )
+        * KVARN_PAGE
+        + native_offset
+    )
+    k_scale = torch_module.ones((), dtype=torch_module.float32, device="xpu:0")
+    v_scale = torch_module.ones((), dtype=torch_module.float32, device="xpu:0")
+
+    def candidate_frontend(layer: int, *, fused: bool) -> None:
+        if fused:
+            if operations.fused_qkv_scatter is None:
+                raise FactoryError("fused QKV operation is unavailable")
+            operations.fused_qkv_scatter(
+                queries[layer],
+                keys[layer],
+                values[layer],
+                candidate_slots,
+                storage.block_to_slot,
+                query_scratch,
+                storage.candidate_tail_keys[layer],
+                storage.candidate_tail_values[layer],
+                KVARN_PAGE,
+                case.variant.dpas_layout,
+            )
+        else:
+            operations.hadamard(
+                queries[layer].reshape(-1, HEAD_DIM),
+                query_scratch.reshape(-1, HEAD_DIM),
+            )
+            operations.scatter(
+                keys[layer],
+                values[layer],
+                candidate_slots,
+                storage.block_to_slot,
+                storage.candidate_tail_keys[layer],
+                storage.candidate_tail_values[layer],
+                KVARN_PAGE,
+                case.variant.dpas_layout,
+            )
+
+    def native_decode(
+        *,
+        cache: Any,
+        table: Any,
+        lookup: Any,
+        tail_key_value: tuple[Any, Any],
+        buffers: SimpleNamespace,
+        variant: int,
+        dpas_layout: bool,
+    ) -> None:
+        invoke_native_decode(
+            operations.native_decode,
+            query=query_scratch,
+            cache=cache,
+            block_table=table,
+            seq_lens=seq_lens,
+            block_to_slot=lookup,
+            tail_key=tail_key_value[0],
+            tail_value=tail_key_value[1],
+            temp_output=buffers.temp,
+            exp_sums=buffers.lse,
+            max_logits=buffers.legacy,
+            output=buffers.output,
+            context=context,
+            unrotate_output=unrotate_output,
+            write_bf16_output=write_bf16_output,
+            num_kv_splits=splits,
+            kernel_variant=variant,
+            dpas_layout=dpas_layout,
+        )
+
+    def candidate_decode(layer: int) -> None:
+        native_decode(
+            cache=storage.candidate_caches[layer],
+            table=storage.native_block_table,
+            lookup=storage.block_to_slot,
+            tail_key_value=(
+                storage.candidate_tail_keys[layer],
+                storage.candidate_tail_values[layer],
+            ),
+            buffers=candidate_buffers,
+            variant=case.variant.variant_id,
+            dpas_layout=case.variant.dpas_layout,
+        )
+        if not unrotate_output:
+            operations.hadamard(
+                candidate_buffers.output.reshape(-1, HEAD_DIM),
+                normalized_candidate.reshape(-1, HEAD_DIM),
+            )
+
+    def auto_store_and_decode(layer: int) -> None:
+        operations.auto_store(
+            keys[layer],
+            values[layer],
+            storage.auto_key_caches[layer],
+            storage.auto_value_caches[layer],
+            auto_slots,
+            "auto",
+            k_scale,
+            v_scale,
+        )
+        operations.auto_decode(
+            queries[layer],
+            storage.auto_key_caches[layer],
+            storage.auto_value_caches[layer],
+            auto_output,
+            cu_q,
+            dummy_cu_k,
+            seq_lens,
+            None,
+            storage.auto_block_table,
+            None,
+            1,
+            context,
+            0.0,
+            None,
+            None,
+            SOFTMAX_SCALE,
+            None,
+            False,
+            True,
+            -1,
+            -1,
+            0.0,
+            False,
+            None,
+            None,
+            True,
+            None,
+            None,
+        )
+
+    # Correctness remains anchored to the existing natural-layout reader.  The
+    # layer replicas exercise distinct queries and current-token payloads, but
+    # intentionally share metadata/scratch just like the timed sequential sweep.
+    candidate_outputs: list[Any] = []
+    natural_outputs: list[Any] = []
+    auto_outputs: list[Any] = []
+    natural_lookup = (
+        source_natural_block_to_slot
+        if fixture_mode == MATCHED_FIXTURE_MODE
+        else storage.block_to_slot
+    )
+    for layer in range(layer_count):
+        candidate_frontend(layer, fused=False)
+        candidate_decode(layer)
+        candidate_result = (
+            candidate_buffers.output if unrotate_output else normalized_candidate
+        )
+        candidate_outputs.append(candidate_result.clone())
+        native_decode(
+            cache=source_natural_cache,
+            table=source_native_block_table,
+            lookup=natural_lookup,
+            tail_key_value=(
+                storage.candidate_tail_keys[layer],
+                storage.candidate_tail_values[layer],
+            ),
+            buffers=natural_buffers,
+            variant=0,
+            dpas_layout=False,
+        )
+        if not unrotate_output:
+            operations.hadamard(
+                natural_buffers.output.reshape(-1, HEAD_DIM),
+                normalized_natural.reshape(-1, HEAD_DIM),
+            )
+        natural_result = natural_buffers.output if unrotate_output else normalized_natural
+        natural_outputs.append(natural_result.clone())
+        if fixture_mode == MATCHED_FIXTURE_MODE:
+            auto_store_and_decode(layer)
+            auto_outputs.append(auto_output.clone())
+    torch_module.xpu.synchronize()
+    candidate_metrics: list[dict[str, Any]] = []
+    auto_metrics: list[dict[str, Any]] = []
+    for layer, (candidate_result, natural_result) in enumerate(
+        zip(candidate_outputs, natural_outputs, strict=True)
+    ):
+        torch_module.testing.assert_close(
+            candidate_result.float().cpu(),
+            natural_result.float().cpu(),
+            atol=correctness_atol,
+            rtol=correctness_rtol,
+        )
+        candidate_metrics.append(
+            {
+                "layer": layer,
+                **_difference_metrics(torch_module, candidate_result, natural_result),
+            }
+        )
+        if fixture_mode == MATCHED_FIXTURE_MODE:
+            auto_result = auto_outputs[layer]
+            torch_module.testing.assert_close(
+                auto_result.float().cpu(),
+                natural_result.float().cpu(),
+                atol=correctness_atol,
+                rtol=correctness_rtol,
+            )
+            auto_metrics.append(
+                {
+                    "layer": layer,
+                    **_difference_metrics(torch_module, auto_result, natural_result),
+                }
+            )
+
+    del candidate_outputs, natural_outputs, auto_outputs
+    del natural_buffers, normalized_natural
+    gc.collect()
+    torch_module.xpu.empty_cache()
+    torch_module.xpu.synchronize()
+    memory_ready = _xpu_memory_snapshot(torch_module)
+    required_headroom = storage.allocation_evidence["budget"][
+        "required_headroom_bytes"
+    ]
+    if memory_ready["free_device_bytes"] < required_headroom:
+        raise FactoryError(
+            "service-shaped live allocation violated reserved XPU headroom: "
+            f"{memory_ready['free_device_bytes']} free bytes remain, "
+            f"{required_headroom} required"
+        )
+    storage.allocation_evidence["memory_ready_for_timing"] = memory_ready
+    storage.allocation_evidence["observed_ready_torch_allocated_delta_bytes"] = (
+        memory_ready["torch_allocated_bytes"]
+        - memory_before["torch_allocated_bytes"]
+    )
+
+    start_offsets: dict[str, list[int]] = {}
+
+    def layer_sweep(name: str, launch: Callable[[int], None]) -> Callable[[], None]:
+        starts: list[int] = []
+        start_offsets[name] = starts
+
+        def sweep() -> None:
+            order = service_layer_order(layer_count, len(starts))
+            starts.append(order[0])
+            for layer in order:
+                launch(layer)
+
+        return sweep
+
+    def separate_layer(layer: int) -> None:
+        candidate_frontend(layer, fused=False)
+        candidate_decode(layer)
+
+    def fused_layer(layer: int) -> None:
+        candidate_frontend(layer, fused=True)
+        candidate_decode(layer)
+
+    arms = {
+        "candidate_separate_frontend_plus_decode": layer_sweep(
+            "candidate_separate_frontend_plus_decode", separate_layer
+        ),
+        "auto_store_plus_decode": layer_sweep(
+            "auto_store_plus_decode", auto_store_and_decode
+        ),
+    }
+    if operations.fused_qkv_scatter is not None:
+        arms["candidate_fused_frontend_plus_decode"] = layer_sweep(
+            "candidate_fused_frontend_plus_decode", fused_layer
+        )
+    raw_timing = measure_interleaved(
+        torch_module,
+        arms,
+        warmup_rounds=warmup_rounds,
+        sample_rounds=sample_rounds,
+    )
+    timing = normalize_service_sweep_timing(raw_timing, layer_count=layer_count)
+    medians = {
+        name: values["device_median_us"]
+        for name, values in timing["per_layer"]["arms"].items()
+    }
+    ratios = {
+        "candidate_separate_frontend_plus_decode": latency_speed_ratios(
+            medians["candidate_separate_frontend_plus_decode"],
+            medians["auto_store_plus_decode"],
+        ),
+        "candidate_fused_frontend_plus_decode": (
+            latency_speed_ratios(
+                medians["candidate_fused_frontend_plus_decode"],
+                medians["auto_store_plus_decode"],
+            )
+            if "candidate_fused_frontend_plus_decode" in medians
+            else None
+        ),
+    }
+    return {
+        "status": "correctness_passed_and_timed",
+        "scope": "service_shaped_multi_layer_xpu_primitive_device_stage",
+        "service_parity_eligible": False,
+        "warning": SCOPE_WARNING,
+        "service_layer_count": layer_count,
+        "execution_shape": {
+            "cache_ownership": "one disjoint auto and candidate cache per layer",
+            "tail_ownership": "one disjoint candidate K/V tail pool per layer",
+            "metadata_and_scratch": "shared across sequential layer launches",
+            "layer_order": "round-robin with a rotating first layer per sweep",
+            "start_offsets_by_arm_invocation": start_offsets,
+            "per_layer_synchronization": False,
+        },
+        "allocation_evidence": {
+            **storage.allocation_evidence,
+            "input_pointer_uniqueness": input_pointer_evidence,
+        },
+        "payload_replication_provenance": {
+            "fixture_mode": fixture_mode,
+            "logical_corpus_sha256": logical_corpus_sha256,
+            "layer_count": layer_count,
+            "cache_replication": (
+                "case-local physical pages gathered from the immutable fixture, "
+                "then exact device clones before timing"
+            ),
+            "tail_replication": (
+                "case-local validated sink/current-tail slots exact-cloned before "
+                "timing"
+            ),
+            "byte_identical_initial_cache_replicas_by_construction": True,
+            "timed_mutation": (
+                "each arm deterministically rewrites only its layer's current "
+                "logical token before decode"
+            ),
+            "layer_input_seeds": seed_records,
+            "query_payloads_distinct_across_layers": layer_count > 1,
+            "kv_payloads_distinct_across_layers": layer_count > 1,
+            "auto_and_candidate_frontier_payloads_matched": True,
+            "auto_frontier_offset": auto_offset,
+            "candidate_frontier_offset": native_offset,
+        },
+        "correctness": {
+            "oracle": "existing natural-layout Kvarn reader",
+            "thresholds": {"atol": correctness_atol, "rtol": correctness_rtol},
+            "candidate_layers_vs_natural": candidate_metrics,
+            "matched_auto_layers_vs_natural": (
+                auto_metrics if fixture_mode == MATCHED_FIXTURE_MODE else None
+            ),
+        },
+        "timing": timing,
+        "diagnostic_ratios": ratios,
+    }
+
+
 def run_case(
     torch_module: Any,
     helpers: Any,
@@ -2402,6 +3329,7 @@ def run_case(
     sample_rounds: int,
     correctness_atol: float,
     correctness_rtol: float,
+    service_layer_count: int = 1,
 ) -> dict[str, Any]:
     batch = case.batch
     context = case.context
@@ -2420,8 +3348,15 @@ def run_case(
         block_to_slot = torch_module.full(
             (native_total_pages,), -1, dtype=torch_module.int32, device="xpu:0"
         )
+        diagnostic_tail_slots = len(
+            tail_page_assignments(
+                batch=batch,
+                context=context,
+                pages_per_request=native_pages,
+            )
+        )
         tail_key = torch_module.zeros(
-            (1, KVARN_PAGE, H_KV, HEAD_DIM),
+            (diagnostic_tail_slots, KVARN_PAGE, H_KV, HEAD_DIM),
             dtype=torch_module.float16,
             device="xpu:0",
         )
@@ -2959,6 +3894,33 @@ def run_case(
         if candidate_fused_stage is not None
         else None
     )
+    service_shaped = _run_service_layer_diagnostic(
+        torch_module,
+        operations,
+        case,
+        layer_count=service_layer_count,
+        fixture_mode=fixture_mode,
+        auto_block_size=auto_block_size,
+        source_auto_key_cache=auto_key_cache,
+        source_auto_value_cache=auto_value_cache,
+        source_auto_block_table=auto_table,
+        source_natural_cache=natural_cache,
+        source_candidate_cache=candidate_cache,
+        source_native_block_table=native_table,
+        source_natural_block_to_slot=block_to_slot,
+        source_tail_key=tail_key,
+        source_tail_value=tail_value,
+        seq_lens=seq_lens,
+        logical_corpus_sha256=(
+            corpus.provenance["logical_corpus_sha256"]
+            if corpus is not None
+            else None
+        ),
+        warmup_rounds=warmup_rounds,
+        sample_rounds=sample_rounds,
+        correctness_atol=correctness_atol,
+        correctness_rtol=correctness_rtol,
+    )
     result = {
         **case.as_dict(),
         "case_id": (
@@ -3013,6 +3975,7 @@ def run_case(
                 else "inverse H256 fused into multi-split decode"
             ),
         },
+        "service_shaped_primitive": service_shaped,
         "diagnostic_ratios": {
             "decode": decode_ratios,
             "separate_device_stage": separate_stage_ratios,
@@ -3142,6 +4105,16 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--auto-block-size", type=int, default=64)
     parser.add_argument("--warmup-rounds", type=int, default=16)
     parser.add_argument("--sample-rounds", type=int, default=20)
+    parser.add_argument(
+        "--service-layer-count",
+        type=int,
+        choices=VALID_SERVICE_LAYER_COUNTS,
+        default=1,
+        help=(
+            "number of disjoint cache-owning layers in the service-shaped "
+            "primitive sweep (supported: 1 or 16; default: 1)"
+        ),
+    )
     parser.add_argument("--correctness-atol", type=float, default=0.08)
     parser.add_argument("--correctness-rtol", type=float, default=0.03)
     parser.add_argument(
@@ -3247,6 +4220,10 @@ def initial_document(args: argparse.Namespace) -> dict[str, Any]:
                 "Kvarn decode primitive",
                 "FA2 auto-cache decode control",
                 "Kvarn and auto cache-write/query-transform device stages",
+                (
+                    "one- or sixteen-layer service-shaped frontend/store plus "
+                    "decode primitive sweeps"
+                ),
             ],
             "excluded": [
                 "vLLM service and scheduler",
@@ -3290,6 +4267,7 @@ def initial_document(args: argparse.Namespace) -> dict[str, Any]:
             "warmup_rounds": args.warmup_rounds,
             "sample_rounds": args.sample_rounds,
             "samples_per_arm": args.sample_rounds * 2,
+            "service_layer_count": args.service_layer_count,
             "correctness_atol": args.correctness_atol,
             "correctness_rtol": args.correctness_rtol,
             "fixture_mode": args.fixture_mode,
@@ -3440,6 +4418,7 @@ def execute(args: argparse.Namespace) -> int:
                 sample_rounds=args.sample_rounds,
                 correctness_atol=args.correctness_atol,
                 correctness_rtol=args.correctness_rtol,
+                service_layer_count=args.service_layer_count,
             )
             document["results"].append(result)
             document["primitive_leaderboard"] = build_primitive_leaderboard(

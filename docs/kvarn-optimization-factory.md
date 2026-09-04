@@ -241,6 +241,19 @@ repositories, with ambiguous shared libraries, or without exact Nix
 derivation and closure attestations. Evidence is written atomically under
 `benchmark-results/kvarn/`; `/tmp` and overwrites are rejected.
 
+Use `--service-layer-count 16` to add the service-shaped primitive screen. It
+allocates disjoint auto caches and Kvarn packed-cache/tail pools for sixteen
+logical attention layers, then times a complete round-robin store/frontend plus
+decode sweep inside one outer XPU event. The first layer rotates between sweeps;
+metadata and decode scratch are reused sequentially. Results retain both raw
+sweep time and the mechanically normalized per-layer time, exact allocation and
+pointer evidence, deterministic per-layer seeds, and cache-replication
+provenance. The runner reserves ten percent of device memory (at least 1 GiB)
+and fails before timing if the estimated allocation does not fit. This remains
+a GPU primitive diagnostic: it does not run model projections, MLPs, the vLLM
+scheduler, transport, or packed-page flushes, and can never establish service
+parity.
+
 The mandatory B70 kill suite is selector-scoped. A `native_xe2` writer run
 adds compact/padded byte-exact packing, ragged block IDs, arbitrary values,
 ties-to-even, constant rows, and invalid-stride rejection. A

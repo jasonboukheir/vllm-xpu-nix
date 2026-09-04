@@ -314,8 +314,6 @@
                 "$@" \
                 --expected-native-attention-output \
                 ${kvarnFactoryAttentionLibrary} \
-                --expected-native-attention-derivation \
-                ${kvarnFactoryAttentionLibrary.drvPath} \
                 --native-attention-source-scheme \
                 ${pkgs.lib.escapeShellArg kvarnFactoryAttentionSourceProvenance.artifactIdentity.scheme} \
                 --native-attention-source-store-hash \

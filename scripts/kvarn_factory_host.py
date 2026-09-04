@@ -81,7 +81,6 @@ class FilteredSourceIdentity:
 @dataclasses.dataclass(frozen=True)
 class NativeAttentionExpectation:
     output: Path
-    derivation: str
     source_identity: FilteredSourceIdentity
     compatible_revision: str
 
@@ -372,7 +371,6 @@ def validate_filtered_source_identity(
 def validate_native_attention_expectation(
     *,
     output: Path,
-    derivation: str,
     source_scheme: str,
     source_store_hash: str,
     compatible_revision: str,
@@ -381,10 +379,6 @@ def validate_native_attention_expectation(
     if store_output_from_resolved(output) != output:
         raise HostLauncherError(
             f"expected native attention output is not exact: {output}"
-        )
-    if not DERIVATION.fullmatch(derivation):
-        raise HostLauncherError(
-            f"expected native attention derivation is invalid: {derivation!r}"
         )
     if (
         not GIT_COMMIT.fullmatch(compatible_revision)
@@ -397,16 +391,8 @@ def validate_native_attention_expectation(
     source_identity = validate_filtered_source_identity(
         scheme=source_scheme, store_hash=source_store_hash
     )
-    marker = f"+src.{source_identity.store_hash}"
-    if marker not in Path(derivation).name:
-        raise HostLauncherError(
-            "expected native attention derivation does not contain its filtered "
-            f"source identity {source_identity.scheme}:{source_identity.store_hash}: "
-            f"{derivation}"
-        )
     return NativeAttentionExpectation(
         output=output,
-        derivation=derivation,
         source_identity=source_identity,
         compatible_revision=compatible_revision,
     )
@@ -421,11 +407,6 @@ def require_native_attention_artifact(
         raise HostLauncherError(
             f"{label} output mismatch: expected {expectation.output}, "
             f"found {artifact.output}"
-        )
-    if artifact.derivation != expectation.derivation:
-        raise HostLauncherError(
-            f"{label} derivation mismatch: expected {expectation.derivation}, "
-            f"found {artifact.derivation}"
         )
     marker = f"+src.{expectation.source_identity.store_hash}"
     if marker not in Path(artifact.derivation).name:
@@ -528,7 +509,11 @@ def build_runner_command(
         "--expected-native-attention-output",
         str(native_attention_expectation.output),
         "--expected-native-attention-derivation",
-        native_attention_expectation.derivation,
+        # Content-addressed derivations have an unresolved path at flake
+        # evaluation time and a different resolved path after realization.
+        # The expected output above is rewritten to its exact realized store
+        # path; attest and forward that output's true runtime deriver here.
+        native_attention.derivation,
         "--native-attention-source-scheme",
         native_attention_expectation.source_identity.scheme,
         "--native-attention-source-store-hash",
@@ -587,7 +572,6 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("expected_vllm_revision")
     parser.add_argument("expected_kernels_revision")
     parser.add_argument("--expected-native-attention-output", type=Path, required=True)
-    parser.add_argument("--expected-native-attention-derivation", required=True)
     parser.add_argument("--native-attention-source-scheme", required=True)
     parser.add_argument("--native-attention-source-store-hash", required=True)
     parser.add_argument("--native-attention-compatible-revision", required=True)
@@ -662,7 +646,6 @@ def launch(
     )
     native_attention_expectation = validate_native_attention_expectation(
         output=args.expected_native_attention_output,
-        derivation=args.expected_native_attention_derivation,
         source_scheme=args.native_attention_source_scheme,
         source_store_hash=args.native_attention_source_store_hash,
         compatible_revision=args.native_attention_compatible_revision,

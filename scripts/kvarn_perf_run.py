@@ -82,6 +82,8 @@ DEFAULT_BATCHES = (1, 4)
 DEFAULT_NATIVE_SPLITS = {1: 24, 4: 16}
 DEFAULT_MAX_NUM_BATCHED_TOKENS = 2048
 DEFAULT_PREFILL_WINDOW_BLOCKS = 16
+VLLM_USE_V2_MODEL_RUNNER = "0"
+ONEDNN_DETERMINISTIC_LAUNCHER_SUFFIX = "-onednn-nondeterministic"
 EXPECTED_XPU_DEVICE_NAME = "Intel(R) Arc(TM) Pro B70 Graphics"
 DEFAULT_MODEL = (
     "jasonboukheir/Qwen3.8-27B-AEON-Ultimate-Uncensored-BF16-W4A16-AutoRound"
@@ -115,6 +117,7 @@ CAPTURED_ENVIRONMENT = (
     "KVARN_NATIVE_XPU_DPAS_LAYOUT",
     "KVARN_NATIVE_XPU_KERNEL_VARIANT",
     "KVARN_NATIVE_XPU_MATERIALIZE",
+    "KVARN_ONEDNN_DETERMINISTIC",
     "KVARN_NATIVE_XPU_PERSISTENT_SCRATCH",
     "KVARN_NATIVE_XPU_SPLITS",
     "KVARN_NATIVE_XPU_SPLIT_POLICY",
@@ -122,6 +125,7 @@ CAPTURED_ENVIRONMENT = (
     "VLLM_CACHE_ROOT",
     "VLLM_TARGET_DEVICE",
     "VLLM_KVARN_DEFER_PREFILL_FLUSH",
+    "VLLM_USE_V2_MODEL_RUNNER",
     "VLLM_XPU_ENABLE_XPU_GRAPH",
     "XDG_CACHE_HOME",
 )
@@ -454,6 +458,11 @@ def native_split_policy_for_run(run: PlannedRun, args: argparse.Namespace) -> st
     )
 
 
+def onednn_deterministic_environment(args: argparse.Namespace) -> str:
+    """Return the exact vLLM selector value bound by both matched arms."""
+    return "1" if args.onednn_deterministic else "0"
+
+
 def variant_provenance_for_run(
     run: PlannedRun, args: argparse.Namespace
 ) -> dict[str, str]:
@@ -710,11 +719,15 @@ def probe_xpu_hardware(args: argparse.Namespace) -> dict[str, Any]:
 def launcher_name(run: PlannedRun, args: argparse.Namespace) -> str:
     if run.arm == "candidate" and args.native_layout == "xe2_dpas":
         suffix = "-262k" if args.max_model_len == 262144 else ""
-        return (
+        launcher = (
             "vllm-xpu-brutus-kvarn-native-dpas-"
             f"{args.native_kernel_variant}{suffix}-b{run.workload.batch}"
         )
-    return ARM_SETTINGS[run.arm]["launcher"].format(batch=run.workload.batch)
+    else:
+        launcher = ARM_SETTINGS[run.arm]["launcher"].format(batch=run.workload.batch)
+    if not args.onednn_deterministic:
+        launcher += ONEDNN_DETERMINISTIC_LAUNCHER_SUFFIX
+    return launcher
 
 
 def resolve_launchers(
@@ -1111,6 +1124,12 @@ def service_profile_evidence(
         "native_split_policy_environment": environment.get(
             "KVARN_NATIVE_XPU_SPLIT_POLICY"
         ),
+        "onednn_deterministic_environment": environment.get(
+            "KVARN_ONEDNN_DETERMINISTIC"
+        ),
+        "vllm_use_v2_model_runner_environment": environment.get(
+            "VLLM_USE_V2_MODEL_RUNNER"
+        ),
         "variant_provenance": dict(variant_provenance or {}),
         "canonical_matched_profile": canonical,
         "canonical_matched_profile_sha256": hashlib.sha256(encoded).hexdigest(),
@@ -1204,10 +1223,12 @@ def verify_service_profile(
         "KVARN_NATIVE_XPU_PERSISTENT_SCRATCH": native,
         "KVARN_NATIVE_XPU_SPLITS": native_splits_environment_for_run(run, args),
         "KVARN_NATIVE_XPU_SPLIT_POLICY": native_split_policy_name_for_run(run, args),
+        "KVARN_ONEDNN_DETERMINISTIC": onednn_deterministic_environment(args),
         "KVARN_PREFILL_FP16_WINDOW_BLOCKS": str(DEFAULT_PREFILL_WINDOW_BLOCKS),
         "VLLM_CACHE_ROOT": str(args.runtime_cache / "vllm-xpu-brutus-kvarn"),
         "VLLM_TARGET_DEVICE": "xpu",
         "VLLM_KVARN_DEFER_PREFILL_FLUSH": None,
+        "VLLM_USE_V2_MODEL_RUNNER": VLLM_USE_V2_MODEL_RUNNER,
         "XDG_CACHE_HOME": str(args.runtime_cache),
     }
     environment_mismatches = {
@@ -1770,6 +1791,10 @@ def seal_benchmark_result(
         or profile.get("native_max_splits_environment")
         != native_splits_environment_for_run(run, args)
         or profile.get("native_split_policy_environment") != expected_split_policy
+        or profile.get("onednn_deterministic_environment")
+        != onednn_deterministic_environment(args)
+        or profile.get("vllm_use_v2_model_runner_environment")
+        != VLLM_USE_V2_MODEL_RUNNER
         or profile.get("variant_provenance") != expected_variant
     ):
         raise RunnerError(
@@ -1831,6 +1856,8 @@ def seal_benchmark_result(
         "kvarn_native_max_splits": str(expected_max_splits),
         "kvarn_native_nominal_splits": str(expected_effective_splits),
         "kvarn_native_split_policy": expected_split_policy,
+        "kvarn_onednn_deterministic": onednn_deterministic_environment(args),
+        "kvarn_vllm_use_v2_model_runner": VLLM_USE_V2_MODEL_RUNNER,
         "kvarn_native_layout_log_marker": (
             kvarn_factory_marker(
                 cache_layout=expected_layout,
@@ -2477,6 +2504,10 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             if args.native_split_policy == "b70_q6"
             else max(args.native_splits.values())
         ),
+        "service_controls": {
+            "kvarn_onednn_deterministic": onednn_deterministic_environment(args),
+            "vllm_use_v2_model_runner": VLLM_USE_V2_MODEL_RUNNER,
+        },
         **selected_variant,
         "max_num_batched_tokens": args.max_num_batched_tokens,
         "resolved_launchers": args.resolved_launchers,
@@ -2783,6 +2814,16 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--onednn-deterministic",
+        type=int,
+        choices=(0, 1),
+        default=1,
+        help=(
+            "set KVARN_ONEDNN_DETERMINISTIC identically for both matched arms; "
+            "1 is the safe default and 0 selects distinct diagnostic launchers"
+        ),
+    )
+    parser.add_argument(
         "--model",
         default=DEFAULT_MODEL,
     )
@@ -2846,6 +2887,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             )
         args.context = _parse_int_list(args.context, DEFAULT_CONTEXTS)
         args.batch = _parse_int_list(args.batch, DEFAULT_BATCHES)
+        args.onednn_deterministic = bool(args.onednn_deterministic)
         if args.native_split_policy == "b70_q6":
             if args.native_splits:
                 raise RunnerError(

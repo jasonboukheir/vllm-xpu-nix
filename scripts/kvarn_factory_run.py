@@ -92,6 +92,14 @@ VARIANTS = {
             "q6_cached_weights_exact_rows",
             "q6 cached epilogue weights plus exact live-row loops",
         ),
+        VariantSpec(9, "q6_page_pair", "q6 paired-page main loop"),
+        VariantSpec(10, "q6_main_grf128", "q6 GRF128 main-kernel experiment"),
+        VariantSpec(
+            11,
+            "q6_split_reducer_specialized",
+            "q6 specialized split reducer",
+        ),
+        VariantSpec(12, "q6_next_page_prefetch", "q6 next-page prefetch"),
     )
 }
 VARIANTS_BY_ID = {spec.variant_id: spec for spec in VARIANTS.values()}
@@ -101,6 +109,13 @@ DEFAULT_VARIANT_NAMES = (
     "q6_cached_weights",
     "q6_exact_rows",
     "q6_cached_weights_exact_rows",
+)
+ALL_VARIANT_NAMES = (
+    *DEFAULT_VARIANT_NAMES,
+    "q6_page_pair",
+    "q6_main_grf128",
+    "q6_split_reducer_specialized",
+    "q6_next_page_prefetch",
 )
 FOCUSED_XPU_TESTS = (
     "tests/flash_attn/test_kvarn_decode_xpu.py::test_structured_permuted_pages",
@@ -541,7 +556,7 @@ def parse_int_list(value: str, *, label: str) -> list[int]:
 
 
 def parse_variants(value: str) -> list[VariantSpec]:
-    names = list(DEFAULT_VARIANT_NAMES) if value == "all" else value.split(",")
+    names = list(ALL_VARIANT_NAMES) if value == "all" else value.split(",")
     if not names or any(not name for name in names):
         raise FactoryError("--variants must contain named candidate IDs")
     unknown = [name for name in names if name not in VARIANTS]

@@ -54,8 +54,12 @@ def test_named_factory_ids_are_complete_and_stable() -> None:
         "q6_cached_weights": 6,
         "q6_exact_rows": 7,
         "q6_cached_weights_exact_rows": 8,
+        "q6_page_pair": 9,
+        "q6_main_grf128": 10,
+        "q6_split_reducer_specialized": 11,
+        "q6_next_page_prefetch": 12,
     }
-    assert set(factory.VARIANTS_BY_ID) == set(range(9))
+    assert set(factory.VARIANTS_BY_ID) == set(range(13))
     assert all(spec.dpas_layout for spec in factory.VARIANTS.values())
     assert factory.DEFAULT_VARIANT_NAMES == (
         "q6_scalar",
@@ -63,6 +67,13 @@ def test_named_factory_ids_are_complete_and_stable() -> None:
         "q6_cached_weights",
         "q6_exact_rows",
         "q6_cached_weights_exact_rows",
+    )
+    assert factory.ALL_VARIANT_NAMES == (
+        *factory.DEFAULT_VARIANT_NAMES,
+        "q6_page_pair",
+        "q6_main_grf128",
+        "q6_split_reducer_specialized",
+        "q6_next_page_prefetch",
     )
 
 
@@ -79,6 +90,10 @@ def test_variant_parser_accepts_names_and_all_but_not_numeric_aliases() -> None:
         6,
         7,
         8,
+        9,
+        10,
+        11,
+        12,
     ]
     assert factory.parse_variants("page128") == [factory.VARIANTS["page128"]]
     with pytest.raises(factory.FactoryError, match="unknown variant"):

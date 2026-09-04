@@ -441,6 +441,10 @@ def test_commands_pin_launcher_and_deterministic_workload(tmp_path: Path) -> Non
         ("q6_cached_weights", 6),
         ("q6_exact_rows", 7),
         ("q6_cached_weights_exact_rows", 8),
+        ("q6_page_pair", 9),
+        ("q6_main_grf128", 10),
+        ("q6_split_reducer_specialized", 11),
+        ("q6_next_page_prefetch", 12),
     ],
 )
 def test_perf_launcher_name_binds_each_factory_variant(

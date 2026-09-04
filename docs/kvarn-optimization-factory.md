@@ -51,6 +51,21 @@ to enable the conservative natural-layout/reference implementation. Factory
 selectors are optional overrides for B70 experiments, not prerequisites for
 using Kvarn.
 
+The round-1 library exposes this frozen engine-start selection surface. Kernel
+variants and split counts do not require rebuilding the extension:
+
+| Selector | Values in the combined build | Lifetime |
+|---|---|---|
+| `KVARN_NATIVE_XPU_CACHE_LAYOUT` | `natural`, `xe2_dpas` | engine/cache ABI; restart and allocate a fresh cache to change |
+| `KVARN_NATIVE_XPU_KERNEL_VARIANT` | `baseline`, `qk_i8u4`, `q6_scalar`, `q8_vector`, `q6_vector` | frozen at engine initialization |
+| `KVARN_NATIVE_XPU_SPLITS` | `1`, `2`, `4`, `8`, `16`, `17`, `24`, `32` | frozen maximum at engine initialization |
+
+The direct B70 factory runner bypasses service startup and passes the same
+explicit variant ID, layout bit, and split count to the operator, allowing all
+compatible cells to be swept in one process. Variant IDs are `0` through `4`
+in the order listed above. ID `5` is reserved for the page-128 experiment and
+fails closed in the round-1 library because that specialization is not ready.
+
 ## Evidence entering round 1
 
 The direct-BF16 B70 device-stage checkpoint in
@@ -109,12 +124,13 @@ Primary implementation references:
 
 ## Round 1 ranked variants
 
-All compatible specializations should be emitted by one XPU-kernel build and
-selected by the host before launch. The initial combined dispatch matrix is
-`q8-scalar`, `q6-scalar`, `q8-vector`, and, if template-compatible,
-`q6-vector`; integer-QK, fused-Q, and page-128 remain separate named paths so a
-win can be attributed. `r1-p0` is the current DPAS baseline, not a promotion
-candidate by itself.
+All compatible specializations are emitted by one XPU-kernel build and
+selected by the host before launch. The combined decode dispatch matrix is
+`q8-scalar` (ID 0), integer-QK (ID 1), `q6-scalar` (ID 2), `q8-vector`
+(ID 3), and `q6-vector` (ID 4). The fused-QKV front end is a separate operator
+in that same extension, so it can be timed independently without confounding
+the decode variants. Page-128 remains reserved and unimplemented. `r1-p0` is
+the current DPAS baseline, not a promotion candidate by itself.
 
 | Rank / ID | Isolated change | Expected impact | Cost | Risk | Fast decision |
 |---|---|---:|---:|---:|---|

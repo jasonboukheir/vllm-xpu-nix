@@ -51,6 +51,8 @@ NATIVE_SPLIT_POLICIES = ("fixed", "b70_q6")
 FLUSH_INDEX_MATERIALIZATION_VARIANTS = ("per_layer", "shared")
 NATIVE_FRONTEND_VARIANTS = ("reference", "qkv_scatter")
 NATIVE_FRONTEND_ACTIVE_MARKER = "[KVARN_FRONTEND] active=qkv_scatter;"
+FILTERED_SOURCE_SCHEME = "nix-filtered-source-store-hash-v1"
+NIX_STORE_HASH = re.compile(r"^[0-9abcdfghijklmnpqrsvwxyz]{32}$")
 DEFAULT_NATIVE_SPLITS = {1: 24, 4: 16}
 B70_Q6_SPLITS = {1: 32, 4: 8}
 B70_Q6_MAX_SPLITS = 32
@@ -492,6 +494,57 @@ def validate_factory_qualification(
         )
     ):
         raise GateError(f"{path}: factory package/library provenance differs")
+    native_source_contract = native_attention_build.get("source_contract")
+    nix_evaluation_identity = (
+        native_source_contract.get("nix_evaluation_identity")
+        if isinstance(native_source_contract, dict)
+        else None
+    )
+    native_source_identity = (
+        native_source_contract.get("artifact_identity")
+        if isinstance(native_source_contract, dict)
+        else None
+    )
+    compatibility = (
+        native_source_contract.get("compatibility_provenance")
+        if isinstance(native_source_contract, dict)
+        else None
+    )
+    native_owner = owned_artifacts["native_attention"]
+    native_derivation = native_attention_build.get("derivation")
+    source_hash = (
+        native_source_identity.get("filtered_source_store_hash")
+        if isinstance(native_source_identity, dict)
+        else None
+    )
+    source_marker = f"+src.{source_hash}"
+    if (
+        not isinstance(native_source_contract, dict)
+        or not isinstance(nix_evaluation_identity, dict)
+        or nix_evaluation_identity.get("output_path")
+        != native_attention_build.get("output_path")
+        or nix_evaluation_identity.get("derivation") != native_derivation
+        or not isinstance(native_source_identity, dict)
+        or native_source_identity.get("scheme") != FILTERED_SOURCE_SCHEME
+        or not isinstance(source_hash, str)
+        or not NIX_STORE_HASH.fullmatch(source_hash)
+        or not isinstance(native_derivation, str)
+        or source_marker not in Path(native_derivation).name
+        or native_owner.get("repository") != "vllm-xpu-kernels"
+        or native_owner.get("compatible_upstream_revision")
+        != expected_sources["vllm-xpu-kernels"]
+        or native_owner.get("derivation") != native_derivation
+        or native_owner.get("derivation_source_marker") != source_marker
+        or native_owner.get("artifact_identity") != native_source_identity
+        or native_owner.get("nix_evaluation_identity") != nix_evaluation_identity
+        or native_owner.get("compatibility_source") != "factory_nix_evaluation"
+        or compatibility
+        != {
+            "upstream_revision": expected_sources["vllm-xpu-kernels"],
+            "asserted_against_expected_repository_revision": True,
+        }
+    ):
+        raise GateError(f"{path}: factory native-attention source identity differs")
     flash_path = flash.get("path")
     flash_sha256 = flash.get("sha256")
     if (
@@ -663,6 +716,7 @@ def validate_factory_qualification(
         "native_attention_library": {
             "path": native_attention_path,
             "sha256": native_attention_sha256,
+            "source_contract": native_source_contract,
             "runtime_binding_verified": True,
         },
         "selection": {

@@ -71,6 +71,11 @@ let
     }).overrideAttrs
       (old: {
         passthru = (old.passthru or { }) // {
+          # Provenance consumers need the exact paired package, including the
+          # source-filtered identities of its split native libraries. Keeping
+          # this in passthru does not make metadata-only revisions part of any
+          # split-library derivation identity.
+          kernelPackage = kernels';
           # The NixOS module uses this narrow hook instead of assuming every
           # user-supplied package's generic `.override` accepts `aotDevices`.
           # Re-enter mkVllm so the setting cascades into the paired kernels.

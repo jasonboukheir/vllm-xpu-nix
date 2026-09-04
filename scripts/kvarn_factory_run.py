@@ -48,6 +48,8 @@ SCOPE_WARNING = (
     "They are not service-performance or parity evidence."
 )
 GIT_COMMIT = re.compile(r"^[0-9a-f]{40}$")
+FILTERED_SOURCE_SCHEME = "nix-filtered-source-store-hash-v1"
+NIX_STORE_HASH = re.compile(r"^[0-9abcdfghijklmnpqrsvwxyz]{32}$")
 RUNTIME_ENVIRONMENT_KEYS = (
     "CC",
     "CMPLR_ROOT",
@@ -527,13 +529,16 @@ def evidence_identity(
         ],
         "build_attestations": {
             name: {
-                key: value[key]
-                for key in (
-                    "derivation",
-                    "closure_sha256",
-                    "output_path",
-                    "actual_deriver",
-                )
+                **{
+                    key: value[key]
+                    for key in (
+                        "derivation",
+                        "closure_sha256",
+                        "output_path",
+                        "actual_deriver",
+                    )
+                },
+                "source_contract": value.get("source_contract"),
             }
             for name, value in sorted((build_attestations or {}).items())
         },
@@ -555,6 +560,68 @@ def validate_build_attestation(
     }
 
 
+def validate_filtered_source_identity(
+    *, scheme: str, store_hash: str
+) -> dict[str, str]:
+    if scheme != FILTERED_SOURCE_SCHEME:
+        raise FactoryError(
+            f"unsupported native attention source identity scheme: {scheme!r}"
+        )
+    if not NIX_STORE_HASH.fullmatch(store_hash):
+        raise FactoryError(
+            "native attention filtered source store hash must be 32 Nix-base32 "
+            "characters"
+        )
+    return {"scheme": scheme, "filtered_source_store_hash": store_hash}
+
+
+def validate_native_attention_source_contract(
+    *,
+    expected_output: Path,
+    expected_derivation: str,
+    source_scheme: str,
+    source_store_hash: str,
+    compatible_revision: str,
+    expected_kernels_revision: str,
+) -> dict[str, Any]:
+    if nix_store_root(expected_output) != expected_output:
+        raise FactoryError(
+            f"expected native attention output is not exact: {expected_output}"
+        )
+    if not re.fullmatch(r"/nix/store/[a-z0-9]{32}-[^/]+\.drv", expected_derivation):
+        raise FactoryError(
+            "expected native attention derivation must be an absolute Nix .drv path"
+        )
+    if (
+        not GIT_COMMIT.fullmatch(compatible_revision)
+        or compatible_revision != expected_kernels_revision
+    ):
+        raise FactoryError(
+            "native attention compatibility revision does not match the expected "
+            "kernel checkout"
+        )
+    artifact_identity = validate_filtered_source_identity(
+        scheme=source_scheme, store_hash=source_store_hash
+    )
+    marker = f"+src.{source_store_hash}"
+    if marker not in Path(expected_derivation).name:
+        raise FactoryError(
+            "expected native attention derivation lacks its filtered source "
+            f"marker {marker}"
+        )
+    return {
+        "nix_evaluation_identity": {
+            "output_path": str(expected_output),
+            "derivation": expected_derivation,
+        },
+        "artifact_identity": artifact_identity,
+        "compatibility_provenance": {
+            "upstream_revision": compatible_revision,
+            "asserted_against_expected_repository_revision": True,
+        },
+    }
+
+
 def verify_source_ownership(
     *,
     package: dict[str, Any],
@@ -567,7 +634,6 @@ def verify_source_ownership(
         "package": (package, "vllm"),
         "base": (base, "vllm-xpu-kernels"),
         "flash": (flash, "vllm-xpu-kernels"),
-        "native_attention": (native_attention, "vllm-xpu-kernels"),
     }
     records: dict[str, Any] = {}
     for artifact_name, (artifact, repository_name) in ownership.items():
@@ -586,6 +652,52 @@ def verify_source_ownership(
             "derivation_version_marker": marker,
             "verified": True,
         }
+    source_contract = native_attention.get("source_contract")
+    if not isinstance(source_contract, dict):
+        raise FactoryError("native_attention source contract is absent")
+    nix_identity = source_contract.get("nix_evaluation_identity")
+    native_source_identity = source_contract.get("artifact_identity")
+    compatibility = source_contract.get("compatibility_provenance")
+    if (
+        not isinstance(nix_identity, dict)
+        or nix_identity.get("output_path") != native_attention.get("output_path")
+        or nix_identity.get("derivation") != native_attention.get("derivation")
+    ):
+        raise FactoryError(
+            "native_attention artifact differs from its Nix-evaluated identity"
+        )
+    if not isinstance(native_source_identity, dict):
+        raise FactoryError("native_attention filtered source identity is absent")
+    expected_native_identity = validate_filtered_source_identity(
+        scheme=str(native_source_identity.get("scheme", "")),
+        store_hash=str(native_source_identity.get("filtered_source_store_hash", "")),
+    )
+    marker = f"+src.{expected_native_identity['filtered_source_store_hash']}"
+    native_derivation = native_attention["derivation"]
+    if marker not in Path(native_derivation).name:
+        raise FactoryError(
+            "native_attention source ownership mismatch: expected filtered source "
+            f"identity {expected_native_identity}, derivation {native_derivation}"
+        )
+    expected_compatible_revision = expected_revisions["vllm-xpu-kernels"]
+    if compatibility != {
+        "upstream_revision": expected_compatible_revision,
+        "asserted_against_expected_repository_revision": True,
+    }:
+        raise FactoryError(
+            "native_attention compatibility revision differs from the expected "
+            "kernel repository"
+        )
+    records["native_attention"] = {
+        "repository": "vllm-xpu-kernels",
+        "compatible_upstream_revision": expected_compatible_revision,
+        "derivation": native_derivation,
+        "derivation_source_marker": marker,
+        "artifact_identity": expected_native_identity,
+        "nix_evaluation_identity": nix_identity,
+        "compatibility_source": "factory_nix_evaluation",
+        "verified": True,
+    }
     package_closure = set(package["closure_paths"])
     for artifact_name, artifact in (
         ("base", base),
@@ -2494,6 +2606,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--flash-closure-sha256", required=True)
     parser.add_argument("--native-attention-derivation", required=True)
     parser.add_argument("--native-attention-closure-sha256", required=True)
+    parser.add_argument("--expected-native-attention-output", type=Path, required=True)
+    parser.add_argument("--expected-native-attention-derivation", required=True)
+    parser.add_argument("--native-attention-source-scheme", required=True)
+    parser.add_argument("--native-attention-source-store-hash", required=True)
+    parser.add_argument("--native-attention-compatible-revision", required=True)
     parser.add_argument("--vllm-xpu-nix-repo", type=Path, default=project)
     parser.add_argument("--vllm-repo", type=Path, default=project.parent / "vllm")
     parser.add_argument(
@@ -2568,11 +2685,24 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             derivation=args.flash_derivation,
             closure_sha256=args.flash_closure_sha256,
         )
-        args.native_attention_build = validate_build_attestation(
-            label="native-attention",
-            derivation=args.native_attention_derivation,
-            closure_sha256=args.native_attention_closure_sha256,
+        args.native_attention_source_contract = (
+            validate_native_attention_source_contract(
+                expected_output=args.expected_native_attention_output,
+                expected_derivation=args.expected_native_attention_derivation,
+                source_scheme=args.native_attention_source_scheme,
+                source_store_hash=args.native_attention_source_store_hash,
+                compatible_revision=args.native_attention_compatible_revision,
+                expected_kernels_revision=args.expected_kernels_revision,
+            )
         )
+        args.native_attention_build = {
+            **validate_build_attestation(
+                label="native-attention",
+                derivation=args.native_attention_derivation,
+                closure_sha256=args.native_attention_closure_sha256,
+            ),
+            "source_contract": args.native_attention_source_contract,
+        }
         args.expected_revisions = {
             "vllm-xpu-nix": args.expected_vllm_xpu_nix_revision,
             "vllm": args.expected_vllm_revision,

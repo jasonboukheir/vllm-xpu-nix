@@ -14,6 +14,22 @@ from scripts import kvarn_factory_host as host
 PROJECT_REVISION = "1" * 40
 VLLM_REVISION = "2" * 40
 KERNELS_REVISION = "3" * 40
+ATTENTION_SOURCE_HASH = "4" * 32
+ATTENTION_SOURCE_IDENTITY = host.FilteredSourceIdentity(
+    scheme=host.FILTERED_SOURCE_SCHEME,
+    store_hash=ATTENTION_SOURCE_HASH,
+)
+
+
+def _attention_expectation(
+    output: Path, derivation: str
+) -> host.NativeAttentionExpectation:
+    return host.NativeAttentionExpectation(
+        output=output,
+        derivation=derivation,
+        source_identity=ATTENTION_SOURCE_IDENTITY,
+        compatible_revision=KERNELS_REVISION,
+    )
 
 
 def test_closure_digest_matches_factory_convention() -> None:
@@ -193,6 +209,63 @@ def test_repository_and_derivation_must_match_full_expected_head() -> None:
         )
 
 
+def test_filtered_source_identity_replaces_revision_marker_for_split_library() -> None:
+    output = Path("/nix/store/" + "n" * 32 + "-attention")
+    derivation = (
+        "/nix/store/"
+        + "d" * 32
+        + "-vllm-xpu-attn-0.1+src."
+        + ATTENTION_SOURCE_HASH
+        + ".drv"
+    )
+    expectation = host.validate_native_attention_expectation(
+        output=output,
+        derivation=derivation,
+        source_scheme=host.FILTERED_SOURCE_SCHEME,
+        source_store_hash=ATTENTION_SOURCE_HASH,
+        compatible_revision=KERNELS_REVISION,
+        expected_kernels_revision=KERNELS_REVISION,
+    )
+    artifact = host.NixArtifact(
+        library=output / "lib/libattn_kernels_xe_2.so",
+        output=output,
+        derivation=derivation,
+        closure_sha256="0" * 64,
+    )
+    host.require_native_attention_artifact("attention", artifact, expectation)
+    with pytest.raises(host.HostLauncherError, match="derivation mismatch"):
+        host.require_native_attention_artifact(
+            "attention",
+            dataclasses.replace(
+                artifact,
+                derivation=artifact.derivation.replace(ATTENTION_SOURCE_HASH, "5" * 32),
+            ),
+            expectation,
+        )
+    with pytest.raises(host.HostLauncherError, match="output mismatch"):
+        host.require_native_attention_artifact(
+            "attention",
+            dataclasses.replace(
+                artifact,
+                output=Path("/nix/store/" + "m" * 32 + "-other-attention"),
+            ),
+            expectation,
+        )
+    with pytest.raises(host.HostLauncherError, match="unsupported"):
+        host.validate_filtered_source_identity(
+            scheme="git-revision", store_hash=ATTENTION_SOURCE_HASH
+        )
+    with pytest.raises(host.HostLauncherError, match="compatibility revision"):
+        host.validate_native_attention_expectation(
+            output=output,
+            derivation=derivation,
+            source_scheme=host.FILTERED_SOURCE_SCHEME,
+            source_store_hash=ATTENTION_SOURCE_HASH,
+            compatible_revision="6" * 40,
+            expected_kernels_revision=KERNELS_REVISION,
+        )
+
+
 def test_source_ownership_maps_package_and_all_libraries_to_repositories() -> None:
     package = host.NixOutput(
         output=Path("/nix/store/" + "p" * 32 + "-vllm"),
@@ -220,12 +293,23 @@ def test_source_ownership_maps_package_and_all_libraries_to_repositories() -> No
     native_attention = dataclasses.replace(
         base,
         library=Path("/nix/store/" + "b" * 32 + "-kernels/lib/libattn_kernels_xe_2.so"),
+        derivation=(
+            "/nix/store/"
+            + "f" * 32
+            + "-vllm-xpu-attn-kernels-xe-2-0.1+src."
+            + ATTENTION_SOURCE_HASH
+            + ".drv"
+        ),
+    )
+    native_expectation = _attention_expectation(
+        native_attention.output, native_attention.derivation
     )
     host.require_source_ownership(
         package=package,
         base=base,
         flash=flash,
         native_attention=native_attention,
+        native_attention_expectation=native_expectation,
         expected_vllm_revision=VLLM_REVISION,
         expected_kernels_revision=KERNELS_REVISION,
     )
@@ -240,6 +324,7 @@ def test_source_ownership_maps_package_and_all_libraries_to_repositories() -> No
             base=base,
             flash=flash,
             native_attention=native_attention,
+            native_attention_expectation=native_expectation,
             expected_vllm_revision=VLLM_REVISION,
             expected_kernels_revision=KERNELS_REVISION,
         )
@@ -254,6 +339,7 @@ def test_source_ownership_maps_package_and_all_libraries_to_repositories() -> No
             ),
             flash=flash,
             native_attention=native_attention,
+            native_attention_expectation=native_expectation,
             expected_vllm_revision=VLLM_REVISION,
             expected_kernels_revision=KERNELS_REVISION,
         )
@@ -268,11 +354,12 @@ def test_source_ownership_maps_package_and_all_libraries_to_repositories() -> No
                 ),
             ),
             native_attention=native_attention,
+            native_attention_expectation=native_expectation,
             expected_vllm_revision=VLLM_REVISION,
             expected_kernels_revision=KERNELS_REVISION,
         )
     with pytest.raises(
-        host.HostLauncherError, match="native attention library source mismatch"
+        host.HostLauncherError, match="native attention library derivation mismatch"
     ):
         host.require_source_ownership(
             package=package,
@@ -281,9 +368,10 @@ def test_source_ownership_maps_package_and_all_libraries_to_repositories() -> No
             native_attention=dataclasses.replace(
                 native_attention,
                 derivation=native_attention.derivation.replace(
-                    KERNELS_REVISION[:7], VLLM_REVISION[:7]
+                    ATTENTION_SOURCE_HASH, "5" * 32
                 ),
             ),
+            native_attention_expectation=native_expectation,
             expected_vllm_revision=VLLM_REVISION,
             expected_kernels_revision=KERNELS_REVISION,
         )
@@ -325,10 +413,21 @@ def test_runner_command_forwards_matrix_and_exact_attestations(tmp_path: Path) -
         closure_sha256="b" * 64,
     )
     native_attention = host.NixArtifact(
-        library=Path("/nix/store/attention/lib/libattn_kernels_xe_2.so"),
-        output=Path("/nix/store/attention"),
-        derivation="/nix/store/attention.drv",
+        library=Path(
+            "/nix/store/" + "n" * 32 + "-attention/lib/libattn_kernels_xe_2.so"
+        ),
+        output=Path("/nix/store/" + "n" * 32 + "-attention"),
+        derivation=(
+            "/nix/store/"
+            + "d" * 32
+            + "-attention-0.1+src."
+            + ATTENTION_SOURCE_HASH
+            + ".drv"
+        ),
         closure_sha256="d" * 64,
+    )
+    native_expectation = _attention_expectation(
+        native_attention.output, native_attention.derivation
     )
     repositories = host.RepositoryPaths(
         project=tmp_path / "nix",
@@ -342,6 +441,7 @@ def test_runner_command_forwards_matrix_and_exact_attestations(tmp_path: Path) -
         base=base,
         flash=flash,
         native_attention=native_attention,
+        native_attention_expectation=native_expectation,
         output=tmp_path / "evidence.json",
         variants="baseline,q8_vector",
         splits="auto,24",
@@ -367,6 +467,21 @@ def test_runner_command_forwards_matrix_and_exact_attestations(tmp_path: Path) -
         native_attention.derivation
     )
     assert command[command.index("--native-attention-closure-sha256") + 1] == "d" * 64
+    assert command[command.index("--expected-native-attention-output") + 1] == str(
+        native_attention.output
+    )
+    assert command[command.index("--expected-native-attention-derivation") + 1] == (
+        native_attention.derivation
+    )
+    assert command[command.index("--native-attention-source-scheme") + 1] == (
+        host.FILTERED_SOURCE_SCHEME
+    )
+    assert command[command.index("--native-attention-source-store-hash") + 1] == (
+        ATTENTION_SOURCE_HASH
+    )
+    assert command[command.index("--native-attention-compatible-revision") + 1] == (
+        KERNELS_REVISION
+    )
     assert command[command.index("--variants") + 1] == "baseline,q8_vector"
     assert command[command.index("--splits") + 1] == "auto,24"
     assert command[command.index("--contexts") + 1] == "4096,65023"
@@ -389,6 +504,20 @@ def test_default_cli_is_the_matched_b70_factory_matrix() -> None:
             "result-kvarn-factory",
             PROJECT_REVISION,
             VLLM_REVISION,
+            KERNELS_REVISION,
+            "--expected-native-attention-output",
+            "/nix/store/" + "n" * 32 + "-attention",
+            "--expected-native-attention-derivation",
+            "/nix/store/"
+            + "d" * 32
+            + "-attention-0.1+src."
+            + ATTENTION_SOURCE_HASH
+            + ".drv",
+            "--native-attention-source-scheme",
+            host.FILTERED_SOURCE_SCHEME,
+            "--native-attention-source-store-hash",
+            ATTENTION_SOURCE_HASH,
+            "--native-attention-compatible-revision",
             KERNELS_REVISION,
         ]
     )
@@ -438,7 +567,11 @@ def test_launch_executes_once_with_resolved_provenance(
     native_attention = host.NixArtifact(
         native_attention_path,
         host.store_output_from_resolved(native_attention_path),
-        "/nix/store/" + "c" * 32 + "-attention.g" + KERNELS_REVISION[:7] + ".drv",
+        "/nix/store/"
+        + "c" * 32
+        + "-attention-0.1+src."
+        + ATTENTION_SOURCE_HASH
+        + ".drv",
         "3" * 64,
     )
     monkeypatch.setattr(host, "require_no_vllm_service", lambda _root: None)
@@ -496,6 +629,11 @@ def test_launch_executes_once_with_resolved_provenance(
         expected_project_revision=PROJECT_REVISION,
         expected_vllm_revision=VLLM_REVISION,
         expected_kernels_revision=KERNELS_REVISION,
+        expected_native_attention_output=native_attention.output,
+        expected_native_attention_derivation=native_attention.derivation,
+        native_attention_source_scheme=host.FILTERED_SOURCE_SCHEME,
+        native_attention_source_store_hash=ATTENTION_SOURCE_HASH,
+        native_attention_compatible_revision=KERNELS_REVISION,
     )
     with pytest.raises(SystemExit, match="0"):
         host.launch(
@@ -516,6 +654,9 @@ def test_launch_executes_once_with_resolved_provenance(
             "base": base,
             "flash": flash,
             "native_attention": native_attention,
+            "native_attention_expectation": _attention_expectation(
+                native_attention.output, native_attention.derivation
+            ),
             "expected_vllm_revision": VLLM_REVISION,
             "expected_kernels_revision": KERNELS_REVISION,
         }

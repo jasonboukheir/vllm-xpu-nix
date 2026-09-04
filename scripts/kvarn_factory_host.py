@@ -30,6 +30,8 @@ PYTHON_EXTENSION_PATTERNS = (
     "lib64/python*/site-packages/*/{basename}",
 )
 NATIVE_LIBRARY_PATTERNS = ("lib/{basename}", "lib64/{basename}")
+FILTERED_SOURCE_SCHEME = "nix-filtered-source-store-hash-v1"
+NIX_STORE_HASH = re.compile(r"^[0-9abcdfghijklmnpqrsvwxyz]{32}$")
 # Resolve ``all`` in the runner so every layout-compatible candidate compiled
 # into the shared library automatically participates in the default sweep.
 DEFAULT_VARIANTS = "all"
@@ -68,6 +70,20 @@ class RepositoryPaths:
     project: Path
     vllm: Path
     kernels: Path
+
+
+@dataclasses.dataclass(frozen=True)
+class FilteredSourceIdentity:
+    scheme: str
+    store_hash: str
+
+
+@dataclasses.dataclass(frozen=True)
+class NativeAttentionExpectation:
+    output: Path
+    derivation: str
+    source_identity: FilteredSourceIdentity
+    compatible_revision: str
 
 
 CommandRunner = Callable[[Sequence[str]], str]
@@ -338,12 +354,96 @@ def require_derivation_source(
         )
 
 
+def validate_filtered_source_identity(
+    *, scheme: str, store_hash: str
+) -> FilteredSourceIdentity:
+    if scheme != FILTERED_SOURCE_SCHEME:
+        raise HostLauncherError(
+            f"unsupported native attention source identity scheme: {scheme!r}"
+        )
+    if not NIX_STORE_HASH.fullmatch(store_hash):
+        raise HostLauncherError(
+            "native attention filtered source store hash must be 32 Nix-base32 "
+            "characters"
+        )
+    return FilteredSourceIdentity(scheme=scheme, store_hash=store_hash)
+
+
+def validate_native_attention_expectation(
+    *,
+    output: Path,
+    derivation: str,
+    source_scheme: str,
+    source_store_hash: str,
+    compatible_revision: str,
+    expected_kernels_revision: str,
+) -> NativeAttentionExpectation:
+    if store_output_from_resolved(output) != output:
+        raise HostLauncherError(
+            f"expected native attention output is not exact: {output}"
+        )
+    if not DERIVATION.fullmatch(derivation):
+        raise HostLauncherError(
+            f"expected native attention derivation is invalid: {derivation!r}"
+        )
+    if (
+        not GIT_COMMIT.fullmatch(compatible_revision)
+        or compatible_revision != expected_kernels_revision
+    ):
+        raise HostLauncherError(
+            "native attention compatibility revision does not match the expected "
+            f"kernel checkout: {compatible_revision!r} != {expected_kernels_revision!r}"
+        )
+    source_identity = validate_filtered_source_identity(
+        scheme=source_scheme, store_hash=source_store_hash
+    )
+    marker = f"+src.{source_identity.store_hash}"
+    if marker not in Path(derivation).name:
+        raise HostLauncherError(
+            "expected native attention derivation does not contain its filtered "
+            f"source identity {source_identity.scheme}:{source_identity.store_hash}: "
+            f"{derivation}"
+        )
+    return NativeAttentionExpectation(
+        output=output,
+        derivation=derivation,
+        source_identity=source_identity,
+        compatible_revision=compatible_revision,
+    )
+
+
+def require_native_attention_artifact(
+    label: str,
+    artifact: NixArtifact,
+    expectation: NativeAttentionExpectation,
+) -> None:
+    if artifact.output != expectation.output:
+        raise HostLauncherError(
+            f"{label} output mismatch: expected {expectation.output}, "
+            f"found {artifact.output}"
+        )
+    if artifact.derivation != expectation.derivation:
+        raise HostLauncherError(
+            f"{label} derivation mismatch: expected {expectation.derivation}, "
+            f"found {artifact.derivation}"
+        )
+    marker = f"+src.{expectation.source_identity.store_hash}"
+    if marker not in Path(artifact.derivation).name:
+        raise HostLauncherError(
+            f"{label} source mismatch: expected filtered source identity "
+            f"{expectation.source_identity.scheme}:"
+            f"{expectation.source_identity.store_hash} is not stamped into "
+            f"artifact derivation {artifact.derivation}"
+        )
+
+
 def require_source_ownership(
     *,
     package: NixOutput,
     base: NixArtifact,
     flash: NixArtifact,
     native_attention: NixArtifact,
+    native_attention_expectation: NativeAttentionExpectation,
     expected_vllm_revision: str,
     expected_kernels_revision: str,
 ) -> None:
@@ -354,10 +454,10 @@ def require_source_ownership(
     require_derivation_source(
         "vllm-xpu-kernels flash extension", flash, expected_kernels_revision
     )
-    require_derivation_source(
+    require_native_attention_artifact(
         "vllm-xpu-kernels native attention library",
         native_attention,
-        expected_kernels_revision,
+        native_attention_expectation,
     )
 
 
@@ -385,6 +485,7 @@ def build_runner_command(
     base: NixArtifact,
     flash: NixArtifact,
     native_attention: NixArtifact,
+    native_attention_expectation: NativeAttentionExpectation,
     output: Path,
     variants: str,
     splits: str,
@@ -424,6 +525,16 @@ def build_runner_command(
         native_attention.derivation,
         "--native-attention-closure-sha256",
         native_attention.closure_sha256,
+        "--expected-native-attention-output",
+        str(native_attention_expectation.output),
+        "--expected-native-attention-derivation",
+        native_attention_expectation.derivation,
+        "--native-attention-source-scheme",
+        native_attention_expectation.source_identity.scheme,
+        "--native-attention-source-store-hash",
+        native_attention_expectation.source_identity.store_hash,
+        "--native-attention-compatible-revision",
+        native_attention_expectation.compatible_revision,
         "--vllm-xpu-nix-repo",
         str(repositories.project),
         "--vllm-repo",
@@ -475,6 +586,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("expected_project_revision")
     parser.add_argument("expected_vllm_revision")
     parser.add_argument("expected_kernels_revision")
+    parser.add_argument("--expected-native-attention-output", type=Path, required=True)
+    parser.add_argument("--expected-native-attention-derivation", required=True)
+    parser.add_argument("--native-attention-source-scheme", required=True)
+    parser.add_argument("--native-attention-source-store-hash", required=True)
+    parser.add_argument("--native-attention-compatible-revision", required=True)
     parser.add_argument("--vllm-xpu-nix-repo", type=Path, default=project)
     parser.add_argument("--vllm-repo", type=Path, default=project.parent / "vllm")
     parser.add_argument(
@@ -544,11 +660,20 @@ def launch(
         ),
         command_runner,
     )
+    native_attention_expectation = validate_native_attention_expectation(
+        output=args.expected_native_attention_output,
+        derivation=args.expected_native_attention_derivation,
+        source_scheme=args.native_attention_source_scheme,
+        source_store_hash=args.native_attention_source_store_hash,
+        compatible_revision=args.native_attention_compatible_revision,
+        expected_kernels_revision=args.expected_kernels_revision,
+    )
     require_source_ownership(
         package=package,
         base=base,
         flash=flash,
         native_attention=native_attention,
+        native_attention_expectation=native_attention_expectation,
         expected_vllm_revision=args.expected_vllm_revision,
         expected_kernels_revision=args.expected_kernels_revision,
     )
@@ -563,6 +688,7 @@ def launch(
         base=base,
         flash=flash,
         native_attention=native_attention,
+        native_attention_expectation=native_attention_expectation,
         output=output,
         variants=args.variants,
         splits=args.splits,

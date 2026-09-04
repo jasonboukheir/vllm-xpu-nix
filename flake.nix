@@ -245,6 +245,9 @@
             aotDevices = [ "bmg" ];
             kernelConfig = kvarnFactoryKernelConfig;
           };
+          kvarnFactoryAttentionLibrary =
+            vllm-xpu-kvarn-factory.kernelPackage.kernelLibraries.attn-kernels-xe-2;
+          kvarnFactoryAttentionSourceProvenance = kvarnFactoryAttentionLibrary.kernelSourceProvenance;
 
           # Run the entire B70 candidate matrix from the same Python closure
           # as the factory package.  The host script receives the embedded
@@ -308,7 +311,17 @@
                 ${self.rev} \
                 ${vllm-xpu-unstable-src.rev} \
                 ${vllm-xpu-kernels-unstable-src.rev} \
-                "$@"
+                "$@" \
+                --expected-native-attention-output \
+                ${kvarnFactoryAttentionLibrary} \
+                --expected-native-attention-derivation \
+                ${kvarnFactoryAttentionLibrary.drvPath} \
+                --native-attention-source-scheme \
+                ${pkgs.lib.escapeShellArg kvarnFactoryAttentionSourceProvenance.artifactIdentity.scheme} \
+                --native-attention-source-store-hash \
+                ${pkgs.lib.escapeShellArg kvarnFactoryAttentionSourceProvenance.artifactIdentity.filteredSourceStoreHash} \
+                --native-attention-compatible-revision \
+                ${pkgs.lib.escapeShellArg kvarnFactoryAttentionSourceProvenance.compatibilityProvenance.upstreamRevision}
             '';
           };
 

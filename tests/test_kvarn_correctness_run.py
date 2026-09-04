@@ -251,6 +251,9 @@ def _service_environment(
             if spec.native
             else "0"
         ),
+        "KVARN_FLUSH_INDEX_MATERIALIZATION": (
+            correctness.perf.flush_index_materialization_environment(args)
+        ),
         "KVARN_NATIVE_XPU_KERNEL_VARIANT": (
             correctness.native_kernel_variant_for_spec(spec, args)
         ),
@@ -262,10 +265,12 @@ def _service_environment(
         "KVARN_NATIVE_XPU_SPLIT_POLICY": correctness.native_split_policy_for_spec(
             spec, args
         ),
+        "KVARN_ONEDNN_DETERMINISTIC": "1",
         "KVARN_PREFILL_FP16_WINDOW_BLOCKS": "16",
         "VLLM_CACHE_ROOT": str(args.runtime_cache / "vllm-xpu-brutus-kvarn"),
         "VLLM_TARGET_DEVICE": "xpu",
         "VLLM_KVARN_DEFER_PREFILL_FLUSH": None,
+        "VLLM_USE_V2_MODEL_RUNNER": "0",
         "VLLM_XPU_ENABLE_XPU_GRAPH": None,
         "XDG_CACHE_HOME": str(args.runtime_cache),
     }

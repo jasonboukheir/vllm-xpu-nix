@@ -48,6 +48,7 @@ NATIVE_KERNEL_VARIANTS = {
     "q6_next_page_prefetch": 12,
 }
 NATIVE_SPLIT_POLICIES = ("fixed", "b70_q6")
+FLUSH_INDEX_MATERIALIZATION_VARIANTS = ("per_layer", "shared")
 DEFAULT_NATIVE_SPLITS = {1: 24, 4: 16}
 B70_Q6_SPLITS = {1: 32, 4: 8}
 B70_Q6_MAX_SPLITS = 32
@@ -305,6 +306,9 @@ COMMON_PROVENANCE_FIELDS = (
     "kvarn_hardware_preflight_path",
     "kvarn_hardware_preflight_sha256",
     "kvarn_evidence_mode",
+    "kvarn_flush_index_materialization",
+    "kvarn_onednn_deterministic",
+    "kvarn_vllm_use_v2_model_runner",
 )
 ARM_PROVENANCE_FIELDS = (
     "kvarn_arm",
@@ -721,6 +725,7 @@ def _validate_correctness_phase(
     native_split_policy: str,
     native_splits: Mapping[int, int],
     native_output_dtype: str,
+    flush_index_materialization: str,
     *,
     owner: Path,
 ) -> dict[str, Any]:
@@ -778,6 +783,7 @@ def _validate_correctness_phase(
         or phase.get("native_split_policy_environment") != expected_policy
         or phase.get("native_layout_log_marker") != expected_marker
         or phase.get("native_layout_evidence") != expected_layout_evidence
+        or phase.get("flush_index_materialization") != flush_index_materialization
         or not isinstance(phase.get("workload"), dict)
     ):
         raise GateError(f"{owner}: invalid {phase_name} phase evidence")
@@ -795,6 +801,8 @@ def _validate_correctness_phase(
         or profile.get("native_kernel_variant_environment") != expected_kernel
         or profile.get("native_max_splits_environment") != expected_splits_environment
         or profile.get("native_split_policy_environment") != expected_policy
+        or profile.get("flush_index_materialization_environment")
+        != flush_index_materialization
         or not isinstance(captured_environment, dict)
         or captured_environment.get("KVARN_NATIVE_XPU_DPAS_LAYOUT")
         != NATIVE_LAYOUT_ENV[expected_layout]
@@ -804,6 +812,10 @@ def _validate_correctness_phase(
         or captured_environment.get("KVARN_NATIVE_XPU_SPLITS")
         != expected_splits_environment
         or captured_environment.get("KVARN_NATIVE_XPU_SPLIT_POLICY") != expected_policy
+        or captured_environment.get("KVARN_FLUSH_INDEX_MATERIALIZATION")
+        != flush_index_materialization
+        or captured_environment.get("KVARN_ONEDNN_DETERMINISTIC") != "1"
+        or captured_environment.get("VLLM_USE_V2_MODEL_RUNNER") != "0"
         or profile.get("variant_provenance") != expected_variant
     ):
         raise GateError(f"{owner}: {phase_name} layout profile differs")
@@ -827,13 +839,9 @@ def _validate_correctness_phase(
     native_decoder_lines = [
         line for line in log_text.splitlines() if NATIVE_DISPATCH in line
     ]
-    direct_bf16_verified = any(
-        NATIVE_DIRECT_BF16_MARKER in line for line in native_decoder_lines
-    )
-    direct_bf16_disabled = any(
-        NATIVE_DIRECT_BF16_DISABLED_MARKER in line for line in native_decoder_lines
-    )
-    if expected_spec["native"] and (direct_bf16_disabled or not direct_bf16_verified):
+    final_decoder_line = native_decoder_lines[-1] if native_decoder_lines else ""
+    direct_bf16_verified = NATIVE_DIRECT_BF16_MARKER in final_decoder_line
+    if expected_spec["native"] and not direct_bf16_verified:
         raise GateError(f"{owner}: {phase_name} lacks direct BF16 runtime proof")
     if expected_marker not in log_text:
         raise GateError(f"{owner}: {phase_name} lacks the exact factory marker")
@@ -862,6 +870,7 @@ def validate_correctness_gate_evidence(
     native_split_policy: str = "fixed",
     native_splits: Mapping[int, int] | None = None,
     native_output_dtype: str = "bf16",
+    flush_index_materialization: str = "per_layer",
 ) -> None:
     """Validate the meaning of one hashed correctness-gate artifact."""
     selected_splits = DEFAULT_NATIVE_SPLITS if native_splits is None else native_splits
@@ -971,6 +980,7 @@ def validate_correctness_gate_evidence(
             native_split_policy,
             selected_splits,
             native_output_dtype,
+            flush_index_materialization,
             owner=path,
         )
 
@@ -1747,6 +1757,16 @@ def _load_correctness(path: Path) -> tuple[dict[str, Any], str]:
         raise GateError(
             f"{path}: finalist service qualification requires bf16 native output"
         )
+    flush_index_materialization = document.get("flush_index_materialization")
+    if flush_index_materialization not in FLUSH_INDEX_MATERIALIZATION_VARIANTS:
+        raise GateError(f"{path}: flush-index materialization is unsupported")
+    expected_service_controls = {
+        "kvarn_flush_index_materialization": flush_index_materialization,
+        "kvarn_onednn_deterministic": "1",
+        "vllm_use_v2_model_runner": "0",
+    }
+    if document.get("service_controls") != expected_service_controls:
+        raise GateError(f"{path}: correctness service controls are inconsistent")
     raw_native_splits = document.get("native_nominal_splits_by_batch")
     if not isinstance(raw_native_splits, dict) or set(raw_native_splits) != {"1", "4"}:
         raise GateError(f"{path}: native_nominal_splits_by_batch is incomplete")
@@ -1856,6 +1876,7 @@ def _load_correctness(path: Path) -> tuple[dict[str, Any], str]:
             native_split_policy=native_split_policy,
             native_splits=native_splits,
             native_output_dtype=native_output_dtype,
+            flush_index_materialization=flush_index_materialization,
         )
         if name.startswith("native_decode_"):
             library_path, library_sha256 = _artifact_reference(
@@ -2160,6 +2181,22 @@ def compare(
     if correctness_identity != benchmark_identity:
         raise GateError(
             "correctness and performance evidence identify different candidate builds"
+        )
+    correctness_controls = correctness["service_controls"]
+    benchmark_controls = {
+        "kvarn_flush_index_materialization": first_cand.provenance[
+            "kvarn_flush_index_materialization"
+        ],
+        "kvarn_onednn_deterministic": first_cand.provenance[
+            "kvarn_onednn_deterministic"
+        ],
+        "vllm_use_v2_model_runner": first_cand.provenance[
+            "kvarn_vllm_use_v2_model_runner"
+        ],
+    }
+    if benchmark_controls != correctness_controls:
+        raise GateError(
+            "correctness and performance selected different service controls"
         )
     correctness_layout = correctness["native_layout"]
     correctness_kernel_variant = correctness["native_kernel_variant"]

@@ -65,6 +65,7 @@ PROFILE = {
     "native_max_splits_environment": "1",
     "native_split_policy_environment": "fixed",
     "onednn_deterministic_environment": "1",
+    "flush_index_materialization_environment": "per_layer",
     "vllm_use_v2_model_runner_environment": "0",
     "variant_provenance": {
         "kernel_strategy": "vllm_auto",
@@ -105,6 +106,7 @@ def _args(tmp_path: Path) -> argparse.Namespace:
         max_model_len=65536,
         max_num_batched_tokens=2048,
         onednn_deterministic=True,
+        flush_index_materialization="per_layer",
         model=MODEL,
         model_revision=REVISION,
         native_splits={1: 24, 4: 16},
@@ -363,6 +365,7 @@ def test_exploratory_plan_session_has_no_formal_claims(
     assert session["promotable"] is False
     assert session["formal_gates_skipped"] is True
     assert session["service_controls"] == {
+        "kvarn_flush_index_materialization": "per_layer",
         "kvarn_onednn_deterministic": "1",
         "vllm_use_v2_model_runner": "0",
     }
@@ -799,6 +802,7 @@ def test_profile_verification_uses_actual_argv_and_environment(tmp_path: Path) -
         "KVARN_NATIVE_XPU_CACHE_LAYOUT": "natural",
         "KVARN_NATIVE_XPU_DECODE": "1",
         "KVARN_NATIVE_XPU_DPAS_LAYOUT": "0",
+        "KVARN_FLUSH_INDEX_MATERIALIZATION": "per_layer",
         "KVARN_NATIVE_XPU_KERNEL_VARIANT": "baseline",
         "KVARN_NATIVE_XPU_MATERIALIZE": "1",
         "KVARN_NATIVE_XPU_PERSISTENT_SCRATCH": "1",

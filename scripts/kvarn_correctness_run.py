@@ -383,6 +383,11 @@ def service_spec_evidence(
         "native_kernel_variant_id": perf.NATIVE_KERNEL_VARIANTS[
             native_kernel_variant_for_spec(spec, args)
         ],
+        "native_kernel_dispatch_contract": (
+            perf.split_policy.kernel_variant_dispatch_contract(
+                native_kernel_variant_for_spec(spec, args)
+            )
+        ),
         "native_frontend": native_frontend_for_spec(spec, args),
         "flush_writer": flush_writer_for_spec(spec, args),
         "prefill_store": prefill_store_for_spec(spec, args),
@@ -1355,6 +1360,11 @@ def run_service_phase(
             native_kernel_variant_id=perf.NATIVE_KERNEL_VARIANTS[
                 native_kernel_variant_for_spec(spec, args)
             ],
+            native_kernel_dispatch_contract=(
+                perf.split_policy.kernel_variant_dispatch_contract(
+                    native_kernel_variant_for_spec(spec, args)
+                )
+            ),
             native_output_dtype=args.native_output_dtype,
             native_direct_bf16_verified=log_scan["native_direct_bf16_verified"],
             native_direct_bf16_log_marker=log_scan["native_direct_bf16_log_marker"],
@@ -2082,6 +2092,11 @@ def build_manifest(
         "native_kernel_variant_id": perf.NATIVE_KERNEL_VARIANTS[
             args.native_kernel_variant
         ],
+        "native_kernel_dispatch_contract": (
+            perf.split_policy.kernel_variant_dispatch_contract(
+                args.native_kernel_variant
+            )
+        ),
         "native_nominal_splits_by_batch": perf.native_nominal_splits_by_batch(args),
         "native_split_policy_contract": perf.native_split_policy_contract(args),
         "native_output_dtype": args.native_output_dtype,
@@ -2198,6 +2213,11 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         "native_kernel_variant_id": perf.NATIVE_KERNEL_VARIANTS[
             args.native_kernel_variant
         ],
+        "native_kernel_dispatch_contract": (
+            perf.split_policy.kernel_variant_dispatch_contract(
+                args.native_kernel_variant
+            )
+        ),
         "native_nominal_splits_by_batch": perf.native_nominal_splits_by_batch(args),
         "native_split_policy_contract": perf.native_split_policy_contract(args),
         "native_output_dtype": args.native_output_dtype,
@@ -2453,6 +2473,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                 "immutable Round-2 finalist launchers require xe2_dpas, a Q6 "
                 "kernel variant, and b70_q6; use --launcher-mode runtime-factory "
                 "for other compatible compiled variants"
+            )
+        if (
+            args.native_kernel_variant
+            == perf.split_policy.Q6_B1_SHORT_LAST_PRODUCER_VARIANT
+            and perf.launcher_mode(args) != "runtime-factory"
+        ):
+            raise CorrectnessError(
+                "q6_b1_short_last_producer (ID19) requires --launcher-mode "
+                "runtime-factory"
             )
         if (
             not args.onednn_deterministic

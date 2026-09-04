@@ -64,6 +64,8 @@ NATIVE_KERNEL_VARIANTS = {
 REFERENCE_NATIVE_KERNEL_VARIANT = "baseline"
 NATIVE_SPLIT_POLICIES = ("fixed", "b70_q6")
 FLUSH_INDEX_MATERIALIZATION_VARIANTS = ("per_layer", "shared")
+NATIVE_FRONTEND_VARIANTS = ("reference", "qkv_scatter")
+NATIVE_FRONTEND_ACTIVE_MARKER = "[KVARN_FRONTEND] active=qkv_scatter;"
 B70_Q6_SPLITS = {1: 32, 4: 8}
 B70_Q6_MAX_SPLITS = 32
 B70_Q6_KERNEL_VARIANTS = frozenset(
@@ -125,6 +127,7 @@ CAPTURED_ENVIRONMENT = (
     "KVARN_NATIVE_XPU_DECODE",
     "KVARN_NATIVE_XPU_DPAS_LAYOUT",
     "KVARN_FLUSH_INDEX_MATERIALIZATION",
+    "KVARN_NATIVE_XPU_FRONTEND",
     "KVARN_NATIVE_XPU_KERNEL_VARIANT",
     "KVARN_NATIVE_XPU_MATERIALIZE",
     "KVARN_ONEDNN_DETERMINISTIC",
@@ -478,6 +481,11 @@ def flush_index_materialization_environment(args: argparse.Namespace) -> str:
     return getattr(args, "flush_index_materialization", "per_layer")
 
 
+def native_frontend_environment(args: argparse.Namespace) -> str:
+    """Return the engine-lifetime Q/K/V frontend strategy for this run."""
+    return getattr(args, "native_frontend", "reference")
+
+
 def variant_provenance_for_run(
     run: PlannedRun, args: argparse.Namespace
 ) -> dict[str, str]:
@@ -572,6 +580,16 @@ def load_correctness(
         raise RunnerError(
             "correctness artifact flush-index materialization is unsupported"
         )
+    native_frontend = document.get("native_frontend")
+    if native_frontend not in NATIVE_FRONTEND_VARIANTS:
+        raise RunnerError("correctness artifact native frontend is unsupported")
+    if document.get("service_controls") != {
+        "kvarn_flush_index_materialization": flush_index_materialization,
+        "kvarn_native_frontend": native_frontend,
+        "kvarn_onednn_deterministic": "1",
+        "vllm_use_v2_model_runner": VLLM_USE_V2_MODEL_RUNNER,
+    }:
+        raise RunnerError("correctness artifact service controls are inconsistent")
     raw_native_splits = document.get("native_nominal_splits_by_batch")
     if not isinstance(raw_native_splits, dict) or set(raw_native_splits) != {"1", "4"}:
         raise RunnerError("correctness artifact nominal split map is incomplete")
@@ -632,6 +650,7 @@ def load_correctness(
             "native_scratch_max_splits": expected_scratch_max,
             "native_output_dtype": native_output_dtype,
             "flush_index_materialization": flush_index_materialization,
+            "native_frontend": native_frontend,
             "factory_qualification": factory,
         },
     )
@@ -680,6 +699,7 @@ def service_environment(args: argparse.Namespace) -> dict[str, str]:
     environment["KVARN_FACTORY_FLUSH_INDEX_MATERIALIZATION"] = (
         flush_index_materialization_environment(args)
     )
+    environment["KVARN_FACTORY_NATIVE_XPU_FRONTEND"] = native_frontend_environment(args)
     environment["KVARN_PREFILL_FP16_WINDOW_BLOCKS"] = str(DEFAULT_PREFILL_WINDOW_BLOCKS)
     return environment
 
@@ -1154,6 +1174,7 @@ def service_profile_evidence(
         "flush_index_materialization_environment": environment.get(
             "KVARN_FLUSH_INDEX_MATERIALIZATION"
         ),
+        "native_frontend_environment": environment.get("KVARN_NATIVE_XPU_FRONTEND"),
         "vllm_use_v2_model_runner_environment": environment.get(
             "VLLM_USE_V2_MODEL_RUNNER"
         ),
@@ -1248,6 +1269,7 @@ def verify_service_profile(
         "KVARN_FLUSH_INDEX_MATERIALIZATION": (
             flush_index_materialization_environment(args)
         ),
+        "KVARN_NATIVE_XPU_FRONTEND": native_frontend_environment(args),
         "KVARN_NATIVE_XPU_KERNEL_VARIANT": native_kernel_variant_for_run(run, args),
         "KVARN_NATIVE_XPU_MATERIALIZE": native,
         "KVARN_NATIVE_XPU_PERSISTENT_SCRATCH": native,
@@ -1614,6 +1636,7 @@ def validate_engine_log(
     expected_kernel_variant: str | None = None,
     expected_max_splits: int | None = None,
     expected_split_policy: str | None = None,
+    expected_frontend: str = "reference",
 ) -> dict[str, Any]:
     if (
         expected_layout not in NATIVE_LAYOUTS
@@ -1638,6 +1661,14 @@ def validate_engine_log(
     if native and FALLBACK_PATTERN.search(text):
         raise RunnerError("native engine log reports a Kvarn fallback")
     direct_bf16 = native_direct_bf16_evidence(text, native=native)
+    if expected_frontend not in NATIVE_FRONTEND_VARIANTS:
+        raise RunnerError(f"unsupported native frontend {expected_frontend!r}")
+    frontend_active = NATIVE_FRONTEND_ACTIVE_MARKER in text
+    if native and (frontend_active != (expected_frontend == "qkv_scatter")):
+        expectation = "execute" if expected_frontend == "qkv_scatter" else "not execute"
+        raise RunnerError(
+            f"native engine log must {expectation} the fused QKV frontend"
+        )
     selection_fields = (
         expected_kernel_variant,
         expected_max_splits,
@@ -1673,6 +1704,13 @@ def validate_engine_log(
     result["native_max_splits_expected"] = expected_max_splits
     result["native_split_policy_expected"] = expected_split_policy
     result.update(direct_bf16)
+    result["native_frontend_expected"] = expected_frontend
+    result["native_frontend_active_verified"] = frontend_active if native else False
+    result["native_frontend_log_marker"] = (
+        NATIVE_FRONTEND_ACTIVE_MARKER
+        if native and expected_frontend == "qkv_scatter"
+        else "not_applicable"
+    )
     result["native_layout_evidence"] = (
         "captured-process-environment-plus-factory-marker-plus-native-dispatch"
         if native and marker is not None
@@ -1825,6 +1863,8 @@ def seal_benchmark_result(
         != onednn_deterministic_environment(args)
         or profile.get("flush_index_materialization_environment")
         != flush_index_materialization_environment(args)
+        or profile.get("native_frontend_environment")
+        != native_frontend_environment(args)
         or profile.get("vllm_use_v2_model_runner_environment")
         != VLLM_USE_V2_MODEL_RUNNER
         or profile.get("variant_provenance") != expected_variant
@@ -1892,6 +1932,7 @@ def seal_benchmark_result(
         "kvarn_flush_index_materialization": (
             flush_index_materialization_environment(args)
         ),
+        "kvarn_native_frontend": native_frontend_environment(args),
         "kvarn_vllm_use_v2_model_runner": VLLM_USE_V2_MODEL_RUNNER,
         "kvarn_native_layout_log_marker": (
             kvarn_factory_marker(
@@ -2089,6 +2130,7 @@ def run_one(
                 if run.arm == "candidate"
                 else None
             ),
+            expected_frontend=native_frontend_environment(args),
         )
         write_json_atomic(run_dir / "engine-log-scan.json", log_scan)
         sealed = seal_benchmark_result(
@@ -2487,6 +2529,8 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             or correctness_factory["native_split_policy"] != args.native_split_policy
             or correctness_factory["flush_index_materialization"]
             != flush_index_materialization_environment(args)
+            or correctness_factory["native_frontend"]
+            != native_frontend_environment(args)
             or any(
                 correctness_factory["native_splits"].get(batch)
                 != args.native_splits[batch]
@@ -2546,6 +2590,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             "kvarn_flush_index_materialization": (
                 flush_index_materialization_environment(args)
             ),
+            "kvarn_native_frontend": native_frontend_environment(args),
             "vllm_use_v2_model_runner": VLLM_USE_V2_MODEL_RUNNER,
         },
         **selected_variant,
@@ -2870,6 +2915,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help=(
             "engine-lifetime Kvarn flush-index strategy selected at launcher "
             "runtime without rebuilding the shared candidate (default: per_layer)"
+        ),
+    )
+    parser.add_argument(
+        "--native-frontend",
+        choices=NATIVE_FRONTEND_VARIANTS,
+        default="reference",
+        help=(
+            "engine-lifetime Q/K/V frontend selected at launcher runtime without "
+            "rebuilding the shared candidate (default: reference)"
         ),
     )
     parser.add_argument(

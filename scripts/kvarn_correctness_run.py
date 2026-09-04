@@ -336,6 +336,8 @@ def passed_artifact(
     native_split_policy: str,
     native_splits: Mapping[int, int],
     native_output_dtype: str,
+    flush_index_materialization: str,
+    native_frontend: str,
 ) -> dict[str, str]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
@@ -356,6 +358,8 @@ def passed_artifact(
             native_split_policy=native_split_policy,
             native_splits=native_splits,
             native_output_dtype=native_output_dtype,
+            flush_index_materialization=flush_index_materialization,
+            native_frontend=native_frontend,
         )
     except GateError as exc:
         raise CorrectnessError(str(exc)) from exc
@@ -409,6 +413,9 @@ def service_environment(args: argparse.Namespace) -> dict[str, str]:
     environment = runner_environment(args)
     environment["KVARN_FACTORY_FLUSH_INDEX_MATERIALIZATION"] = (
         perf.flush_index_materialization_environment(args)
+    )
+    environment["KVARN_FACTORY_NATIVE_XPU_FRONTEND"] = perf.native_frontend_environment(
+        args
     )
     environment["KVARN_PREFILL_FP16_WINDOW_BLOCKS"] = str(DEFAULT_PREFILL_WINDOW_BLOCKS)
     return environment
@@ -981,6 +988,7 @@ def verify_service_profile(
         "KVARN_FLUSH_INDEX_MATERIALIZATION": (
             perf.flush_index_materialization_environment(args)
         ),
+        "KVARN_NATIVE_XPU_FRONTEND": perf.native_frontend_environment(args),
         "KVARN_NATIVE_XPU_KERNEL_VARIANT": native_kernel_variant_for_spec(spec, args),
         "KVARN_NATIVE_XPU_MATERIALIZE": native,
         "KVARN_NATIVE_XPU_PERSISTENT_SCRATCH": native,
@@ -1135,6 +1143,7 @@ def run_service_phase(
         captured_flush_index_materialization = service.environment.get(
             "KVARN_FLUSH_INDEX_MATERIALIZATION"
         )
+        captured_native_frontend = service.environment.get("KVARN_NATIVE_XPU_FRONTEND")
         write_json_atomic(phase_dir / "service-profile.json", profile)
         write_json_atomic(phase_dir / "candidate-identity.json", identity)
         engine_pid = service.engine_pid
@@ -1148,6 +1157,7 @@ def run_service_phase(
             expected_kernel_variant=native_kernel_variant_for_spec(spec, args),
             expected_max_splits=native_max_splits_for_spec(spec, args),
             expected_split_policy=native_split_policy_for_spec(spec, args),
+            expected_frontend=perf.native_frontend_environment(args),
         )
         native_dispatch_verified = spec.native and perf.NATIVE_DISPATCH in (
             phase_dir / "engine.log"
@@ -1179,6 +1189,9 @@ def run_service_phase(
             native_split_policy=service_variant_provenance(spec, args)["split_policy"],
             native_split_policy_environment=captured_split_policy_environment,
             flush_index_materialization=captured_flush_index_materialization,
+            native_frontend=captured_native_frontend,
+            native_frontend_active_verified=log_scan["native_frontend_active_verified"],
+            native_frontend_log_marker=log_scan["native_frontend_log_marker"],
             native_layout_log_marker=perf.kvarn_factory_marker(
                 cache_layout=native_layout_for_spec(spec, args),
                 kernel_variant=native_kernel_variant_for_spec(spec, args),
@@ -1844,6 +1857,10 @@ def build_manifest(
             native_split_policy=args.native_split_policy,
             native_splits=args.native_splits,
             native_output_dtype=args.native_output_dtype,
+            flush_index_materialization=(
+                perf.flush_index_materialization_environment(args)
+            ),
+            native_frontend=perf.native_frontend_environment(args),
         )
         for name in REQUIRED_GATES
     }
@@ -1878,11 +1895,13 @@ def build_manifest(
         "flush_index_materialization": (
             perf.flush_index_materialization_environment(args)
         ),
+        "native_frontend": perf.native_frontend_environment(args),
         "service_controls": {
             "kvarn_flush_index_materialization": (
                 perf.flush_index_materialization_environment(args)
             ),
             "kvarn_onednn_deterministic": "1",
+            "kvarn_native_frontend": perf.native_frontend_environment(args),
             "vllm_use_v2_model_runner": perf.VLLM_USE_V2_MODEL_RUNNER,
         },
         "native_scratch_max_splits": (
@@ -1977,11 +1996,13 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         "flush_index_materialization": (
             perf.flush_index_materialization_environment(args)
         ),
+        "native_frontend": perf.native_frontend_environment(args),
         "service_controls": {
             "kvarn_flush_index_materialization": (
                 perf.flush_index_materialization_environment(args)
             ),
             "kvarn_onednn_deterministic": "1",
+            "kvarn_native_frontend": perf.native_frontend_environment(args),
             "vllm_use_v2_model_runner": perf.VLLM_USE_V2_MODEL_RUNNER,
         },
         "native_scratch_max_splits": (
@@ -2074,6 +2095,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "engine-lifetime flush-index strategy for all Kvarn correctness "
             "services (default: per_layer)"
         ),
+    )
+    parser.add_argument(
+        "--native-frontend",
+        choices=perf.NATIVE_FRONTEND_VARIANTS,
+        default="reference",
+        help="engine-lifetime Q/K/V frontend for native correctness services",
     )
     parser.add_argument(
         "--native-splits",

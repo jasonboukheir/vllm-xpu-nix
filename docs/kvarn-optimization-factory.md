@@ -60,10 +60,10 @@ extension:
 | Selector | Values in the combined build | Lifetime |
 |---|---|---|
 | `KVARN_NATIVE_XPU_CACHE_LAYOUT` | `natural`, `xe2_dpas` | engine/cache ABI; restart and allocate a fresh cache to change |
-| `KVARN_NATIVE_XPU_KERNEL_VARIANT` | `baseline`, `qk_i8u4`, `q6_scalar`, `q8_vector`, `q6_vector`, `q6_cached_weights`, `q6_exact_rows`, `q6_cached_weights_exact_rows`, `q6_page_pair`, `q6_main_grf128`, `q6_split_reducer_specialized`, `q6_next_page_prefetch`, `q6_next_page_prefetch_split_reducer`, `q6_simd_unpack`, `q6_block_output_store`, `q6_current_half_v_prefetch`, `q6_page_record_cursor`, `q6_prefetch_record_cursor` | startup selector; every listed specialization is in the same library |
+| `KVARN_NATIVE_XPU_KERNEL_VARIANT` | `baseline`, `qk_i8u4`, `q6_scalar`, `q8_vector`, `q6_vector`, `q6_cached_weights`, `q6_exact_rows`, `q6_cached_weights_exact_rows`, `q6_page_pair`, `q6_main_grf128`, `q6_split_reducer_specialized`, `q6_next_page_prefetch`, `q6_next_page_prefetch_split_reducer`, `q6_simd_unpack`, `q6_block_output_store`, `q6_current_half_v_prefetch`, `q6_page_record_cursor`, `q6_prefetch_record_cursor`, `q6_page_metadata_cursor`, `q6_paired_nibble_half2` | startup selector; every listed specialization is in the same library |
 | `KVARN_NATIVE_XPU_SPLIT_POLICY` | `fixed`, `b70_q6`, `b70_q6_v2` | startup policy; named policies select the effective count per decode call |
 | `KVARN_NATIVE_XPU_SPLITS` | `1`, `2`, `4`, `8`, `16`, `17`, `24`, `32` | scratch-allocation maximum; effective count may be selected per call |
-| `KVARN_FLUSH_WRITER` | `reference`, `native_xe2` | startup writer; `native_xe2` requires the `xe2_dpas` D256/G128/K4V4/Hkv4 cache ABI |
+| `KVARN_FLUSH_WRITER` | `reference`, `native_xe2`, `sinkhorn_pack_xe2` | startup writer; both native writers require the `xe2_dpas` D256/G128/K4V4/Hkv4 cache ABI |
 | `KVARN_NATIVE_XPU_PREFILL_STORE` | `reference`, `hadamard_scatter` | startup multi-token store; unsupported calls fall back to the reference path |
 | `KVARN_NATIVE_XPU_FRONTEND` | `reference`, `qkv_scatter`, `qkv_scatter_inline` | startup Q/K/V frontend; inline selection must report both the fused-QKV active marker and its inline-specific marker |
 | `KVARN_FORWARD_POOL_ENSURE` | `always`, `fused_qkv_proof` | startup service-only forward-pool guard; `always` is the conservative default |
@@ -71,8 +71,9 @@ extension:
 The writer/store selectors are orthogonal to the reader ID. `reference` remains
 the public-beta default for both. `native_xe2` replaces the completed-page
 Sinkhorn/RTN packer with the native Xe2 balanced-record writer, while
-`hadamard_scatter` replaces eligible pure multi-token prefill scatters. Neither
-selector permits changing the cache layout after allocation. The factory
+`sinkhorn_pack_xe2` additionally fuses Sinkhorn balancing with record packing,
+and `hadamard_scatter` replaces eligible pure multi-token prefill scatters.
+None of these selectors permits changing the cache layout after allocation. The factory
 harness records both selectors independently so a winning reader is not
 mistaken for a writer or prefill-store gain.
 
@@ -122,7 +123,10 @@ prefetch. IDs `13` and `14` are independently assigned to the combined
 prefetch/reducer and SIMD-unpack experiments; ID `15` isolates two-row plus
 one-row block-2D output stores from all of those changes. IDs `16` through `18`
 retain ID13 as the reader control and independently select current-half V
-prefetch, page-record address reuse, or their composition.
+prefetch, page-record address reuse, or their composition. ID `19` is the
+retired last-producer experiment and remains a fail-closed hole. IDs `20` and
+`21` retain ID18 as their control and independently add page-metadata cursor
+reuse or paired-nibble half2 expansion.
 
 For the next ID18 scheduling pass, select
 `--factory-split-policy b70_wave_sweep --variants q6_prefetch_record_cursor`.
@@ -141,7 +145,7 @@ Zero, compute-runtime, IGC, oneAPI, compiler, and JIT-linker environment, so
 the harness's Python XPU proof cannot silently use `/run/opengl-driver` while
 the service uses the candidate closure. The underlying
 `vllm-xpu-kvarn-factory` compiles every implemented decode specialization
-through ID18 plus the fused-QKV operator into one BMG-AOT attention library.
+through ID21 plus the fused-QKV operator into one BMG-AOT attention library.
 Runtime selection therefore does not start another Nix build. The package also
 freezes the generated upstream FA2 buildout to Brutus's text-only Qwen3.8
 profile: two head-dimension-256 chunk-prefill policies and one qgroup-8,
@@ -159,6 +163,19 @@ scripts/kvarn_perf_run.py \
 `nix run .#kvarn-factory` remains the direct primitive factory host and uses
 the same underlying factory package; the new environment does not change that
 host's sanitization or launch behavior.
+
+Before spending B70 time on new AOT variants, audit their exact IntelGT images:
+
+```console
+scripts/kvarn_resource_audit.py \
+  --attention-library /nix/store/.../lib/libattn_kernels_xe_2.so \
+  --llvm-cxxfilt /nix/store/.../bin/llvm-cxxfilt
+```
+
+The report binds ID18, ID20, ID21, and the shared reducers to unique demangled
+signatures and `.text` hashes, then gates on nonempty text, 256 GRFs, and zero
+compiler-reported spill or scratch. Its `.ze_info` SLM figure is evidence only:
+runtime SYCL `work_group_scratch_size` allocations are not encoded there.
 
 ### One package-free service launcher
 
@@ -269,8 +286,8 @@ nix run .#kvarn-factory -- \
 
 This realizes one BMG-AOT package, then tests every selected kernel variant and
 the configured split sweep in one pinned Python/Torch/XPU process. The default
-`--variants all` is literal: it runs every compiled, runnable ID (`0`--`4` and
-`6`--`18`) at split 8 and 32 with direct BF16 output. Use an explicit named
+`--variants all` is literal: it runs every compiled, runnable ID (`0`--`4`,
+`6`--`18`, and `20`--`21`) at split 8 and 32 with direct BF16 output. Use an explicit named
 comma-separated shortlist when a smaller sweep is intended. Sixteen warmup
 rounds precede twenty
 measured rounds per arm because the first B70 sweep showed material

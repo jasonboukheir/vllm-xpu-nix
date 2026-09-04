@@ -295,7 +295,9 @@ def parse_intelgt_notes(data: bytes, label: str) -> dict[str, dict[str, Any]]:
 
 
 def parse_ze_info_version(text: str, label: str) -> str:
-    matches = re.findall(r"^version:\s+['\"]?([^'\"\s]+)['\"]?\s*$", text, re.M)
+    matches = re.findall(
+        r"^version:\s+['\"]?([^'\"\s]+)['\"]?\s*$", text, re.MULTILINE
+    )
     if len(matches) != 1:
         raise AuditError(f"{label}: expected exactly one .ze_info version")
     if matches[0] != EXPECTED_ZE_INFO_VERSION:
@@ -307,7 +309,9 @@ def parse_ze_info_version(text: str, label: str) -> str:
 
 
 def _numeric_execution_field(block: str, field: str, label: str) -> int | None:
-    matches = re.findall(rf"^      {re.escape(field)}:\s+(\d+)\s*$", block, re.M)
+    matches = re.findall(
+        rf"^      {re.escape(field)}:\s+(\d+)\s*$", block, re.MULTILINE
+    )
     if len(matches) > 1:
         raise AuditError(f"{label}: duplicate execution_env field {field}")
     return int(matches[0]) if matches else None
@@ -351,14 +355,16 @@ def _scratch_sizes(block: str, label: str) -> tuple[int, ...]:
 def parse_kernel_records(
     elf: Elf, ze_info: str, image_index: int
 ) -> list[KernelRecord]:
-    match = re.search(r"^kernels:\s*$", ze_info, re.M)
+    match = re.search(r"^kernels:\s*$", ze_info, re.MULTILINE)
     if match is None:
         raise AuditError(f"IntelGT image {image_index}: .ze_info lacks kernels")
     kernel_text = ze_info[match.end() :]
     kernel_text = re.split(
-        r"^kernels_misc_info:\s*$", kernel_text, maxsplit=1, flags=re.M
+        r"^kernels_misc_info:\s*$", kernel_text, maxsplit=1, flags=re.MULTILINE
     )[0]
-    headers = list(re.finditer(r"^  - name:\s+(\S+)\s*$", kernel_text, re.M))
+    headers = list(
+        re.finditer(r"^  - name:\s+(\S+)\s*$", kernel_text, re.MULTILINE)
+    )
     if not headers:
         raise AuditError(f"IntelGT image {image_index}: .ze_info has no kernels")
     records: list[KernelRecord] = []
@@ -689,9 +695,11 @@ def audit_bytes(data: bytes, demangle: Callable[[str], str]) -> dict[str, Any]:
             "scratch_bytes == 0",
         ],
         "limitations": [
-            ".ze_info slm_size excludes runtime SYCL work_group_scratch_size; "
-            "ID21's 1 KiB paired-nibble LUT must be verified from source/launch "
-            "configuration rather than inferred from this artifact field"
+            (
+                ".ze_info slm_size excludes runtime SYCL work_group_scratch_size; "
+                "ID21's 1 KiB paired-nibble LUT must be verified from source/launch "
+                "configuration rather than inferred from this artifact field"
+            )
         ],
         "offload": {
             "section_offset": offload_section.offset,

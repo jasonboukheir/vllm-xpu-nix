@@ -5,7 +5,6 @@ from pathlib import Path
 
 import pytest
 
-
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location(
     "kvarn_resource_audit", ROOT / "scripts" / "kvarn_resource_audit.py"

@@ -60,13 +60,27 @@ variants and split counts do not require rebuilding the extension:
 |---|---|---|
 | `KVARN_NATIVE_XPU_CACHE_LAYOUT` | `natural`, `xe2_dpas` | engine/cache ABI; restart and allocate a fresh cache to change |
 | `KVARN_NATIVE_XPU_KERNEL_VARIANT` | `baseline`, `qk_i8u4`, `q6_scalar`, `q8_vector`, `q6_vector`, `q6_cached_weights`, `q6_exact_rows`, `q6_cached_weights_exact_rows`, `q6_page_pair`, `q6_main_grf128`, `q6_split_reducer_specialized`, `q6_next_page_prefetch`, `q6_next_page_prefetch_split_reducer`, `q6_simd_unpack`, `q6_block_output_store` | startup selector; every listed specialization is in the same library |
-| `KVARN_NATIVE_XPU_SPLIT_POLICY` | `fixed`, `b70_q6` | startup policy; `b70_q6` selects the effective count per decode batch |
+| `KVARN_NATIVE_XPU_SPLIT_POLICY` | `fixed`, `b70_q6`, `b70_q6_v2` | startup policy; named policies select the effective count per decode call |
 | `KVARN_NATIVE_XPU_SPLITS` | `1`, `2`, `4`, `8`, `16`, `17`, `24`, `32` | scratch-allocation maximum; effective count may be selected per call |
 
 `b70_q6` allocates for 32 and selects B1=32, B2=16, B3--4=8,
 B5--8=4, and B9--12=2. It is valid only with a Q6 DPAS reader. The named
 policy and `KVARN_NATIVE_XPU_SPLITS` are mutually exclusive so a launcher
 cannot present two different scheduling contracts.
+
+`b70_q6_v2` is an exploratory, context-aware policy for
+`q6_next_page_prefetch` (ID12) only. It allocates scratch for 32 splits,
+selects B1=32 at every context, and selects B4=8 through 48 Ki tokens
+(49,152 inclusive) or B4=32 above that boundary. It is available only through
+the runtime-factory launcher; the historical immutable launchers remain bound
+to `b70_q6`.
+
+Harness artifacts record a versioned `native_split_policy_contract` containing
+the selection axes, inclusive context bounds, exact rules, scratch ceiling,
+and kernel compatibility. `native_nominal_splits_by_batch` is deliberately
+`null` for `b70_q6_v2`; each performance/profile workload instead records its
+resolved effective split count. This prevents a B4=8 nominal map from hiding
+the B4=32 long-context behavior.
 
 The direct B70 factory runner bypasses service startup and passes the same
 explicit variant ID, layout bit, and split count to the operator, allowing all
@@ -105,7 +119,7 @@ scripts/kvarn_perf_run.py \
   --candidate-env /nix/store/CURRENT-FACTORY-CANDIDATE \
   --native-layout xe2_dpas \
   --native-kernel-variant q6_next_page_prefetch \
-  --native-split-policy b70_q6 \
+  --native-split-policy b70_q6_v2 \
   ...
 ```
 
@@ -115,8 +129,16 @@ layout, kernel, split policy/count, frontend, flush strategy, oneDNN mode,
 65K/262K model length, and B1/B4 width process-start choices. The launcher is
 resolved to one immutable Nix-store program once per harness run, while every
 service-start record contains the exact selector map. `KVARN_FACTORY_SPLITS`
-is recorded as `null` and omitted from the process environment when `b70_q6`
-owns split selection.
+is recorded as `null` and omitted from the process environment when either
+named policy owns split selection.
+
+Use `b70_q6_v2` first with `kvarn_xpu_profile.py` or
+`kvarn_perf_run.py --exploratory`. The correctness runner supports the same
+runtime-factory selector and records the complete policy contract across its
+65K and 262K phases. Formal performance gates are unchanged: they still
+require the full correctness manifest, matched factory qualification, exact
+candidate identity, B70 execution proof, and the existing throughput/latency
+thresholds.
 
 The historical `immutable` launcher mode remains the default for compatibility.
 The correctness runner has one explicit exception in runtime-factory mode: its

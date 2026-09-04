@@ -34,10 +34,16 @@ from pathlib import Path
 from typing import Any, TextIO
 
 try:
-    from scripts.kvarn_perf_gate import GateError, compare
+    from scripts import kvarn_split_policy as split_policy
+    from scripts.kvarn_perf_gate import (
+        FACTORY_QUALIFICATION_CONTEXTS,
+        GateError,
+        compare,
+    )
     from scripts.kvarn_scan_engine_log import scan, xpu_runtime_evidence
 except ModuleNotFoundError:  # Direct execution from the scripts directory.
-    from kvarn_perf_gate import GateError, compare
+    import kvarn_split_policy as split_policy
+    from kvarn_perf_gate import FACTORY_QUALIFICATION_CONTEXTS, GateError, compare
     from kvarn_scan_engine_log import scan, xpu_runtime_evidence
 
 
@@ -65,12 +71,14 @@ NATIVE_KERNEL_VARIANTS = {
     "q6_block_output_store": 15,
 }
 REFERENCE_NATIVE_KERNEL_VARIANT = "baseline"
-NATIVE_SPLIT_POLICIES = ("fixed", "b70_q6")
+NATIVE_SPLIT_POLICIES = split_policy.NATIVE_SPLIT_POLICIES
 FLUSH_INDEX_MATERIALIZATION_VARIANTS = ("per_layer", "shared")
 NATIVE_FRONTEND_VARIANTS = ("reference", "qkv_scatter")
 NATIVE_FRONTEND_ACTIVE_MARKER = "[KVARN_FRONTEND] active=qkv_scatter;"
-B70_Q6_SPLITS = {1: 32, 4: 8}
-B70_Q6_MAX_SPLITS = 32
+B70_Q6_SPLITS = split_policy.B70_Q6_SPLITS
+B70_Q6_MAX_SPLITS = split_policy.B70_Q6_MAX_SPLITS
+B70_Q6_V2_MAX_SPLITS = split_policy.B70_Q6_V2_MAX_SPLITS
+B70_Q6_V2_KERNEL_VARIANT = split_policy.B70_Q6_V2_KERNEL_VARIANT
 B70_Q6_KERNEL_VARIANTS = frozenset(
     {
         "q6_scalar",
@@ -437,15 +445,43 @@ def build_plan(
 
 
 def native_splits_for_run(run: PlannedRun, args: argparse.Namespace) -> int:
-    """Return the nominal split selection for this batch and service arm."""
+    """Return the effective split selection for this exact workload."""
     if run.arm == "reference":
         return REFERENCE_NATIVE_SPLITS
     try:
-        return int(args.native_splits[run.workload.batch])
+        return split_policy.effective_splits(
+            args.native_split_policy,
+            batch=run.workload.batch,
+            context_tokens=run.workload.context,
+            fixed_splits=args.native_splits or None,
+        )
     except (KeyError, TypeError, ValueError) as exc:
         raise RunnerError(
-            f"no native split count configured for B{run.workload.batch}"
+            "no native split count configured for "
+            f"B{run.workload.batch} at context {run.workload.context}"
         ) from exc
+
+
+def native_split_policy_contract(args: argparse.Namespace) -> dict[str, Any]:
+    """Return the exact batch/context scheduling contract for the candidate."""
+    try:
+        return split_policy.split_policy_contract(
+            args.native_split_policy, args.native_splits or None
+        )
+    except ValueError as exc:
+        raise RunnerError(str(exc)) from exc
+
+
+def native_nominal_splits_by_batch(
+    args: argparse.Namespace,
+) -> dict[str, int] | None:
+    """Return legacy batch-only provenance only for context-invariant policies."""
+    try:
+        return split_policy.nominal_splits_by_batch(
+            args.native_split_policy, args.native_splits or None
+        )
+    except ValueError as exc:
+        raise RunnerError(str(exc)) from exc
 
 
 def native_split_policy_name_for_run(run: PlannedRun, args: argparse.Namespace) -> str:
@@ -457,8 +493,10 @@ def native_max_splits_for_run(run: PlannedRun, args: argparse.Namespace) -> int:
     """Return the scratch ceiling reported by the immutable startup marker."""
     if run.arm == "reference":
         return REFERENCE_NATIVE_SPLITS
-    if native_split_policy_name_for_run(run, args) == "b70_q6":
-        return B70_Q6_MAX_SPLITS
+    if split_policy.owns_runtime_selection(
+        native_split_policy_name_for_run(run, args)
+    ):
+        return int(native_split_policy_contract(args)["scratch_max_splits"])
     return native_splits_for_run(run, args)
 
 
@@ -466,7 +504,9 @@ def native_splits_environment_for_run(
     run: PlannedRun, args: argparse.Namespace
 ) -> str | None:
     """Return the legacy fixed-split selector, absent for named policies."""
-    if native_split_policy_name_for_run(run, args) == "b70_q6":
+    if split_policy.owns_runtime_selection(
+        native_split_policy_name_for_run(run, args)
+    ):
         return None
     return str(native_max_splits_for_run(run, args))
 
@@ -651,23 +691,44 @@ def load_correctness(
     if correctness_onednn not in {"0", "1"}:
         raise RunnerError("correctness artifact oneDNN selector is unsupported")
     raw_native_splits = document.get("native_nominal_splits_by_batch")
-    if not isinstance(raw_native_splits, dict) or set(raw_native_splits) != {"1", "4"}:
-        raise RunnerError("correctness artifact nominal split map is incomplete")
-    if any(
-        isinstance(value, bool)
-        or not isinstance(value, int)
-        or value not in SUPPORTED_NATIVE_SPLITS
-        for value in raw_native_splits.values()
-    ):
-        raise RunnerError("correctness artifact native split map is unsupported")
-    native_splits = {int(batch): splits for batch, splits in raw_native_splits.items()}
-    expected_scratch_max = max(native_splits.values())
-    if native_split_policy == "b70_q6":
-        if native_kernel_variant not in B70_Q6_KERNEL_VARIANTS:
-            raise RunnerError("correctness b70_q6 policy requires a Q6 kernel")
-        if native_splits != B70_Q6_SPLITS:
-            raise RunnerError("correctness b70_q6 nominal split map differs")
-        expected_scratch_max = B70_Q6_MAX_SPLITS
+    if native_split_policy == "b70_q6_v2":
+        if raw_native_splits is not None:
+            raise RunnerError(
+                "context-dependent correctness policy must not declare a "
+                "batch-only nominal split map"
+            )
+        native_splits: dict[int, int] = {}
+    else:
+        if not isinstance(raw_native_splits, dict) or set(raw_native_splits) != {
+            "1",
+            "4",
+        }:
+            raise RunnerError("correctness artifact nominal split map is incomplete")
+        if any(
+            isinstance(value, bool)
+            or not isinstance(value, int)
+            or value not in SUPPORTED_NATIVE_SPLITS
+            for value in raw_native_splits.values()
+        ):
+            raise RunnerError("correctness artifact native split map is unsupported")
+        native_splits = {
+            int(batch): splits for batch, splits in raw_native_splits.items()
+        }
+    try:
+        split_policy.validate_kernel_compatibility(
+            native_split_policy,
+            native_kernel_variant,
+            q6_variants=B70_Q6_KERNEL_VARIANTS,
+        )
+        expected_contract = split_policy.split_policy_contract(
+            native_split_policy, native_splits or None
+        )
+    except ValueError as exc:
+        raise RunnerError(f"correctness split policy is invalid: {exc}") from exc
+    observed_policy_contract = document.get("native_split_policy_contract")
+    if observed_policy_contract != expected_contract:
+        raise RunnerError("correctness split-policy contract differs")
+    expected_scratch_max = int(expected_contract["scratch_max_splits"])
     if document.get("native_scratch_max_splits") != expected_scratch_max:
         raise RunnerError("correctness artifact scratch split ceiling differs")
     factory = document.get("factory_qualification")
@@ -677,16 +738,41 @@ def load_correctness(
         or factory.get("qualification_scope")
         != "selected_native_variant_primitive_matrix"
         or factory.get("package_output") != identity["process_package"]
-        or factory.get("selection")
+        or not isinstance(factory.get("selection"), dict)
+        or {
+            key: factory["selection"].get(key)
+            for key in (
+                "cache_layout",
+                "kernel_variant",
+                "kernel_variant_id",
+                "split_policy",
+                "output_dtype",
+            )
+        }
         != {
             "cache_layout": native_layout,
             "kernel_variant": native_kernel_variant,
             "kernel_variant_id": NATIVE_KERNEL_VARIANTS[native_kernel_variant],
             "split_policy": native_split_policy,
-            "effective_splits_by_batch": {
-                str(batch): splits for batch, splits in sorted(native_splits.items())
-            },
             "output_dtype": native_output_dtype,
+        }
+        or factory["selection"].get("split_policy_contract") != expected_contract
+        or factory["selection"].get("nominal_splits_by_batch")
+        != split_policy.nominal_splits_by_batch(
+            native_split_policy, native_splits or None
+        )
+        or factory["selection"].get("effective_splits_by_context_and_batch")
+        != {
+            str(context): {
+                str(batch): split_policy.effective_splits(
+                    native_split_policy,
+                    batch=batch,
+                    context_tokens=context,
+                    fixed_splits=native_splits or None,
+                )
+                for batch in (1, 4)
+            }
+            for context in FACTORY_QUALIFICATION_CONTEXTS
         }
     ):
         raise RunnerError("correctness artifact factory binding is inconsistent")
@@ -707,6 +793,7 @@ def load_correctness(
             "native_kernel_variant_id": NATIVE_KERNEL_VARIANTS[native_kernel_variant],
             "native_split_policy": native_split_policy,
             "native_splits": native_splits,
+            "native_split_policy_contract": expected_contract,
             "native_scratch_max_splits": expected_scratch_max,
             "native_output_dtype": native_output_dtype,
             "flush_index_materialization": flush_index_materialization,
@@ -773,7 +860,7 @@ def runtime_factory_axes_for_run(
     simultaneously supplied ``KVARN_FACTORY_SPLITS`` value.
     """
     reference = run.arm == "reference"
-    split_policy = native_split_policy_name_for_run(run, args)
+    selected_policy = native_split_policy_name_for_run(run, args)
     axes: dict[str, str | None] = {
         "KVARN_FACTORY_CACHE_LAYOUT": native_layout_for_run(run, args),
         "KVARN_FACTORY_FLUSH_INDEX_MATERIALIZATION": (
@@ -787,10 +874,10 @@ def runtime_factory_axes_for_run(
         "KVARN_FACTORY_ONEDNN_DETERMINISTIC": (onednn_deterministic_environment(args)),
         "KVARN_FACTORY_SPLITS": (
             None
-            if split_policy == "b70_q6"
+            if split_policy.owns_runtime_selection(selected_policy)
             else native_splits_environment_for_run(run, args)
         ),
-        "KVARN_FACTORY_SPLIT_POLICY": split_policy,
+        "KVARN_FACTORY_SPLIT_POLICY": selected_policy,
     }
     if tuple(axes) != RUNTIME_FACTORY_SELECTORS:
         raise RunnerError("runtime factory selector schema drifted")
@@ -2709,6 +2796,11 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         if (
             correctness_factory["native_kernel_variant"] != args.native_kernel_variant
             or correctness_factory["native_split_policy"] != args.native_split_policy
+            or (
+                split_policy.owns_runtime_selection(args.native_split_policy)
+                and correctness_factory["native_split_policy_contract"]
+                != native_split_policy_contract(args)
+            )
             or correctness_factory["flush_index_materialization"]
             != flush_index_materialization_environment(args)
             or correctness_factory["native_frontend"]
@@ -2717,8 +2809,9 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             != onednn_deterministic_environment(args)
             or any(
                 correctness_factory["native_splits"].get(batch)
-                != args.native_splits[batch]
+                != args.native_splits.get(batch)
                 for batch in args.batch
+                if args.native_split_policy != "b70_q6_v2"
             )
         ):
             raise RunnerError(
@@ -2757,18 +2850,15 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         "promotable": not args.exploratory,
         "created_at": utc_timestamp(),
         "candidate_env": str(args.candidate_env),
-        "candidate_nominal_splits_by_batch": {
-            str(batch): splits for batch, splits in sorted(args.native_splits.items())
-        },
+        "candidate_nominal_splits_by_batch": native_nominal_splits_by_batch(args),
+        "native_split_policy_contract": native_split_policy_contract(args),
         "native_layout": args.native_layout,
         "native_kernel_variant": args.native_kernel_variant,
         "native_kernel_variant_id": NATIVE_KERNEL_VARIANTS[args.native_kernel_variant],
         "native_split_policy": args.native_split_policy,
-        "native_scratch_max_splits": (
-            B70_Q6_MAX_SPLITS
-            if args.native_split_policy == "b70_q6"
-            else max(args.native_splits.values())
-        ),
+        "native_scratch_max_splits": native_split_policy_contract(args)[
+            "scratch_max_splits"
+        ],
         "service_controls": {
             "kvarn_onednn_deterministic": onednn_deterministic_environment(args),
             "kvarn_flush_index_materialization": (
@@ -2786,6 +2876,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             {
                 **dataclasses.asdict(run),
                 "nominal_native_splits": native_splits_for_run(run, args),
+                "effective_native_splits": native_splits_for_run(run, args),
                 "expected_native_max_splits": native_max_splits_for_run(run, args),
                 "expected_native_kernel_variant": native_kernel_variant_for_run(
                     run, args
@@ -3196,21 +3287,32 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         args.context = _parse_int_list(args.context, DEFAULT_CONTEXTS)
         args.batch = _parse_int_list(args.batch, DEFAULT_BATCHES)
         args.onednn_deterministic = bool(args.onednn_deterministic)
-        if args.native_split_policy == "b70_q6":
+        if split_policy.owns_runtime_selection(args.native_split_policy):
             if args.native_splits:
                 raise RunnerError(
-                    "--native-splits must be absent with --native-split-policy b70_q6"
+                    "--native-splits must be absent with named split policies"
                 )
-            missing = sorted(set(args.batch) - B70_Q6_SPLITS.keys())
+            missing = sorted(
+                set(args.batch) - set(split_policy.SUPPORTED_HARNESS_BATCHES)
+            )
             if missing:
                 raise RunnerError(
-                    f"b70_q6 has no split selection for batches {missing}"
+                    f"{args.native_split_policy} has no split selection for "
+                    f"batches {missing}"
                 )
-            args.native_splits = {batch: B70_Q6_SPLITS[batch] for batch in args.batch}
-            if args.native_kernel_variant not in B70_Q6_KERNEL_VARIANTS:
-                raise RunnerError(
-                    "b70_q6 split policy requires a q6 native kernel variant"
+            try:
+                split_policy.validate_kernel_compatibility(
+                    args.native_split_policy,
+                    args.native_kernel_variant,
+                    q6_variants=B70_Q6_KERNEL_VARIANTS,
                 )
+            except ValueError as exc:
+                raise RunnerError(str(exc)) from exc
+            args.native_splits = (
+                {batch: B70_Q6_SPLITS[batch] for batch in args.batch}
+                if args.native_split_policy == "b70_q6"
+                else {}
+            )
         else:
             args.native_splits = _parse_native_splits(args.native_splits, args.batch)
         args.output_dir = ensure_durable(args.output_dir, allow_tmp=args.allow_tmp)

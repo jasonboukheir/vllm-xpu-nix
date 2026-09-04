@@ -59,7 +59,7 @@ variants and split counts do not require rebuilding the extension:
 | Selector | Values in the combined build | Lifetime |
 |---|---|---|
 | `KVARN_NATIVE_XPU_CACHE_LAYOUT` | `natural`, `xe2_dpas` | engine/cache ABI; restart and allocate a fresh cache to change |
-| `KVARN_NATIVE_XPU_KERNEL_VARIANT` | `baseline`, `qk_i8u4`, `q6_scalar`, `q8_vector`, `q6_vector`, `q6_cached_weights`, `q6_exact_rows`, `q6_cached_weights_exact_rows`, `q6_page_pair`, `q6_main_grf128`, `q6_split_reducer_specialized`, `q6_next_page_prefetch` | startup selector; every listed specialization is in the same library |
+| `KVARN_NATIVE_XPU_KERNEL_VARIANT` | `baseline`, `qk_i8u4`, `q6_scalar`, `q8_vector`, `q6_vector`, `q6_cached_weights`, `q6_exact_rows`, `q6_cached_weights_exact_rows`, `q6_page_pair`, `q6_main_grf128`, `q6_split_reducer_specialized`, `q6_next_page_prefetch`, `q6_simd_unpack` | startup selector; every listed specialization is in the same library |
 | `KVARN_NATIVE_XPU_SPLIT_POLICY` | `fixed`, `b70_q6` | startup policy; `b70_q6` selects the effective count per decode batch |
 | `KVARN_NATIVE_XPU_SPLITS` | `1`, `2`, `4`, `8`, `16`, `17`, `24`, `32` | scratch-allocation maximum; effective count may be selected per call |
 
@@ -77,7 +77,8 @@ ID `5` is reserved for the page-128 experiment and fails closed. Round-2 IDs
 `6`, `7`, and `8` are cached weights, exact rows, and their combination. The
 subsequent independently dispatched experiments are ID `9` page-pair, ID `10`
 GRF128 main kernel, ID `11` specialized split reducer, and ID `12` next-page
-prefetch.
+prefetch. ID `14` is Q6 packed-nibble SIMD unpack; ID `13` remains assigned to
+the separately integrated combined variant.
 
 Build `.#vllm-xpu-kvarn-factory` for the complete current-layout matrix. It
 compiles every implemented Round-1 and Round-2 decode specialization plus the

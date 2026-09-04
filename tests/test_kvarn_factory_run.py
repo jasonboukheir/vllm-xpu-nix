@@ -481,6 +481,12 @@ def test_build_and_source_provenance_is_exact(tmp_path: Path) -> None:
             "size_bytes": 3,
             "mtime_ns": 4,
         },
+        "native_attention": {
+            "path": "/native-attention",
+            "sha256": "5" * 64,
+            "size_bytes": 6,
+            "mtime_ns": 7,
+        },
     }
     identity = factory.evidence_identity(libraries, [state])
     assert len(identity) == 64
@@ -595,10 +601,16 @@ def test_source_ownership_binds_package_and_kernel_outputs_to_correct_repos() ->
     package_output = "/nix/store/" + "p" * 32 + "-vllm"
     base_output = "/nix/store/" + "b" * 32 + "-base"
     flash_output = "/nix/store/" + "f" * 32 + "-flash"
+    native_attention_output = "/nix/store/" + "n" * 32 + "-attention"
     package = {
         "derivation": "/nix/store/" + "d" * 32 + "-vllm.g" + VLLM_REVISION[:7] + ".drv",
         "output_path": package_output,
-        "closure_paths": [package_output, base_output, flash_output],
+        "closure_paths": [
+            package_output,
+            base_output,
+            flash_output,
+            native_attention_output,
+        ],
     }
     base = {
         "derivation": "/nix/store/"
@@ -616,13 +628,25 @@ def test_source_ownership_binds_package_and_kernel_outputs_to_correct_repos() ->
         + ".drv",
         "output_path": flash_output,
     }
+    native_attention = {
+        "derivation": "/nix/store/"
+        + "c" * 32
+        + "-native-attention.g"
+        + KERNELS_REVISION[:7]
+        + ".drv",
+        "output_path": native_attention_output,
+    }
     expected = {
         "vllm-xpu-nix": PROJECT_REVISION,
         "vllm": VLLM_REVISION,
         "vllm-xpu-kernels": KERNELS_REVISION,
     }
     ownership = factory.verify_source_ownership(
-        package=package, base=base, flash=flash, expected_revisions=expected
+        package=package,
+        base=base,
+        flash=flash,
+        native_attention=native_attention,
+        expected_revisions=expected,
     )
     assert ownership["verified"] is True
     assert ownership["artifacts"]["base"]["repository"] == "vllm-xpu-kernels"
@@ -636,13 +660,37 @@ def test_source_ownership_binds_package_and_kernel_outputs_to_correct_repos() ->
                 ),
             },
             flash=flash,
+            native_attention=native_attention,
             expected_revisions=expected,
         )
     with pytest.raises(factory.FactoryError, match="absent from"):
         factory.verify_source_ownership(
-            package={**package, "closure_paths": [package_output, flash_output]},
+            package={
+                **package,
+                "closure_paths": [
+                    package_output,
+                    flash_output,
+                    native_attention_output,
+                ],
+            },
             base=base,
             flash=flash,
+            native_attention=native_attention,
+            expected_revisions=expected,
+        )
+    with pytest.raises(
+        factory.FactoryError, match="native_attention source ownership mismatch"
+    ):
+        factory.verify_source_ownership(
+            package=package,
+            base=base,
+            flash=flash,
+            native_attention={
+                **native_attention,
+                "derivation": native_attention["derivation"].replace(
+                    KERNELS_REVISION[:7], VLLM_REVISION[:7]
+                ),
+            },
             expected_revisions=expected,
         )
 
@@ -837,6 +885,12 @@ def test_matched_fixture_is_default_and_unmatched_is_explicit_diagnostic(
         derivation,
         "--flash-closure-sha256",
         "2" * 64,
+        "--native-attention-library",
+        str(tmp_path / "libattn_kernels_xe_2.so"),
+        "--native-attention-derivation",
+        derivation,
+        "--native-attention-closure-sha256",
+        "3" * 64,
         "--expected-vllm-xpu-nix-revision",
         PROJECT_REVISION,
         "--expected-vllm-revision",
@@ -853,6 +907,13 @@ def test_matched_fixture_is_default_and_unmatched_is_explicit_diagnostic(
     assert matched.output_dtype_values == ["bf16"]
     assert matched.warmup_rounds == 16
     assert matched.sample_rounds == 20
+    assert matched.native_attention_build["closure_sha256"] == "3" * 64
+    assert set(factory.initial_document(matched)["build_attestations"]) == {
+        "package",
+        "base",
+        "flash",
+        "native_attention",
+    }
     with pytest.raises(SystemExit):
         factory.parse_args([*common, "--auto-block-size", "832"])
     diagnostic = factory.parse_args(
@@ -892,6 +953,46 @@ def test_library_hash_and_atomic_durable_output(tmp_path: Path) -> None:
         factory.ensure_durable_output(Path("/tmp/factory-result.json"), allow_tmp=False)
 
 
+def test_native_attention_runtime_binding_is_exact_and_unambiguous(
+    tmp_path: Path,
+) -> None:
+    native = tmp_path / "expected" / "libattn_kernels_xe_2.so"
+    native.parent.mkdir()
+    native.write_bytes(b"native")
+    maps = tmp_path / "maps"
+    maps.write_text(
+        "001000-002000 r-xp 00000000 00:00 0 " + str(native) + "\n"
+        "002000-003000 r--p 00001000 00:00 0 " + str(native) + "\n",
+        encoding="utf-8",
+    )
+    binding = factory.verify_loaded_native_attention(native, maps_path=maps)
+    assert binding == {
+        "status": "verified",
+        "expected_path": str(native.resolve()),
+        "mapped_path": str(native.resolve()),
+        "basename": "libattn_kernels_xe_2.so",
+        "unique_basename_mapping": True,
+    }
+
+    other = tmp_path / "other" / native.name
+    other.parent.mkdir()
+    other.write_bytes(b"other")
+    maps.write_text(
+        "001000-002000 r-xp 00000000 00:00 0 " + str(native) + "\n"
+        "003000-004000 r-xp 00000000 00:00 0 " + str(other) + "\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(factory.FactoryError, match="not the unique mapped"):
+        factory.verify_loaded_native_attention(native, maps_path=maps)
+
+    maps.write_text(
+        "001000-002000 r-xp 00000000 00:00 0 " + str(native) + " (deleted)\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(factory.FactoryError, match="was deleted"):
+        factory.verify_loaded_native_attention(native, maps_path=maps)
+
+
 def test_execution_failure_is_durable_and_nonzero(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -919,6 +1020,12 @@ def test_execution_failure_is_durable_and_nonzero(
             derivation,
             "--flash-closure-sha256",
             "2" * 64,
+            "--native-attention-library",
+            str(tmp_path / "missing-native-attention.so"),
+            "--native-attention-derivation",
+            derivation,
+            "--native-attention-closure-sha256",
+            "3" * 64,
             "--expected-vllm-xpu-nix-revision",
             PROJECT_REVISION,
             "--expected-vllm-revision",

@@ -42,6 +42,33 @@ def test_discovery_fails_closed_on_absence_and_ambiguity(tmp_path: Path) -> None
         )
 
 
+def test_native_attention_discovery_is_exact_and_fails_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    (first / "lib").mkdir(parents=True)
+    (second / "lib64").mkdir(parents=True)
+    native = first / "lib" / host.NATIVE_ATTENTION_LIBRARY
+    native.touch()
+    monkeypatch.setattr(host, "store_output_from_resolved", lambda path: first)
+    assert (
+        host.discover_library(
+            [first],
+            host.NATIVE_ATTENTION_LIBRARY,
+            relative_patterns=host.NATIVE_LIBRARY_PATTERNS,
+        )
+        == native.resolve()
+    )
+    (second / "lib64" / host.NATIVE_ATTENTION_LIBRARY).touch()
+    with pytest.raises(host.HostLauncherError, match="found 2"):
+        host.discover_library(
+            [first, second],
+            host.NATIVE_ATTENTION_LIBRARY,
+            relative_patterns=host.NATIVE_LIBRARY_PATTERNS,
+        )
+
+
 def test_attestation_queries_true_deriver_and_hashes_sorted_closure() -> None:
     output = Path("/nix/store/" + "a" * 32 + "-kernels")
     library = output / "lib/python3.12/site-packages/kernels/_C.abi3.so"
@@ -166,7 +193,7 @@ def test_repository_and_derivation_must_match_full_expected_head() -> None:
         )
 
 
-def test_source_ownership_maps_package_to_vllm_and_both_libraries_to_kernels() -> None:
+def test_source_ownership_maps_package_and_all_libraries_to_repositories() -> None:
     package = host.NixOutput(
         output=Path("/nix/store/" + "p" * 32 + "-vllm"),
         derivation=(
@@ -190,10 +217,15 @@ def test_source_ownership_maps_package_to_vllm_and_both_libraries_to_kernels() -
         base,
         library=Path("/nix/store/" + "b" * 32 + "-kernels/lib/_vllm_fa2_C.abi3.so"),
     )
+    native_attention = dataclasses.replace(
+        base,
+        library=Path("/nix/store/" + "b" * 32 + "-kernels/lib/libattn_kernels_xe_2.so"),
+    )
     host.require_source_ownership(
         package=package,
         base=base,
         flash=flash,
+        native_attention=native_attention,
         expected_vllm_revision=VLLM_REVISION,
         expected_kernels_revision=KERNELS_REVISION,
     )
@@ -207,6 +239,7 @@ def test_source_ownership_maps_package_to_vllm_and_both_libraries_to_kernels() -
             ),
             base=base,
             flash=flash,
+            native_attention=native_attention,
             expected_vllm_revision=VLLM_REVISION,
             expected_kernels_revision=KERNELS_REVISION,
         )
@@ -220,18 +253,34 @@ def test_source_ownership_maps_package_to_vllm_and_both_libraries_to_kernels() -
                 ),
             ),
             flash=flash,
+            native_attention=native_attention,
             expected_vllm_revision=VLLM_REVISION,
             expected_kernels_revision=KERNELS_REVISION,
         )
-    with pytest.raises(
-        host.HostLauncherError, match="attention library source mismatch"
-    ):
+    with pytest.raises(host.HostLauncherError, match="flash extension source mismatch"):
         host.require_source_ownership(
             package=package,
             base=base,
             flash=dataclasses.replace(
                 flash,
                 derivation=flash.derivation.replace(
+                    KERNELS_REVISION[:7], VLLM_REVISION[:7]
+                ),
+            ),
+            native_attention=native_attention,
+            expected_vllm_revision=VLLM_REVISION,
+            expected_kernels_revision=KERNELS_REVISION,
+        )
+    with pytest.raises(
+        host.HostLauncherError, match="native attention library source mismatch"
+    ):
+        host.require_source_ownership(
+            package=package,
+            base=base,
+            flash=flash,
+            native_attention=dataclasses.replace(
+                native_attention,
+                derivation=native_attention.derivation.replace(
                     KERNELS_REVISION[:7], VLLM_REVISION[:7]
                 ),
             ),
@@ -275,6 +324,12 @@ def test_runner_command_forwards_matrix_and_exact_attestations(tmp_path: Path) -
         derivation="/nix/store/flash.drv",
         closure_sha256="b" * 64,
     )
+    native_attention = host.NixArtifact(
+        library=Path("/nix/store/attention/lib/libattn_kernels_xe_2.so"),
+        output=Path("/nix/store/attention"),
+        derivation="/nix/store/attention.drv",
+        closure_sha256="d" * 64,
+    )
     repositories = host.RepositoryPaths(
         project=tmp_path / "nix",
         vllm=tmp_path / "vllm",
@@ -286,6 +341,7 @@ def test_runner_command_forwards_matrix_and_exact_attestations(tmp_path: Path) -
         package=package,
         base=base,
         flash=flash,
+        native_attention=native_attention,
         output=tmp_path / "evidence.json",
         variants="baseline,q8_vector",
         splits="auto,24",
@@ -304,6 +360,13 @@ def test_runner_command_forwards_matrix_and_exact_attestations(tmp_path: Path) -
     assert command[command.index("--package-closure-sha256") + 1] == "c" * 64
     assert command[command.index("--base-derivation") + 1] == base.derivation
     assert command[command.index("--flash-closure-sha256") + 1] == "b" * 64
+    assert command[command.index("--native-attention-library") + 1] == str(
+        native_attention.library
+    )
+    assert command[command.index("--native-attention-derivation") + 1] == (
+        native_attention.derivation
+    )
+    assert command[command.index("--native-attention-closure-sha256") + 1] == "d" * 64
     assert command[command.index("--variants") + 1] == "baseline,q8_vector"
     assert command[command.index("--splits") + 1] == "auto,24"
     assert command[command.index("--contexts") + 1] == "4096,65023"
@@ -357,6 +420,9 @@ def test_launch_executes_once_with_resolved_provenance(
     )
     base_path = Path("/nix/store/" + "b" * 32 + "-base/lib/_C.abi3.so")
     flash_path = Path("/nix/store/" + "f" * 32 + "-flash/lib/_vllm_fa2_C.abi3.so")
+    native_attention_path = Path(
+        "/nix/store/" + "n" * 32 + "-attention/lib/libattn_kernels_xe_2.so"
+    )
     base = host.NixArtifact(
         base_path,
         host.store_output_from_resolved(base_path),
@@ -369,6 +435,12 @@ def test_launch_executes_once_with_resolved_provenance(
         "/nix/store/" + "e" * 32 + "-flash.drv",
         "2" * 64,
     )
+    native_attention = host.NixArtifact(
+        native_attention_path,
+        host.store_output_from_resolved(native_attention_path),
+        "/nix/store/" + "c" * 32 + "-attention.g" + KERNELS_REVISION[:7] + ".drv",
+        "3" * 64,
+    )
     monkeypatch.setattr(host, "require_no_vllm_service", lambda _root: None)
     monkeypatch.setattr(
         host, "require_clean_repository", lambda _label, path, _runner: path.resolve()
@@ -377,11 +449,17 @@ def test_launch_executes_once_with_resolved_provenance(
     monkeypatch.setattr(host, "resolve_package_output", lambda _path: package)
     monkeypatch.setattr(host, "query_closure", lambda _path, _runner: [package])
     monkeypatch.setattr(host, "attest_output", lambda _path, _runner: package_build)
-    libraries = iter((base_path, flash_path))
+    libraries = iter((base_path, flash_path, native_attention_path))
     monkeypatch.setattr(
-        host, "discover_library", lambda _closure, _basename: next(libraries)
+        host,
+        "discover_library",
+        lambda _closure, _basename, **_kwargs: next(libraries),
     )
-    attestations = {base_path: base, flash_path: flash}
+    attestations = {
+        base_path: base,
+        flash_path: flash,
+        native_attention_path: native_attention,
+    }
     monkeypatch.setattr(
         host, "attest_library", lambda library, _runner: attestations[library]
     )
@@ -430,12 +508,14 @@ def test_launch_executes_once_with_resolved_provenance(
     assert len(captured) == 1
     assert str(base_path) in captured[0]
     assert str(flash_path) in captured[0]
+    assert str(native_attention_path) in captured[0]
     assert captured[0][captured[0].index("--package-output") + 1] == str(package)
     assert ownership_calls == [
         {
             "package": package_build,
             "base": base,
             "flash": flash,
+            "native_attention": native_attention,
             "expected_vllm_revision": VLLM_REVISION,
             "expected_kernels_revision": KERNELS_REVISION,
         }

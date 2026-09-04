@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Launch the Kvarn B70 factory from one realized vLLM Nix output.
 
-The launcher discovers both native libraries from the package's realized
-closure, records their true Nix derivations and closure digests, and then
+The launcher discovers the two Python extensions and the Xe2 attention kernel
+library from the package's realized closure, records their true Nix
+derivations and closure digests, and then
 replaces itself with ``kvarn_factory_run.py``.  It never starts or stops a
 service and refuses to compete with an already-running vLLM service for VRAM.
 """
@@ -23,6 +24,12 @@ from typing import NoReturn
 
 BASE_LIBRARY = "_C.abi3.so"
 FLASH_LIBRARY = "_vllm_fa2_C.abi3.so"
+NATIVE_ATTENTION_LIBRARY = "libattn_kernels_xe_2.so"
+PYTHON_EXTENSION_PATTERNS = (
+    "lib/python*/site-packages/*/{basename}",
+    "lib64/python*/site-packages/*/{basename}",
+)
+NATIVE_LIBRARY_PATTERNS = ("lib/{basename}", "lib64/{basename}")
 # Resolve ``all`` in the runner so every layout-compatible candidate compiled
 # into the shared library automatically participates in the default sweep.
 DEFAULT_VARIANTS = "all"
@@ -133,15 +140,17 @@ def query_closure(output: Path, command_runner: CommandRunner = _run) -> list[Pa
     return closure
 
 
-def discover_library(closure: Sequence[Path], basename: str) -> Path:
+def discover_library(
+    closure: Sequence[Path],
+    basename: str,
+    *,
+    relative_patterns: Sequence[str] = PYTHON_EXTENSION_PATTERNS,
+) -> Path:
     candidates: set[Path] = set()
-    patterns = (
-        f"lib/python*/site-packages/*/{basename}",
-        f"lib64/python*/site-packages/*/{basename}",
-    )
     try:
         for output in closure:
-            for pattern in patterns:
+            for template in relative_patterns:
+                pattern = template.format(basename=basename)
                 for match in output.glob(pattern):
                     resolved = match.resolve(strict=True)
                     if resolved.is_file():
@@ -334,6 +343,7 @@ def require_source_ownership(
     package: NixOutput,
     base: NixArtifact,
     flash: NixArtifact,
+    native_attention: NixArtifact,
     expected_vllm_revision: str,
     expected_kernels_revision: str,
 ) -> None:
@@ -342,7 +352,12 @@ def require_source_ownership(
         "vllm-xpu-kernels base library", base, expected_kernels_revision
     )
     require_derivation_source(
-        "vllm-xpu-kernels attention library", flash, expected_kernels_revision
+        "vllm-xpu-kernels flash extension", flash, expected_kernels_revision
+    )
+    require_derivation_source(
+        "vllm-xpu-kernels native attention library",
+        native_attention,
+        expected_kernels_revision,
     )
 
 
@@ -369,6 +384,7 @@ def build_runner_command(
     package: NixOutput,
     base: NixArtifact,
     flash: NixArtifact,
+    native_attention: NixArtifact,
     output: Path,
     variants: str,
     splits: str,
@@ -402,6 +418,12 @@ def build_runner_command(
         flash.derivation,
         "--flash-closure-sha256",
         flash.closure_sha256,
+        "--native-attention-library",
+        str(native_attention.library),
+        "--native-attention-derivation",
+        native_attention.derivation,
+        "--native-attention-closure-sha256",
+        native_attention.closure_sha256,
         "--vllm-xpu-nix-repo",
         str(repositories.project),
         "--vllm-repo",
@@ -514,10 +536,19 @@ def launch(
     flash = attest_library(
         discover_library(package_closure, FLASH_LIBRARY), command_runner
     )
+    native_attention = attest_library(
+        discover_library(
+            package_closure,
+            NATIVE_ATTENTION_LIBRARY,
+            relative_patterns=NATIVE_LIBRARY_PATTERNS,
+        ),
+        command_runner,
+    )
     require_source_ownership(
         package=package,
         base=base,
         flash=flash,
+        native_attention=native_attention,
         expected_vllm_revision=args.expected_vllm_revision,
         expected_kernels_revision=args.expected_kernels_revision,
     )
@@ -531,6 +562,7 @@ def launch(
         package=package,
         base=base,
         flash=flash,
+        native_attention=native_attention,
         output=output,
         variants=args.variants,
         splits=args.splits,

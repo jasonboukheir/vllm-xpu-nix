@@ -140,8 +140,14 @@ def _factory_result(
     }
     library_sha256 = hashlib.sha256(native_library.read_bytes()).hexdigest()
     factory_output = "/nix/store/factory-kernels"
+    native_attention_library = path.parent / "libattn_kernels_xe_2.so"
+    native_attention_library.write_bytes(b"native Xe2 attention kernels")
+    native_attention_sha256 = hashlib.sha256(
+        native_attention_library.read_bytes()
+    ).hexdigest()
+    native_attention_output = "/nix/store/factory-native-attention"
     document = {
-        "schema_version": 2,
+        "schema_version": 3,
         "artifact_kind": "kvarn_b70_primitive_factory_run",
         "status": "completed_primitive_diagnostic",
         "identity_stable_through_sweep": True,
@@ -187,26 +193,46 @@ def _factory_result(
             "flash": {
                 "path": str(native_library.resolve()),
                 "sha256": library_sha256,
-            }
+            },
+            "native_attention": {
+                "path": str(native_attention_library.resolve()),
+                "sha256": native_attention_sha256,
+            },
         },
         "build_attestations": {
             "package": {
                 "verified": True,
                 "output_path": "/nix/store/package",
-                "closure_paths": ["/nix/store/package", factory_output],
+                "closure_paths": [
+                    "/nix/store/package",
+                    factory_output,
+                    native_attention_output,
+                ],
             },
             "flash": {
                 "verified": True,
                 "output_path": factory_output,
                 "library_path": str(native_library.resolve()),
             },
+            "native_attention": {
+                "verified": True,
+                "output_path": native_attention_output,
+                "library_path": str(native_attention_library.resolve()),
+            },
         },
         "source_ownership": {
             "verified": True,
             "artifacts": {
                 name: {"verified": True, "member_of_package_closure": True}
-                for name in ("package", "base", "flash")
+                for name in ("package", "base", "flash", "native_attention")
             },
+        },
+        "native_attention_runtime_binding": {
+            "status": "verified",
+            "expected_path": str(native_attention_library.resolve()),
+            "mapped_path": str(native_attention_library.resolve()),
+            "basename": "libattn_kernels_xe_2.so",
+            "unique_basename_mapping": True,
         },
         "requested_settings": {
             "fixture_mode": "matched-production",

@@ -1273,7 +1273,7 @@ def tokenize_worker(arguments: Sequence[str]) -> int:
     )
     specs = (
         ("dialogue-127", "dialogue", 127, False),
-        ("code-4095", "code", 4095, False),
+        ("code-4095", "code", 4095, True),
         ("math-16383", "math", 16383, False),
         ("reasoning-65023", "reasoning", 65023, True),
         ("reasoning-261631", "reasoning", NEAR_262K_PROMPT_TOKENS, True),

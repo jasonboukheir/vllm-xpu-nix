@@ -3,7 +3,9 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
+import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -54,6 +56,63 @@ def test_exact_prompt_ids_is_deterministic_and_preserves_trailing_task() -> None
     assert len(first) == 400
     assert first == second
     assert first[-len(suffix) :] == suffix
+
+
+def test_tokenize_worker_generates_code_fixture_with_trailing_instruction(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    fixtures = tmp_path / "fixtures.json"
+    fixtures.write_text(
+        json.dumps(
+            [
+                {"category": category, "prompt": f"{category} prompt"}
+                for category in ("dialogue", "code", "math", "reasoning")
+            ]
+        ),
+        encoding="utf-8",
+    )
+    tokenizer = object()
+    monkeypatch.setitem(
+        sys.modules,
+        "transformers",
+        SimpleNamespace(
+            AutoTokenizer=SimpleNamespace(
+                from_pretrained=lambda *args, **kwargs: tokenizer
+            )
+        ),
+    )
+    calls: dict[str, tuple[str, int, bool]] = {}
+
+    def fake_exact_prompt_ids(
+        actual_tokenizer: object,
+        prompt: str,
+        category: str,
+        target: int,
+        *,
+        trailing_prompt: bool,
+    ) -> list[int]:
+        assert actual_tokenizer is tokenizer
+        calls[category] = (prompt, target, trailing_prompt)
+        return [target]
+
+    monkeypatch.setattr(correctness, "exact_prompt_ids", fake_exact_prompt_ids)
+    assert (
+        correctness.tokenize_worker(
+            [
+                "--model",
+                "model",
+                "--revision",
+                "1" * 40,
+                "--fixtures",
+                str(fixtures),
+            ]
+        )
+        == 0
+    )
+    assert json.loads(capsys.readouterr().out)["code-4095"] == [4095]
+    assert calls["code"] == ("code prompt", 4095, True)
 
 
 def test_compact_results_and_exact_comparison_fail_closed() -> None:

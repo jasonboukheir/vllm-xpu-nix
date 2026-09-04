@@ -298,6 +298,8 @@ def test_profile_command_and_dpas_launcher_provenance(
         native_kernel_variant=variant,
         native_split_policy="fixed",
         native_splits={4: 16},
+        native_frontend="qkv_scatter",
+        flush_index_materialization="per_layer",
         onednn_deterministic=True,
         variant_id="factory-dpas-001",
         resolved_launchers={
@@ -323,11 +325,24 @@ def test_profile_command_and_dpas_launcher_provenance(
         "max_split_count": 16,
         "split_policy": "fixed_b4s16",
         "split_policy_selector": "fixed",
-        "fusion_selection": "fused_attention_decode",
+        "native_frontend": "qkv_scatter",
+        "flush_index_materialization": "per_layer",
+        "fusion_selection": (
+            "fused_attention_decode_per_layer_flush_qkv_scatter_frontend"
+        ),
         "scheduling_selection": "split_k",
         "scheduler_max_num_batched_tokens": 2048,
         "scheduler_max_num_seqs": 4,
     }
+
+    args.variant_id = None
+    per_layer_variant = variant_provenance(run, args)
+    args.flush_index_materialization = "shared"
+    shared_variant = variant_provenance(run, args)
+    assert shared_variant["variant_id"] != per_layer_variant["variant_id"]
+    assert "-shared-flush-qkv_scatter-frontend-" in shared_variant["variant_id"]
+    assert shared_variant["flush_index_materialization"] == "shared"
+    args.flush_index_materialization = "per_layer"
     args.native_split_policy = "b70_q6"
     args.native_splits = {4: 8}
     args.variant_id = "factory-dpas-b70-q6"
@@ -339,7 +354,11 @@ def test_profile_command_and_dpas_launcher_provenance(
         "max_split_count": 32,
         "split_policy": "b70_q6",
         "split_policy_selector": "b70_q6",
-        "fusion_selection": "fused_attention_decode",
+        "native_frontend": "qkv_scatter",
+        "flush_index_materialization": "per_layer",
+        "fusion_selection": (
+            "fused_attention_decode_per_layer_flush_qkv_scatter_frontend"
+        ),
         "scheduling_selection": "split_k",
         "scheduler_max_num_batched_tokens": 2048,
         "scheduler_max_num_seqs": 4,
@@ -369,6 +388,8 @@ def test_candidate_profile_cli_rejects_fixed_round2_launcher_contract(
         "xe2_dpas",
         "--native-kernel-variant",
         "q6_scalar",
+        "--native-frontend",
+        "qkv_scatter",
     ]
 
     with pytest.raises(SystemExit):
@@ -392,3 +413,4 @@ def test_candidate_profile_cli_rejects_fixed_round2_launcher_contract(
         ]
     )
     assert args.native_splits == {1: 32}
+    assert args.native_frontend == "qkv_scatter"

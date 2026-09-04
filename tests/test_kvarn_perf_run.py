@@ -430,13 +430,25 @@ def test_commands_pin_launcher_and_deterministic_workload(tmp_path: Path) -> Non
     assert candidate_variant == {
         "kernel_strategy": "native_xe2_qlen1_q6_scalar",
         "split_policy": "fixed_b1s24_b4s16",
-        "fusion_strategy": "native_materializer_persistent_scratch",
+        "fusion_strategy": (
+            "native_materializer_persistent_scratch_per_layer_flush_reference_frontend"
+        ),
         "scheduling_variant": "eager_mnbt2048",
         "variant_id": (
-            "native-xe2-xe2_dpas-q6_scalar-fixed_b1s24_b4s16-eager_mnbt2048"
+            "native-xe2-xe2_dpas-q6_scalar-fixed_b1s24_b4s16-"
+            "per_layer-flush-reference-frontend-eager_mnbt2048"
         ),
     }
     assert reference_variant["variant_id"] == "auto-control-eager_mnbt2048"
+
+    args.flush_index_materialization = "shared"
+    shared_variant = variant_provenance_for_run(run, args)
+    assert shared_variant["variant_id"] != candidate_variant["variant_id"]
+    assert shared_variant["fusion_strategy"] == (
+        "native_materializer_persistent_scratch_shared_flush_reference_frontend"
+    )
+    assert "-shared-flush-reference-frontend-" in shared_variant["variant_id"]
+    assert variant_provenance_for_run(reference, args) == reference_variant
 
 
 @pytest.mark.parametrize(
@@ -937,7 +949,9 @@ def test_service_environment_pins_window_and_scrubs_full_defer(
     ):
         monkeypatch.setenv(name, "/tmp/injected")
 
-    environment = runner.service_environment(_args(tmp_path))
+    args = _args(tmp_path)
+    run = PlannedRun(Workload(4096, 1, 32, 1, 17), "candidate", 1)
+    environment = runner.service_environment(run, args)
 
     assert environment["KVARN_PREFILL_FP16_WINDOW_BLOCKS"] == "16"
     assert "KVARN_ONEDNN_DETERMINISTIC" not in environment
@@ -955,6 +969,17 @@ def test_service_environment_pins_window_and_scrubs_full_defer(
         )
     )
     assert environment["PYTHONNOUSERSITE"] == "1"
+
+    args.native_frontend = "qkv_scatter"
+    assert (
+        runner.service_environment(run, args)["KVARN_FACTORY_NATIVE_XPU_FRONTEND"]
+        == "qkv_scatter"
+    )
+    reference = PlannedRun(run.workload, "reference", 2)
+    assert (
+        runner.service_environment(reference, args)["KVARN_FACTORY_NATIVE_XPU_FRONTEND"]
+        == "reference"
+    )
 
 
 def test_native_log_allows_unrelated_fallback_but_rejects_kvarn_fallback(
@@ -974,7 +999,10 @@ def test_native_log_allows_unrelated_fallback_but_rejects_kvarn_fallback(
     engine_log.write_text(base, encoding="utf-8")
 
     scan = runner.validate_engine_log(
-        engine_log, native=True, expected_layout="xe2_dpas"
+        engine_log,
+        native=True,
+        expected_layout="xe2_dpas",
+        expected_frontend="reference",
     )
     assert scan["status"] == "passed"
     assert scan["native_layout_expected"] == "xe2_dpas"
@@ -991,7 +1019,9 @@ def test_native_log_allows_unrelated_fallback_but_rejects_kvarn_fallback(
     ):
         engine_log.write_text(base + kvarn_fallback, encoding="utf-8")
         with pytest.raises(RunnerError, match="Kvarn fallback"):
-            runner.validate_engine_log(engine_log, native=True)
+            runner.validate_engine_log(
+                engine_log, native=True, expected_frontend="reference"
+            )
 
 
 @pytest.mark.parametrize(
@@ -1012,7 +1042,9 @@ def test_native_log_rejects_disabled_or_missing_direct_bf16(
     )
 
     with pytest.raises(RunnerError, match="direct BF16 decoder path"):
-        runner.validate_engine_log(engine_log, native=True)
+        runner.validate_engine_log(
+            engine_log, native=True, expected_frontend="reference"
+        )
 
 
 def test_native_log_allows_transitional_batches_before_direct_bf16(
@@ -1035,7 +1067,10 @@ def test_native_log_allows_transitional_batches_before_direct_bf16(
     )
 
     scan = runner.validate_engine_log(
-        engine_log, native=True, expected_layout="xe2_dpas"
+        engine_log,
+        native=True,
+        expected_layout="xe2_dpas",
+        expected_frontend="reference",
     )
     assert scan["native_direct_bf16_verified"] is True
 
@@ -1060,7 +1095,9 @@ def test_native_log_rejects_disabled_direct_bf16_after_proof(
     )
 
     with pytest.raises(RunnerError, match="direct BF16 decoder path"):
-        runner.validate_engine_log(engine_log, native=True)
+        runner.validate_engine_log(
+            engine_log, native=True, expected_frontend="reference"
+        )
 
 
 def test_native_log_attests_selected_frontend(tmp_path: Path) -> None:
@@ -1094,6 +1131,29 @@ def test_native_log_attests_selected_frontend(tmp_path: Path) -> None:
     with pytest.raises(RunnerError, match="must not execute the fused QKV frontend"):
         runner.validate_engine_log(
             engine_log, native=True, expected_frontend="reference"
+        )
+
+
+def test_non_native_log_rejects_frontend_contamination(tmp_path: Path) -> None:
+    engine_log = tmp_path / "engine.log"
+    base = (
+        "INFO config: device_config=xpu\n"
+        "INFO Actual usage is 17.54 GiB for consumed memory. "
+        "Current kv cache memory in use is 10.92 GiB.\n"
+    )
+    engine_log.write_text(base, encoding="utf-8")
+    scan = runner.validate_engine_log(
+        engine_log, native=False, expected_frontend="reference"
+    )
+    assert scan["native_frontend_active_verified"] is False
+
+    engine_log.write_text(
+        base + f"INFO {runner.NATIVE_FRONTEND_ACTIVE_MARKER} layer=0\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(RunnerError, match="non-native engine log must not execute"):
+        runner.validate_engine_log(
+            engine_log, native=False, expected_frontend="reference"
         )
 
 

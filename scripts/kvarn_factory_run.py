@@ -109,14 +109,12 @@ DEFAULT_VARIANT_NAMES = (
     "q6_cached_weights",
     "q6_exact_rows",
     "q6_cached_weights_exact_rows",
-)
-ALL_VARIANT_NAMES = (
-    *DEFAULT_VARIANT_NAMES,
     "q6_page_pair",
     "q6_main_grf128",
     "q6_split_reducer_specialized",
     "q6_next_page_prefetch",
 )
+ALL_VARIANT_NAMES = DEFAULT_VARIANT_NAMES
 FOCUSED_XPU_TESTS = (
     "tests/flash_attn/test_kvarn_decode_xpu.py::test_structured_permuted_pages",
     "tests/flash_attn/test_kvarn_decode_xpu.py::test_nonuniform_kvarn_factors_across_page_boundary",
@@ -2432,7 +2430,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--expected-vllm-xpu-nix-revision", required=True)
     parser.add_argument("--expected-vllm-revision", required=True)
     parser.add_argument("--expected-kernels-revision", required=True)
-    parser.add_argument("--variants", default=",".join(DEFAULT_VARIANT_NAMES))
+    parser.add_argument("--variants", default="all")
     parser.add_argument("--splits", default="auto")
     parser.add_argument("--contexts", default="4096,16384,65023")
     parser.add_argument("--batches", default="1,4")

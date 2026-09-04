@@ -292,6 +292,8 @@ def _correctness(
         spec = gate_module._correctness_phase_spec(
             phase_name,
             native_layout,
+            native_frontend,
+            flush_index_materialization,
             native_kernel_variant,
             native_split_policy,
             selected_splits,
@@ -299,6 +301,7 @@ def _correctness(
         effective_layout = spec["native_layout"]
         effective_kernel = spec["native_kernel_variant"]
         effective_policy = spec["native_split_policy"]
+        effective_frontend = spec["native_frontend"]
         max_splits = spec["max_decode_splits"]
         splits_environment = (
             None if spec["native"] and effective_policy == "b70_q6" else str(max_splits)
@@ -324,12 +327,12 @@ def _correctness(
                     "flush_index_materialization_environment": (
                         flush_index_materialization
                     ),
-                    "native_frontend_environment": native_frontend,
+                    "native_frontend_environment": effective_frontend,
                     "redacted_environment": {
                         "KVARN_FLUSH_INDEX_MATERIALIZATION": (
                             flush_index_materialization
                         ),
-                        "KVARN_NATIVE_XPU_FRONTEND": native_frontend,
+                        "KVARN_NATIVE_XPU_FRONTEND": effective_frontend,
                         "KVARN_NATIVE_XPU_DPAS_LAYOUT": gate_module.NATIVE_LAYOUT_ENV[
                             effective_layout
                         ],
@@ -365,7 +368,7 @@ def _correctness(
             )
             + (
                 f"INFO {gate_module.NATIVE_FRONTEND_ACTIVE_MARKER} layer=test\n"
-                if spec["native"] and native_frontend == "qkv_scatter"
+                if spec["native"] and effective_frontend == "qkv_scatter"
                 else ""
             ),
             encoding="utf-8",
@@ -382,9 +385,14 @@ def _correctness(
                         if spec["native"]
                         else "not_applicable"
                     ),
-                    "native_frontend_expected": native_frontend,
+                    "native_frontend_expected": effective_frontend,
                     "native_frontend_active_verified": (
-                        spec["native"] and native_frontend == "qkv_scatter"
+                        spec["native"] and effective_frontend == "qkv_scatter"
+                    ),
+                    "native_frontend_log_marker": (
+                        gate_module.NATIVE_FRONTEND_ACTIVE_MARKER
+                        if spec["native"] and effective_frontend == "qkv_scatter"
+                        else "not_applicable"
                     ),
                 }
             ),
@@ -424,13 +432,13 @@ def _correctness(
                         else "captured-process-environment-plus-factory-marker"
                     ),
                     "flush_index_materialization": flush_index_materialization,
-                    "native_frontend": native_frontend,
+                    "native_frontend": effective_frontend,
                     "native_frontend_active_verified": (
-                        spec["native"] and native_frontend == "qkv_scatter"
+                        spec["native"] and effective_frontend == "qkv_scatter"
                     ),
                     "native_frontend_log_marker": (
                         gate_module.NATIVE_FRONTEND_ACTIVE_MARKER
-                        if spec["native"] and native_frontend == "qkv_scatter"
+                        if spec["native"] and effective_frontend == "qkv_scatter"
                         else "not_applicable"
                     ),
                     "profile": _artifact(profile),
@@ -626,6 +634,8 @@ def _correctness(
         ),
         **gate_module._candidate_variant_provenance(
             native_layout,
+            native_frontend,
+            flush_index_materialization,
             native_kernel_variant,
             native_split_policy,
             selected_splits,
@@ -638,6 +648,8 @@ def _correctness(
             gate_module._correctness_phase_spec(
                 name,
                 native_layout,
+                native_frontend,
+                flush_index_materialization,
                 native_kernel_variant,
                 native_split_policy,
                 selected_splits,
@@ -778,6 +790,8 @@ def _result(
                     if arm == "reference"
                     else gate_module._candidate_variant_provenance(
                         native_layout,
+                        native_frontend,
+                        flush_index_materialization,
                         native_kernel_variant,
                         native_split_policy,
                         (
@@ -856,7 +870,9 @@ def _result(
         "kvarn_candidate_closure_sha256": "b" * 64,
         "kvarn_max_num_batched_tokens": "2048",
         "kvarn_flush_index_materialization": flush_index_materialization,
-        "kvarn_native_frontend": native_frontend,
+        "kvarn_native_frontend": (
+            "reference" if arm == "reference" else native_frontend
+        ),
         "kvarn_onednn_deterministic": "1",
         "kvarn_vllm_use_v2_model_runner": "0",
         "kvarn_matched_profile_sha256": "c" * 64,
@@ -911,6 +927,8 @@ def _result(
                 if arm == "reference"
                 else gate_module._candidate_variant_provenance(
                     native_layout,
+                    native_frontend,
+                    flush_index_materialization,
                     native_kernel_variant,
                     native_split_policy,
                     selected_split_map,
@@ -934,6 +952,7 @@ def _log(
     native_kernel_variant: str = "q6_scalar",
     native_split_policy: str = "b70_q6",
     native_max_splits: int = 32,
+    native_frontend: str = "reference",
 ) -> Path:
     lines = [
         "INFO config: device_config=xpu",
@@ -955,6 +974,8 @@ def _log(
         lines.append(
             "INFO Using the native Xe2 KVarN qlen=1 decoder (direct bf16 output=True)"
         )
+        if native_frontend == "qkv_scatter":
+            lines.append(f"INFO {gate_module.NATIVE_FRONTEND_ACTIVE_MARKER} layer=test")
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return path
 
@@ -972,6 +993,8 @@ def _arms(
     native_kernel_variant: str = "q6_scalar",
     native_split_policy: str = "b70_q6",
     native_splits: dict[int, int] | None = None,
+    native_frontend: str = "reference",
+    flush_index_materialization: str = "per_layer",
 ) -> tuple[list[Path], list[Path], list[Path], list[Path], Path]:
     selected_splits = (
         dict(gate_module.B70_Q6_SPLITS) if native_splits is None else native_splits
@@ -982,6 +1005,8 @@ def _arms(
         native_kernel_variant=native_kernel_variant,
         native_split_policy=native_split_policy,
         native_splits=selected_splits,
+        native_frontend=native_frontend,
+        flush_index_materialization=flush_index_materialization,
     )
     digest = hashlib.sha256(correctness.read_bytes()).hexdigest()
     reference_orders = (1, 4, 5, 8, 9, 12, 13, 16)
@@ -1002,6 +1027,7 @@ def _arms(
                 if native_split_policy == "b70_q6"
                 else selected_splits[4]
             ),
+            native_frontend=native_frontend,
         )
         for index in range(len(candidate_orders))
     ]
@@ -1018,6 +1044,7 @@ def _arms(
             request_throughput=reference_value / 512,
             ttft=reference_ttft,
             itl=reference_itl,
+            flush_index_materialization=flush_index_materialization,
         )
         for index, order in enumerate(reference_orders)
     ]
@@ -1038,6 +1065,8 @@ def _arms(
             native_kernel_variant=native_kernel_variant,
             native_split_policy=native_split_policy,
             native_split_map=selected_splits,
+            native_frontend=native_frontend,
+            flush_index_materialization=flush_index_materialization,
         )
         for index, order in enumerate(candidate_orders)
     ]
@@ -1076,6 +1105,74 @@ def test_match_gate_uses_repeat_medians_and_both_perf_axes(tmp_path: Path) -> No
     assert result["candidate_over_reference"][
         "median_request_decode_throughput"
     ] == pytest.approx(0.05 / 0.052)
+
+
+def test_match_gate_accepts_qkv_candidate_with_unfused_reference(
+    tmp_path: Path,
+) -> None:
+    arms = _arms(
+        tmp_path,
+        native_frontend="qkv_scatter",
+        flush_index_materialization="shared",
+    )
+
+    result = _compare(arms)
+
+    assert result["status"] == "passed"
+    assert result["reference"]["arm"]["kvarn_native_frontend"] == "reference"
+    assert result["candidate"]["arm"]["kvarn_native_frontend"] == "qkv_scatter"
+    assert result["candidate"]["arm"]["kvarn_fusion_strategy"] == (
+        "native_materializer_persistent_scratch_shared_flush_qkv_scatter_frontend"
+    )
+    assert (
+        "-shared-flush-qkv_scatter-frontend-"
+        in result["candidate"]["arm"]["kvarn_variant_id"]
+    )
+    assert result["reference"]["arm"]["kvarn_variant_id"] == (
+        "auto-control-eager_mnbt2048"
+    )
+
+
+def test_gate_rejects_qkv_marker_in_reference_log(tmp_path: Path) -> None:
+    arms = _arms(tmp_path, native_frontend="qkv_scatter")
+    reference_log = arms[2][0]
+    reference_log.write_text(
+        reference_log.read_text(encoding="utf-8")
+        + f"INFO {gate_module.NATIVE_FRONTEND_ACTIVE_MARKER} layer=test\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(GateError, match="reference frontend runtime proof differs"):
+        _compare(arms)
+
+
+def test_correctness_gate_rejects_qkv_marker_in_natural_reference(
+    tmp_path: Path,
+) -> None:
+    correctness_path = _correctness(
+        tmp_path / "correctness.json", native_frontend="qkv_scatter"
+    )
+    correctness = json.loads(correctness_path.read_text(encoding="utf-8"))
+    outer_gate = correctness["gates"]["near_262k_reference_equivalence"]
+    gate_path = Path(outer_gate["path"])
+    gate = json.loads(gate_path.read_text(encoding="utf-8"))
+    phase_path = Path(gate["reference_service_phase"]["path"])
+    phase = json.loads(phase_path.read_text(encoding="utf-8"))
+    log_path = Path(phase["engine_log"]["path"])
+    log_path.write_text(
+        log_path.read_text(encoding="utf-8")
+        + f"INFO {gate_module.NATIVE_FRONTEND_ACTIVE_MARKER} layer=test\n",
+        encoding="utf-8",
+    )
+    phase["engine_log"] = _artifact(log_path)
+    phase_path.write_text(json.dumps(phase), encoding="utf-8")
+    gate["reference_service_phase"] = _artifact(phase_path)
+    gate_path.write_text(json.dumps(gate), encoding="utf-8")
+    outer_gate["sha256"] = hashlib.sha256(gate_path.read_bytes()).hexdigest()
+    correctness_path.write_text(json.dumps(correctness), encoding="utf-8")
+
+    with pytest.raises(GateError, match="reference-262k-b1 frontend runtime proof"):
+        _load_correctness(correctness_path)
 
 
 def test_gate_accepts_dpas_only_with_matching_correctness_layout(

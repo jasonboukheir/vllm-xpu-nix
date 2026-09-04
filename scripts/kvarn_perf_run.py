@@ -483,7 +483,16 @@ def flush_index_materialization_environment(args: argparse.Namespace) -> str:
 
 def native_frontend_environment(args: argparse.Namespace) -> str:
     """Return the engine-lifetime Q/K/V frontend strategy for this run."""
-    return getattr(args, "native_frontend", "reference")
+    variant = args.native_frontend
+    if variant not in NATIVE_FRONTEND_VARIANTS:
+        raise RunnerError(f"unsupported native frontend {variant!r}")
+    return variant
+
+
+def native_frontend_for_run(run: PlannedRun, args: argparse.Namespace) -> str:
+    """Return the effective frontend, keeping the control arm uncontaminated."""
+    selected = native_frontend_environment(args)
+    return selected if run.arm == "candidate" else "reference"
 
 
 def variant_provenance_for_run(
@@ -500,14 +509,20 @@ def variant_provenance_for_run(
         }
     kernel_variant = native_kernel_variant_for_run(run, args)
     split_policy = native_split_policy_for_run(run, args)
+    native_frontend = native_frontend_for_run(run, args)
+    flush_indices = flush_index_materialization_environment(args)
     return {
         "kernel_strategy": f"native_xe2_qlen1_{kernel_variant}",
         "split_policy": split_policy,
-        "fusion_strategy": "native_materializer_persistent_scratch",
+        "fusion_strategy": (
+            "native_materializer_persistent_scratch_"
+            f"{flush_indices}_flush_{native_frontend}_frontend"
+        ),
         "scheduling_variant": scheduling,
         "variant_id": (
             f"native-xe2-{args.native_layout}-{kernel_variant}-"
-            f"{split_policy}-{scheduling}"
+            f"{split_policy}-{flush_indices}-flush-"
+            f"{native_frontend}-frontend-{scheduling}"
         ),
     }
 
@@ -694,12 +709,14 @@ def runner_environment(args: argparse.Namespace) -> dict[str, str]:
     return environment
 
 
-def service_environment(args: argparse.Namespace) -> dict[str, str]:
+def service_environment(run: PlannedRun, args: argparse.Namespace) -> dict[str, str]:
     environment = runner_environment(args)
     environment["KVARN_FACTORY_FLUSH_INDEX_MATERIALIZATION"] = (
         flush_index_materialization_environment(args)
     )
-    environment["KVARN_FACTORY_NATIVE_XPU_FRONTEND"] = native_frontend_environment(args)
+    environment["KVARN_FACTORY_NATIVE_XPU_FRONTEND"] = native_frontend_for_run(
+        run, args
+    )
     environment["KVARN_PREFILL_FP16_WINDOW_BLOCKS"] = str(DEFAULT_PREFILL_WINDOW_BLOCKS)
     return environment
 
@@ -1269,7 +1286,7 @@ def verify_service_profile(
         "KVARN_FLUSH_INDEX_MATERIALIZATION": (
             flush_index_materialization_environment(args)
         ),
-        "KVARN_NATIVE_XPU_FRONTEND": native_frontend_environment(args),
+        "KVARN_NATIVE_XPU_FRONTEND": native_frontend_for_run(run, args),
         "KVARN_NATIVE_XPU_KERNEL_VARIANT": native_kernel_variant_for_run(run, args),
         "KVARN_NATIVE_XPU_MATERIALIZE": native,
         "KVARN_NATIVE_XPU_PERSISTENT_SCRATCH": native,
@@ -1476,7 +1493,7 @@ def start_service(
         process = subprocess.Popen(
             command,
             cwd=args.config_repo,
-            env=service_environment(args),
+            env=service_environment(run, args),
             stdout=log_stream,
             stderr=subprocess.STDOUT,
             start_new_session=True,
@@ -1636,7 +1653,7 @@ def validate_engine_log(
     expected_kernel_variant: str | None = None,
     expected_max_splits: int | None = None,
     expected_split_policy: str | None = None,
-    expected_frontend: str = "reference",
+    expected_frontend: str,
 ) -> dict[str, Any]:
     if (
         expected_layout not in NATIVE_LAYOUTS
@@ -1664,10 +1681,12 @@ def validate_engine_log(
     if expected_frontend not in NATIVE_FRONTEND_VARIANTS:
         raise RunnerError(f"unsupported native frontend {expected_frontend!r}")
     frontend_active = NATIVE_FRONTEND_ACTIVE_MARKER in text
-    if native and (frontend_active != (expected_frontend == "qkv_scatter")):
-        expectation = "execute" if expected_frontend == "qkv_scatter" else "not execute"
+    expected_frontend_active = native and expected_frontend == "qkv_scatter"
+    if frontend_active != expected_frontend_active:
+        expectation = "execute" if expected_frontend_active else "not execute"
+        scope = "native" if native else "non-native"
         raise RunnerError(
-            f"native engine log must {expectation} the fused QKV frontend"
+            f"{scope} engine log must {expectation} the fused QKV frontend"
         )
     selection_fields = (
         expected_kernel_variant,
@@ -1705,7 +1724,7 @@ def validate_engine_log(
     result["native_split_policy_expected"] = expected_split_policy
     result.update(direct_bf16)
     result["native_frontend_expected"] = expected_frontend
-    result["native_frontend_active_verified"] = frontend_active if native else False
+    result["native_frontend_active_verified"] = frontend_active
     result["native_frontend_log_marker"] = (
         NATIVE_FRONTEND_ACTIVE_MARKER
         if native and expected_frontend == "qkv_scatter"
@@ -1864,7 +1883,7 @@ def seal_benchmark_result(
         or profile.get("flush_index_materialization_environment")
         != flush_index_materialization_environment(args)
         or profile.get("native_frontend_environment")
-        != native_frontend_environment(args)
+        != native_frontend_for_run(run, args)
         or profile.get("vllm_use_v2_model_runner_environment")
         != VLLM_USE_V2_MODEL_RUNNER
         or profile.get("variant_provenance") != expected_variant
@@ -1932,7 +1951,7 @@ def seal_benchmark_result(
         "kvarn_flush_index_materialization": (
             flush_index_materialization_environment(args)
         ),
-        "kvarn_native_frontend": native_frontend_environment(args),
+        "kvarn_native_frontend": native_frontend_for_run(run, args),
         "kvarn_vllm_use_v2_model_runner": VLLM_USE_V2_MODEL_RUNNER,
         "kvarn_native_layout_log_marker": (
             kvarn_factory_marker(
@@ -2130,7 +2149,7 @@ def run_one(
                 if run.arm == "candidate"
                 else None
             ),
-            expected_frontend=native_frontend_environment(args),
+            expected_frontend=native_frontend_for_run(run, args),
         )
         write_json_atomic(run_dir / "engine-log-scan.json", log_scan)
         sealed = seal_benchmark_result(
@@ -2608,6 +2627,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
                 "expected_native_split_policy": native_split_policy_name_for_run(
                     run, args
                 ),
+                "expected_native_frontend": native_frontend_for_run(run, args),
                 "service_command": service_command(run, args),
             }
             for run in plan

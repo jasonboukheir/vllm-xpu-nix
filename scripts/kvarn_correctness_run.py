@@ -207,6 +207,12 @@ def native_splits_environment_for_spec(
     return str(native_max_splits_for_spec(spec, args))
 
 
+def native_frontend_for_spec(spec: ServiceSpec, args: argparse.Namespace) -> str:
+    """Keep natural KVarN reference phases on the unfused frontend."""
+    selected = perf.native_frontend_environment(args)
+    return selected if spec.native else "reference"
+
+
 def candidate_variant_provenance(args: argparse.Namespace) -> dict[str, str]:
     split_policy = args.native_split_policy
     if split_policy == "fixed":
@@ -214,14 +220,20 @@ def candidate_variant_provenance(args: argparse.Namespace) -> dict[str, str]:
             f"b{batch}s{splits}" for batch, splits in sorted(args.native_splits.items())
         )
     scheduling = f"eager_mnbt{args.max_num_batched_tokens}"
+    native_frontend = perf.native_frontend_environment(args)
+    flush_indices = perf.flush_index_materialization_environment(args)
     return {
         "kernel_strategy": f"native_xe2_qlen1_{args.native_kernel_variant}",
         "split_policy": split_policy,
-        "fusion_strategy": "native_materializer_persistent_scratch",
+        "fusion_strategy": (
+            "native_materializer_persistent_scratch_"
+            f"{flush_indices}_flush_{native_frontend}_frontend"
+        ),
         "scheduling_variant": scheduling,
         "variant_id": (
             f"native-xe2-{args.native_layout}-{args.native_kernel_variant}-"
-            f"{split_policy}-{scheduling}"
+            f"{split_policy}-{flush_indices}-flush-"
+            f"{native_frontend}-frontend-{scheduling}"
         ),
     }
 
@@ -263,6 +275,7 @@ def service_spec_evidence(
             native_kernel_variant_for_spec(spec, args)
         ],
         "native_output_dtype": args.native_output_dtype,
+        "native_frontend": native_frontend_for_spec(spec, args),
         "max_decode_splits": native_max_splits_for_spec(spec, args),
         "nominal_decode_splits": native_splits_for_spec(spec, args),
         "native_split_policy": native_split_policy_for_spec(spec, args),
@@ -409,13 +422,13 @@ def primitive_environment(args: argparse.Namespace) -> dict[str, str]:
     return environment
 
 
-def service_environment(args: argparse.Namespace) -> dict[str, str]:
+def service_environment(spec: ServiceSpec, args: argparse.Namespace) -> dict[str, str]:
     environment = runner_environment(args)
     environment["KVARN_FACTORY_FLUSH_INDEX_MATERIALIZATION"] = (
         perf.flush_index_materialization_environment(args)
     )
-    environment["KVARN_FACTORY_NATIVE_XPU_FRONTEND"] = perf.native_frontend_environment(
-        args
+    environment["KVARN_FACTORY_NATIVE_XPU_FRONTEND"] = native_frontend_for_spec(
+        spec, args
     )
     environment["KVARN_PREFILL_FP16_WINDOW_BLOCKS"] = str(DEFAULT_PREFILL_WINDOW_BLOCKS)
     return environment
@@ -988,7 +1001,7 @@ def verify_service_profile(
         "KVARN_FLUSH_INDEX_MATERIALIZATION": (
             perf.flush_index_materialization_environment(args)
         ),
-        "KVARN_NATIVE_XPU_FRONTEND": perf.native_frontend_environment(args),
+        "KVARN_NATIVE_XPU_FRONTEND": native_frontend_for_spec(spec, args),
         "KVARN_NATIVE_XPU_KERNEL_VARIANT": native_kernel_variant_for_spec(spec, args),
         "KVARN_NATIVE_XPU_MATERIALIZE": native,
         "KVARN_NATIVE_XPU_PERSISTENT_SCRATCH": native,
@@ -1054,7 +1067,7 @@ def start_service(
         process = subprocess.Popen(
             command,
             cwd=args.config_repo,
-            env=service_environment(args),
+            env=service_environment(spec, args),
             stdout=log_stream,
             stderr=subprocess.STDOUT,
             start_new_session=True,
@@ -1157,7 +1170,7 @@ def run_service_phase(
             expected_kernel_variant=native_kernel_variant_for_spec(spec, args),
             expected_max_splits=native_max_splits_for_spec(spec, args),
             expected_split_policy=native_split_policy_for_spec(spec, args),
-            expected_frontend=perf.native_frontend_environment(args),
+            expected_frontend=native_frontend_for_spec(spec, args),
         )
         native_dispatch_verified = spec.native and perf.NATIVE_DISPATCH in (
             phase_dir / "engine.log"

@@ -14,6 +14,7 @@
   triton-xpu,
   flash-linear-attention,
   vllm-xpu-kernels,
+  mcpPackage,
   level-zero,
   intel-graphics-compiler,
   intel-compute-runtime,
@@ -76,7 +77,7 @@ let
       lark
       llguidance
       lm-format-enforcer
-      mcp
+      mcpPackage
       mistral-common
       model-hosting-container-standards
       msgspec
@@ -254,7 +255,7 @@ python3Packages.buildPythonPackage {
       -e '/^torchcodec([[:space:]<>=!~].*)?$/d' \
       -e '/^auto_round_lib([[:space:]<>=!~].*)?$/d' \
       requirements/xpu.txt
-    sed -i '/^vllm_xpu_kernels @ /d' requirements/xpu.txt
+    sed -i -E '/^vllm_xpu_kernels([[:space:]@<>=!~].*)?$/d' requirements/xpu.txt
 
     # Strip the Rust frontend (PR #40848: vllm-rs). setuptools-rust would
     # demand rustPlatform.cargoSetupHook with a vendored Cargo.lock; the Rust

@@ -80,9 +80,9 @@
           kernelsUnstableVersion = mkInputVersion {
             name = "vllm-xpu-kernels-unstable-src";
             input = vllm-xpu-kernels-unstable-src;
-            # main descends from the v0.1.13.1 tag (git describe -> v0.1.13.1-N);
-            # the +unstable.<date>.g<rev> suffix marks the snapshot ahead of it.
-            base = "0.1.13.1";
+            # main descends from the 0.1.14.1/v0.1.14 tag commit; retain the
+            # most precise upstream release line before the snapshot suffix.
+            base = "0.1.14.1";
             unstable = true;
           };
           vllmStableVersion = mkInputVersion {
@@ -213,6 +213,7 @@
             src = vllm-xpu-unstable-src;
             version = vllmUnstableVersion;
             kernels = vllm-xpu-kernels-unstable;
+            mcpPackage = python312PackagesXpu.mcp-v2;
           };
 
           kv-kernel-ab = pkgs.callPackage ./nix/kv-kernel-ab.nix { };

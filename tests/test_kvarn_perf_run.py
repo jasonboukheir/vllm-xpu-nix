@@ -934,6 +934,60 @@ def test_native_log_rejects_disabled_or_missing_direct_bf16(
         runner.validate_engine_log(engine_log, native=True)
 
 
+def test_native_log_allows_single_split_warmup_before_direct_bf16(
+    tmp_path: Path,
+) -> None:
+    engine_log = tmp_path / "engine.log"
+    engine_log.write_text(
+        "INFO config: device_config=xpu\n"
+        "INFO Actual usage is 17.54 GiB for consumed memory. "
+        "Current kv cache memory in use is 10.92 GiB.\n"
+        f"INFO {runner.NATIVE_DISPATCH} "
+        "(direct bf16 output=False; cache layout=xe2_dpas; splits=1)\n"
+        f"INFO {runner.NATIVE_DISPATCH} "
+        "(direct bf16 output=True; cache layout=xe2_dpas; splits=32)\n",
+        encoding="utf-8",
+    )
+
+    scan = runner.validate_engine_log(
+        engine_log, native=True, expected_layout="xe2_dpas"
+    )
+    assert scan["native_direct_bf16_verified"] is True
+
+
+@pytest.mark.parametrize(
+    "decoder_lines",
+    [
+        [
+            "(direct bf16 output=False; cache layout=xe2_dpas; splits=8)",
+            "(direct bf16 output=True; cache layout=xe2_dpas; splits=32)",
+        ],
+        [
+            "(direct bf16 output=True; cache layout=xe2_dpas; splits=32)",
+            "(direct bf16 output=False; cache layout=xe2_dpas; splits=1)",
+        ],
+    ],
+    ids=("disabled-multisplit", "disabled-after-proof"),
+)
+def test_native_log_rejects_unsafe_disabled_direct_bf16_dispatch(
+    tmp_path: Path, decoder_lines: list[str]
+) -> None:
+    engine_log = tmp_path / "engine.log"
+    dispatch = "\n".join(
+        f"INFO {runner.NATIVE_DISPATCH} {suffix}" for suffix in decoder_lines
+    )
+    engine_log.write_text(
+        "INFO config: device_config=xpu\n"
+        "INFO Actual usage is 17.54 GiB for consumed memory. "
+        "Current kv cache memory in use is 10.92 GiB.\n"
+        f"{dispatch}\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RunnerError, match="direct BF16 decoder path"):
+        runner.validate_engine_log(engine_log, native=True)
+
+
 def test_execute_rejects_correctness_from_another_candidate(tmp_path: Path) -> None:
     args = _args(tmp_path)
     args.candidate_id = None

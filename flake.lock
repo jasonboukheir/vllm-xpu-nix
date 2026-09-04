@@ -99,17 +99,17 @@
     "vllm-xpu-kernels-unstable-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1788532238,
-        "narHash": "sha256-+TmmTHxYF6wPfavVRbopwW+anhy4PmT/ed75DaTCGY8=",
-        "ref": "refs/heads/experimental/kvarn-factory-round3-20260904",
-        "rev": "96cee2f41c96d9a1a44f532384a4e96c1514c7a7",
-        "revCount": 415,
+        "lastModified": 1788543200,
+        "narHash": "sha256-FL0xcSGUnNF0JPyhGCUnGhfdp1w/QbqTYnJpSTVUOhY=",
+        "ref": "refs/heads/experimental/kvarn-factory-round5-integration",
+        "rev": "138fe5baa01ce797a3d7ef8d5a69496778787128",
+        "revCount": 417,
         "submodules": true,
         "type": "git",
         "url": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm-xpu-kernels.git"
       },
       "original": {
-        "ref": "refs/heads/experimental/kvarn-factory-round3-20260904",
+        "ref": "refs/heads/experimental/kvarn-factory-round5-integration",
         "submodules": true,
         "type": "git",
         "url": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm-xpu-kernels.git"
@@ -135,16 +135,16 @@
     "vllm-xpu-unstable-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1788531822,
-        "narHash": "sha256-9dyl7lXJ8JfxSjcgbgZdxIIqYKmxPRIk4EyOFmYSmiI=",
-        "ref": "refs/heads/experimental/kvarn-factory-round3-20260904",
-        "rev": "0b5c29bff17c0e062f6bc4ed0a97a861a3e8b6bd",
-        "revCount": 20885,
+        "lastModified": 1788543205,
+        "narHash": "sha256-WP3hUihKVvJOgq86hoajGQGdarktk/SEUd9R+snoNiQ=",
+        "ref": "refs/heads/experimental/kvarn-factory-round5-integration",
+        "rev": "565ebd069b6997b89d43c8f9b320aa81db12853d",
+        "revCount": 20889,
         "type": "git",
         "url": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm.git"
       },
       "original": {
-        "ref": "refs/heads/experimental/kvarn-factory-round3-20260904",
+        "ref": "refs/heads/experimental/kvarn-factory-round5-integration",
         "type": "git",
         "url": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm.git"
       }

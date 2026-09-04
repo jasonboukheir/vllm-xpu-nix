@@ -12,6 +12,21 @@
   cutlass-src,
 }:
 let
+  mkKernelLibSrc = import ./lib/kernel-lib-src.nix { inherit (pkgs) lib; };
+
+  # The aggregate Python package retains the upstream revision-bearing
+  # version.  Split .so derivations use their filtered source-store identity
+  # instead: changing an unrelated sibling subtree then leaves both their name
+  # and derivation hash stable, while a relevant source change still produces
+  # a new, content-addressed identity.
+  mkKernelLibVersion =
+    version: src:
+    let
+      baseVersion = builtins.head (pkgs.lib.splitString "+" version);
+      sourceStoreHash = builtins.head (pkgs.lib.splitString "-" (builtins.baseNameOf (toString src)));
+    in
+    "${baseVersion}+src.${sourceStoreHash}";
+
   # oneDNN is no longer vendored as the `third_party/oneDNN` submodule; the
   # kernels' cmake/Modules/FindoneDNN.cmake clones it via FetchContent at
   # configure time, which the offline Nix sandbox cannot do. Prefetch it as a
@@ -30,6 +45,7 @@ let
     {
       src,
       version,
+      sourceRevision ? null,
       aotDevices ? [ ],
       useCcache ? true,
       kernelChunkPrefillConfig ? null,
@@ -37,35 +53,57 @@ let
       kernelChunkPrefillExtra ? [ ],
       kernelPagedDecodeExtra ? [ ],
     }:
-    let
-      factory = pkgs.callPackage ./vllm-xpu-lib.nix {
-        intel-oneapi-base = intel-oneapi;
-        inherit intel-pti torch-xpu;
-        python3Packages = pkgs.python312Packages;
-        inherit src version;
-        inherit cutlass-src onednn-src;
-      };
-    in
     {
       libName,
       featureFlags ? [ ],
       buildDependencies ? [ ],
       compileJobs ? null,
     }:
-    factory {
+    let
+      libSrc = mkKernelLibSrc {
+        inherit src libName;
+      };
+      libVersion = mkKernelLibVersion version libSrc;
+      isAttn = libName == "attn_kernels_xe_2";
+      factory = pkgs.callPackage ./vllm-xpu-lib.nix {
+        intel-oneapi-base = intel-oneapi;
+        inherit intel-pti torch-xpu;
+        python3Packages = pkgs.python312Packages;
+        src = libSrc;
+        version = libVersion;
+        inherit cutlass-src onednn-src;
+      };
+    in
+    (factory {
       inherit
         libName
         featureFlags
         aotDevices
         useCcache
-        kernelChunkPrefillConfig
-        kernelPagedDecodeConfig
-        kernelChunkPrefillExtra
-        kernelPagedDecodeExtra
         buildDependencies
         compileJobs
         ;
-    };
+      # These selectors mutate/reference attention config files.  Keeping them
+      # out of sibling derivations avoids both false invalidation and missing
+      # paths in their filtered sources.
+      kernelChunkPrefillConfig = if isAttn then kernelChunkPrefillConfig else null;
+      kernelPagedDecodeConfig = if isAttn then kernelPagedDecodeConfig else null;
+      kernelChunkPrefillExtra = if isAttn then kernelChunkPrefillExtra else [ ];
+      kernelPagedDecodeExtra = if isAttn then kernelPagedDecodeExtra else [ ];
+    }).overrideAttrs
+      (old: {
+        passthru = (old.passthru or { }) // {
+          kernelSourceProvenance = {
+            library = libName;
+            upstreamVersion = version;
+            upstreamRevision = sourceRevision;
+            filteredSource = toString libSrc;
+            filteredSourceStoreHash = builtins.head (
+              pkgs.lib.splitString "-" (builtins.baseNameOf (toString libSrc))
+            );
+          };
+        };
+      });
 
   # Per-lib feature flag matrices: enable only the chosen library's source
   # subdir. Ninja builds the named target directly, so configured extension
@@ -142,6 +180,7 @@ let
     {
       src,
       version,
+      sourceRevision ? null,
       aotDevices ? [ ],
       useCcache ? true,
       kernelChunkPrefillConfig ? null,
@@ -154,6 +193,7 @@ let
         inherit
           src
           version
+          sourceRevision
           aotDevices
           useCcache
           kernelChunkPrefillConfig
@@ -234,6 +274,7 @@ let
     {
       src,
       version,
+      sourceRevision ? null,
       aotDevices ? [ ],
       useCcache ? true,
       kernelConfig ? { },
@@ -257,6 +298,7 @@ let
           inherit
             src
             version
+            sourceRevision
             aotDevices
             useCcache
             ;
@@ -264,7 +306,7 @@ let
         // kernelCfg
       );
     in
-    pkgs.callPackage ./vllm-xpu-kernels.nix (
+    (pkgs.callPackage ./vllm-xpu-kernels.nix (
       {
         intel-oneapi-base = intel-oneapi;
         inherit intel-pti torch-xpu useCcache;
@@ -273,7 +315,12 @@ let
         inherit cutlass-src onednn-src;
       }
       // libs
-    )
+    )).overrideAttrs
+      (old: {
+        passthru = (old.passthru or { }) // {
+          kernelLibraries = libs;
+        };
+      })
   );
 in
 {

@@ -126,7 +126,8 @@ scripts/kvarn_perf_run.py \
 The same `--launcher-mode runtime-factory` switch is supported by
 `kvarn_correctness_run.py` and `kvarn_xpu_profile.py`. It makes cache dtype,
 layout, kernel, split policy/count, frontend, flush strategy, oneDNN mode,
-65K/262K model length, and B1/B4 width process-start choices. The launcher is
+request-stable projections/RMSNorm, 65K/262K model length, and B1/B4 width
+process-start choices. The launcher is
 resolved to one immutable Nix-store program once per harness run, while every
 service-start record contains the exact selector map. `KVARN_FACTORY_SPLITS`
 is recorded as `null` and omitted from the process environment when either
@@ -139,6 +140,25 @@ runtime-factory selector and records the complete policy contract across its
 require the full correctness manifest, matched factory qualification, exact
 candidate identity, B70 execution proof, and the existing throughput/latency
 thresholds.
+
+Two additional strict selectors isolate the model-wide request-stability costs
+without rebuilding the candidate:
+
+| Factory selector | Child-process selector | Default | Effect when `0` |
+| --- | --- | --- | --- |
+| `KVARN_FACTORY_REQUEST_STABLE_PROJECTION_ROWS` | `KVARN_REQUEST_STABLE_PROJECTION_ROWS` | `1` | Use ordinary model and logits projection dispatch. |
+| `KVARN_FACTORY_REQUEST_STABLE_RMSNORM` | `KVARN_REQUEST_STABLE_RMSNORM` | `1` | Use ordinary Gemma RMSNorm dispatch, including the fused XPU path when available. |
+
+Both factory selectors accept exactly `0` or `1`. They are independent from
+each other and from `KVARN_FACTORY_ONEDNN_DETERMINISTIC`, and all three values
+are recorded in the selector map, captured engine environment, profile, and
+sealed result provenance. The qualified default is `1` for both new axes.
+An opt-out is diagnostic: profiling and exploratory performance runs may use
+it immediately, but formal parity accepts it only when a correctness artifact
+from the same candidate records the identical selectors and has passed the
+full replay/restart/isolation/262K suite. The immutable named-launcher path
+keeps the qualified defaults; opt-outs require `--launcher-mode
+runtime-factory`.
 
 The historical `immutable` launcher mode remains the default for compatibility.
 The correctness runner has one explicit exception in runtime-factory mode: its

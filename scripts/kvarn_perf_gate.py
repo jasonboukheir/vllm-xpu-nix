@@ -231,11 +231,17 @@ def _correctness_phase_spec(
     native_kernel_variant: str = "baseline",
     native_split_policy: str = "fixed",
     native_splits: Mapping[int, int] | None = None,
+    request_stable_projection_rows: str = "1",
+    request_stable_rmsnorm: str = "1",
 ) -> dict[str, Any]:
     spec = dict(CORRECTNESS_PHASE_SPECS[phase_name])
     selected_splits = DEFAULT_NATIVE_SPLITS if native_splits is None else native_splits
     effective_layout = native_layout if spec["native"] else "natural"
     effective_frontend = native_frontend if spec["native"] else "reference"
+    effective_projection_rows = (
+        request_stable_projection_rows if spec["native"] else "1"
+    )
+    effective_rmsnorm = request_stable_rmsnorm if spec["native"] else "1"
     if spec["native"] and native_layout == "xe2_dpas":
         suffix = "-262k" if spec["max_model_len"] == 262144 else ""
         spec["launcher"] = (
@@ -273,6 +279,8 @@ def _correctness_phase_spec(
         native_split_policy_contract=policy_contract,
         max_decode_splits=max_splits,
         nominal_decode_splits=effective_splits,
+        request_stable_projection_rows=effective_projection_rows,
+        request_stable_rmsnorm=effective_rmsnorm,
     )
     spec.update(
         _candidate_variant_provenance(
@@ -354,6 +362,9 @@ COMMON_PROVENANCE_FIELDS = (
     "kvarn_hardware_preflight_sha256",
     "kvarn_evidence_mode",
     "kvarn_onednn_deterministic",
+    "kvarn_request_stable_projection_rows",
+    "kvarn_request_stable_rmsnorm",
+    "kvarn_request_stability_qualification",
     "kvarn_vllm_use_v2_model_runner",
 )
 ARM_PROVENANCE_FIELDS = (
@@ -936,6 +947,8 @@ def _validate_correctness_phase(
     native_output_dtype: str,
     flush_index_materialization: str,
     native_frontend: str,
+    request_stable_projection_rows: str,
+    request_stable_rmsnorm: str,
     *,
     owner: Path,
 ) -> dict[str, Any]:
@@ -948,6 +961,8 @@ def _validate_correctness_phase(
         native_kernel_variant,
         native_split_policy,
         native_splits,
+        request_stable_projection_rows,
+        request_stable_rmsnorm,
     )
     expected_layout = expected_spec["native_layout"]
     expected_kernel = expected_spec["native_kernel_variant"]
@@ -1004,6 +1019,10 @@ def _validate_correctness_phase(
         or phase.get("native_layout_evidence") != expected_layout_evidence
         or phase.get("flush_index_materialization") != flush_index_materialization
         or phase.get("native_frontend") != effective_frontend
+        or phase.get("request_stable_projection_rows")
+        != expected_spec["request_stable_projection_rows"]
+        or phase.get("request_stable_rmsnorm")
+        != expected_spec["request_stable_rmsnorm"]
         or phase.get("native_frontend_active_verified") is not expected_frontend_active
         or phase.get("native_frontend_log_marker")
         != (
@@ -1031,6 +1050,18 @@ def _validate_correctness_phase(
         or profile.get("flush_index_materialization_environment")
         != flush_index_materialization
         or profile.get("native_frontend_environment") != effective_frontend
+        or profile.get("request_stable_projection_rows_environment")
+        not in (
+            {"1", None}
+            if expected_spec["request_stable_projection_rows"] == "1"
+            else {"0"}
+        )
+        or profile.get("request_stable_rmsnorm_environment")
+        not in (
+            {"1", None}
+            if expected_spec["request_stable_rmsnorm"] == "1"
+            else {"0"}
+        )
         or not isinstance(captured_environment, dict)
         or captured_environment.get("KVARN_NATIVE_XPU_DPAS_LAYOUT")
         != NATIVE_LAYOUT_ENV[expected_layout]
@@ -1044,6 +1075,10 @@ def _validate_correctness_phase(
         != flush_index_materialization
         or captured_environment.get("KVARN_NATIVE_XPU_FRONTEND") != effective_frontend
         or captured_environment.get("KVARN_ONEDNN_DETERMINISTIC") != "1"
+        or captured_environment.get("KVARN_REQUEST_STABLE_PROJECTION_ROWS")
+        != profile.get("request_stable_projection_rows_environment")
+        or captured_environment.get("KVARN_REQUEST_STABLE_RMSNORM")
+        != profile.get("request_stable_rmsnorm_environment")
         or captured_environment.get("VLLM_USE_V2_MODEL_RUNNER") != "0"
         or profile.get("variant_provenance") != expected_variant
     ):
@@ -1113,9 +1148,15 @@ def validate_correctness_gate_evidence(
     native_output_dtype: str = "bf16",
     flush_index_materialization: str = "per_layer",
     native_frontend: str = "reference",
+    request_stable_projection_rows: str = "1",
+    request_stable_rmsnorm: str = "1",
 ) -> None:
     """Validate the meaning of one hashed correctness-gate artifact."""
     selected_splits = DEFAULT_NATIVE_SPLITS if native_splits is None else native_splits
+    if request_stable_projection_rows not in {"0", "1"}:
+        raise GateError(f"{path}: projection-row selector is unsupported")
+    if request_stable_rmsnorm not in {"0", "1"}:
+        raise GateError(f"{path}: RMSNorm selector is unsupported")
     if name not in REQUIRED_GATES:
         raise GateError(f"{path}: unknown correctness gate {name}")
     if (
@@ -1224,6 +1265,8 @@ def validate_correctness_gate_evidence(
             native_output_dtype,
             flush_index_materialization,
             native_frontend,
+            request_stable_projection_rows,
+            request_stable_rmsnorm,
             owner=path,
         )
 
@@ -2012,16 +2055,39 @@ def _load_correctness(path: Path) -> tuple[dict[str, Any], str]:
         if isinstance(service_controls, dict)
         else None
     )
+    correctness_projection_rows = (
+        service_controls.get("kvarn_request_stable_projection_rows")
+        if isinstance(service_controls, dict)
+        else None
+    )
+    correctness_rmsnorm = (
+        service_controls.get("kvarn_request_stable_rmsnorm")
+        if isinstance(service_controls, dict)
+        else None
+    )
     if correctness_onednn not in {"0", "1"}:
         raise GateError(f"{path}: correctness oneDNN selector is unsupported")
+    if correctness_projection_rows not in {"0", "1"}:
+        raise GateError(f"{path}: correctness projection-row selector is unsupported")
+    if correctness_rmsnorm not in {"0", "1"}:
+        raise GateError(f"{path}: correctness RMSNorm selector is unsupported")
     expected_service_controls = {
         "kvarn_flush_index_materialization": flush_index_materialization,
         "kvarn_native_frontend": native_frontend,
         "kvarn_onednn_deterministic": correctness_onednn,
+        "kvarn_request_stable_projection_rows": correctness_projection_rows,
+        "kvarn_request_stable_rmsnorm": correctness_rmsnorm,
         "vllm_use_v2_model_runner": "0",
     }
     if service_controls != expected_service_controls:
         raise GateError(f"{path}: correctness service controls are inconsistent")
+    expected_qualification = (
+        "qualified-default"
+        if correctness_projection_rows == "1" and correctness_rmsnorm == "1"
+        else "replay-qualified"
+    )
+    if document.get("request_stability_qualification") != expected_qualification:
+        raise GateError(f"{path}: request-stability qualification is inconsistent")
     raw_native_splits = document.get("native_nominal_splits_by_batch")
     if native_split_policy == "b70_q6_v2":
         if raw_native_splits is not None:
@@ -2072,6 +2138,8 @@ def _load_correctness(path: Path) -> tuple[dict[str, Any], str]:
             native_kernel_variant,
             native_split_policy,
             native_splits,
+            correctness_projection_rows,
+            correctness_rmsnorm,
         )
         for phase_name in CORRECTNESS_PHASE_SPECS
     ]
@@ -2158,6 +2226,8 @@ def _load_correctness(path: Path) -> tuple[dict[str, Any], str]:
             native_output_dtype=native_output_dtype,
             flush_index_materialization=flush_index_materialization,
             native_frontend=native_frontend,
+            request_stable_projection_rows=correctness_projection_rows,
+            request_stable_rmsnorm=correctness_rmsnorm,
         )
         if name.startswith("native_decode_"):
             library_path, library_sha256 = _artifact_reference(
@@ -2481,6 +2551,12 @@ def compare(
         "kvarn_onednn_deterministic": first_cand.provenance[
             "kvarn_onednn_deterministic"
         ],
+        "kvarn_request_stable_projection_rows": first_cand.provenance[
+            "kvarn_request_stable_projection_rows"
+        ],
+        "kvarn_request_stable_rmsnorm": first_cand.provenance[
+            "kvarn_request_stable_rmsnorm"
+        ],
         "vllm_use_v2_model_runner": first_cand.provenance[
             "kvarn_vllm_use_v2_model_runner"
         ],
@@ -2488,6 +2564,19 @@ def compare(
     if benchmark_controls != correctness_controls:
         raise GateError(
             "correctness and performance selected different service controls"
+        )
+    expected_request_stability_qualification = (
+        "qualified-default"
+        if correctness_controls["kvarn_request_stable_projection_rows"] == "1"
+        and correctness_controls["kvarn_request_stable_rmsnorm"] == "1"
+        else "replay-qualified"
+    )
+    if (
+        first_cand.provenance["kvarn_request_stability_qualification"]
+        != expected_request_stability_qualification
+    ):
+        raise GateError(
+            "performance request-stability policy is not replay-qualified"
         )
     correctness_layout = correctness["native_layout"]
     correctness_kernel_variant = correctness["native_kernel_variant"]

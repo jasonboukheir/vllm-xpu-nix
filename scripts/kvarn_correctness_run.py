@@ -229,6 +229,24 @@ def onednn_deterministic_for_spec(spec: ServiceSpec, args: argparse.Namespace) -
     return perf.onednn_deterministic_environment(args)
 
 
+def request_stable_projection_rows_for_spec(
+    spec: ServiceSpec, args: argparse.Namespace
+) -> str:
+    """Keep the immutable natural KVarN oracle on the qualified default."""
+    if not spec.native and perf.launcher_mode(args) == "runtime-factory":
+        return "1"
+    return perf.request_stable_projection_rows_environment(args)
+
+
+def request_stable_rmsnorm_for_spec(
+    spec: ServiceSpec, args: argparse.Namespace
+) -> str:
+    """Keep the immutable natural KVarN oracle on the qualified default."""
+    if not spec.native and perf.launcher_mode(args) == "runtime-factory":
+        return "1"
+    return perf.request_stable_rmsnorm_environment(args)
+
+
 def candidate_variant_provenance(args: argparse.Namespace) -> dict[str, str]:
     split_policy = args.native_split_policy
     if split_policy == "fixed":
@@ -300,6 +318,12 @@ def runtime_factory_axes_for_spec(
         "KVARN_FACTORY_MAX_NUM_SEQS": str(spec.batch),
         "KVARN_FACTORY_NATIVE_XPU_FRONTEND": native_frontend_for_spec(spec, args),
         "KVARN_FACTORY_ONEDNN_DETERMINISTIC": onednn_deterministic_for_spec(spec, args),
+        "KVARN_FACTORY_REQUEST_STABLE_PROJECTION_ROWS": (
+            request_stable_projection_rows_for_spec(spec, args)
+        ),
+        "KVARN_FACTORY_REQUEST_STABLE_RMSNORM": request_stable_rmsnorm_for_spec(
+            spec, args
+        ),
         "KVARN_FACTORY_SPLITS": (
             None
             if perf.split_policy.owns_runtime_selection(split_policy)
@@ -344,6 +368,10 @@ def service_spec_evidence(
         "native_output_dtype": args.native_output_dtype,
         "native_frontend": native_frontend_for_spec(spec, args),
         "onednn_deterministic": onednn_deterministic_for_spec(spec, args),
+        "request_stable_projection_rows": request_stable_projection_rows_for_spec(
+            spec, args
+        ),
+        "request_stable_rmsnorm": request_stable_rmsnorm_for_spec(spec, args),
         "max_decode_splits": native_max_splits_for_spec(spec, args),
         "nominal_decode_splits": native_splits_for_spec(spec, args),
         "native_split_policy": native_split_policy_for_spec(spec, args),
@@ -422,6 +450,8 @@ def passed_artifact(
     native_output_dtype: str,
     flush_index_materialization: str,
     native_frontend: str,
+    request_stable_projection_rows: str,
+    request_stable_rmsnorm: str,
 ) -> dict[str, str]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
@@ -444,6 +474,8 @@ def passed_artifact(
             native_output_dtype=native_output_dtype,
             flush_index_materialization=flush_index_materialization,
             native_frontend=native_frontend,
+            request_stable_projection_rows=request_stable_projection_rows,
+            request_stable_rmsnorm=request_stable_rmsnorm,
         )
     except GateError as exc:
         raise CorrectnessError(str(exc)) from exc
@@ -1088,6 +1120,16 @@ def verify_service_profile(
         "KVARN_NATIVE_XPU_SPLITS": native_splits_environment_for_spec(spec, args),
         "KVARN_NATIVE_XPU_SPLIT_POLICY": native_split_policy_for_spec(spec, args),
         "KVARN_ONEDNN_DETERMINISTIC": onednn_deterministic_for_spec(spec, args),
+        "KVARN_REQUEST_STABLE_PROJECTION_ROWS": (
+            request_stable_projection_rows_for_spec(spec, args)
+            if spec.native and perf.launcher_mode(args) == "runtime-factory"
+            else None
+        ),
+        "KVARN_REQUEST_STABLE_RMSNORM": (
+            request_stable_rmsnorm_for_spec(spec, args)
+            if spec.native and perf.launcher_mode(args) == "runtime-factory"
+            else None
+        ),
         "KVARN_PREFILL_FP16_WINDOW_BLOCKS": str(DEFAULT_PREFILL_WINDOW_BLOCKS),
         "VLLM_CACHE_ROOT": str(args.runtime_cache / "vllm-xpu-brutus-kvarn"),
         "VLLM_TARGET_DEVICE": "xpu",
@@ -1242,6 +1284,12 @@ def run_service_phase(
             "KVARN_FLUSH_INDEX_MATERIALIZATION"
         )
         captured_native_frontend = service.environment.get("KVARN_NATIVE_XPU_FRONTEND")
+        captured_request_stable_projection_rows = service.environment.get(
+            "KVARN_REQUEST_STABLE_PROJECTION_ROWS"
+        )
+        captured_request_stable_rmsnorm = service.environment.get(
+            "KVARN_REQUEST_STABLE_RMSNORM"
+        )
         write_json_atomic(phase_dir / "service-profile.json", profile)
         write_json_atomic(phase_dir / "candidate-identity.json", identity)
         engine_pid = service.engine_pid
@@ -1291,6 +1339,14 @@ def run_service_phase(
             native_split_policy_environment=captured_split_policy_environment,
             flush_index_materialization=captured_flush_index_materialization,
             native_frontend=captured_native_frontend,
+            request_stable_projection_rows=(
+                request_stable_projection_rows_for_spec(spec, args)
+            ),
+            request_stable_projection_rows_environment=(
+                captured_request_stable_projection_rows
+            ),
+            request_stable_rmsnorm=request_stable_rmsnorm_for_spec(spec, args),
+            request_stable_rmsnorm_environment=captured_request_stable_rmsnorm,
             native_frontend_active_verified=log_scan["native_frontend_active_verified"],
             native_frontend_log_marker=log_scan["native_frontend_log_marker"],
             native_layout_log_marker=perf.kvarn_factory_marker(
@@ -1962,6 +2018,10 @@ def build_manifest(
                 perf.flush_index_materialization_environment(args)
             ),
             native_frontend=perf.native_frontend_environment(args),
+            request_stable_projection_rows=(
+                perf.request_stable_projection_rows_environment(args)
+            ),
+            request_stable_rmsnorm=perf.request_stable_rmsnorm_environment(args),
         )
         for name in REQUIRED_GATES
     }
@@ -1996,11 +2056,23 @@ def build_manifest(
             perf.flush_index_materialization_environment(args)
         ),
         "native_frontend": perf.native_frontend_environment(args),
+        "request_stability_qualification": (
+            "qualified-default"
+            if perf.request_stable_projection_rows_environment(args) == "1"
+            and perf.request_stable_rmsnorm_environment(args) == "1"
+            else "replay-qualified"
+        ),
         "service_controls": {
             "kvarn_flush_index_materialization": (
                 perf.flush_index_materialization_environment(args)
             ),
             "kvarn_onednn_deterministic": perf.onednn_deterministic_environment(args),
+            "kvarn_request_stable_projection_rows": (
+                perf.request_stable_projection_rows_environment(args)
+            ),
+            "kvarn_request_stable_rmsnorm": (
+                perf.request_stable_rmsnorm_environment(args)
+            ),
             "kvarn_native_frontend": perf.native_frontend_environment(args),
             "vllm_use_v2_model_runner": perf.VLLM_USE_V2_MODEL_RUNNER,
         },
@@ -2095,11 +2167,23 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             perf.flush_index_materialization_environment(args)
         ),
         "native_frontend": perf.native_frontend_environment(args),
+        "request_stability_qualification": (
+            "qualified-default"
+            if perf.request_stable_projection_rows_environment(args) == "1"
+            and perf.request_stable_rmsnorm_environment(args) == "1"
+            else "diagnostic-pending-replay"
+        ),
         "service_controls": {
             "kvarn_flush_index_materialization": (
                 perf.flush_index_materialization_environment(args)
             ),
             "kvarn_onednn_deterministic": perf.onednn_deterministic_environment(args),
+            "kvarn_request_stable_projection_rows": (
+                perf.request_stable_projection_rows_environment(args)
+            ),
+            "kvarn_request_stable_rmsnorm": (
+                perf.request_stable_rmsnorm_environment(args)
+            ),
             "kvarn_native_frontend": perf.native_frontend_environment(args),
             "vllm_use_v2_model_runner": perf.VLLM_USE_V2_MODEL_RUNNER,
         },
@@ -2191,6 +2275,26 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="candidate engine oneDNN selector; 0 requires runtime-factory mode",
     )
     parser.add_argument(
+        "--request-stable-projection-rows",
+        type=int,
+        choices=(0, 1),
+        default=1,
+        help=(
+            "request-stable projection policy; 0 is a runtime-factory "
+            "diagnostic that this replay suite must qualify"
+        ),
+    )
+    parser.add_argument(
+        "--request-stable-rmsnorm",
+        type=int,
+        choices=(0, 1),
+        default=1,
+        help=(
+            "request-stable Gemma RMSNorm policy; 0 is a runtime-factory "
+            "diagnostic that this replay suite must qualify"
+        ),
+    )
+    parser.add_argument(
         "--flush-index-materialization",
         choices=perf.FLUSH_INDEX_MATERIALIZATION_VARIANTS,
         default="per_layer",
@@ -2276,6 +2380,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     args = parser.parse_args(argv)
     try:
         args.onednn_deterministic = bool(args.onednn_deterministic)
+        args.request_stable_projection_rows = bool(
+            args.request_stable_projection_rows
+        )
+        args.request_stable_rmsnorm = bool(args.request_stable_rmsnorm)
         if args.native_output_dtype != "bf16":
             raise CorrectnessError(
                 "finalist service qualification requires --native-output-dtype bf16"
@@ -2297,6 +2405,13 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             raise CorrectnessError(
                 "non-deterministic oneDNN correctness requires "
                 "--launcher-mode runtime-factory"
+            )
+        if perf.launcher_mode(args) != "runtime-factory" and (
+            not args.request_stable_projection_rows
+            or not args.request_stable_rmsnorm
+        ):
+            raise CorrectnessError(
+                "request-stability opt-outs require --launcher-mode runtime-factory"
             )
         if (
             args.native_kernel_variant != perf.REFERENCE_NATIVE_KERNEL_VARIANT

@@ -440,6 +440,16 @@ def variant_provenance(
         "split_policy": perf.native_split_policy_for_run(run, args),
         "split_policy_selector": perf.native_split_policy_name_for_run(run, args),
         "native_frontend": native_frontend,
+        "request_stable_projection_rows": (
+            perf.request_stable_projection_rows_environment(args)
+        ),
+        "request_stable_rmsnorm": perf.request_stable_rmsnorm_environment(args),
+        "request_stability_qualification": (
+            "qualified-default"
+            if perf.request_stable_projection_rows_environment(args) == "1"
+            and perf.request_stable_rmsnorm_environment(args) == "1"
+            else "diagnostic-unqualified"
+        ),
         "flush_index_materialization": flush_indices,
         "fusion_selection": fusion_selection,
         "scheduling_selection": scheduling_selection,
@@ -924,6 +934,20 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         choices=(0, 1),
         default=1,
     )
+    parser.add_argument(
+        "--request-stable-projection-rows",
+        type=int,
+        choices=(0, 1),
+        default=1,
+        help="diagnostic projection-row policy; 0 requires runtime-factory mode",
+    )
+    parser.add_argument(
+        "--request-stable-rmsnorm",
+        type=int,
+        choices=(0, 1),
+        default=1,
+        help="diagnostic Gemma RMSNorm policy; 0 requires runtime-factory mode",
+    )
     parser.add_argument("--native-splits", type=int)
     parser.add_argument(
         "--launcher",
@@ -986,6 +1010,17 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         )
         args.native_split_policy = args.native_split_policy or "fixed"
         args.onednn_deterministic = bool(args.onednn_deterministic)
+        args.request_stable_projection_rows = bool(
+            args.request_stable_projection_rows
+        )
+        args.request_stable_rmsnorm = bool(args.request_stable_rmsnorm)
+        if perf.launcher_mode(args) != "runtime-factory" and (
+            not args.request_stable_projection_rows
+            or not args.request_stable_rmsnorm
+        ):
+            raise perf.RunnerError(
+                "request-stability opt-outs require --launcher-mode runtime-factory"
+            )
         args.output_dir = perf.ensure_durable(args.output_dir, allow_tmp=args.allow_tmp)
         args.candidate_env = args.candidate_env.expanduser().resolve()
         args.runtime_cache = args.runtime_cache.expanduser().resolve()

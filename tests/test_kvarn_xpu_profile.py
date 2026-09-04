@@ -329,6 +329,9 @@ def test_profile_command_and_dpas_launcher_provenance(
         "split_policy": "fixed_b4s16",
         "split_policy_selector": "fixed",
         "native_frontend": "qkv_scatter",
+        "request_stable_projection_rows": "1",
+        "request_stable_rmsnorm": "1",
+        "request_stability_qualification": "qualified-default",
         "flush_index_materialization": "per_layer",
         "fusion_selection": (
             "fused_attention_decode_per_layer_flush_qkv_scatter_frontend"
@@ -358,6 +361,9 @@ def test_profile_command_and_dpas_launcher_provenance(
         "split_policy": "b70_q6",
         "split_policy_selector": "b70_q6",
         "native_frontend": "qkv_scatter",
+        "request_stable_projection_rows": "1",
+        "request_stable_rmsnorm": "1",
+        "request_stability_qualification": "qualified-default",
         "flush_index_materialization": "per_layer",
         "fusion_selection": (
             "fused_attention_decode_per_layer_flush_qkv_scatter_frontend"
@@ -405,6 +411,10 @@ def test_runtime_factory_profile_accepts_runtime_axes_without_named_launcher(
             "shared",
             "--onednn-deterministic",
             "0",
+            "--request-stable-projection-rows",
+            "0",
+            "--request-stable-rmsnorm",
+            "1",
         ]
     )
     run = perf.PlannedRun(perf.Workload(4096, 1, 96, 1, 17), "candidate", 1)
@@ -419,6 +429,8 @@ def test_runtime_factory_profile_accepts_runtime_axes_without_named_launcher(
         "KVARN_FACTORY_MAX_NUM_SEQS": "1",
         "KVARN_FACTORY_NATIVE_XPU_FRONTEND": "reference",
         "KVARN_FACTORY_ONEDNN_DETERMINISTIC": "0",
+        "KVARN_FACTORY_REQUEST_STABLE_PROJECTION_ROWS": "0",
+        "KVARN_FACTORY_REQUEST_STABLE_RMSNORM": "1",
         "KVARN_FACTORY_SPLITS": "17",
         "KVARN_FACTORY_SPLIT_POLICY": "fixed",
     }
@@ -473,3 +485,18 @@ def test_candidate_profile_cli_rejects_fixed_round2_launcher_contract(
     )
     assert args.native_splits == {1: 32}
     assert args.native_frontend == "qkv_scatter"
+    assert args.request_stable_projection_rows is True
+    assert args.request_stable_rmsnorm is True
+
+    with pytest.raises(SystemExit):
+        profile.parse_args(
+            [
+                *common,
+                "--native-split-policy",
+                "b70_q6",
+                "--request-stable-rmsnorm",
+                "0",
+                "--output-dir",
+                str(tmp_path / "invalid-immutable-request-policy"),
+            ]
+        )

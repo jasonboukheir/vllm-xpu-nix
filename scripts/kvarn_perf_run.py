@@ -123,6 +123,8 @@ RUNTIME_FACTORY_SELECTORS = (
     "KVARN_FACTORY_MAX_NUM_SEQS",
     "KVARN_FACTORY_NATIVE_XPU_FRONTEND",
     "KVARN_FACTORY_ONEDNN_DETERMINISTIC",
+    "KVARN_FACTORY_REQUEST_STABLE_PROJECTION_ROWS",
+    "KVARN_FACTORY_REQUEST_STABLE_RMSNORM",
     "KVARN_FACTORY_SPLITS",
     "KVARN_FACTORY_SPLIT_POLICY",
 )
@@ -162,6 +164,8 @@ CAPTURED_ENVIRONMENT = (
     "KVARN_NATIVE_XPU_KERNEL_VARIANT",
     "KVARN_NATIVE_XPU_MATERIALIZE",
     "KVARN_ONEDNN_DETERMINISTIC",
+    "KVARN_REQUEST_STABLE_PROJECTION_ROWS",
+    "KVARN_REQUEST_STABLE_RMSNORM",
     "KVARN_NATIVE_XPU_PERSISTENT_SCRATCH",
     "KVARN_NATIVE_XPU_SPLITS",
     "KVARN_NATIVE_XPU_SPLIT_POLICY",
@@ -540,6 +544,28 @@ def onednn_deterministic_environment(args: argparse.Namespace) -> str:
     return "1" if getattr(args, "onednn_deterministic", True) else "0"
 
 
+def request_stable_projection_rows_environment(args: argparse.Namespace) -> str:
+    """Return the exact process-lifetime projection-row selector."""
+    return "1" if getattr(args, "request_stable_projection_rows", True) else "0"
+
+
+def request_stable_rmsnorm_environment(args: argparse.Namespace) -> str:
+    """Return the exact process-lifetime Gemma RMSNorm selector."""
+    return "1" if getattr(args, "request_stable_rmsnorm", True) else "0"
+
+
+def request_stability_qualification(args: argparse.Namespace) -> str:
+    """Describe whether the selected request-stability policy is qualified."""
+    if (
+        request_stable_projection_rows_environment(args) == "1"
+        and request_stable_rmsnorm_environment(args) == "1"
+    ):
+        return "qualified-default"
+    if getattr(args, "exploratory", False):
+        return "diagnostic-unqualified"
+    return "replay-qualified"
+
+
 def flush_index_materialization_environment(args: argparse.Namespace) -> str:
     """Return the engine-lifetime flush-index strategy for this factory run."""
     return getattr(args, "flush_index_materialization", "per_layer")
@@ -681,15 +707,33 @@ def load_correctness(
         if isinstance(service_controls, dict)
         else None
     )
+    correctness_projection_rows = (
+        service_controls.get("kvarn_request_stable_projection_rows")
+        if isinstance(service_controls, dict)
+        else None
+    )
+    correctness_rmsnorm = (
+        service_controls.get("kvarn_request_stable_rmsnorm")
+        if isinstance(service_controls, dict)
+        else None
+    )
     if service_controls != {
         "kvarn_flush_index_materialization": flush_index_materialization,
         "kvarn_native_frontend": native_frontend,
         "kvarn_onednn_deterministic": correctness_onednn,
+        "kvarn_request_stable_projection_rows": correctness_projection_rows,
+        "kvarn_request_stable_rmsnorm": correctness_rmsnorm,
         "vllm_use_v2_model_runner": VLLM_USE_V2_MODEL_RUNNER,
     }:
         raise RunnerError("correctness artifact service controls are inconsistent")
     if correctness_onednn not in {"0", "1"}:
         raise RunnerError("correctness artifact oneDNN selector is unsupported")
+    if correctness_projection_rows not in {"0", "1"}:
+        raise RunnerError(
+            "correctness artifact projection-row selector is unsupported"
+        )
+    if correctness_rmsnorm not in {"0", "1"}:
+        raise RunnerError("correctness artifact RMSNorm selector is unsupported")
     raw_native_splits = document.get("native_nominal_splits_by_batch")
     if native_split_policy == "b70_q6_v2":
         if raw_native_splits is not None:
@@ -799,6 +843,8 @@ def load_correctness(
             "flush_index_materialization": flush_index_materialization,
             "native_frontend": native_frontend,
             "onednn_deterministic": correctness_onednn,
+            "request_stable_projection_rows": correctness_projection_rows,
+            "request_stable_rmsnorm": correctness_rmsnorm,
             "factory_qualification": factory,
         },
     )
@@ -872,6 +918,12 @@ def runtime_factory_axes_for_run(
         "KVARN_FACTORY_MAX_NUM_SEQS": str(run.workload.batch),
         "KVARN_FACTORY_NATIVE_XPU_FRONTEND": native_frontend_for_run(run, args),
         "KVARN_FACTORY_ONEDNN_DETERMINISTIC": (onednn_deterministic_environment(args)),
+        "KVARN_FACTORY_REQUEST_STABLE_PROJECTION_ROWS": (
+            request_stable_projection_rows_environment(args)
+        ),
+        "KVARN_FACTORY_REQUEST_STABLE_RMSNORM": (
+            request_stable_rmsnorm_environment(args)
+        ),
         "KVARN_FACTORY_SPLITS": (
             None
             if split_policy.owns_runtime_selection(selected_policy)
@@ -890,6 +942,12 @@ def runtime_factory_axes_for_run(
         "KVARN_FACTORY_MAX_NUM_SEQS": str(run.workload.batch),
         "KVARN_FACTORY_NATIVE_XPU_FRONTEND": "reference",
         "KVARN_FACTORY_ONEDNN_DETERMINISTIC": (onednn_deterministic_environment(args)),
+        "KVARN_FACTORY_REQUEST_STABLE_PROJECTION_ROWS": (
+            request_stable_projection_rows_environment(args)
+        ),
+        "KVARN_FACTORY_REQUEST_STABLE_RMSNORM": (
+            request_stable_rmsnorm_environment(args)
+        ),
         "KVARN_FACTORY_SPLITS": "1",
         "KVARN_FACTORY_SPLIT_POLICY": "fixed",
     }:
@@ -1424,6 +1482,12 @@ def service_profile_evidence(
         "onednn_deterministic_environment": environment.get(
             "KVARN_ONEDNN_DETERMINISTIC"
         ),
+        "request_stable_projection_rows_environment": environment.get(
+            "KVARN_REQUEST_STABLE_PROJECTION_ROWS"
+        ),
+        "request_stable_rmsnorm_environment": environment.get(
+            "KVARN_REQUEST_STABLE_RMSNORM"
+        ),
         "flush_index_materialization_environment": environment.get(
             "KVARN_FLUSH_INDEX_MATERIALIZATION"
         ),
@@ -1529,6 +1593,16 @@ def verify_service_profile(
         "KVARN_NATIVE_XPU_SPLITS": native_splits_environment_for_run(run, args),
         "KVARN_NATIVE_XPU_SPLIT_POLICY": native_split_policy_name_for_run(run, args),
         "KVARN_ONEDNN_DETERMINISTIC": onednn_deterministic_environment(args),
+        "KVARN_REQUEST_STABLE_PROJECTION_ROWS": (
+            request_stable_projection_rows_environment(args)
+            if launcher_mode(args) == "runtime-factory"
+            else None
+        ),
+        "KVARN_REQUEST_STABLE_RMSNORM": (
+            request_stable_rmsnorm_environment(args)
+            if launcher_mode(args) == "runtime-factory"
+            else None
+        ),
         "KVARN_PREFILL_FP16_WINDOW_BLOCKS": str(DEFAULT_PREFILL_WINDOW_BLOCKS),
         "VLLM_CACHE_ROOT": str(args.runtime_cache / "vllm-xpu-brutus-kvarn"),
         "VLLM_TARGET_DEVICE": "xpu",
@@ -2116,6 +2190,18 @@ def seal_benchmark_result(
         or profile.get("native_split_policy_environment") != expected_split_policy
         or profile.get("onednn_deterministic_environment")
         != onednn_deterministic_environment(args)
+        or profile.get("request_stable_projection_rows_environment")
+        != (
+            request_stable_projection_rows_environment(args)
+            if launcher_mode(args) == "runtime-factory"
+            else None
+        )
+        or profile.get("request_stable_rmsnorm_environment")
+        != (
+            request_stable_rmsnorm_environment(args)
+            if launcher_mode(args) == "runtime-factory"
+            else None
+        )
         or profile.get("flush_index_materialization_environment")
         != flush_index_materialization_for_run(run, args)
         or profile.get("native_frontend_environment")
@@ -2197,6 +2283,13 @@ def seal_benchmark_result(
         "kvarn_native_nominal_splits": str(expected_effective_splits),
         "kvarn_native_split_policy": expected_split_policy,
         "kvarn_onednn_deterministic": onednn_deterministic_environment(args),
+        "kvarn_request_stable_projection_rows": (
+            request_stable_projection_rows_environment(args)
+        ),
+        "kvarn_request_stable_rmsnorm": request_stable_rmsnorm_environment(args),
+        "kvarn_request_stability_qualification": request_stability_qualification(
+            args
+        ),
         "kvarn_flush_index_materialization": (
             flush_index_materialization_for_run(run, args)
         ),
@@ -2807,6 +2900,10 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             != native_frontend_environment(args)
             or correctness_factory["onednn_deterministic"]
             != onednn_deterministic_environment(args)
+            or correctness_factory["request_stable_projection_rows"]
+            != request_stable_projection_rows_environment(args)
+            or correctness_factory["request_stable_rmsnorm"]
+            != request_stable_rmsnorm_environment(args)
             or any(
                 correctness_factory["native_splits"].get(batch)
                 != args.native_splits.get(batch)
@@ -2859,8 +2956,15 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         "native_scratch_max_splits": native_split_policy_contract(args)[
             "scratch_max_splits"
         ],
+        "request_stability_qualification": request_stability_qualification(args),
         "service_controls": {
             "kvarn_onednn_deterministic": onednn_deterministic_environment(args),
+            "kvarn_request_stable_projection_rows": (
+                request_stable_projection_rows_environment(args)
+            ),
+            "kvarn_request_stable_rmsnorm": (
+                request_stable_rmsnorm_environment(args)
+            ),
             "kvarn_flush_index_materialization": (
                 flush_index_materialization_environment(args)
             ),
@@ -3187,6 +3291,26 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--request-stable-projection-rows",
+        type=int,
+        choices=(0, 1),
+        default=1,
+        help=(
+            "select request-stable projection rows; 1 is the qualified default, "
+            "0 is diagnostic until a matching correctness replay passes"
+        ),
+    )
+    parser.add_argument(
+        "--request-stable-rmsnorm",
+        type=int,
+        choices=(0, 1),
+        default=1,
+        help=(
+            "select request-stable Gemma RMSNorm; 1 is the qualified default, "
+            "0 is diagnostic until a matching correctness replay passes"
+        ),
+    )
+    parser.add_argument(
         "--flush-index-materialization",
         choices=FLUSH_INDEX_MATERIALIZATION_VARIANTS,
         default="per_layer",
@@ -3287,6 +3411,17 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         args.context = _parse_int_list(args.context, DEFAULT_CONTEXTS)
         args.batch = _parse_int_list(args.batch, DEFAULT_BATCHES)
         args.onednn_deterministic = bool(args.onednn_deterministic)
+        args.request_stable_projection_rows = bool(
+            args.request_stable_projection_rows
+        )
+        args.request_stable_rmsnorm = bool(args.request_stable_rmsnorm)
+        if launcher_mode(args) != "runtime-factory" and (
+            not args.request_stable_projection_rows
+            or not args.request_stable_rmsnorm
+        ):
+            raise RunnerError(
+                "request-stability opt-outs require --launcher-mode runtime-factory"
+            )
         if split_policy.owns_runtime_selection(args.native_split_policy):
             if args.native_splits:
                 raise RunnerError(

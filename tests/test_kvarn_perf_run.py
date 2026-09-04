@@ -65,6 +65,8 @@ PROFILE = {
     "native_max_splits_environment": "1",
     "native_split_policy_environment": "fixed",
     "onednn_deterministic_environment": "1",
+    "request_stable_projection_rows_environment": None,
+    "request_stable_rmsnorm_environment": None,
     "flush_index_materialization_environment": "per_layer",
     "native_frontend_environment": "reference",
     "vllm_use_v2_model_runner_environment": "0",
@@ -370,6 +372,8 @@ def test_exploratory_plan_session_has_no_formal_claims(
         "kvarn_flush_index_materialization": "per_layer",
         "kvarn_native_frontend": "reference",
         "kvarn_onednn_deterministic": "1",
+        "kvarn_request_stable_projection_rows": "1",
+        "kvarn_request_stable_rmsnorm": "1",
         "vllm_use_v2_model_runner": "0",
     }
     assert len(session["plan"]) == 4
@@ -566,11 +570,28 @@ def test_scheduler_budget_cli_defaults_overrides_and_rejects_zero(
             "0",
         ]
     )
+    diagnostic = runner.parse_args(
+        [
+            *common,
+            "--output-dir",
+            str(tmp_path / "diagnostic-output"),
+            "--launcher-mode",
+            "runtime-factory",
+            "--request-stable-projection-rows",
+            "0",
+            "--request-stable-rmsnorm",
+            "1",
+        ]
+    )
 
     assert default.max_num_batched_tokens == 2048
     assert default.onednn_deterministic is True
+    assert default.request_stable_projection_rows is True
+    assert default.request_stable_rmsnorm is True
     assert explicit.max_num_batched_tokens == 4096
     assert nondeterministic.onednn_deterministic is False
+    assert diagnostic.request_stable_projection_rows is False
+    assert diagnostic.request_stable_rmsnorm is True
     with pytest.raises(SystemExit):
         runner.parse_args(
             [
@@ -579,6 +600,26 @@ def test_scheduler_budget_cli_defaults_overrides_and_rejects_zero(
                 str(tmp_path / "invalid-output"),
                 "--max-num-batched-tokens",
                 "0",
+            ]
+        )
+    with pytest.raises(SystemExit):
+        runner.parse_args(
+            [
+                *common,
+                "--output-dir",
+                str(tmp_path / "immutable-request-opt-out"),
+                "--request-stable-rmsnorm",
+                "0",
+            ]
+        )
+    with pytest.raises(SystemExit):
+        runner.parse_args(
+            [
+                *common,
+                "--output-dir",
+                str(tmp_path / "invalid-request-selector"),
+                "--request-stable-projection-rows",
+                "2",
             ]
         )
     with pytest.raises(SystemExit):
@@ -913,6 +954,8 @@ def test_process_capture_includes_bounded_window_and_full_defer_state() -> None:
     environment = dict(os.environ)
     environment["KVARN_PREFILL_FP16_WINDOW_BLOCKS"] = "16"
     environment["KVARN_ONEDNN_DETERMINISTIC"] = "1"
+    environment["KVARN_REQUEST_STABLE_PROJECTION_ROWS"] = "0"
+    environment["KVARN_REQUEST_STABLE_RMSNORM"] = "1"
     environment["VLLM_KVARN_DEFER_PREFILL_FLUSH"] = "0"
     environment["VLLM_USE_V2_MODEL_RUNNER"] = "0"
     process = subprocess.Popen(
@@ -931,6 +974,8 @@ def test_process_capture_includes_bounded_window_and_full_defer_state() -> None:
 
     assert captured["KVARN_PREFILL_FP16_WINDOW_BLOCKS"] == "16"
     assert captured["KVARN_ONEDNN_DETERMINISTIC"] == "1"
+    assert captured["KVARN_REQUEST_STABLE_PROJECTION_ROWS"] == "0"
+    assert captured["KVARN_REQUEST_STABLE_RMSNORM"] == "1"
     assert captured["VLLM_KVARN_DEFER_PREFILL_FLUSH"] == "0"
     assert captured["VLLM_USE_V2_MODEL_RUNNER"] == "0"
 
@@ -995,6 +1040,8 @@ def test_runtime_factory_environment_carries_exact_per_process_axes(
     args.native_split_policy = "b70_q6"
     args.native_splits = {1: 32, 4: 8}
     args.onednn_deterministic = False
+    args.request_stable_projection_rows = False
+    args.request_stable_rmsnorm = True
     args.flush_index_materialization = "shared"
     args.native_frontend = "qkv_scatter"
     candidate = PlannedRun(Workload(65023, 4, 32, 4, 17), "candidate", 1)
@@ -1010,6 +1057,8 @@ def test_runtime_factory_environment_carries_exact_per_process_axes(
         "KVARN_FACTORY_MAX_NUM_SEQS": "4",
         "KVARN_FACTORY_NATIVE_XPU_FRONTEND": "qkv_scatter",
         "KVARN_FACTORY_ONEDNN_DETERMINISTIC": "0",
+        "KVARN_FACTORY_REQUEST_STABLE_PROJECTION_ROWS": "0",
+        "KVARN_FACTORY_REQUEST_STABLE_RMSNORM": "1",
         "KVARN_FACTORY_SPLITS": None,
         "KVARN_FACTORY_SPLIT_POLICY": "b70_q6",
     }
@@ -1023,6 +1072,8 @@ def test_runtime_factory_environment_carries_exact_per_process_axes(
         "KVARN_FACTORY_MAX_NUM_SEQS": "4",
         "KVARN_FACTORY_NATIVE_XPU_FRONTEND": "reference",
         "KVARN_FACTORY_ONEDNN_DETERMINISTIC": "0",
+        "KVARN_FACTORY_REQUEST_STABLE_PROJECTION_ROWS": "0",
+        "KVARN_FACTORY_REQUEST_STABLE_RMSNORM": "1",
         "KVARN_FACTORY_SPLITS": "1",
         "KVARN_FACTORY_SPLIT_POLICY": "fixed",
     }

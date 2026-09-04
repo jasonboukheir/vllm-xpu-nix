@@ -328,6 +328,8 @@ def _correctness(
     native_splits: dict[int, int] | None = None,
     flush_index_materialization: str = "per_layer",
     native_frontend: str = "reference",
+    request_stable_projection_rows: str = "1",
+    request_stable_rmsnorm: str = "1",
 ) -> Path:
     selected_splits = (
         dict(gate_module.B70_Q6_SPLITS) if native_splits is None else native_splits
@@ -394,6 +396,8 @@ def _correctness(
             native_kernel_variant,
             native_split_policy,
             selected_splits,
+            request_stable_projection_rows,
+            request_stable_rmsnorm,
         )
         effective_layout = spec["native_layout"]
         effective_kernel = spec["native_kernel_variant"]
@@ -428,6 +432,12 @@ def _correctness(
                         flush_index_materialization
                     ),
                     "native_frontend_environment": effective_frontend,
+                    "request_stable_projection_rows_environment": (
+                        spec["request_stable_projection_rows"]
+                    ),
+                    "request_stable_rmsnorm_environment": spec[
+                        "request_stable_rmsnorm"
+                    ],
                     "redacted_environment": {
                         "KVARN_FLUSH_INDEX_MATERIALIZATION": (
                             flush_index_materialization
@@ -441,6 +451,12 @@ def _correctness(
                         "KVARN_NATIVE_XPU_SPLITS": splits_environment,
                         "KVARN_NATIVE_XPU_SPLIT_POLICY": effective_policy,
                         "KVARN_ONEDNN_DETERMINISTIC": "1",
+                        "KVARN_REQUEST_STABLE_PROJECTION_ROWS": spec[
+                            "request_stable_projection_rows"
+                        ],
+                        "KVARN_REQUEST_STABLE_RMSNORM": spec[
+                            "request_stable_rmsnorm"
+                        ],
                         "VLLM_USE_V2_MODEL_RUNNER": "0",
                     },
                     "variant_provenance": variant,
@@ -536,6 +552,10 @@ def _correctness(
                     ),
                     "flush_index_materialization": flush_index_materialization,
                     "native_frontend": effective_frontend,
+                    "request_stable_projection_rows": spec[
+                        "request_stable_projection_rows"
+                    ],
+                    "request_stable_rmsnorm": spec["request_stable_rmsnorm"],
                     "native_frontend_active_verified": (
                         spec["native"] and effective_frontend == "qkv_scatter"
                     ),
@@ -730,10 +750,20 @@ def _correctness(
         "native_split_policy": native_split_policy,
         "flush_index_materialization": flush_index_materialization,
         "native_frontend": native_frontend,
+        "request_stability_qualification": (
+            "qualified-default"
+            if request_stable_projection_rows == "1"
+            and request_stable_rmsnorm == "1"
+            else "replay-qualified"
+        ),
         "service_controls": {
             "kvarn_flush_index_materialization": flush_index_materialization,
             "kvarn_native_frontend": native_frontend,
             "kvarn_onednn_deterministic": "1",
+            "kvarn_request_stable_projection_rows": (
+                request_stable_projection_rows
+            ),
+            "kvarn_request_stable_rmsnorm": request_stable_rmsnorm,
             "vllm_use_v2_model_runner": "0",
         },
         "native_scratch_max_splits": gate_module.split_policy.split_policy_contract(
@@ -760,6 +790,8 @@ def _correctness(
                 native_kernel_variant,
                 native_split_policy,
                 selected_splits,
+                request_stable_projection_rows,
+                request_stable_rmsnorm,
             )
             for name in gate_module.CORRECTNESS_PHASE_SPECS
         ],
@@ -808,6 +840,8 @@ def _result(
     native_split_map: dict[int, int] | None = None,
     flush_index_materialization: str = "per_layer",
     native_frontend: str = "reference",
+    request_stable_projection_rows: str = "1",
+    request_stable_rmsnorm: str = "1",
 ) -> Path:
     completed = 8
     context = 4096
@@ -993,6 +1027,14 @@ def _result(
             "reference" if arm == "reference" else native_frontend
         ),
         "kvarn_onednn_deterministic": "1",
+        "kvarn_request_stable_projection_rows": request_stable_projection_rows,
+        "kvarn_request_stable_rmsnorm": request_stable_rmsnorm,
+        "kvarn_request_stability_qualification": (
+            "qualified-default"
+            if request_stable_projection_rows == "1"
+            and request_stable_rmsnorm == "1"
+            else "replay-qualified"
+        ),
         "kvarn_vllm_use_v2_model_runner": "0",
         "kvarn_matched_profile_sha256": "c" * 64,
         "kvarn_accelerator": "xpu",
@@ -1114,6 +1156,8 @@ def _arms(
     native_splits: dict[int, int] | None = None,
     native_frontend: str = "reference",
     flush_index_materialization: str = "per_layer",
+    request_stable_projection_rows: str = "1",
+    request_stable_rmsnorm: str = "1",
 ) -> tuple[list[Path], list[Path], list[Path], list[Path], Path]:
     selected_splits = (
         dict(gate_module.B70_Q6_SPLITS) if native_splits is None else native_splits
@@ -1126,6 +1170,8 @@ def _arms(
         native_splits=selected_splits,
         native_frontend=native_frontend,
         flush_index_materialization=flush_index_materialization,
+        request_stable_projection_rows=request_stable_projection_rows,
+        request_stable_rmsnorm=request_stable_rmsnorm,
     )
     digest = hashlib.sha256(correctness.read_bytes()).hexdigest()
     reference_orders = (1, 4, 5, 8, 9, 12, 13, 16)
@@ -1168,6 +1214,8 @@ def _arms(
             ttft=reference_ttft,
             itl=reference_itl,
             flush_index_materialization=flush_index_materialization,
+            request_stable_projection_rows=request_stable_projection_rows,
+            request_stable_rmsnorm=request_stable_rmsnorm,
         )
         for index, order in enumerate(reference_orders)
     ]
@@ -1190,6 +1238,8 @@ def _arms(
             native_split_map=selected_splits,
             native_frontend=native_frontend,
             flush_index_materialization=flush_index_materialization,
+            request_stable_projection_rows=request_stable_projection_rows,
+            request_stable_rmsnorm=request_stable_rmsnorm,
         )
         for index, order in enumerate(candidate_orders)
     ]
@@ -1228,6 +1278,24 @@ def test_match_gate_uses_repeat_medians_and_both_perf_axes(tmp_path: Path) -> No
     assert result["candidate_over_reference"][
         "median_request_decode_throughput"
     ] == pytest.approx(0.05 / 0.052)
+
+
+def test_match_gate_accepts_replay_qualified_request_stability_opt_out(
+    tmp_path: Path,
+) -> None:
+    result = _compare(
+        _arms(
+            tmp_path,
+            request_stable_projection_rows="0",
+            request_stable_rmsnorm="1",
+        )
+    )
+
+    assert result["status"] == "passed"
+    assert result["provenance"]["kvarn_request_stable_projection_rows"] == "0"
+    assert result["provenance"]["kvarn_request_stability_qualification"] == (
+        "replay-qualified"
+    )
 
 
 def test_match_gate_accepts_qkv_candidate_with_unfused_reference(

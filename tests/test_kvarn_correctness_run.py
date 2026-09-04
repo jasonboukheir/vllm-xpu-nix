@@ -830,6 +830,46 @@ def test_cli_binds_config_ref_and_keeps_mandatory_inactive_units(
     assert args.config_ref == f"path:{config.resolve()}"
     assert set(correctness.REQUIRED_INACTIVE_UNITS) < set(args.require_inactive_unit)
     assert args.native_layout == "xe2_dpas"
+    assert args.request_stable_projection_rows is True
+    assert args.request_stable_rmsnorm is True
+
+    diagnostic = correctness.parse_args(
+        [
+            *common,
+            "--config-ref",
+            f"path:{config}",
+            "--launcher-mode",
+            "runtime-factory",
+            "--request-stable-projection-rows",
+            "0",
+            "--request-stable-rmsnorm",
+            "1",
+            "--output-dir",
+            str(tmp_path / "diagnostic-request-policy"),
+        ]
+    )
+    assert diagnostic.request_stable_projection_rows is False
+    assert diagnostic.request_stable_rmsnorm is True
+    native_spec = correctness.SERVICE_PLAN[0]
+    assert correctness.runtime_factory_axes_for_spec(native_spec, diagnostic)[
+        "KVARN_FACTORY_REQUEST_STABLE_PROJECTION_ROWS"
+    ] == "0"
+    assert correctness.runtime_factory_axes_for_spec(native_spec, diagnostic)[
+        "KVARN_FACTORY_REQUEST_STABLE_RMSNORM"
+    ] == "1"
+
+    with pytest.raises(SystemExit):
+        correctness.parse_args(
+            [
+                *common,
+                "--config-ref",
+                f"path:{config}",
+                "--request-stable-rmsnorm",
+                "0",
+                "--output-dir",
+                str(tmp_path / "invalid-immutable-request-policy"),
+            ]
+        )
 
     dpas = correctness.parse_args(
         [

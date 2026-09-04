@@ -18,15 +18,20 @@ nix build .#gdn-attn-kernels-xe-2
 nix build .#grouped-gemm-xe-2
 ```
 
-After `0007-fa2-dtype-split.patch` the worst-case kernel_template TU
-peaks at ~7 GiB RSS (down from ~40 GiB pre-patch); after
-`0008-fa2-dispatcher-split.patch` the chunk_prefill / paged_decode
-dispatcher TUs — the residual OOM hotspot at `-j$(nproc)` — split into
-per-policy shards that also sit below that ceiling. Each lib drv runs
-`ninja -j$NIX_BUILD_CORES` at the daemon default (`nproc`). On
-memory-constrained hosts cap parallelism with `nix build --cores N`
-(or `cores = N` in nix.conf); the same value feeds
-`-fsycl-max-parallel-link-jobs`.
+Upstream's generated attention buildout now emits one translation unit per
+kernel variant, replacing the former local `0007`/`0008` split patches. A
+partial chunk-prefill/paged-decode config is the primary way to bound both
+total compile work and generated-TU memory. The Kvarn integration additionally
+prunes disabled policy dispatch trees before their recursive boolean templates
+are instantiated; without that source fix, the `fmha_xe2.cpp` dispatcher can
+still consume tens of GiB even for a narrow generated build.
+
+Each lib drv runs `ninja -j$NIX_BUILD_CORES` at the daemon default (`nproc`).
+On memory-constrained hosts cap parallelism with `nix build --cores N` (or
+`cores = N` in nix.conf); the same value feeds
+`-fsycl-max-parallel-link-jobs`. The per-library `compileJobs` override limits
+concurrent compiler processes, but cannot cap the memory of one template-heavy
+frontend.
 
 ## Compiler launcher cache
 

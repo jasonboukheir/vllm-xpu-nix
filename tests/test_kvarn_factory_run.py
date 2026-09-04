@@ -1254,6 +1254,73 @@ def test_focused_xpu_kill_suite_is_bound_to_library_and_fail_closed(
         factory.require_focused_xpu_kill_suite(skipped)
 
 
+def test_fused_writer_kill_suite_includes_production_vllm_differential(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    kernels_repo = tmp_path / "kernels"
+    vllm_repo = tmp_path / "vllm"
+    variant = [factory.VARIANTS["q6_prefetch_record_cursor"]]
+    kernel_selections = factory.focused_xpu_tests(
+        variant, flush_writer="sinkhorn_pack_xe2"
+    )
+    for repo, selections in (
+        (kernels_repo, kernel_selections),
+        (vllm_repo, factory.FOCUSED_XPU_VLLM_SINKHORN_WRITER_TESTS),
+    ):
+        for selection in selections:
+            source = repo / selection.partition("::")[0]
+            source.parent.mkdir(parents=True, exist_ok=True)
+            source.touch()
+    library = tmp_path / "flash.so"
+    library.touch()
+    minimum_passed = len(kernel_selections) + len(
+        factory.FOCUSED_XPU_VLLM_SINKHORN_WRITER_TESTS
+    )
+
+    def passing_run(command, **kwargs):
+        return SimpleNamespace(
+            returncode=0,
+            stdout=f"{minimum_passed} passed in 1.00s\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr(factory.subprocess, "run", passing_run)
+    result = factory.run_focused_xpu_kill_suite(
+        kernels_repo=kernels_repo,
+        vllm_repo=vllm_repo,
+        flash_library=library,
+        variants=variant,
+        flush_writer="sinkhorn_pack_xe2",
+    )
+
+    factory.require_focused_xpu_kill_suite(result)
+    assert result["minimum_passed_required"] == minimum_passed
+    assert all(
+        f"vllm:{selection}" in result["test_selections"]
+        for selection in factory.FOCUSED_XPU_VLLM_SINKHORN_WRITER_TESTS
+    )
+    assert any(str(vllm_repo.resolve()) in item for item in result["command"])
+
+
+def test_fused_writer_command_requires_vllm_repository(tmp_path: Path) -> None:
+    kernels_repo = tmp_path / "kernels"
+    selections = factory.focused_xpu_tests(
+        [factory.VARIANTS["q6_prefetch_record_cursor"]],
+        flush_writer="sinkhorn_pack_xe2",
+    )
+    for selection in selections:
+        source = kernels_repo / selection.partition("::")[0]
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.touch()
+
+    with pytest.raises(factory.FactoryError, match="requires the vLLM repository"):
+        factory.focused_xpu_test_command(
+            kernels_repo,
+            [factory.VARIANTS["q6_prefetch_record_cursor"]],
+            flush_writer="sinkhorn_pack_xe2",
+        )
+
+
 def _valid_matched_manifest() -> dict:
     shape = [1, 128, factory.H_KV, factory.HEAD_DIM]
     tensor_bytes = 2

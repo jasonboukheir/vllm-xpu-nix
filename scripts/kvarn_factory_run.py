@@ -393,6 +393,12 @@ FOCUSED_XPU_SINKHORN_WRITER_TESTS = (
     "tests/flash_attn/test_kvarn_sinkhorn_writer_xpu.py::test_sinkhorn_writer_uses_int64_long_context_record_addressing",
     "tests/flash_attn/test_kvarn_sinkhorn_writer_xpu.py::test_sinkhorn_writer_rejects_non_abi_inputs",
 )
+FOCUSED_XPU_VLLM_SINKHORN_WRITER_TESTS = (
+    "tests/v1/attention/test_kvarn_sinkhorn_writer_xpu.py::test_fused_writer_is_byte_identical_to_production_path",
+    "tests/v1/attention/test_kvarn_sinkhorn_writer_xpu.py::test_fused_writer_multi_block_iteration16_matches_production_path",
+    "tests/v1/attention/test_kvarn_sinkhorn_writer_xpu.py::test_fused_writer_empty_and_negative_iteration_contracts",
+    "tests/v1/attention/test_kvarn_sinkhorn_writer_xpu.py::test_fused_writer_records_temporary_allocator_lifetimes",
+)
 FOCUSED_XPU_PREFILL_STORE_TESTS = (
     "tests/flash_attn/test_kvarn_hadamard_scatter_xpu.py::test_kvarn_hadamard_scatter_matches_fp32",
     "tests/flash_attn/test_kvarn_hadamard_scatter_xpu.py::test_kvarn_hadamard_scatter_structured_and_invalid_rows",
@@ -1742,6 +1748,7 @@ def focused_xpu_test_command(
     kernels_repo: Path,
     variants: Sequence[VariantSpec],
     *,
+    vllm_repo: Path | None = None,
     flush_writer: str = "reference",
     prefill_store: str = "reference",
 ) -> list[str]:
@@ -1757,6 +1764,23 @@ def focused_xpu_test_command(
         if not source.is_relative_to(resolved):
             raise FactoryError(f"focused XPU test escapes kernel repository: {source}")
         node_ids.append(f"{source}::{test_name}")
+    vllm_selections = (
+        FOCUSED_XPU_VLLM_SINKHORN_WRITER_TESTS
+        if flush_writer == "sinkhorn_pack_xe2"
+        else ()
+    )
+    if vllm_selections:
+        if vllm_repo is None:
+            raise FactoryError("fused writer kill suite requires the vLLM repository")
+        resolved_vllm = vllm_repo.expanduser().resolve(strict=True)
+        for selection in vllm_selections:
+            relative, separator, test_name = selection.partition("::")
+            if not separator:
+                raise FactoryError(f"invalid focused vLLM XPU selection: {selection}")
+            source = (resolved_vllm / relative).resolve(strict=True)
+            if not source.is_relative_to(resolved_vllm):
+                raise FactoryError(f"focused XPU test escapes vLLM repository: {source}")
+            node_ids.append(f"{source}::{test_name}")
     return [
         sys.executable,
         "-m",
@@ -1772,6 +1796,7 @@ def focused_xpu_test_command(
 def run_focused_xpu_kill_suite(
     *,
     kernels_repo: Path,
+    vllm_repo: Path | None = None,
     flash_library: Path,
     variants: Sequence[VariantSpec],
     flush_writer: str = "reference",
@@ -1782,9 +1807,16 @@ def run_focused_xpu_kill_suite(
     selections = focused_xpu_tests(
         variants, flush_writer=flush_writer, prefill_store=prefill_store
     )
+    vllm_selections = (
+        FOCUSED_XPU_VLLM_SINKHORN_WRITER_TESTS
+        if flush_writer == "sinkhorn_pack_xe2"
+        else ()
+    )
+    reported_selections = [*selections, *(f"vllm:{item}" for item in vllm_selections)]
     command = focused_xpu_test_command(
         resolved_repo,
         variants,
+        vllm_repo=vllm_repo,
         flush_writer=flush_writer,
         prefill_store=prefill_store,
     )
@@ -1792,7 +1824,7 @@ def run_focused_xpu_kill_suite(
         {"variant_id": variant.variant_id, "name": variant.name}
         for variant in dict.fromkeys(variants)
     ]
-    minimum_passed = len(selections)
+    minimum_passed = len(reported_selections)
     environment = os.environ.copy()
     environment["VLLM_XPU_KERNELS_LIBRARY"] = str(resolved_library)
     environment["PYTHONDONTWRITEBYTECODE"] = "1"
@@ -1820,7 +1852,7 @@ def run_focused_xpu_kill_suite(
             "selected_variants": selected_variants,
             "flush_writer": flush_writer,
             "prefill_store": prefill_store,
-            "test_selections": list(selections),
+            "test_selections": reported_selections,
             "minimum_passed_required": minimum_passed,
             "error": str(error),
         }
@@ -1847,7 +1879,7 @@ def run_focused_xpu_kill_suite(
         "selected_variants": selected_variants,
         "flush_writer": flush_writer,
         "prefill_store": prefill_store,
-        "test_selections": list(selections),
+        "test_selections": reported_selections,
         "minimum_passed_required": minimum_passed,
         "passed_count": passed_count,
         "skipped_count": skipped_count,
@@ -4524,6 +4556,7 @@ def execute(args: argparse.Namespace) -> int:
         document["hardware_preflight"] = preflight_xpu(torch)
         document["kernel_kill_suite"] = run_focused_xpu_kill_suite(
             kernels_repo=args.kernels_repo,
+            vllm_repo=args.vllm_repo,
             flash_library=Path(flash_record["path"]),
             variants=args.variant_specs,
             flush_writer=args.flush_writer,

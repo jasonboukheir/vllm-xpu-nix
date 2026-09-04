@@ -407,6 +407,9 @@ def primitive_environment(args: argparse.Namespace) -> dict[str, str]:
 
 def service_environment(args: argparse.Namespace) -> dict[str, str]:
     environment = runner_environment(args)
+    environment["KVARN_FACTORY_FLUSH_INDEX_MATERIALIZATION"] = (
+        perf.flush_index_materialization_environment(args)
+    )
     environment["KVARN_PREFILL_FP16_WINDOW_BLOCKS"] = str(DEFAULT_PREFILL_WINDOW_BLOCKS)
     return environment
 
@@ -975,15 +978,20 @@ def verify_service_profile(
         "KVARN_NATIVE_XPU_DPAS_LAYOUT": perf.NATIVE_LAYOUT_ENV[
             native_layout_for_spec(spec, args)
         ],
+        "KVARN_FLUSH_INDEX_MATERIALIZATION": (
+            perf.flush_index_materialization_environment(args)
+        ),
         "KVARN_NATIVE_XPU_KERNEL_VARIANT": native_kernel_variant_for_spec(spec, args),
         "KVARN_NATIVE_XPU_MATERIALIZE": native,
         "KVARN_NATIVE_XPU_PERSISTENT_SCRATCH": native,
         "KVARN_NATIVE_XPU_SPLITS": native_splits_environment_for_spec(spec, args),
         "KVARN_NATIVE_XPU_SPLIT_POLICY": native_split_policy_for_spec(spec, args),
+        "KVARN_ONEDNN_DETERMINISTIC": "1",
         "KVARN_PREFILL_FP16_WINDOW_BLOCKS": str(DEFAULT_PREFILL_WINDOW_BLOCKS),
         "VLLM_CACHE_ROOT": str(args.runtime_cache / "vllm-xpu-brutus-kvarn"),
         "VLLM_TARGET_DEVICE": "xpu",
         "VLLM_KVARN_DEFER_PREFILL_FLUSH": None,
+        "VLLM_USE_V2_MODEL_RUNNER": perf.VLLM_USE_V2_MODEL_RUNNER,
         "XDG_CACHE_HOME": str(args.runtime_cache),
     }
     environment_mismatches = {
@@ -1124,6 +1132,9 @@ def run_service_phase(
         captured_split_policy_environment = service.environment.get(
             "KVARN_NATIVE_XPU_SPLIT_POLICY"
         )
+        captured_flush_index_materialization = service.environment.get(
+            "KVARN_FLUSH_INDEX_MATERIALIZATION"
+        )
         write_json_atomic(phase_dir / "service-profile.json", profile)
         write_json_atomic(phase_dir / "candidate-identity.json", identity)
         engine_pid = service.engine_pid
@@ -1167,6 +1178,7 @@ def run_service_phase(
             native_max_splits_environment=captured_max_splits_environment,
             native_split_policy=service_variant_provenance(spec, args)["split_policy"],
             native_split_policy_environment=captured_split_policy_environment,
+            flush_index_materialization=captured_flush_index_materialization,
             native_layout_log_marker=perf.kvarn_factory_marker(
                 cache_layout=native_layout_for_spec(spec, args),
                 kernel_variant=native_kernel_variant_for_spec(spec, args),
@@ -1863,6 +1875,16 @@ def build_manifest(
         },
         "native_output_dtype": args.native_output_dtype,
         "native_split_policy": args.native_split_policy,
+        "flush_index_materialization": (
+            perf.flush_index_materialization_environment(args)
+        ),
+        "service_controls": {
+            "kvarn_flush_index_materialization": (
+                perf.flush_index_materialization_environment(args)
+            ),
+            "kvarn_onednn_deterministic": "1",
+            "vllm_use_v2_model_runner": perf.VLLM_USE_V2_MODEL_RUNNER,
+        },
         "native_scratch_max_splits": (
             perf.B70_Q6_MAX_SPLITS
             if args.native_split_policy == "b70_q6"
@@ -1952,6 +1974,16 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         },
         "native_output_dtype": args.native_output_dtype,
         "native_split_policy": args.native_split_policy,
+        "flush_index_materialization": (
+            perf.flush_index_materialization_environment(args)
+        ),
+        "service_controls": {
+            "kvarn_flush_index_materialization": (
+                perf.flush_index_materialization_environment(args)
+            ),
+            "kvarn_onednn_deterministic": "1",
+            "vllm_use_v2_model_runner": perf.VLLM_USE_V2_MODEL_RUNNER,
+        },
         "native_scratch_max_splits": (
             perf.B70_Q6_MAX_SPLITS
             if args.native_split_policy == "b70_q6"
@@ -2033,6 +2065,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         choices=("fp16", "bf16"),
         default="bf16",
         help="direct native output path that must be qualified (default: bf16)",
+    )
+    parser.add_argument(
+        "--flush-index-materialization",
+        choices=perf.FLUSH_INDEX_MATERIALIZATION_VARIANTS,
+        default="per_layer",
+        help=(
+            "engine-lifetime flush-index strategy for all Kvarn correctness "
+            "services (default: per_layer)"
+        ),
     )
     parser.add_argument(
         "--native-splits",

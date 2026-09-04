@@ -99,11 +99,11 @@
     "vllm-xpu-kernels-unstable-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1788556491,
-        "narHash": "sha256-qAXRHheWdt4O5bu7HR7j92RM6PzCM06ABUnzQ6G/bAM=",
+        "lastModified": 1788560451,
+        "narHash": "sha256-qmCHRBd1RkXdGeZWAm+wYdbD5iuzq4CM27RXxMBhUlo=",
         "ref": "refs/heads/experimental/kvarn-factory-round5-integration",
-        "rev": "3b411a6a63114aca6a5700e308f470084c8cf3f9",
-        "revCount": 433,
+        "rev": "167457d09533995677385bc2e09a146c932831b7",
+        "revCount": 434,
         "submodules": true,
         "type": "git",
         "url": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm-xpu-kernels.git"

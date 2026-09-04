@@ -777,6 +777,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
                 else None
             ),
             expected_frontend=native_frontend,
+            expected_forward_pool_ensure=forward_pool_ensure,
         )
         perf.write_json_atomic(run_dir / "engine-log-scan.json", log_scan)
         trace_path = find_kineto_trace(trace_dir)
@@ -844,6 +845,12 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
                 "native_frontend_inline_log_marker": log_scan[
                     "native_frontend_inline_log_marker"
                 ],
+                "forward_pool_ensure_active_verified": log_scan[
+                    "forward_pool_ensure_active_verified"
+                ],
+                "forward_pool_ensure_log_marker": log_scan[
+                    "forward_pool_ensure_log_marker"
+                ],
                 "variant_id": variant["variant_id"],
                 "variant_parameters": variant,
                 "logical_launcher": expected_launcher,
@@ -902,6 +909,12 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             ],
             native_frontend_inline_log_marker=log_scan[
                 "native_frontend_inline_log_marker"
+            ],
+            forward_pool_ensure_active_verified=log_scan[
+                "forward_pool_ensure_active_verified"
+            ],
+            forward_pool_ensure_log_marker=log_scan[
+                "forward_pool_ensure_log_marker"
             ],
         )
         perf.write_json_atomic(run_dir / "run.json", manifest)
@@ -1082,6 +1095,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             args.request_stable_projection_rows
         )
         args.request_stable_rmsnorm = bool(args.request_stable_rmsnorm)
+        perf.forward_pool_ensure_environment(args)
         if perf.launcher_mode(args) != "runtime-factory" and (
             not args.request_stable_projection_rows
             or not args.request_stable_rmsnorm

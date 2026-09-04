@@ -527,6 +527,13 @@ def _correctness(
                 "layer=test\n"
                 if spec["native"] and effective_frontend == "qkv_scatter_inline"
                 else ""
+            )
+            + (
+                f"INFO {gate_module.FORWARD_POOL_ENSURE_ACTIVE_MARKER} "
+                "layer=test\n"
+                if spec["native"]
+                and effective_forward_pool_ensure == "fused_qkv_proof"
+                else ""
             ),
             encoding="utf-8",
         )
@@ -562,6 +569,17 @@ def _correctness(
                         gate_module.NATIVE_FRONTEND_INLINE_ACTIVE_MARKER
                         if spec["native"]
                         and effective_frontend == "qkv_scatter_inline"
+                        else "not_applicable"
+                    ),
+                    "forward_pool_ensure_expected": effective_forward_pool_ensure,
+                    "forward_pool_ensure_active_verified": (
+                        spec["native"]
+                        and effective_forward_pool_ensure == "fused_qkv_proof"
+                    ),
+                    "forward_pool_ensure_log_marker": (
+                        gate_module.FORWARD_POOL_ENSURE_ACTIVE_MARKER
+                        if spec["native"]
+                        and effective_forward_pool_ensure == "fused_qkv_proof"
                         else "not_applicable"
                     ),
                 }
@@ -632,6 +650,16 @@ def _correctness(
                         gate_module.NATIVE_FRONTEND_INLINE_ACTIVE_MARKER
                         if spec["native"]
                         and effective_frontend == "qkv_scatter_inline"
+                        else "not_applicable"
+                    ),
+                    "forward_pool_ensure_active_verified": (
+                        spec["native"]
+                        and effective_forward_pool_ensure == "fused_qkv_proof"
+                    ),
+                    "forward_pool_ensure_log_marker": (
+                        gate_module.FORWARD_POOL_ENSURE_ACTIVE_MARKER
+                        if spec["native"]
+                        and effective_forward_pool_ensure == "fused_qkv_proof"
                         else "not_applicable"
                     ),
                     "profile": _artifact(profile),
@@ -1216,6 +1244,7 @@ def _log(
     native_split_policy: str = "b70_q6",
     native_max_splits: int = 32,
     native_frontend: str = "reference",
+    forward_pool_ensure: str = "always",
 ) -> Path:
     lines = [
         "INFO config: device_config=xpu",
@@ -1242,6 +1271,10 @@ def _log(
         if native_frontend == "qkv_scatter_inline":
             lines.append(
                 f"INFO {gate_module.NATIVE_FRONTEND_INLINE_ACTIVE_MARKER} layer=test"
+            )
+        if forward_pool_ensure == "fused_qkv_proof":
+            lines.append(
+                f"INFO {gate_module.FORWARD_POOL_ENSURE_ACTIVE_MARKER} layer=test"
             )
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return path
@@ -1309,6 +1342,7 @@ def _arms(
                 else selected_splits[4]
             ),
             native_frontend=native_frontend,
+            forward_pool_ensure=forward_pool_ensure,
         )
         for index in range(len(candidate_orders))
     ]
@@ -1484,6 +1518,57 @@ def test_match_gate_requires_inline_marker_in_addition_to_active_qkv(
 
     with pytest.raises(GateError, match="inline frontend runtime proof differs"):
         _compare(arms)
+
+
+def test_match_gate_requires_forward_pool_elision_marker(tmp_path: Path) -> None:
+    arms = _arms(
+        tmp_path,
+        native_frontend="qkv_scatter",
+        forward_pool_ensure="fused_qkv_proof",
+    )
+    candidate_log = arms[3][0]
+    text = candidate_log.read_text(encoding="utf-8")
+    candidate_log.write_text(
+        "\n".join(
+            line
+            for line in text.splitlines()
+            if gate_module.FORWARD_POOL_ENSURE_ACTIVE_MARKER not in line
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(GateError, match="forward-pool runtime proof differs"):
+        _compare(arms)
+
+
+@pytest.mark.parametrize("log_group", [2, 3])
+def test_match_gate_rejects_inapplicable_pool_elision_marker(
+    tmp_path: Path, log_group: int
+) -> None:
+    arms = _arms(tmp_path)
+    contaminated_log = arms[log_group][0]
+    contaminated_log.write_text(
+        contaminated_log.read_text(encoding="utf-8")
+        + f"INFO {gate_module.FORWARD_POOL_ENSURE_ACTIVE_MARKER} layer=test\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(GateError, match="forward-pool runtime proof differs"):
+        _compare(arms)
+
+
+def test_correctness_gate_rejects_pool_proof_without_fused_frontend(
+    tmp_path: Path,
+) -> None:
+    correctness_path = _correctness(
+        tmp_path / "correctness.json",
+        native_frontend="reference",
+        forward_pool_ensure="fused_qkv_proof",
+    )
+
+    with pytest.raises(GateError, match="fused pool proof requires"):
+        _load_correctness(correctness_path)
 
 
 @pytest.mark.parametrize("flush_writer", ["native_xe2", "sinkhorn_pack_xe2"])

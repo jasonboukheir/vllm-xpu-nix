@@ -83,9 +83,14 @@ PREFILL_STORE_VARIANTS = ("reference", "hadamard_scatter")
 NATIVE_FRONTEND_VARIANTS = ("reference", "qkv_scatter", "qkv_scatter_inline")
 NATIVE_FRONTEND_ACTIVE_MARKER = "[KVARN_FRONTEND] active=qkv_scatter;"
 NATIVE_FRONTEND_INLINE_ACTIVE_MARKER = (
-    "[KVARN_FRONTEND_INLINE] configured=qkv_scatter_inline;"
+    "[KVARN_FRONTEND_INLINE] active=qkv_scatter_inline; "
+    "wrapper=unified_qkv_attention_with_output;"
 )
 FORWARD_POOL_ENSURE_VARIANTS = ("always", "fused_qkv_proof")
+FORWARD_POOL_ENSURE_ACTIVE_MARKER = (
+    "[KVARN_FORWARD_POOL_ENSURE] active=fused_qkv_proof; "
+    "action=elide_ensure_pool;"
+)
 B70_Q6_SPLITS = split_policy.B70_Q6_SPLITS
 B70_Q6_MAX_SPLITS = split_policy.B70_Q6_MAX_SPLITS
 B70_Q6_V2_MAX_SPLITS = split_policy.B70_Q6_V2_MAX_SPLITS
@@ -660,6 +665,14 @@ def forward_pool_ensure_environment(args: argparse.Namespace) -> str:
     selection = getattr(args, "forward_pool_ensure", "always")
     if selection not in FORWARD_POOL_ENSURE_VARIANTS:
         raise RunnerError(f"unsupported forward pool ensure {selection!r}")
+    if selection == "fused_qkv_proof" and native_frontend_environment(args) not in {
+        "qkv_scatter",
+        "qkv_scatter_inline",
+    }:
+        raise RunnerError(
+            "fused_qkv_proof requires --native-frontend qkv_scatter or "
+            "qkv_scatter_inline"
+        )
     return selection
 
 
@@ -793,6 +806,13 @@ def load_correctness(
     forward_pool_ensure = document.get("forward_pool_ensure")
     if forward_pool_ensure not in FORWARD_POOL_ENSURE_VARIANTS:
         raise RunnerError("correctness artifact forward pool ensure is unsupported")
+    if forward_pool_ensure == "fused_qkv_proof" and native_frontend not in {
+        "qkv_scatter",
+        "qkv_scatter_inline",
+    }:
+        raise RunnerError(
+            "correctness artifact fused pool proof requires a fused QKV frontend"
+        )
     service_controls = document.get("service_controls")
     correctness_onednn = (
         service_controls.get("kvarn_onednn_deterministic")
@@ -2081,6 +2101,7 @@ def validate_engine_log(
     expected_max_splits: int | None = None,
     expected_split_policy: str | None = None,
     expected_frontend: str,
+    expected_forward_pool_ensure: str = "always",
 ) -> dict[str, Any]:
     if (
         expected_layout not in NATIVE_LAYOUTS
@@ -2128,6 +2149,25 @@ def validate_engine_log(
         raise RunnerError(
             f"{scope} engine log must {expectation} the inline fused QKV frontend"
         )
+    if expected_forward_pool_ensure not in FORWARD_POOL_ENSURE_VARIANTS:
+        raise RunnerError(
+            f"unsupported forward pool ensure {expected_forward_pool_ensure!r}"
+        )
+    if expected_forward_pool_ensure == "fused_qkv_proof" and expected_frontend not in {
+        "qkv_scatter",
+        "qkv_scatter_inline",
+    }:
+        raise RunnerError("fused_qkv_proof requires a fused QKV frontend")
+    forward_pool_ensure_active = FORWARD_POOL_ENSURE_ACTIVE_MARKER in text
+    expected_forward_pool_ensure_active = (
+        native and expected_forward_pool_ensure == "fused_qkv_proof"
+    )
+    if forward_pool_ensure_active != expected_forward_pool_ensure_active:
+        expectation = "execute" if expected_forward_pool_ensure_active else "not execute"
+        scope = "native" if native else "non-native"
+        raise RunnerError(
+            f"{scope} engine log must {expectation} fused QKV pool-check elision"
+        )
     selection_fields = (
         expected_kernel_variant,
         expected_max_splits,
@@ -2174,6 +2214,13 @@ def validate_engine_log(
     result["native_frontend_inline_log_marker"] = (
         NATIVE_FRONTEND_INLINE_ACTIVE_MARKER
         if expected_frontend_inline_active
+        else "not_applicable"
+    )
+    result["forward_pool_ensure_expected"] = expected_forward_pool_ensure
+    result["forward_pool_ensure_active_verified"] = forward_pool_ensure_active
+    result["forward_pool_ensure_log_marker"] = (
+        FORWARD_POOL_ENSURE_ACTIVE_MARKER
+        if expected_forward_pool_ensure_active
         else "not_applicable"
     )
     result["native_layout_evidence"] = (
@@ -2638,6 +2685,7 @@ def run_one(
                 else None
             ),
             expected_frontend=native_frontend_for_run(run, args),
+            expected_forward_pool_ensure=forward_pool_ensure_for_run(run, args),
         )
         write_json_atomic(run_dir / "engine-log-scan.json", log_scan)
         sealed = seal_benchmark_result(
@@ -3610,6 +3658,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             args.request_stable_projection_rows
         )
         args.request_stable_rmsnorm = bool(args.request_stable_rmsnorm)
+        forward_pool_ensure_environment(args)
         if launcher_mode(args) != "runtime-factory" and (
             not args.request_stable_projection_rows
             or not args.request_stable_rmsnorm

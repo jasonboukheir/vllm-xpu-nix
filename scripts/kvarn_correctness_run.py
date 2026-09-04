@@ -1353,6 +1353,7 @@ def run_service_phase(
             expected_max_splits=native_max_splits_for_spec(spec, args),
             expected_split_policy=native_split_policy_for_spec(spec, args),
             expected_frontend=native_frontend_for_spec(spec, args),
+            expected_forward_pool_ensure=forward_pool_ensure_for_spec(spec, args),
         )
         native_dispatch_verified = spec.native and perf.NATIVE_DISPATCH in (
             phase_dir / "engine.log"
@@ -1406,6 +1407,12 @@ def run_service_phase(
             ],
             native_frontend_inline_log_marker=log_scan[
                 "native_frontend_inline_log_marker"
+            ],
+            forward_pool_ensure_active_verified=log_scan[
+                "forward_pool_ensure_active_verified"
+            ],
+            forward_pool_ensure_log_marker=log_scan[
+                "forward_pool_ensure_log_marker"
             ],
             native_layout_log_marker=perf.kvarn_factory_marker(
                 cache_layout=native_layout_for_spec(spec, args),
@@ -2480,6 +2487,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             args.request_stable_projection_rows
         )
         args.request_stable_rmsnorm = bool(args.request_stable_rmsnorm)
+        perf.forward_pool_ensure_environment(args)
         if args.native_output_dtype != "bf16":
             raise CorrectnessError(
                 "finalist service qualification requires --native-output-dtype bf16"

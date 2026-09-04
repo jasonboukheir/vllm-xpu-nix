@@ -934,7 +934,7 @@ def test_native_log_rejects_disabled_or_missing_direct_bf16(
         runner.validate_engine_log(engine_log, native=True)
 
 
-def test_native_log_allows_single_split_warmup_before_direct_bf16(
+def test_native_log_allows_transitional_batches_before_direct_bf16(
     tmp_path: Path,
 ) -> None:
     engine_log = tmp_path / "engine.log"
@@ -945,7 +945,11 @@ def test_native_log_allows_single_split_warmup_before_direct_bf16(
         f"INFO {runner.NATIVE_DISPATCH} "
         "(direct bf16 output=False; cache layout=xe2_dpas; splits=1)\n"
         f"INFO {runner.NATIVE_DISPATCH} "
-        "(direct bf16 output=True; cache layout=xe2_dpas; splits=32)\n",
+        "(direct bf16 output=False; cache layout=xe2_dpas; splits=32)\n"
+        f"INFO {runner.NATIVE_DISPATCH} "
+        "(direct bf16 output=False; cache layout=xe2_dpas; splits=16)\n"
+        f"INFO {runner.NATIVE_DISPATCH} "
+        "(direct bf16 output=True; cache layout=xe2_dpas; splits=8)\n",
         encoding="utf-8",
     )
 
@@ -955,24 +959,14 @@ def test_native_log_allows_single_split_warmup_before_direct_bf16(
     assert scan["native_direct_bf16_verified"] is True
 
 
-@pytest.mark.parametrize(
-    "decoder_lines",
-    [
-        [
-            "(direct bf16 output=False; cache layout=xe2_dpas; splits=8)",
-            "(direct bf16 output=True; cache layout=xe2_dpas; splits=32)",
-        ],
-        [
-            "(direct bf16 output=True; cache layout=xe2_dpas; splits=32)",
-            "(direct bf16 output=False; cache layout=xe2_dpas; splits=1)",
-        ],
-    ],
-    ids=("disabled-multisplit", "disabled-after-proof"),
-)
-def test_native_log_rejects_unsafe_disabled_direct_bf16_dispatch(
-    tmp_path: Path, decoder_lines: list[str]
+def test_native_log_rejects_disabled_direct_bf16_after_proof(
+    tmp_path: Path,
 ) -> None:
     engine_log = tmp_path / "engine.log"
+    decoder_lines = [
+        "(direct bf16 output=True; cache layout=xe2_dpas; splits=32)",
+        "(direct bf16 output=False; cache layout=xe2_dpas; splits=1)",
+    ]
     dispatch = "\n".join(
         f"INFO {runner.NATIVE_DISPATCH} {suffix}" for suffix in decoder_lines
     )

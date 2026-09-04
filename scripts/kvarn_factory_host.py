@@ -1,0 +1,440 @@
+#!/usr/bin/env python3
+"""Launch the Kvarn B70 factory from one realized vLLM Nix output.
+
+The launcher discovers both native libraries from the package's realized
+closure, records their true Nix derivations and closure digests, and then
+replaces itself with ``kvarn_factory_run.py``.  It never starts or stops a
+service and refuses to compete with an already-running vLLM service for VRAM.
+"""
+
+from __future__ import annotations
+
+import argparse
+import dataclasses
+import datetime as dt
+import hashlib
+import os
+import re
+import subprocess
+import sys
+from collections.abc import Callable, Sequence
+from pathlib import Path
+from typing import NoReturn
+
+BASE_LIBRARY = "_C.abi3.so"
+FLASH_LIBRARY = "_vllm_fa2_C.abi3.so"
+DEFAULT_VARIANTS = "baseline,qk_i8u4,q6_scalar,q8_vector,q6_vector"
+DEFAULT_SPLITS = "auto,8,16,24,32"
+DEFAULT_CONTEXTS = "4096,16384,65023"
+DEFAULT_BATCHES = "1,4"
+STORE_NAME = re.compile(r"^[a-z0-9]{32}-.+")
+DERIVATION = re.compile(r"^/nix/store/[a-z0-9]{32}-.+\.drv$")
+GIT_COMMIT = re.compile(r"^[0-9a-f]{40}$")
+
+
+class HostLauncherError(RuntimeError):
+    """Raised when host provenance or exclusivity cannot be established."""
+
+
+@dataclasses.dataclass(frozen=True)
+class NixArtifact:
+    library: Path
+    output: Path
+    derivation: str
+    closure_sha256: str
+
+
+@dataclasses.dataclass(frozen=True)
+class RepositoryPaths:
+    project: Path
+    vllm: Path
+    kernels: Path
+
+
+CommandRunner = Callable[[Sequence[str]], str]
+Executor = Callable[[Sequence[str]], NoReturn]
+
+
+def _run(command: Sequence[str]) -> str:
+    try:
+        completed = subprocess.run(
+            list(command),
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise HostLauncherError(
+            f"command failed: {' '.join(command)}: {error}"
+        ) from error
+    return completed.stdout.strip()
+
+
+def closure_digest(paths: Sequence[str]) -> str:
+    """Match kvarn_factory_run.py's sorted, unique, newline-terminated hash."""
+    canonical = "\n".join(sorted(set(paths))) + "\n"
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def store_output_from_resolved(path: Path) -> Path:
+    parts = path.parts
+    if (
+        len(parts) < 4
+        or parts[:3] != ("/", "nix", "store")
+        or not STORE_NAME.fullmatch(parts[3])
+    ):
+        raise HostLauncherError(f"path is not in a Nix store output: {path}")
+    return Path(*parts[:4])
+
+
+def resolve_package_output(path: Path) -> Path:
+    try:
+        resolved = path.expanduser().resolve(strict=True)
+    except OSError as error:
+        raise HostLauncherError(
+            f"cannot resolve vLLM package {path}: {error}"
+        ) from error
+    output = store_output_from_resolved(resolved)
+    if resolved != output or not output.is_dir():
+        raise HostLauncherError(
+            f"vLLM package must resolve to a Nix store output directory: {resolved}"
+        )
+    return output
+
+
+def query_closure(output: Path, command_runner: CommandRunner = _run) -> list[Path]:
+    raw_paths = command_runner(("nix-store", "-qR", str(output))).splitlines()
+    if not raw_paths:
+        raise HostLauncherError(f"Nix returned an empty closure for {output}")
+    closure: list[Path] = []
+    for raw_path in sorted(set(raw_paths)):
+        candidate = Path(raw_path)
+        if store_output_from_resolved(candidate) != candidate:
+            raise HostLauncherError(
+                f"Nix closure contains a non-output path: {candidate}"
+            )
+        closure.append(candidate)
+    if output not in closure:
+        raise HostLauncherError(
+            f"realized package output is absent from its own closure: {output}"
+        )
+    return closure
+
+
+def discover_library(closure: Sequence[Path], basename: str) -> Path:
+    candidates: set[Path] = set()
+    patterns = (
+        f"lib/python*/site-packages/*/{basename}",
+        f"lib64/python*/site-packages/*/{basename}",
+    )
+    try:
+        for output in closure:
+            for pattern in patterns:
+                for match in output.glob(pattern):
+                    resolved = match.resolve(strict=True)
+                    if resolved.is_file():
+                        candidates.add(resolved)
+    except OSError as error:
+        raise HostLauncherError(
+            f"cannot inspect the realized Nix closure for {basename}: {error}"
+        ) from error
+    if len(candidates) != 1:
+        rendered = ", ".join(str(path) for path in sorted(candidates)) or "none"
+        raise HostLauncherError(
+            f"expected exactly one {basename} in the vLLM closure, found "
+            f"{len(candidates)}: {rendered}"
+        )
+    library = next(iter(candidates))
+    library_output = store_output_from_resolved(library)
+    if library_output not in closure:
+        raise HostLauncherError(
+            f"resolved {basename} escapes the attested vLLM closure: {library}"
+        )
+    return library
+
+
+def attest_library(library: Path, command_runner: CommandRunner = _run) -> NixArtifact:
+    output = store_output_from_resolved(library)
+    derivation = command_runner(("nix-store", "-q", "--deriver", str(output)))
+    if not DERIVATION.fullmatch(derivation):
+        raise HostLauncherError(
+            f"Nix returned no unique derivation for {output}: {derivation!r}"
+        )
+    closure = command_runner(("nix-store", "-qR", str(output))).splitlines()
+    if not closure:
+        raise HostLauncherError(f"Nix returned an empty closure for {output}")
+    for item in closure:
+        candidate = Path(item)
+        if store_output_from_resolved(candidate) != candidate:
+            raise HostLauncherError(
+                f"artifact closure contains a non-output path: {candidate}"
+            )
+    return NixArtifact(
+        library=library,
+        output=output,
+        derivation=derivation,
+        closure_sha256=closure_digest(closure),
+    )
+
+
+def is_vllm_service_argv(argv: Sequence[str]) -> bool:
+    if not argv:
+        return False
+    executable_names = {Path(token).name for token in argv}
+    if "serve" in argv and executable_names.intersection({"vllm", ".vllm-wrapped"}):
+        return True
+    modules = {
+        "vllm.entrypoints.openai.api_server",
+        "vllm.entrypoints.api_server",
+    }
+    return any(token in modules for token in argv)
+
+
+def find_vllm_services(
+    proc_root: Path = Path("/proc"), *, self_pid: int | None = None
+) -> list[int]:
+    own_pid = os.getpid() if self_pid is None else self_pid
+    matches: list[int] = []
+    inaccessible: list[int] = []
+    try:
+        entries = list(proc_root.iterdir())
+    except OSError as error:
+        raise HostLauncherError(f"cannot inspect {proc_root}: {error}") from error
+    for entry in entries:
+        if not entry.name.isdigit() or int(entry.name) == own_pid:
+            continue
+        try:
+            raw = (entry / "cmdline").read_bytes()
+        except FileNotFoundError:
+            continue
+        except (OSError, PermissionError):
+            inaccessible.append(int(entry.name))
+            continue
+        argv = [part.decode(errors="replace") for part in raw.split(b"\0") if part]
+        if is_vllm_service_argv(argv):
+            matches.append(int(entry.name))
+    if inaccessible:
+        preview = ", ".join(str(pid) for pid in sorted(inaccessible)[:8])
+        raise HostLauncherError(
+            "cannot prove vLLM is stopped because process command lines are "
+            f"inaccessible (PIDs {preview})"
+        )
+    return sorted(matches)
+
+
+def require_no_vllm_service(proc_root: Path = Path("/proc")) -> None:
+    running = find_vllm_services(proc_root)
+    if running:
+        rendered = ", ".join(str(pid) for pid in running)
+        raise HostLauncherError(
+            "refusing to run while a vLLM service is active "
+            f"(PIDs {rendered}); the matched corpus needs about 4 GiB of free "
+            "VRAM. Stop it yourself, then rerun this launcher."
+        )
+
+
+def require_clean_repository(
+    label: str, path: Path, runner: CommandRunner = _run
+) -> Path:
+    try:
+        resolved = path.expanduser().resolve(strict=True)
+    except OSError as error:
+        raise HostLauncherError(
+            f"cannot resolve {label} repository {path}: {error}"
+        ) from error
+    top_level = Path(
+        runner(("git", "-C", str(resolved), "rev-parse", "--show-toplevel"))
+    ).resolve(strict=True)
+    if top_level != resolved:
+        raise HostLauncherError(
+            f"{label} repository path is not its Git top level: {resolved}"
+        )
+    status = runner(
+        (
+            "git",
+            "-C",
+            str(resolved),
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all",
+        )
+    )
+    if status:
+        raise HostLauncherError(f"{label} repository is dirty: {resolved}")
+    return resolved
+
+
+def require_derivation_source(
+    label: str,
+    artifact: NixArtifact,
+    repository: Path,
+    runner: CommandRunner = _run,
+) -> None:
+    head = runner(("git", "-C", str(repository), "rev-parse", "HEAD"))
+    if not GIT_COMMIT.fullmatch(head):
+        raise HostLauncherError(
+            f"{label} repository returned an invalid Git commit: {head!r}"
+        )
+    marker = f".g{head[:7]}"
+    if marker not in Path(artifact.derivation).name:
+        raise HostLauncherError(
+            f"{label} source mismatch: repository HEAD {head} is not stamped "
+            f"into artifact derivation {artifact.derivation}"
+        )
+
+
+def timestamped_output(output_dir: Path, *, now: dt.datetime | None = None) -> Path:
+    resolved_dir = output_dir.expanduser().resolve()
+    if resolved_dir.is_relative_to(Path("/tmp")):
+        raise HostLauncherError(
+            f"factory output must be durable and outside /tmp: {resolved_dir}"
+        )
+    instant = now or dt.datetime.now(tz=dt.UTC)
+    if instant.tzinfo is None:
+        raise HostLauncherError("timestamp must be timezone-aware")
+    stamp = instant.astimezone(dt.UTC).strftime("%Y%m%dT%H%M%SZ")
+    output = resolved_dir / f"factory-b70-{stamp}.json"
+    if output.exists():
+        raise HostLauncherError(f"refusing to overwrite factory evidence: {output}")
+    return output
+
+
+def build_runner_command(
+    *,
+    runner: Path,
+    repositories: RepositoryPaths,
+    base: NixArtifact,
+    flash: NixArtifact,
+    output: Path,
+    variants: str,
+    splits: str,
+    contexts: str,
+    batches: str,
+) -> list[str]:
+    return [
+        sys.executable,
+        str(runner),
+        "--base-library",
+        str(base.library),
+        "--flash-library",
+        str(flash.library),
+        "--base-derivation",
+        base.derivation,
+        "--base-closure-sha256",
+        base.closure_sha256,
+        "--flash-derivation",
+        flash.derivation,
+        "--flash-closure-sha256",
+        flash.closure_sha256,
+        "--vllm-xpu-nix-repo",
+        str(repositories.project),
+        "--vllm-repo",
+        str(repositories.vllm),
+        "--kernels-repo",
+        str(repositories.kernels),
+        "--variants",
+        variants,
+        "--splits",
+        splits,
+        "--contexts",
+        contexts,
+        "--batches",
+        batches,
+        "--fixture-mode",
+        "matched-production",
+        "--output",
+        str(output),
+    ]
+
+
+def _exec(command: Sequence[str]) -> NoReturn:
+    os.execv(command[0], list(command))
+
+
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    # ``nix run .#kvarn-factory`` executes this file from the Nix store while
+    # preserving the caller's working directory. The factory is intentionally
+    # run from the clean vllm-xpu-nix checkout whose state enters provenance.
+    project = Path.cwd()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "package",
+        type=Path,
+        help="realized vLLM package output or a result symlink to it",
+    )
+    parser.add_argument("--vllm-xpu-nix-repo", type=Path, default=project)
+    parser.add_argument("--vllm-repo", type=Path, default=project.parent / "vllm")
+    parser.add_argument(
+        "--kernels-repo", type=Path, default=project.parent / "vllm-xpu-kernels"
+    )
+    parser.add_argument(
+        "--output-dir", type=Path, default=project / "benchmark-results/kvarn"
+    )
+    parser.add_argument("--variants", default=DEFAULT_VARIANTS)
+    parser.add_argument("--splits", default=DEFAULT_SPLITS)
+    parser.add_argument("--contexts", default=DEFAULT_CONTEXTS)
+    parser.add_argument("--batches", default=DEFAULT_BATCHES)
+    return parser.parse_args(argv)
+
+
+def launch(
+    args: argparse.Namespace,
+    *,
+    command_runner: CommandRunner = _run,
+    executor: Executor = _exec,
+    proc_root: Path = Path("/proc"),
+    now: dt.datetime | None = None,
+) -> NoReturn:
+    require_no_vllm_service(proc_root)
+    project = require_clean_repository(
+        "vllm-xpu-nix", args.vllm_xpu_nix_repo, command_runner
+    )
+    repositories = RepositoryPaths(
+        project=project,
+        vllm=require_clean_repository("vLLM", args.vllm_repo, command_runner),
+        kernels=require_clean_repository(
+            "vllm-xpu-kernels", args.kernels_repo, command_runner
+        ),
+    )
+    package = resolve_package_output(args.package)
+    package_closure = query_closure(package, command_runner)
+    base = attest_library(
+        discover_library(package_closure, BASE_LIBRARY), command_runner
+    )
+    flash = attest_library(
+        discover_library(package_closure, FLASH_LIBRARY), command_runner
+    )
+    require_derivation_source("vLLM", base, repositories.vllm, command_runner)
+    require_derivation_source(
+        "vllm-xpu-kernels", flash, repositories.kernels, command_runner
+    )
+    output = timestamped_output(args.output_dir, now=now)
+    runner = project / "scripts/kvarn_factory_run.py"
+    if not runner.is_file():
+        raise HostLauncherError(f"factory runner is missing: {runner}")
+    command = build_runner_command(
+        runner=runner,
+        repositories=repositories,
+        base=base,
+        flash=flash,
+        output=output,
+        variants=args.variants,
+        splits=args.splits,
+        contexts=args.contexts,
+        batches=args.batches,
+    )
+    print(f"Launching matched B70 factory evidence: {output}", flush=True)
+    executor(command)
+    raise HostLauncherError("factory runner unexpectedly returned from exec")
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    try:
+        launch(parse_args(argv))
+    except HostLauncherError as error:
+        print(f"kvarn factory launcher: {error}", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

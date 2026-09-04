@@ -97,6 +97,23 @@ parity. Each case must first pass candidate-versus-natural and quantized
 natural-versus-auto output checks. Full model execution, scheduler behavior,
 page flushing, TTFT, ITL, and service throughput remain finalist gates.
 
+Run the complete matched primitive matrix from the repository root after the
+vLLM service has been stopped:
+
+```console
+nix run .#kvarn-factory -- \
+  --vllm-xpu-nix-repo "$PWD" \
+  --vllm-repo /tmp/vllm-kvarn-upstream-sync \
+  --kernels-repo /tmp/vllm-xpu-kernels-upstream-sync
+```
+
+This realizes one BMG-AOT package, then tests all five kernel variants and the
+configured split sweep in one Python/XPU process. The launcher refuses to run
+beside a vLLM service, against dirty or source-mismatched repositories, with
+ambiguous shared libraries, or without exact Nix derivation and closure
+attestations. Evidence is written atomically under
+`benchmark-results/kvarn/`; `/tmp` and overwrites are rejected.
+
 ## Evidence entering round 1
 
 The direct-BF16 B70 device-stage checkpoint in

@@ -242,6 +242,25 @@
             kernelConfig = kvarnFactoryKernelConfig;
           };
 
+          # Run the entire B70 candidate matrix from the same Python closure
+          # as the factory package.  The host script receives the embedded
+          # package as its positional artifact, so the environment and the
+          # attested shared objects cannot silently come from different
+          # builds.
+          kvarnFactoryPython = pkgs.python312.withPackages (_: [ vllm-xpu-kvarn-factory ]);
+          kvarn-factory-host = pkgs.writeShellApplication {
+            name = "kvarn-factory-host";
+            runtimeInputs = [
+              pkgs.gitMinimal
+              pkgs.nix
+            ];
+            text = ''
+              exec ${kvarnFactoryPython}/bin/python \
+                ${./scripts/kvarn_factory_host.py} \
+                ${vllm-xpu-kvarn-factory} "$@"
+            '';
+          };
+
           kv-kernel-ab = pkgs.callPackage ./nix/kv-kernel-ab.nix { };
 
           # ---- shells, checks, and misc helpers ----
@@ -301,6 +320,7 @@
               vllm-xpu
               vllm-xpu-unstable
               vllm-xpu-kvarn-factory
+              kvarn-factory-host
               ;
             inherit (stableLibs)
               attn-kernels-xe-2
@@ -335,6 +355,10 @@
             kv-kernel-ab = {
               type = "app";
               program = "${kv-kernel-ab}/bin/kv-kernel-ab";
+            };
+            kvarn-factory = {
+              type = "app";
+              program = "${kvarn-factory-host}/bin/kvarn-factory-host";
             };
             lint = {
               type = "app";

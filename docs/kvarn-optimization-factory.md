@@ -82,6 +82,21 @@ attention sinks requires a broader kernel package. The other split kernel
 libraries remain present in this round; pruning unrelated feature libraries is
 kept separate from kernel-performance experiments.
 
+The direct runner defaults to `--fixture-mode matched-production` and likewise
+requires auto block size 64. It creates one deterministic logical BF16 K/V
+corpus, writes that corpus into the auto cache with the production cache op,
+and derives both natural and DPAS Kvarn records with the production Hadamard,
+Sinkhorn, RTN, and packing paths. Sink pages and each current page remain in
+their production-style FP16 tail slots. Corpus construction, validation, and
+hashing occur before timing. The old unrelated random payloads are available
+only through explicit `--fixture-mode unmatched-diagnostic` and can never
+produce matched-ratio evidence.
+
+A matched primitive ratio is still candidate-ranking evidence, not service
+parity. Each case must first pass candidate-versus-natural and quantized
+natural-versus-auto output checks. Full model execution, scheduler behavior,
+page flushing, TTFT, ITL, and service throughput remain finalist gates.
+
 ## Evidence entering round 1
 
 The direct-BF16 B70 device-stage checkpoint in

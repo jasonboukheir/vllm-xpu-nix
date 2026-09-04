@@ -306,6 +306,31 @@ def test_distinct_layout_cache_guard_rejects_alias() -> None:
         factory.ensure_distinct_storage(first, first)
 
 
+def test_natural_and_dpas_metadata_must_match_exactly() -> None:
+    class FakeTorch:
+        @staticmethod
+        def equal(left, right) -> bool:
+            return left == right
+
+    natural_key = {"s_col_K": 1, "zp_K": 2, "s_row_K": 3}
+    natural_value = {"s_col_V": 4, "s_row_V": 5, "zp_V": 6}
+    factory._require_same_quantization_metadata(
+        FakeTorch(),
+        natural_key,
+        natural_value,
+        dict(natural_key),
+        dict(natural_value),
+    )
+    with pytest.raises(factory.FactoryError, match="K metadata diverged"):
+        factory._require_same_quantization_metadata(
+            FakeTorch(),
+            natural_key,
+            natural_value,
+            {**natural_key, "s_row_K": 99},
+            dict(natural_value),
+        )
+
+
 def test_fixture_helper_must_come_from_attested_repo(tmp_path: Path) -> None:
     expected = tmp_path / "benchmark" / "kvarn_utils.py"
     expected.parent.mkdir()
@@ -482,10 +507,162 @@ def test_focused_xpu_kill_suite_is_bound_to_library_and_fail_closed(
         factory.require_focused_xpu_kill_suite(skipped)
 
 
-def test_fixture_and_fusion_results_cannot_claim_matched_parity() -> None:
+def _valid_matched_manifest() -> dict:
+    shape = [1, 128, factory.H_KV, factory.HEAD_DIM]
+    tensor_bytes = 2
+    for extent in shape:
+        tensor_bytes *= extent
+    source = {
+        "path": "/source.py",
+        "sha256": "e" * 64,
+        "size_bytes": 1,
+        "mtime_ns": 1,
+    }
+    manifest = {
+        "fixture_mode": factory.MATCHED_FIXTURE_MODE,
+        "logical_shape": shape,
+        "logical_dtype": "torch.bfloat16",
+        "generator": {
+            "algorithm": "torch CPU Generator.randn request-major",
+            "key_seed": factory.CORPUS_SEED,
+            "value_seed": factory.CORPUS_SEED + 1,
+            "generation_dtype": "torch.bfloat16",
+        },
+        "key_sha256": "a" * 64,
+        "value_sha256": "b" * 64,
+        "logical_bytes_hashed": {"key": tensor_bytes, "value": tensor_bytes},
+        "auto_key_cache_sha256": "f" * 64,
+        "auto_value_cache_sha256": "0" * 64,
+        "natural_packed_cache_sha256": "c" * 64,
+        "dpas_packed_cache_sha256": "d" * 64,
+        "production_packer_sources": {
+            "config": dict(source),
+            "sinkhorn": dict(source),
+            "store": dict(source),
+        },
+        "tail_mapping_by_context": {
+            "128": {
+                "validated": True,
+                "block_to_slot_sha256": "1" * 64,
+                "tail_key_sha256": "2" * 64,
+                "tail_value_sha256": "3" * 64,
+            }
+        },
+        "invariants": {
+            "auto_populated_by_reshape_and_cache_flash": True,
+            "natural_populated_by_production_packers": True,
+            "dpas_populated_by_production_packers": True,
+            "natural_and_dpas_share_sinkhorn_results": True,
+            "sink_page_mapped_to_fp16_pool": True,
+            "current_tail_mapped_to_fp16_pool": True,
+            "partial_tail_valid_token_counts_verified": True,
+            "all_setup_and_hashing_outside_timing": True,
+        },
+    }
+    manifest["logical_corpus_sha256"] = factory._corpus_identity(manifest)
+    return manifest
+
+
+def test_matched_corpus_manifest_is_fail_closed() -> None:
+    manifest = _valid_matched_manifest()
+    factory.validate_matched_corpus_manifest(manifest)
+
+    incomplete_hash = dict(manifest)
+    incomplete_hash["logical_bytes_hashed"] = {"key": 1, "value": 1}
+    incomplete_hash["logical_corpus_sha256"] = factory._corpus_identity(incomplete_hash)
+    with pytest.raises(factory.FactoryError, match="every logical BF16 byte"):
+        factory.validate_matched_corpus_manifest(incomplete_hash)
+
+    unchecked_tail = {**manifest, "tail_mapping_by_context": {"128": {}}}
+    with pytest.raises(factory.FactoryError, match="tail mappings"):
+        factory.validate_matched_corpus_manifest(unchecked_tail)
+
+    false_invariant = {
+        **manifest,
+        "invariants": {
+            **manifest["invariants"],
+            "natural_and_dpas_share_sinkhorn_results": False,
+        },
+    }
+    with pytest.raises(factory.FactoryError, match="share_sinkhorn"):
+        factory.validate_matched_corpus_manifest(false_invariant)
+
+
+def test_tail_assignments_model_sink_and_partial_or_full_current_tail() -> None:
+    one_page = factory.tail_page_assignments(
+        batch=1, context=128, pages_per_request=512
+    )
+    assert one_page == [
+        {
+            "request": 0,
+            "local_page": 0,
+            "physical_page": 0,
+            "pool_slot": 0,
+            "roles": ["sink", "current_tail"],
+            "valid_tokens": 128,
+        }
+    ]
+
+    ragged = factory.tail_page_assignments(
+        batch=2, context=65_023, pages_per_request=512
+    )
+    assert [
+        (item["physical_page"], item["roles"], item["valid_tokens"]) for item in ragged
+    ] == [
+        (0, ["sink"], 128),
+        (507, ["current_tail"], 127),
+        (512, ["sink"], 128),
+        (1019, ["current_tail"], 127),
+    ]
+    assert [item["pool_slot"] for item in ragged] == [0, 1, 2, 3]
+    with pytest.raises(factory.FactoryError, match="exceeds"):
+        factory.tail_page_assignments(batch=1, context=129, pages_per_request=1)
+
+
+def test_matched_fixture_is_default_and_unmatched_is_explicit_diagnostic(
+    tmp_path: Path,
+) -> None:
+    derivation = "/nix/store/0123456789abcdfghijklmnpqrsvwxyz-test.drv"
+    common = [
+        "--base-library",
+        str(tmp_path / "base.so"),
+        "--flash-library",
+        str(tmp_path / "flash.so"),
+        "--base-derivation",
+        derivation,
+        "--base-closure-sha256",
+        "1" * 64,
+        "--flash-derivation",
+        derivation,
+        "--flash-closure-sha256",
+        "2" * 64,
+        "--output",
+        str(tmp_path / "result.json"),
+        "--allow-tmp",
+    ]
+    matched = factory.parse_args(common)
+    assert matched.fixture_mode == factory.MATCHED_FIXTURE_MODE
+    assert matched.auto_block_size == 64
+    with pytest.raises(SystemExit):
+        factory.parse_args([*common, "--auto-block-size", "832"])
+    diagnostic = factory.parse_args(
+        [
+            *common,
+            "--fixture-mode",
+            factory.UNMATCHED_FIXTURE_MODE,
+            "--auto-block-size",
+            "832",
+        ]
+    )
+    assert diagnostic.fixture_mode == factory.UNMATCHED_FIXTURE_MODE
+    assert diagnostic.auto_block_size == 832
+
+
+def test_fixture_and_fusion_results_label_diagnostic_mode_clearly() -> None:
     source = Path(factory.__file__).read_text(encoding="utf-8")
-    assert 'logical_kv_payloads_matched_between_auto_and_kvarn": False' in source
-    assert 'matched_parity_eligible": False' in source
+    assert factory.MATCHED_FIXTURE_MODE in source
+    assert factory.UNMATCHED_FIXTURE_MODE in source
+    assert "production_sinkhorn_rtn_from_shared_logical_corpus" in source
     assert "candidate_separate_device_stage_over_auto" in source
     assert "candidate_fused_device_stage_over_auto" in source
     assert '"candidate_device_stage_over_auto"' not in source

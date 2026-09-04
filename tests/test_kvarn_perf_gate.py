@@ -51,7 +51,11 @@ def _correctness_comparison(fixture_id: str) -> dict[str, object]:
     }
 
 
-def _correctness(path: Path, candidate_id: str = "candidate-store-path") -> Path:
+def _correctness(
+    path: Path,
+    candidate_id: str = "candidate-store-path",
+    native_layout: str = "natural",
+) -> Path:
     root = path.parent / "correctness-evidence"
     root.mkdir()
     short = gate_module.CORRECTNESS_SHORT_FIXTURES
@@ -105,11 +109,30 @@ def _correctness(path: Path, candidate_id: str = "candidate-store-path") -> Path
     }
 
     phases: dict[str, dict[str, str]] = {}
-    for phase_name, spec in gate_module.CORRECTNESS_PHASE_SPECS.items():
+    for phase_name in gate_module.CORRECTNESS_PHASE_SPECS:
+        spec = gate_module._correctness_phase_spec(phase_name, native_layout)
+        effective_layout = spec["native_layout"]
+        variant = {field: spec[field] for field in gate_module.VARIANT_FIELDS}
         phase_dir = root / phase_name
         phase_dir.mkdir()
         profile = phase_dir / "profile.json"
-        profile.write_text("{}\n", encoding="utf-8")
+        profile.write_text(
+            json.dumps(
+                {
+                    "native_layout": effective_layout,
+                    "native_layout_environment": gate_module.NATIVE_LAYOUT_ENV[
+                        effective_layout
+                    ],
+                    "redacted_environment": {
+                        "KVARN_NATIVE_XPU_DPAS_LAYOUT": gate_module.NATIVE_LAYOUT_ENV[
+                            effective_layout
+                        ]
+                    },
+                    "variant_provenance": variant,
+                }
+            ),
+            encoding="utf-8",
+        )
         identity = phase_dir / "identity.json"
         identity.write_text(
             json.dumps(
@@ -139,6 +162,16 @@ def _correctness(path: Path, candidate_id: str = "candidate-store-path") -> Path
                     "status": "passed",
                     "spec": spec,
                     "native_dispatch_verified": spec["native"],
+                    "native_layout": effective_layout,
+                    "native_layout_environment": gate_module.NATIVE_LAYOUT_ENV[
+                        effective_layout
+                    ],
+                    "native_layout_log_marker": "unavailable",
+                    "native_layout_evidence": (
+                        "captured-process-environment-plus-native-dispatch"
+                        if spec["native"]
+                        else "captured-process-environment"
+                    ),
                     "profile": _artifact(profile),
                     "identity": _artifact(identity),
                     "engine_log": _artifact(engine_log),
@@ -174,6 +207,8 @@ def _correctness(path: Path, candidate_id: str = "candidate-store-path") -> Path
             "status": "passed",
             "gate": name,
             "candidate_id": candidate_id,
+            "native_layout": native_layout,
+            **gate_module._candidate_variant_provenance(native_layout),
             "command": [
                 "/nix/store/python/bin/python",
                 "-m",
@@ -281,7 +316,13 @@ def _correctness(path: Path, candidate_id: str = "candidate-store-path") -> Path
     document = {
         "status": "passed",
         "candidate_id": candidate_id,
+        "native_layout": native_layout,
+        **gate_module._candidate_variant_provenance(native_layout),
         "native_dispatch_verified": True,
+        "service_start_plan": [
+            gate_module._correctness_phase_spec(name, native_layout)
+            for name in gate_module.CORRECTNESS_PHASE_SPECS
+        ],
         "gates": gates,
         "candidate_identity": {
             "process_package": "/nix/store/package",
@@ -321,6 +362,7 @@ def _result(
     itl: float,
     kv_cache_dtype: str | None = None,
     native_splits: int | None = None,
+    native_layout: str = "natural",
 ) -> Path:
     completed = 8
     context = 4096
@@ -399,6 +441,17 @@ def _result(
                 "process_closure_sha256": "a" * 64,
                 "candidate_closure_sha256": "b" * 64,
                 "matched_profile_sha256": "c" * 64,
+                "native_layout": ("natural" if arm == "reference" else native_layout),
+                "native_layout_environment": (
+                    "0"
+                    if arm == "reference"
+                    else gate_module.NATIVE_LAYOUT_ENV[native_layout]
+                ),
+                "variant_provenance": (
+                    gate_module._performance_reference_variant_provenance()
+                    if arm == "reference"
+                    else gate_module._candidate_variant_provenance(native_layout)
+                ),
             }
         ),
         encoding="utf-8",
@@ -460,6 +513,24 @@ def _result(
         "kvarn_kv_cache_dtype": kv_cache_dtype
         or ("auto" if arm == "reference" else "kvarn_k4v4_g128_compact"),
         "kvarn_native_xpu": "0" if arm == "reference" else "1",
+        "kvarn_native_layout": "natural" if arm == "reference" else native_layout,
+        "kvarn_native_layout_environment": (
+            "0" if arm == "reference" else gate_module.NATIVE_LAYOUT_ENV[native_layout]
+        ),
+        "kvarn_native_layout_log_marker": "unavailable",
+        "kvarn_native_layout_evidence": (
+            "captured-process-environment"
+            if arm == "reference"
+            else "captured-process-environment-plus-native-dispatch"
+        ),
+        **{
+            f"kvarn_{field}": value
+            for field, value in (
+                gate_module._performance_reference_variant_provenance()
+                if arm == "reference"
+                else gate_module._candidate_variant_provenance(native_layout)
+            ).items()
+        },
         "kvarn_native_splits": str(
             native_splits
             if native_splits is not None
@@ -497,8 +568,11 @@ def _arms(
     candidate_ttft: float = 0.105,
     reference_itl: float = 0.050,
     candidate_itl: float = 0.052,
+    native_layout: str = "natural",
 ) -> tuple[list[Path], list[Path], list[Path], list[Path], Path]:
-    correctness = _correctness(tmp_path / "correctness.json")
+    correctness = _correctness(
+        tmp_path / "correctness.json", native_layout=native_layout
+    )
     digest = hashlib.sha256(correctness.read_bytes()).hexdigest()
     reference_orders = (1, 4, 5, 8, 9, 12, 13, 16)
     candidate_orders = (2, 3, 6, 7, 10, 11, 14, 15)
@@ -539,6 +613,7 @@ def _arms(
             request_throughput=candidate_value / 512,
             ttft=candidate_ttft,
             itl=candidate_itl,
+            native_layout=native_layout,
         )
         for index, order in enumerate(candidate_orders)
     ]
@@ -577,6 +652,59 @@ def test_match_gate_uses_repeat_medians_and_both_perf_axes(tmp_path: Path) -> No
     assert result["candidate_over_reference"][
         "median_request_decode_throughput"
     ] == pytest.approx(0.05 / 0.052)
+
+
+def test_gate_accepts_dpas_only_with_matching_correctness_layout(
+    tmp_path: Path,
+) -> None:
+    dpas_root = tmp_path / "dpas"
+    dpas_root.mkdir()
+    arms = _arms(dpas_root, native_layout="xe2_dpas")
+    assert _compare(arms)["status"] == "passed"
+
+    natural_root = tmp_path / "natural"
+    natural_root.mkdir()
+    natural_correctness = _correctness(natural_root / "correctness.json")
+    natural_digest = hashlib.sha256(natural_correctness.read_bytes()).hexdigest()
+    for result_path in (*arms[0], *arms[1]):
+        result = json.loads(result_path.read_text(encoding="utf-8"))
+        result["kvarn_correctness_sha256"] = natural_digest
+        result_path.write_text(json.dumps(result), encoding="utf-8")
+    mismatched = (*arms[:4], natural_correctness)
+    with pytest.raises(GateError, match="layout must match correctness"):
+        _compare(mismatched)
+
+
+def test_correctness_manifest_binds_dpas_service_plan(tmp_path: Path) -> None:
+    correctness_path = _correctness(
+        tmp_path / "correctness.json", native_layout="xe2_dpas"
+    )
+    document = json.loads(correctness_path.read_text(encoding="utf-8"))
+    document["service_start_plan"][0]["native_layout"] = "natural"
+    correctness_path.write_text(json.dumps(document), encoding="utf-8")
+
+    with pytest.raises(GateError, match="service_start_plan differs"):
+        _load_correctness(correctness_path)
+
+
+def test_gate_binds_candidate_variant_provenance_to_correctness(
+    tmp_path: Path,
+) -> None:
+    arms = _arms(tmp_path)
+    for result_path in arms[1]:
+        result = json.loads(result_path.read_text(encoding="utf-8"))
+        result["kvarn_variant_id"] = "unqualified-variant"
+        warmup_path = Path(result["kvarn_warmup_path"])
+        warmup = json.loads(warmup_path.read_text(encoding="utf-8"))
+        warmup["variant_provenance"]["variant_id"] = "unqualified-variant"
+        warmup_path.write_text(json.dumps(warmup), encoding="utf-8")
+        result["kvarn_warmup_sha256"] = hashlib.sha256(
+            warmup_path.read_bytes()
+        ).hexdigest()
+        result_path.write_text(json.dumps(result), encoding="utf-8")
+
+    with pytest.raises(GateError, match="variant provenance must match"):
+        _compare(arms)
 
 
 def test_win_mode_rejects_a_latency_for_throughput_trade(tmp_path: Path) -> None:

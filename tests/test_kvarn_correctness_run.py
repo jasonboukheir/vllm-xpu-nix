@@ -187,7 +187,11 @@ def _service_environment(
         "HOME": str(args.runtime_cache / "vllm-xpu-brutus-kvarn"),
         "KVARN_NATIVE_XPU": native,
         "KVARN_NATIVE_XPU_DECODE": native,
-        "KVARN_NATIVE_XPU_DPAS_LAYOUT": "0",
+        "KVARN_NATIVE_XPU_DPAS_LAYOUT": (
+            correctness.perf.NATIVE_LAYOUT_ENV[args.native_layout]
+            if spec.native
+            else "0"
+        ),
         "KVARN_NATIVE_XPU_MATERIALIZE": native,
         "KVARN_NATIVE_XPU_PERSISTENT_SCRATCH": native,
         "KVARN_NATIVE_XPU_SPLITS": str(spec.splits),
@@ -208,6 +212,7 @@ def test_service_profile_enforces_262k_reference_and_native_settings(
         served_model="sunny-chat",
         model_revision="1" * 40,
         max_num_batched_tokens=2048,
+        native_layout="natural",
         hf_home=tmp_path / "hf",
         runtime_cache=tmp_path / "cache",
     )
@@ -221,6 +226,44 @@ def test_service_profile_enforces_262k_reference_and_native_settings(
         environment["KVARN_NATIVE_XPU_SPLITS"] = "32"
         with pytest.raises(correctness.CorrectnessError, match="profile mismatch"):
             correctness.verify_service_profile(argv, environment, spec, args)
+
+
+def test_dpas_mode_uses_separate_launchers_and_keeps_reference_natural(
+    tmp_path: Path,
+) -> None:
+    args = argparse.Namespace(
+        native_layout="xe2_dpas",
+        model="model",
+        served_model="sunny-chat",
+        model_revision="1" * 40,
+        max_num_batched_tokens=2048,
+        hf_home=tmp_path / "hf",
+        runtime_cache=tmp_path / "cache",
+    )
+    native = correctness.SERVICE_PLAN[4]
+    reference = correctness.SERVICE_PLAN[3]
+
+    assert correctness.launcher_name(native, args) == (
+        "vllm-xpu-brutus-kvarn-native-dpas-262k-b1"
+    )
+    assert correctness.launcher_name(reference, args) == reference.launcher
+    assert correctness.native_layout_for_spec(native, args) == "xe2_dpas"
+    assert correctness.native_layout_for_spec(reference, args) == "natural"
+    assert correctness.candidate_variant_provenance(args)["variant_id"] == (
+        "native-xe2-xe2_dpas-fixed_b1s24_b4s16-eager_mnbt2048"
+    )
+    assert correctness.service_variant_provenance(reference, args)["variant_id"] == (
+        "natural-kvarn-correctness-reference-eager_mnbt2048"
+    )
+    correctness.verify_service_profile(
+        _service_argv(native, args), _service_environment(native, args), native, args
+    )
+    correctness.verify_service_profile(
+        _service_argv(reference, args),
+        _service_environment(reference, args),
+        reference,
+        args,
+    )
 
 
 def test_service_environment_pins_bounded_window_and_scrubs_full_defer(
@@ -268,6 +311,8 @@ def test_manifest_rejects_content_free_gate_evidence(
         output_dir=tmp_path,
         candidate_env=candidate,
         expected_package=Path("/nix/store/package"),
+        native_layout="natural",
+        max_num_batched_tokens=2048,
         source_identity={"revisions": {"vllm": "1" * 40}},
     )
     monkeypatch.setattr(correctness, "verify_config_identity", lambda _args: None)
@@ -503,6 +548,20 @@ def test_cli_binds_config_ref_and_keeps_mandatory_inactive_units(
     )
     assert args.config_ref == f"path:{config.resolve()}"
     assert set(correctness.REQUIRED_INACTIVE_UNITS) < set(args.require_inactive_unit)
+    assert args.native_layout == "natural"
+
+    dpas = correctness.parse_args(
+        [
+            *common,
+            "--config-ref",
+            f"path:{config}",
+            "--native-layout",
+            "xe2_dpas",
+            "--output-dir",
+            str(tmp_path / "valid-dpas"),
+        ]
+    )
+    assert dpas.native_layout == "xe2_dpas"
 
 
 def test_tracked_checkout_identity_records_head_digest_and_dirtiness(

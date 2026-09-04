@@ -166,6 +166,54 @@ PRIMITIVE_PLAN = (
 )
 
 
+def native_layout_for_spec(spec: ServiceSpec, args: argparse.Namespace) -> str:
+    return args.native_layout if spec.native else "natural"
+
+
+def candidate_variant_provenance(args: argparse.Namespace) -> dict[str, str]:
+    split_policy = "fixed_b1s24_b4s16"
+    scheduling = f"eager_mnbt{args.max_num_batched_tokens}"
+    return {
+        "kernel_strategy": "native_xe2_qlen1",
+        "split_policy": split_policy,
+        "fusion_strategy": "native_materializer_persistent_scratch",
+        "scheduling_variant": scheduling,
+        "variant_id": f"native-xe2-{args.native_layout}-{split_policy}-{scheduling}",
+    }
+
+
+def service_variant_provenance(
+    spec: ServiceSpec, args: argparse.Namespace
+) -> dict[str, str]:
+    if spec.native:
+        return candidate_variant_provenance(args)
+    scheduling = f"eager_mnbt{args.max_num_batched_tokens}"
+    return {
+        "kernel_strategy": "kvarn_non_native",
+        "split_policy": "neutral_1",
+        "fusion_strategy": "none",
+        "scheduling_variant": scheduling,
+        "variant_id": f"natural-kvarn-correctness-reference-{scheduling}",
+    }
+
+
+def launcher_name(spec: ServiceSpec, args: argparse.Namespace) -> str:
+    if spec.native and args.native_layout == "xe2_dpas":
+        return spec.launcher.replace("kvarn-native", "kvarn-native-dpas", 1)
+    return spec.launcher
+
+
+def service_spec_evidence(
+    spec: ServiceSpec, args: argparse.Namespace
+) -> dict[str, Any]:
+    return {
+        **dataclasses.asdict(spec),
+        "launcher": launcher_name(spec, args),
+        "native_layout": native_layout_for_spec(spec, args),
+        **service_variant_provenance(spec, args),
+    }
+
+
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
@@ -222,7 +270,12 @@ def verify_artifact_references(
 
 
 def passed_artifact(
-    path: Path, *, gate: str, candidate_id: str, process_package: str
+    path: Path,
+    *,
+    gate: str,
+    candidate_id: str,
+    process_package: str,
+    native_layout: str,
 ) -> dict[str, str]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
@@ -238,6 +291,7 @@ def passed_artifact(
             path=path.resolve(),
             candidate_id=candidate_id,
             process_package=process_package,
+            native_layout=native_layout,
         )
     except GateError as exc:
         raise CorrectnessError(str(exc)) from exc
@@ -723,7 +777,15 @@ def resolve_launcher(launcher: str, args: argparse.Namespace) -> str:
         build_result = json.loads(build.stdout)
         app_result = json.loads(app.stdout)
     except (OSError, subprocess.CalledProcessError, json.JSONDecodeError) as exc:
-        raise CorrectnessError(f"cannot resolve launcher {installable}: {exc}") from exc
+        hint = (
+            "; xe2_dpas requires dedicated Brutus native-dpas launcher outputs "
+            "that export KVARN_NATIVE_XPU_DPAS_LAYOUT=1"
+            if "native-dpas" in launcher
+            else ""
+        )
+        raise CorrectnessError(
+            f"cannot resolve launcher {installable}{hint}: {exc}"
+        ) from exc
 
     if not isinstance(build_result, list) or len(build_result) != 1:
         raise CorrectnessError(
@@ -824,7 +886,9 @@ def verify_service_profile(
         "HOME": str(args.runtime_cache / "vllm-xpu-brutus-kvarn"),
         "KVARN_NATIVE_XPU": native,
         "KVARN_NATIVE_XPU_DECODE": native,
-        "KVARN_NATIVE_XPU_DPAS_LAYOUT": "0",
+        "KVARN_NATIVE_XPU_DPAS_LAYOUT": perf.NATIVE_LAYOUT_ENV[
+            native_layout_for_spec(spec, args)
+        ],
         "KVARN_NATIVE_XPU_MATERIALIZE": native,
         "KVARN_NATIVE_XPU_PERSISTENT_SCRATCH": native,
         "KVARN_NATIVE_XPU_SPLITS": str(spec.splits),
@@ -866,7 +930,7 @@ def verify_service_profile(
 
 def service_command(spec: ServiceSpec, args: argparse.Namespace) -> list[str]:
     return [
-        args.resolved_launchers[spec.launcher],
+        args.resolved_launchers[launcher_name(spec, args)],
         str(args.candidate_env),
         "--max-num-batched-tokens",
         str(args.max_num_batched_tokens),
@@ -944,15 +1008,22 @@ def run_service_phase(
     state: dict[str, Any] = {
         "schema_version": 1,
         "status": "running",
-        "spec": dataclasses.asdict(spec),
+        "spec": service_spec_evidence(spec, args),
         "started_at": perf.utc_timestamp(),
     }
     write_json_atomic(phase_path, state)
     service: perf.ServiceProcess | None = None
     try:
         service = start_service(spec, phase_dir, args)
-        profile = perf.service_profile_evidence(service.argv, service.environment)
+        profile = perf.service_profile_evidence(
+            service.argv,
+            service.environment,
+            variant_provenance=service_variant_provenance(spec, args),
+        )
         identity = perf.verify_candidate_identity(service.argv, args.candidate_env)
+        captured_layout_environment = service.environment.get(
+            "KVARN_NATIVE_XPU_DPAS_LAYOUT"
+        )
         write_json_atomic(phase_dir / "service-profile.json", profile)
         write_json_atomic(phase_dir / "candidate-identity.json", identity)
         engine_pid = service.engine_pid
@@ -960,7 +1031,9 @@ def run_service_phase(
         perf.stop_service(service, args.shutdown_timeout)
         service = None
         log_scan = perf.validate_engine_log(
-            phase_dir / "engine.log", native=spec.native
+            phase_dir / "engine.log",
+            native=spec.native,
+            expected_layout=native_layout_for_spec(spec, args),
         )
         native_dispatch_verified = spec.native and perf.NATIVE_DISPATCH in (
             phase_dir / "engine.log"
@@ -975,6 +1048,14 @@ def run_service_phase(
             engine_log=artifact(phase_dir / "engine.log"),
             engine_log_scan=artifact(phase_dir / "engine-log-scan.json"),
             native_dispatch_verified=native_dispatch_verified,
+            native_layout=native_layout_for_spec(spec, args),
+            native_layout_environment=captured_layout_environment,
+            native_layout_log_marker="unavailable",
+            native_layout_evidence=(
+                "captured-process-environment-plus-native-dispatch"
+                if spec.native
+                else "captured-process-environment"
+            ),
             workload=payload,
         )
         write_json_atomic(phase_path, state)
@@ -1327,6 +1408,8 @@ def run_primitive_gate(gate: str, expression: str, args: argparse.Namespace) -> 
             "status": "passed",
             "gate": gate,
             "candidate_id": str(args.candidate_env),
+            "native_layout": args.native_layout,
+            **candidate_variant_provenance(args),
             "command": command,
             "native_library": artifact(args.native_library),
             "test_source": artifact(args.kernels_repo / NATIVE_TEST),
@@ -1612,6 +1695,7 @@ def build_manifest(
             gate=name,
             candidate_id=str(args.candidate_env),
             process_package=str(args.expected_package),
+            native_layout=args.native_layout,
         )
         for name in REQUIRED_GATES
     }
@@ -1630,7 +1714,11 @@ def build_manifest(
             )
         },
         "source_identity": args.source_identity,
-        "service_start_plan": [dataclasses.asdict(spec) for spec in SERVICE_PLAN],
+        "native_layout": args.native_layout,
+        **candidate_variant_provenance(args),
+        "service_start_plan": [
+            service_spec_evidence(spec, args) for spec in SERVICE_PLAN
+        ],
         "fixture_manifest": artifact(args.output_dir / "fixture-manifest.json"),
         "created_at": perf.utc_timestamp(),
     }
@@ -1666,7 +1754,9 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
     preflight["primitive_imports"] = probe_primitive_imports(args)
     args.resolved_launchers = {
         launcher: resolve_launcher(launcher, args)
-        for launcher in dict.fromkeys(spec.launcher for spec in SERVICE_PLAN)
+        for launcher in dict.fromkeys(
+            launcher_name(spec, args) for spec in SERVICE_PLAN
+        )
     }
     session = {
         "schema_version": 1,
@@ -1679,7 +1769,11 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             {"gate": gate, "pytest_expression": expression}
             for gate, expression in PRIMITIVE_PLAN
         ],
-        "service_start_plan": [dataclasses.asdict(spec) for spec in SERVICE_PLAN],
+        "native_layout": args.native_layout,
+        **candidate_variant_provenance(args),
+        "service_start_plan": [
+            service_spec_evidence(spec, args) for spec in SERVICE_PLAN
+        ],
         "resolved_launchers": args.resolved_launchers,
     }
     session_path = args.output_dir / "session.json"
@@ -1720,6 +1814,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--model", default=DEFAULT_MODEL)
     parser.add_argument("--model-revision", default=DEFAULT_MODEL_REVISION)
     parser.add_argument("--served-model", default="sunny-chat")
+    parser.add_argument(
+        "--native-layout",
+        choices=perf.NATIVE_LAYOUTS,
+        default="natural",
+        help=(
+            "native service cache layout; xe2_dpas requires dedicated Brutus "
+            "native-dpas launcher outputs (default: natural)"
+        ),
+    )
     parser.add_argument("--output-tokens", type=int, default=DEFAULT_OUTPUT_TOKENS)
     parser.add_argument(
         "--max-num-batched-tokens",

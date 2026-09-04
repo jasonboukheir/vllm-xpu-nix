@@ -285,8 +285,8 @@ def _correctness(path: Path, candidate_id: str = "candidate-store-path") -> Path
         "gates": gates,
         "candidate_identity": {
             "process_package": "/nix/store/package",
-            "candidate_closure_sha256": "6" * 64,
-            "process_closure_sha256": "7" * 64,
+            "candidate_closure_sha256": "b" * 64,
+            "process_closure_sha256": "a" * 64,
         },
         "source_identity": {
             "lock_path": str(lock),
@@ -322,11 +322,89 @@ def _result(
     kv_cache_dtype: str | None = None,
     native_splits: int | None = None,
 ) -> Path:
-    output_lens = [4, 4, 4, 4]
-    input_lens = [127, 4095, 127, 4095]
+    completed = 8
+    context = 4096
+    output_tokens = 512
+    output_lens = [output_tokens] * completed
+    input_lens = [context] * completed
     duration = sum(output_lens) / output_throughput
+    hardware = path.parent / "hardware-preflight.json"
+    hardware.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "torch_version": "test",
+                "xpu_available": True,
+                "xpu_device_count": 1,
+                "xpu_device_names": ["Intel(R) Arc(TM) Pro B70 Graphics"],
+                "probe_device": "xpu:0",
+                "probe_value": 6.0,
+            }
+        ),
+        encoding="utf-8",
+    )
+    warmup = path.with_name(f"{path.stem}-warmup.json")
+    warmup_raw = path.with_name(f"{path.stem}-warmup.raw.json")
+    warmup_raw.write_text(
+        json.dumps(
+            {
+                "completed": 4,
+                "num_prompts": 4,
+                "failed": 0,
+                "max_concurrency": 4,
+                "max_concurrent_requests": 4,
+                "input_lens": [context] * 4,
+                "output_lens": [output_tokens] * 4,
+            }
+        ),
+        encoding="utf-8",
+    )
+    warmup.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "status": "passed",
+                "arm": arm,
+                "run_uuid": f"run-{run_order}",
+                "workload": {
+                    "context": context,
+                    "batch": 4,
+                    "output_tokens": output_tokens,
+                    "num_prompts": 4,
+                    "seed": 17,
+                },
+                "argv": [
+                    "vllm",
+                    "--random-input-len",
+                    str(context),
+                    "--random-output-len",
+                    str(output_tokens),
+                    "--num-prompts",
+                    "4",
+                    "--num-warmups",
+                    "0",
+                    "--max-concurrency",
+                    "4",
+                    "--seed",
+                    "17",
+                ],
+                "raw_result": str(warmup_raw.resolve()),
+                "raw_result_sha256": hashlib.sha256(
+                    warmup_raw.read_bytes()
+                ).hexdigest(),
+                "completed": 4,
+                "failed": 0,
+                "max_concurrent_requests": 4,
+                "process_package": "/nix/store/package",
+                "process_closure_sha256": "a" * 64,
+                "candidate_closure_sha256": "b" * 64,
+                "matched_profile_sha256": "c" * 64,
+            }
+        ),
+        encoding="utf-8",
+    )
     document = {
-        "completed": 4,
+        "completed": completed,
         "failed": 0,
         "output_throughput": output_throughput,
         "request_throughput": request_throughput,
@@ -336,15 +414,17 @@ def _result(
         "total_output_tokens": sum(output_lens),
         "input_lens": input_lens,
         "output_lens": output_lens,
-        "ttfts": [ttft] * 4,
+        "ttfts": [ttft] * completed,
         "itls": [[itl] * (length - 1) for length in output_lens],
         "backend": "openai",
         "model_id": "sunny-chat",
-        "tokenizer_id": "model-repo",
-        "num_prompts": 4,
+        "tokenizer_id": "jasonboukheir/Qwen3.8-27B-AEON-Ultimate-Uncensored-BF16-W4A16-AutoRound",
+        "num_prompts": completed,
         "request_rate": "inf",
         "max_concurrency": 4,
         "max_concurrent_requests": 4,
+        "kvarn_evidence_mode": "formal",
+        "kvarn_promotable": True,
         "kvarn_candidate_id": "candidate-store-path",
         "kvarn_model_revision": "6b0622f4354481d5d04577d48ba0db844efc1330",
         "kvarn_service_profile": "qwen38-64k-b4-eager",
@@ -358,6 +438,24 @@ def _result(
         "kvarn_xpu_graph": "0",
         "kvarn_scheduler_peak_running": "4",
         "kvarn_correctness_sha256": correctness_sha256,
+        "kvarn_process_package": "/nix/store/package",
+        "kvarn_process_closure_sha256": "a" * 64,
+        "kvarn_candidate_closure_sha256": "b" * 64,
+        "kvarn_max_num_batched_tokens": "2048",
+        "kvarn_matched_profile_sha256": "c" * 64,
+        "kvarn_accelerator": "xpu",
+        "kvarn_xpu_available": "1",
+        "kvarn_xpu_device_count": "1",
+        "kvarn_xpu_device_name": "Intel(R) Arc(TM) Pro B70 Graphics",
+        "kvarn_xpu_compute_probe": "passed",
+        "kvarn_hardware_preflight_path": str(hardware.resolve()),
+        "kvarn_hardware_preflight_sha256": hashlib.sha256(
+            hardware.read_bytes()
+        ).hexdigest(),
+        "kvarn_warmup_path": str(warmup.resolve()),
+        "kvarn_warmup_sha256": hashlib.sha256(warmup.read_bytes()).hexdigest(),
+        "kvarn_xpu_consumed_memory_gib": 17.54,
+        "kvarn_xpu_kv_cache_memory_gib": 10.92,
         "kvarn_arm": arm,
         "kvarn_kv_cache_dtype": kv_cache_dtype
         or ("auto" if arm == "reference" else "kvarn_k4v4_g128_compact"),
@@ -377,7 +475,13 @@ def _result(
 
 
 def _log(path: Path, *, native: bool) -> Path:
-    lines = ["INFO engine ready"]
+    lines = [
+        "INFO config: device_config=xpu",
+        (
+            "INFO Actual usage is 17.54 GiB for consumed memory. "
+            "Current kv cache memory in use is 10.92 GiB."
+        ),
+    ]
     if native:
         lines.append("INFO Using the native Xe2 KVarN qlen=1 decoder")
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -396,13 +500,15 @@ def _arms(
 ) -> tuple[list[Path], list[Path], list[Path], list[Path], Path]:
     correctness = _correctness(tmp_path / "correctness.json")
     digest = hashlib.sha256(correctness.read_bytes()).hexdigest()
-    reference_orders = (1, 4, 5, 8)
-    candidate_orders = (2, 3, 6, 7)
+    reference_orders = (1, 4, 5, 8, 9, 12, 13, 16)
+    candidate_orders = (2, 3, 6, 7, 10, 11, 14, 15)
     reference_logs = [
-        _log(tmp_path / f"reference-{index}.log", native=False) for index in range(4)
+        _log(tmp_path / f"reference-{index}.log", native=False)
+        for index in range(len(reference_orders))
     ]
     candidate_logs = [
-        _log(tmp_path / f"candidate-{index}.log", native=True) for index in range(4)
+        _log(tmp_path / f"candidate-{index}.log", native=True)
+        for index in range(len(candidate_orders))
     ]
     references = [
         _result(
@@ -414,7 +520,7 @@ def _arms(
                 reference_logs[index].read_bytes()
             ).hexdigest(),
             output_throughput=reference_value,
-            request_throughput=reference_value / 4,
+            request_throughput=reference_value / 512,
             ttft=reference_ttft,
             itl=reference_itl,
         )
@@ -430,7 +536,7 @@ def _arms(
                 candidate_logs[index].read_bytes()
             ).hexdigest(),
             output_throughput=candidate_value,
-            request_throughput=candidate_value / 4,
+            request_throughput=candidate_value / 512,
             ttft=candidate_ttft,
             itl=candidate_itl,
         )
@@ -509,14 +615,14 @@ def test_win_mode_requires_a_meaningful_gain(tmp_path: Path) -> None:
 def test_gate_rejects_unmatched_workload_shapes(tmp_path: Path) -> None:
     arms = _arms(tmp_path)
     document = json.loads(arms[1][0].read_text(encoding="utf-8"))
-    document["input_lens"] = [128, 4095, 127, 4095]
+    document["input_lens"][0] = 4097
     document["total_input_tokens"] = sum(document["input_lens"])
     document["total_token_throughput"] = (
         document["total_input_tokens"] + document["total_output_tokens"]
     ) / document["duration"]
     arms[1][0].write_text(json.dumps(document), encoding="utf-8")
 
-    with pytest.raises(GateError, match="workload shape"):
+    with pytest.raises(GateError, match="context.*matrix"):
         _compare(arms)
 
 
@@ -525,7 +631,7 @@ def test_gate_rejects_unbalanced_repeat_counts(tmp_path: Path) -> None:
     arms[1].pop()
     arms[3].pop()
 
-    with pytest.raises(GateError, match="at least four candidate repeats"):
+    with pytest.raises(GateError, match="at least eight candidate repeats"):
         _compare(arms)
 
 
@@ -570,9 +676,219 @@ def test_gate_requires_neutral_reference_and_supported_candidate_splits(
 
 def test_gate_rejects_missing_native_dispatch(tmp_path: Path) -> None:
     arms = _arms(tmp_path)
-    arms[3][0].write_text("INFO engine ready\n", encoding="utf-8")
+    text = arms[3][0].read_text(encoding="utf-8")
+    arms[3][0].write_text(
+        text.replace("INFO Using the native Xe2 KVarN qlen=1 decoder\n", ""),
+        encoding="utf-8",
+    )
 
     with pytest.raises(GateError, match="must contain native dispatch"):
+        _compare(arms)
+
+
+def test_gate_allows_unrelated_fallback_but_rejects_kvarn_fallback(
+    tmp_path: Path,
+) -> None:
+    arms = _arms(tmp_path)
+    candidate_log = arms[3][0]
+    candidate_log.write_text(
+        candidate_log.read_text(encoding="utf-8")
+        + "INFO Falling back to the Triton GDN decode path\n"
+        + "WARNING sampler is Falling back to PyTorch-native implementation\n",
+        encoding="utf-8",
+    )
+    candidate_result = json.loads(arms[1][0].read_text(encoding="utf-8"))
+    candidate_result["kvarn_engine_log_sha256"] = hashlib.sha256(
+        candidate_log.read_bytes()
+    ).hexdigest()
+    arms[1][0].write_text(json.dumps(candidate_result), encoding="utf-8")
+
+    assert _compare(arms)["status"] == "passed"
+
+    candidate_log.write_text(
+        candidate_log.read_text(encoding="utf-8")
+        + "WARNING Falling back from the Kvarn native decoder\n",
+        encoding="utf-8",
+    )
+    candidate_result["kvarn_engine_log_sha256"] = hashlib.sha256(
+        candidate_log.read_bytes()
+    ).hexdigest()
+    arms[1][0].write_text(json.dumps(candidate_result), encoding="utf-8")
+    with pytest.raises(GateError, match="fallback"):
+        _compare(arms)
+
+
+def test_gate_rejects_cpu_or_zero_residency_engine_logs(tmp_path: Path) -> None:
+    arms = _arms(tmp_path)
+    cpu_log = arms[2][0]
+    cpu_log.write_text(
+        cpu_log.read_text(encoding="utf-8").replace(
+            "device_config=xpu", "device_config=cpu"
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(GateError, match="device_config=xpu"):
+        _compare(arms)
+
+    zero_root = tmp_path / "zero"
+    zero_root.mkdir()
+    arms = _arms(zero_root)
+    zero_log = arms[2][0]
+    zero_log.write_text(
+        zero_log.read_text(encoding="utf-8")
+        .replace("17.54 GiB", "0.0 GiB")
+        .replace("10.92 GiB", "0.0 GiB"),
+        encoding="utf-8",
+    )
+    with pytest.raises(GateError, match="positive XPU model/KV residency"):
+        _compare(arms)
+
+
+def test_gate_requires_hashed_b70_and_full_width_warmup_evidence(
+    tmp_path: Path,
+) -> None:
+    arms = _arms(tmp_path)
+    document = json.loads(arms[1][0].read_text(encoding="utf-8"))
+    hardware = Path(document["kvarn_hardware_preflight_path"])
+    probe = json.loads(hardware.read_text(encoding="utf-8"))
+    probe["xpu_device_names"] = ["Intel Arc A770"]
+    hardware.write_text(json.dumps(probe), encoding="utf-8")
+    digest = hashlib.sha256(hardware.read_bytes()).hexdigest()
+    for path in [*arms[0], *arms[1]]:
+        result = json.loads(path.read_text(encoding="utf-8"))
+        result["kvarn_hardware_preflight_sha256"] = digest
+        path.write_text(json.dumps(result), encoding="utf-8")
+    with pytest.raises(GateError, match="exact B70 proof"):
+        _compare(arms)
+
+    warmup_root = tmp_path / "warmup"
+    warmup_root.mkdir()
+    arms = _arms(warmup_root)
+    result = json.loads(arms[1][0].read_text(encoding="utf-8"))
+    warmup = Path(result["kvarn_warmup_path"])
+    evidence = json.loads(warmup.read_text(encoding="utf-8"))
+    evidence["max_concurrent_requests"] = 1
+    warmup.write_text(json.dumps(evidence), encoding="utf-8")
+    result["kvarn_warmup_sha256"] = hashlib.sha256(warmup.read_bytes()).hexdigest()
+    arms[1][0].write_text(json.dumps(result), encoding="utf-8")
+    with pytest.raises(GateError, match="not full-width"):
+        _compare(arms)
+
+
+def test_gate_rejects_mismatched_build_or_service_profile(tmp_path: Path) -> None:
+    arms = _arms(tmp_path)
+    for path in arms[1]:
+        document = json.loads(path.read_text(encoding="utf-8"))
+        document["kvarn_process_closure_sha256"] = "d" * 64
+        warmup = Path(document["kvarn_warmup_path"])
+        warmup_document = json.loads(warmup.read_text(encoding="utf-8"))
+        warmup_document["process_closure_sha256"] = "d" * 64
+        warmup.write_text(json.dumps(warmup_document), encoding="utf-8")
+        document["kvarn_warmup_sha256"] = hashlib.sha256(
+            warmup.read_bytes()
+        ).hexdigest()
+        path.write_text(json.dumps(document), encoding="utf-8")
+    with pytest.raises(GateError, match="provenance field.*differs"):
+        _compare(arms)
+
+
+def test_gate_binds_performance_to_correctness_candidate_build(tmp_path: Path) -> None:
+    arms = _arms(tmp_path)
+    for path in [*arms[0], *arms[1]]:
+        document = json.loads(path.read_text(encoding="utf-8"))
+        document["kvarn_process_package"] = "/nix/store/other-package"
+        document["kvarn_process_closure_sha256"] = "d" * 64
+        document["kvarn_candidate_closure_sha256"] = "e" * 64
+        warmup = Path(document["kvarn_warmup_path"])
+        warmup_document = json.loads(warmup.read_text(encoding="utf-8"))
+        warmup_document["process_package"] = "/nix/store/other-package"
+        warmup_document["process_closure_sha256"] = "d" * 64
+        warmup_document["candidate_closure_sha256"] = "e" * 64
+        warmup.write_text(json.dumps(warmup_document), encoding="utf-8")
+        document["kvarn_warmup_sha256"] = hashlib.sha256(
+            warmup.read_bytes()
+        ).hexdigest()
+        path.write_text(json.dumps(document), encoding="utf-8")
+
+    with pytest.raises(GateError, match="different candidate builds"):
+        _compare(arms)
+
+
+def test_gate_binds_warmup_workload_and_raw_artifact(tmp_path: Path) -> None:
+    arms = _arms(tmp_path)
+    result = json.loads(arms[1][0].read_text(encoding="utf-8"))
+    warmup = Path(result["kvarn_warmup_path"])
+    warmup_document = json.loads(warmup.read_text(encoding="utf-8"))
+    warmup_document["workload"]["context"] = 16384
+    warmup.write_text(json.dumps(warmup_document), encoding="utf-8")
+    result["kvarn_warmup_sha256"] = hashlib.sha256(warmup.read_bytes()).hexdigest()
+    arms[1][0].write_text(json.dumps(result), encoding="utf-8")
+    with pytest.raises(GateError, match="warmup workload differs"):
+        _compare(arms)
+
+    raw_root = tmp_path / "raw"
+    raw_root.mkdir()
+    arms = _arms(raw_root)
+    result = json.loads(arms[1][0].read_text(encoding="utf-8"))
+    warmup = Path(result["kvarn_warmup_path"])
+    warmup_document = json.loads(warmup.read_text(encoding="utf-8"))
+    Path(warmup_document["raw_result"]).write_text("{}\n", encoding="utf-8")
+    with pytest.raises(GateError, match="raw-result SHA-256 differs"):
+        _compare(arms)
+
+
+def test_gate_requires_globally_distinct_warmup_evidence(tmp_path: Path) -> None:
+    arms = _arms(tmp_path)
+    first = json.loads(arms[1][0].read_text(encoding="utf-8"))
+    second = json.loads(arms[1][1].read_text(encoding="utf-8"))
+    second["kvarn_run_uuid"] = first["kvarn_run_uuid"]
+    second["kvarn_warmup_path"] = first["kvarn_warmup_path"]
+    second["kvarn_warmup_sha256"] = first["kvarn_warmup_sha256"]
+    arms[1][1].write_text(json.dumps(second), encoding="utf-8")
+
+    with pytest.raises(GateError, match="distinct warmup evidence"):
+        _compare(arms)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("min_throughput_ratio", 0.94),
+        ("min_request_decode_ratio", 0.94),
+        ("max_latency_ratio", 1.11),
+    ],
+)
+def test_gate_rejects_weakened_formal_thresholds(
+    tmp_path: Path, field: str, value: float
+) -> None:
+    arms = _arms(tmp_path)
+    kwargs = {
+        "min_throughput_ratio": 0.95,
+        "min_request_decode_ratio": 0.95,
+        "max_latency_ratio": 1.10,
+    }
+    kwargs[field] = value
+    with pytest.raises(GateError, match="formal comparison thresholds"):
+        compare(
+            arms[0],
+            arms[1],
+            reference_logs=arms[2],
+            candidate_logs=arms[3],
+            correctness_path=arms[4],
+            comparison_kind="end-to-end",
+            mode="match",
+            **kwargs,
+        )
+
+
+def test_gate_rejects_non_promotable_exploratory_results(tmp_path: Path) -> None:
+    arms = _arms(tmp_path)
+    document = json.loads(arms[1][0].read_text(encoding="utf-8"))
+    document["kvarn_evidence_mode"] = "exploratory"
+    document["kvarn_promotable"] = False
+    arms[1][0].write_text(json.dumps(document), encoding="utf-8")
+
+    with pytest.raises(GateError, match="must be promotable"):
         _compare(arms)
 
 

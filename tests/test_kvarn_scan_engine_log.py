@@ -77,3 +77,32 @@ def test_numerical_and_runtime_failures_fail():
         "assertion_error",
         "engine_dead_error",
     }
+
+
+def test_xpu_runtime_evidence_requires_device_config_and_positive_residency():
+    result = MODULE.xpu_runtime_evidence(
+        [
+            "INFO config: device_config=xpu, enforce_eager=True",
+            (
+                "INFO Actual usage is 17.54 GiB for consumed memory, and 0.0 GiB "
+                "for CUDAGraph memory. Current kv cache memory in use is 10.92 GiB."
+            ),
+        ]
+    )
+
+    assert result == {
+        "device_config_xpu": True,
+        "positive_residency": True,
+        "consumed_memory_gib": 17.54,
+        "kv_cache_memory_gib": 10.92,
+        "memory_profile_count": 1,
+    }
+    assert (
+        MODULE.xpu_runtime_evidence(
+            [
+                "INFO config: device_config=cpu",
+                "INFO Actual usage is 0.0 GiB. Current kv cache memory in use is 0.0 GiB.",
+            ]
+        )["positive_residency"]
+        is False
+    )

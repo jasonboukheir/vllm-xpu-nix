@@ -20,6 +20,42 @@ FATAL_PATTERNS = {
     "engine_dead_error": re.compile(r"(?i)\bEngineDeadError\b"),
     "error_level": re.compile(r"(?i)(?:^|\s)ERROR(?:\s|:|$)"),
 }
+XPU_DEVICE_CONFIG_PATTERN = re.compile(r"\bdevice_config=xpu\b")
+XPU_MEMORY_PROFILE_PATTERN = re.compile(
+    r"Actual usage is (?P<consumed>[0-9]+(?:\.[0-9]+)?) GiB .*"
+    r"Current kv cache memory in use is "
+    r"(?P<kv_cache>[0-9]+(?:\.[0-9]+)?) GiB\."
+)
+
+
+def xpu_runtime_evidence(lines: list[str]) -> dict[str, object]:
+    """Extract proof that the service placed model and KV state on an XPU."""
+    device_config_xpu = any(XPU_DEVICE_CONFIG_PATTERN.search(line) for line in lines)
+    profiles = [
+        {
+            "consumed_memory_gib": float(match.group("consumed")),
+            "kv_cache_memory_gib": float(match.group("kv_cache")),
+        }
+        for line in lines
+        if (match := XPU_MEMORY_PROFILE_PATTERN.search(line))
+    ]
+    positive_profiles = [
+        profile
+        for profile in profiles
+        if profile["consumed_memory_gib"] > 0 and profile["kv_cache_memory_gib"] > 0
+    ]
+    selected = positive_profiles[-1] if positive_profiles else None
+    return {
+        "device_config_xpu": device_config_xpu,
+        "positive_residency": selected is not None,
+        "consumed_memory_gib": (
+            selected["consumed_memory_gib"] if selected is not None else None
+        ),
+        "kv_cache_memory_gib": (
+            selected["kv_cache_memory_gib"] if selected is not None else None
+        ),
+        "memory_profile_count": len(profiles),
+    }
 
 
 def is_known_shutdown_traceback(lines: list[str], traceback_index: int) -> bool:

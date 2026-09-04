@@ -1653,6 +1653,7 @@ def test_matched_profile_normalizes_only_declared_arm_differences(
         "KVARN_NATIVE_XPU": "0",
         "KVARN_NATIVE_XPU_CACHE_LAYOUT": "natural",
         "KVARN_NATIVE_XPU_DPAS_LAYOUT": "0",
+        "KVARN_NATIVE_XPU_FRONTEND": "reference",
         "KVARN_NATIVE_XPU_KERNEL_VARIANT": "baseline",
         "KVARN_ONEDNN_DETERMINISTIC": "1",
         "KVARN_NATIVE_XPU_SPLITS": "1",
@@ -1687,6 +1688,17 @@ def test_matched_profile_normalizes_only_declared_arm_differences(
     assert (
         "KVARN_NATIVE_XPU_DPAS_LAYOUT"
         in reference["allowed_arm_environment_differences"]
+    )
+    assert (
+        "KVARN_NATIVE_XPU_FRONTEND"
+        in reference["allowed_arm_environment_differences"]
+    )
+
+    environment["KVARN_NATIVE_XPU_FRONTEND"] = "qkv_scatter"
+    frontend_candidate = service_profile_evidence(argv, environment)
+    assert (
+        frontend_candidate["canonical_matched_profile_sha256"]
+        == reference["canonical_matched_profile_sha256"]
     )
 
     environment["KVARN_NATIVE_XPU_DPAS_LAYOUT"] = "1"

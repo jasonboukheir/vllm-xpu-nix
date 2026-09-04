@@ -180,12 +180,16 @@ def attest_library(library: Path, command_runner: CommandRunner = _run) -> NixAr
 def is_vllm_service_argv(argv: Sequence[str]) -> bool:
     if not argv:
         return False
+    process_roles = ("::APIServer", "::EngineCore", "::Worker", "::DPCoordinator")
+    if any(role in token for token in argv for role in process_roles):
+        return True
     executable_names = {Path(token).name for token in argv}
     if "serve" in argv and executable_names.intersection({"vllm", ".vllm-wrapped"}):
         return True
     modules = {
         "vllm.entrypoints.openai.api_server",
         "vllm.entrypoints.api_server",
+        "vllm.entrypoints.cli.main",
     }
     return any(token in modules for token in argv)
 
@@ -264,21 +268,41 @@ def require_clean_repository(
     return resolved
 
 
-def require_derivation_source(
+def require_repository_revision(
     label: str,
-    artifact: NixArtifact,
     repository: Path,
+    expected_revision: str,
     runner: CommandRunner = _run,
 ) -> None:
+    if not GIT_COMMIT.fullmatch(expected_revision):
+        raise HostLauncherError(
+            f"{label} expected revision is not a full Git commit: {expected_revision!r}"
+        )
     head = runner(("git", "-C", str(repository), "rev-parse", "HEAD"))
     if not GIT_COMMIT.fullmatch(head):
         raise HostLauncherError(
             f"{label} repository returned an invalid Git commit: {head!r}"
         )
-    marker = f".g{head[:7]}"
+    if head != expected_revision:
+        raise HostLauncherError(
+            f"{label} source mismatch: expected {expected_revision}, got {head}"
+        )
+
+
+def require_derivation_source(
+    label: str,
+    artifact: NixArtifact,
+    expected_revision: str,
+) -> None:
+    if not GIT_COMMIT.fullmatch(expected_revision):
+        raise HostLauncherError(
+            f"{label} expected revision is not a full Git commit: {expected_revision!r}"
+        )
+    marker = f".g{expected_revision[:7]}"
     if marker not in Path(artifact.derivation).name:
         raise HostLauncherError(
-            f"{label} source mismatch: repository HEAD {head} is not stamped "
+            f"{label} source mismatch: expected revision {expected_revision} "
+            "is not stamped "
             f"into artifact derivation {artifact.derivation}"
         )
 
@@ -310,6 +334,9 @@ def build_runner_command(
     splits: str,
     contexts: str,
     batches: str,
+    expected_project_revision: str,
+    expected_vllm_revision: str,
+    expected_kernels_revision: str,
 ) -> list[str]:
     return [
         sys.executable,
@@ -332,6 +359,12 @@ def build_runner_command(
         str(repositories.vllm),
         "--kernels-repo",
         str(repositories.kernels),
+        "--expected-vllm-xpu-nix-revision",
+        expected_project_revision,
+        "--expected-vllm-revision",
+        expected_vllm_revision,
+        "--expected-kernels-revision",
+        expected_kernels_revision,
         "--variants",
         variants,
         "--splits",
@@ -362,6 +395,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         type=Path,
         help="realized vLLM package output or a result symlink to it",
     )
+    parser.add_argument("expected_project_revision")
+    parser.add_argument("expected_vllm_revision")
+    parser.add_argument("expected_kernels_revision")
     parser.add_argument("--vllm-xpu-nix-repo", type=Path, default=project)
     parser.add_argument("--vllm-repo", type=Path, default=project.parent / "vllm")
     parser.add_argument(
@@ -396,6 +432,21 @@ def launch(
             "vllm-xpu-kernels", args.kernels_repo, command_runner
         ),
     )
+    require_repository_revision(
+        "vllm-xpu-nix",
+        repositories.project,
+        args.expected_project_revision,
+        command_runner,
+    )
+    require_repository_revision(
+        "vLLM", repositories.vllm, args.expected_vllm_revision, command_runner
+    )
+    require_repository_revision(
+        "vllm-xpu-kernels",
+        repositories.kernels,
+        args.expected_kernels_revision,
+        command_runner,
+    )
     package = resolve_package_output(args.package)
     package_closure = query_closure(package, command_runner)
     base = attest_library(
@@ -404,10 +455,8 @@ def launch(
     flash = attest_library(
         discover_library(package_closure, FLASH_LIBRARY), command_runner
     )
-    require_derivation_source("vLLM", base, repositories.vllm, command_runner)
-    require_derivation_source(
-        "vllm-xpu-kernels", flash, repositories.kernels, command_runner
-    )
+    require_derivation_source("vLLM", base, args.expected_vllm_revision)
+    require_derivation_source("vllm-xpu-kernels", flash, args.expected_kernels_revision)
     output = timestamped_output(args.output_dir, now=now)
     runner = project / "scripts/kvarn_factory_run.py"
     if not runner.is_file():
@@ -422,6 +471,9 @@ def launch(
         splits=args.splits,
         contexts=args.contexts,
         batches=args.batches,
+        expected_project_revision=args.expected_project_revision,
+        expected_vllm_revision=args.expected_vllm_revision,
+        expected_kernels_revision=args.expected_kernels_revision,
     )
     print(f"Launching matched B70 factory evidence: {output}", flush=True)
     executor(command)

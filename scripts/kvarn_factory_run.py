@@ -46,6 +46,21 @@ SCOPE_WARNING = (
     "vLLM scheduler, model layers, service transport, and Kvarn page flushes. "
     "They are not service-performance or parity evidence."
 )
+GIT_COMMIT = re.compile(r"^[0-9a-f]{40}$")
+RUNTIME_ENVIRONMENT_KEYS = (
+    "CC",
+    "CMPLR_ROOT",
+    "CXX",
+    "LD_LIBRARY_PATH",
+    "LEVEL_ZERO_V1_SDK_PATH",
+    "LIBRARY_PATH",
+    "ONEAPI_ROOT",
+    "PATH",
+    "PYTHONDONTWRITEBYTECODE",
+    "PYTHONNOUSERSITE",
+    "PYTEST_DISABLE_PLUGIN_AUTOLOAD",
+    "SYCL_HOME",
+)
 
 
 class FactoryError(RuntimeError):
@@ -321,6 +336,40 @@ def require_clean_repositories(repositories: Sequence[dict[str, Any]]) -> None:
             "factory evidence requires clean source repositories; dirty: "
             + ", ".join(dirty)
         )
+
+
+def require_expected_repository_revisions(
+    repositories: Sequence[dict[str, Any]], expected: dict[str, str]
+) -> dict[str, str]:
+    actual = {value["name"]: value["head"] for value in repositories}
+    if set(actual) != set(expected):
+        raise FactoryError(
+            "source revision contract does not match the repository set: "
+            f"expected {sorted(expected)}, got {sorted(actual)}"
+        )
+    for name, revision in expected.items():
+        if not GIT_COMMIT.fullmatch(revision):
+            raise FactoryError(f"expected {name} revision is not a full Git commit")
+        if actual[name] != revision:
+            raise FactoryError(
+                f"{name} revision mismatch: expected {revision}, got {actual[name]}"
+            )
+    return actual
+
+
+def runtime_environment_contract() -> dict[str, Any]:
+    prefixed = {
+        name: value
+        for name, value in sorted(os.environ.items())
+        if name.startswith(("KVARN_", "VLLM_"))
+    }
+    return {
+        "kvarn_or_vllm_prefixed_variables": prefixed,
+        "prefixed_environment_clean": not prefixed,
+        "pinned_runtime_environment": {
+            name: os.environ.get(name) for name in RUNTIME_ENVIRONMENT_KEYS
+        },
+    }
 
 
 def evidence_identity(
@@ -2205,6 +2254,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--kernels-repo", type=Path, default=project.parent / "vllm-xpu-kernels"
     )
+    parser.add_argument("--expected-vllm-xpu-nix-revision", required=True)
+    parser.add_argument("--expected-vllm-revision", required=True)
+    parser.add_argument("--expected-kernels-revision", required=True)
     parser.add_argument("--variants", default=",".join(DEFAULT_VARIANT_NAMES))
     parser.add_argument("--splits", default="auto")
     parser.add_argument("--contexts", default="4096,16384,65023")
@@ -2259,6 +2311,16 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             derivation=args.flash_derivation,
             closure_sha256=args.flash_closure_sha256,
         )
+        args.expected_revisions = {
+            "vllm-xpu-nix": args.expected_vllm_xpu_nix_revision,
+            "vllm": args.expected_vllm_revision,
+            "vllm-xpu-kernels": args.expected_kernels_revision,
+        }
+        for label, revision in args.expected_revisions.items():
+            if not GIT_COMMIT.fullmatch(revision):
+                raise FactoryError(
+                    f"--expected-{label}-revision must be a full Git commit"
+                )
     except FactoryError as error:
         parser.error(str(error))
     return args
@@ -2307,6 +2369,12 @@ def initial_document(args: argparse.Namespace) -> dict[str, Any]:
             ),
         },
         "command": {"argv": sys.argv, "cwd": os.getcwd()},
+        "source_revisions": {
+            "expected": args.expected_revisions,
+            "actual": None,
+            "verified": False,
+        },
+        "runtime_environment": runtime_environment_contract(),
         "requested_settings": {
             "variants": [dataclasses.asdict(item) for item in args.variant_specs],
             "splits": args.splits,
@@ -2355,6 +2423,18 @@ def execute(args: argparse.Namespace) -> int:
         ]
         document["repositories"] = repositories
         require_clean_repositories(repositories)
+        if not document["runtime_environment"]["prefixed_environment_clean"]:
+            names = sorted(
+                document["runtime_environment"]["kvarn_or_vllm_prefixed_variables"]
+            )
+            raise FactoryError(
+                "factory environment contains inherited Kvarn/vLLM variables: "
+                + ", ".join(names)
+            )
+        document["source_revisions"]["actual"] = require_expected_repository_revisions(
+            repositories, args.expected_revisions
+        )
+        document["source_revisions"]["verified"] = True
         starting_identity = evidence_identity(
             document["libraries"], document["repositories"]
         )

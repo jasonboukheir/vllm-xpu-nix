@@ -126,6 +126,30 @@ def test_variant_parser_accepts_names_and_all_but_not_numeric_aliases() -> None:
         factory.parse_variants("3")
 
 
+def test_focused_kill_suite_has_262k_coverage_for_every_variant() -> None:
+    selected = "\n".join(factory.FOCUSED_XPU_TESTS)
+    expected_node_ids = {
+        0: "dpas-split24",
+        1: "dpas-qk-i8u4-split24",
+        2: "r1-p2-dpas-q6",
+        3: "r1-p5-dpas-vector-load",
+        4: "r1-p2-p5-dpas-q6-vector-load",
+        6: "r2-q6-cached-weights",
+        7: "r2-q6-exact-rows",
+        8: "r2-q6-cached-weights-exact-rows",
+        9: "q6-page-pair",
+        10: "q6_main_grf128",
+        11: "q6-split-reducer-specialized",
+        12: "q6-next-page-prefetch",
+    }
+    assert set(expected_node_ids) == set(factory.VARIANTS_BY_ID)
+    for node_id in expected_node_ids.values():
+        assert (
+            "test_long_context_ragged_b4_matches_structured_oracle["
+            f"{node_id}]" in selected
+        )
+
+
 def test_matrix_expands_auto_and_explicit_split_sweeps() -> None:
     cases = factory.build_matrix(
         batches=[1, 4],

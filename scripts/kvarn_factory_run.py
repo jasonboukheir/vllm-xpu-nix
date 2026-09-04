@@ -209,6 +209,16 @@ VARIANTS = {
             "tile64_next_page_prefetch",
         ),
         VariantSpec(
+            13,
+            "q6_next_page_prefetch_split_reducer",
+            "q6 next-page prefetch plus specialized split reducer",
+            "xe2_dpas",
+            "native_xe2_qlen1_q6_next_page_prefetch_split_reducer",
+            "runtime_explicit_count",
+            "specialized_split_reduction",
+            "tile64_next_page_prefetch",
+        ),
+        VariantSpec(
             14,
             "q6_simd_unpack",
             "q6 SIMD packed-nibble unpack",
@@ -231,6 +241,7 @@ DEFAULT_VARIANT_NAMES = (
     "q6_main_grf128",
     "q6_split_reducer_specialized",
     "q6_next_page_prefetch",
+    "q6_next_page_prefetch_split_reducer",
     "q6_simd_unpack",
 )
 # ``all`` is literal: every runnable layout-compatible dispatch compiled into
@@ -257,6 +268,7 @@ FOCUSED_XPU_TESTS = (
     "tests/flash_attn/test_kvarn_decode_xpu.py::test_long_context_ragged_b4_matches_structured_oracle[q6_main_grf128]",
     "tests/flash_attn/test_kvarn_decode_xpu.py::test_long_context_ragged_b4_matches_structured_oracle[q6-split-reducer-specialized]",
     "tests/flash_attn/test_kvarn_decode_xpu.py::test_long_context_ragged_b4_matches_structured_oracle[q6-next-page-prefetch]",
+    "tests/flash_attn/test_kvarn_decode_xpu.py::test_long_context_ragged_b4_matches_structured_oracle[q6-next-page-prefetch-split-reducer]",
     "tests/flash_attn/test_kvarn_decode_xpu.py::test_long_context_ragged_b4_matches_structured_oracle[q6-simd-unpack]",
     "tests/flash_attn/test_kvarn_hadamard_scatter_xpu.py::test_kvarn_fused_qkv_hadamard_scatter_matches_separate_ops",
 )

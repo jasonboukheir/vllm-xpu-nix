@@ -501,6 +501,7 @@ def test_qkv_frontend_is_native_only_and_reference_phase_is_unfused(
         ("q6_main_grf128", 10),
         ("q6_split_reducer_specialized", 11),
         ("q6_next_page_prefetch", 12),
+        ("q6_next_page_prefetch_split_reducer", 13),
         ("q6_simd_unpack", 14),
     ],
 )

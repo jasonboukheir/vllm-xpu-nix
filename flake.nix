@@ -21,7 +21,7 @@
     vllm-xpu-kernels-unstable-src = {
       type = "git";
       url = "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm-xpu-kernels.git";
-      ref = "refs/heads/experimental/kvarn-factory-20260903";
+      ref = "refs/heads/experimental/kvarn-factory-round3-20260904";
       submodules = true;
       flake = false;
     };
@@ -36,7 +36,7 @@
     vllm-xpu-unstable-src = {
       type = "git";
       url = "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm.git";
-      ref = "refs/heads/experimental/kvarn-factory-20260903";
+      ref = "refs/heads/experimental/kvarn-factory-round3-20260904";
       flake = false;
     };
 

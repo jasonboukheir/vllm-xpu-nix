@@ -99,17 +99,17 @@
     "vllm-xpu-kernels-unstable-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1788518792,
-        "narHash": "sha256-ouJBSVkQ7avw53fSDssHXwGGcKn6ztaFEnMHVwoXna8=",
-        "ref": "refs/heads/experimental/kvarn-factory-20260903",
-        "rev": "f8921c81426d46ed355b94a709a02392d2344bef",
-        "revCount": 403,
+        "lastModified": 1788524615,
+        "narHash": "sha256-Lfj4u2Gt97dqzZZ3F2OKIP6ep8DTdJoZEQbHJGGa/3E=",
+        "ref": "refs/heads/experimental/kvarn-factory-round3-20260904",
+        "rev": "1cd9f1b006a1834db2ada04b466186b319dcf4a9",
+        "revCount": 407,
         "submodules": true,
         "type": "git",
         "url": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm-xpu-kernels.git"
       },
       "original": {
-        "ref": "refs/heads/experimental/kvarn-factory-20260903",
+        "ref": "refs/heads/experimental/kvarn-factory-round3-20260904",
         "submodules": true,
         "type": "git",
         "url": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm-xpu-kernels.git"
@@ -135,16 +135,16 @@
     "vllm-xpu-unstable-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1788520151,
-        "narHash": "sha256-HbMzr5T+ysg+NxbFItSQuiRYjk8bFntRFC0VuBdcEm8=",
-        "ref": "refs/heads/experimental/kvarn-factory-20260903",
-        "rev": "b869d5062cc5cf2eda4c4a69ae3b911f78d9d739",
-        "revCount": 20874,
+        "lastModified": 1788525135,
+        "narHash": "sha256-VqeHm6wkHV/muwzFFWoqdh3drCwGbpaLFHcxS9bcQHU=",
+        "ref": "refs/heads/experimental/kvarn-factory-round3-20260904",
+        "rev": "2bf3010c9f165b463f6fac8dd94972a6302a23a6",
+        "revCount": 20880,
         "type": "git",
         "url": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm.git"
       },
       "original": {
-        "ref": "refs/heads/experimental/kvarn-factory-20260903",
+        "ref": "refs/heads/experimental/kvarn-factory-round3-20260904",
         "type": "git",
         "url": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm.git"
       }

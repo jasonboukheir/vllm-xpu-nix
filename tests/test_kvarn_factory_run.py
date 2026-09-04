@@ -77,7 +77,7 @@ def test_named_factory_ids_are_complete_and_stable() -> None:
         "q6_split_reducer_specialized",
         "q6_next_page_prefetch",
     )
-    assert factory.ALL_VARIANT_NAMES == factory.DEFAULT_VARIANT_NAMES
+    assert factory.ALL_VARIANT_NAMES == tuple(factory.VARIANTS)
 
 
 def test_variant_parser_accepts_names_and_all_but_not_numeric_aliases() -> None:
@@ -88,7 +88,10 @@ def test_variant_parser_accepts_names_and_all_but_not_numeric_aliases() -> None:
         3,
     ]
     assert [item.variant_id for item in factory.parse_variants("all")] == [
+        0,
+        1,
         2,
+        3,
         4,
         6,
         7,

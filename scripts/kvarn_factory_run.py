@@ -119,7 +119,10 @@ DEFAULT_VARIANT_NAMES = (
     "q6_split_reducer_specialized",
     "q6_next_page_prefetch",
 )
-ALL_VARIANT_NAMES = DEFAULT_VARIANT_NAMES
+# ``all`` is literal: every runnable layout-compatible dispatch compiled into
+# the shared attention DSO participates.  DEFAULT_VARIANT_NAMES remains the
+# current Q6 optimization-round shortlist for callers that want it explicitly.
+ALL_VARIANT_NAMES = tuple(VARIANTS)
 FOCUSED_XPU_TESTS = (
     "tests/flash_attn/test_kvarn_decode_xpu.py::test_structured_permuted_pages",
     "tests/flash_attn/test_kvarn_decode_xpu.py::test_nonuniform_kvarn_factors_across_page_boundary",

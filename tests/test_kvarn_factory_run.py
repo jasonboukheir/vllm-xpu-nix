@@ -399,6 +399,53 @@ def test_split_parser_is_fail_closed() -> None:
             factory.parse_split_tokens(invalid)
 
 
+def test_b70_wave_selector_expands_exact_id18_candidate_set() -> None:
+    selector = policy_name = "b70_wave_sweep"
+    splits = factory.resolve_factory_split_tokens(selector, None)
+
+    assert splits == [8, 16, 17, 24, 32]
+    assert factory.resolve_factory_split_tokens(
+        selector, "8,16,17,24,32"
+    ) == splits
+    with pytest.raises(factory.FactoryError, match="owns --splits"):
+        factory.resolve_factory_split_tokens(selector, "8,32")
+
+    cases = factory.build_matrix(
+        batches=[1, 4],
+        contexts=[4096, 65023],
+        splits=splits,
+        variants=[factory.VARIANTS["q6_prefetch_record_cursor"]],
+        output_dtypes=["bf16"],
+        factory_split_policy=policy_name,
+    )
+    assert len(cases) == 20
+    assert {
+        case.requested_splits for case in cases
+    } == {8, 16, 17, 24, 32}
+    assert {case.requested_split_policy for case in cases} == {selector}
+    assert {case.as_dict()["split_policy"] for case in cases} == {selector}
+
+
+def test_b70_wave_selector_rejects_non_id18_or_partial_matrix() -> None:
+    splits = [8, 16, 17, 24, 32]
+    with pytest.raises(factory.FactoryError, match="evidence-scoped.*ID18"):
+        factory.build_matrix(
+            batches=[1],
+            contexts=[4096],
+            splits=splits,
+            variants=[factory.VARIANTS["q6_page_record_cursor"]],
+            factory_split_policy="b70_wave_sweep",
+        )
+    with pytest.raises(factory.FactoryError, match="enumerate exactly"):
+        factory.build_matrix(
+            batches=[1],
+            contexts=[4096],
+            splits=[8, 32],
+            variants=[factory.VARIANTS["q6_prefetch_record_cursor"]],
+            factory_split_policy="b70_wave_sweep",
+        )
+
+
 def test_interleaved_order_is_rotating_and_palindromic() -> None:
     names = ["reference", "candidate"]
     assert factory.interleaved_order(names, 0) == (
@@ -1555,6 +1602,24 @@ def test_matched_fixture_is_default_and_unmatched_is_explicit_diagnostic(
     assert sixteen_layers.service_layer_count == 16
     with pytest.raises(SystemExit):
         factory.parse_args([*common, "--service-layer-count", "4"])
+
+    wave = factory.parse_args(
+        [
+            *common,
+            "--variants",
+            "q6_prefetch_record_cursor",
+            "--factory-split-policy",
+            "b70_wave_sweep",
+        ]
+    )
+    assert wave.splits == "8,16,17,24,32"
+    assert wave.split_values == [8, 16, 17, 24, 32]
+    wave_settings = factory.initial_document(wave)["requested_settings"]
+    assert wave_settings["factory_split_policy"] == "b70_wave_sweep"
+    assert wave_settings["factory_split_policy_contract"]["winner"] is None
+    assert {item["split_policy"] for item in wave_settings["matrix"]} == {
+        "b70_wave_sweep"
+    }
 
 
 def test_fixture_and_fusion_results_label_diagnostic_mode_clearly() -> None:

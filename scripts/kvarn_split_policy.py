@@ -15,6 +15,15 @@ from typing import Any
 NATIVE_SPLIT_POLICIES = ("fixed", "b70_q6", "b70_q6_v2")
 NAMED_SPLIT_POLICIES = frozenset({"b70_q6", "b70_q6_v2"})
 SUPPORTED_HARNESS_BATCHES = (1, 4)
+FACTORY_SPLIT_POLICY_EXPLICIT = "explicit"
+FACTORY_SPLIT_POLICY_B70_WAVE_SWEEP = "b70_wave_sweep"
+FACTORY_SPLIT_POLICIES = (
+    FACTORY_SPLIT_POLICY_EXPLICIT,
+    FACTORY_SPLIT_POLICY_B70_WAVE_SWEEP,
+)
+B70_WAVE_SWEEP_SPLITS = (8, 16, 17, 24, 32)
+B70_WAVE_SWEEP_KERNEL_VARIANT = "q6_prefetch_record_cursor"
+B70_WAVE_SWEEP_KERNEL_VARIANT_ID = 18
 B70_Q6_SPLITS = {1: 32, 4: 8}
 B70_Q6_MAX_SPLITS = 32
 B70_Q6_V2_KERNEL_VARIANT = "q6_next_page_prefetch"
@@ -73,6 +82,87 @@ _B70_Q6_V2_CONTRACT = {
         ),
     ],
 }
+
+# This is intentionally a sweep contract, not a runtime policy or a claim
+# that one split count wins.  The older device-stage sweep is the source of
+# the complete candidate set; the two later, matched ID18 runs establish that
+# both endpoints remain relevant on the current reader.  A warmed B70 run of
+# all five cells is required before a context/batch winner may be frozen.
+_B70_WAVE_SWEEP_CONTRACT = {
+    "schema_version": 1,
+    "selector": FACTORY_SPLIT_POLICY_B70_WAVE_SWEEP,
+    "selection_mode": "enumerate_all_candidates_no_winner",
+    "hardware": "Intel(R) Arc(TM) Pro B70 Graphics",
+    "candidate_num_kv_splits": list(B70_WAVE_SWEEP_SPLITS),
+    "winner": None,
+    "kernel_compatibility": {
+        "kind": "exact_variant",
+        "name": B70_WAVE_SWEEP_KERNEL_VARIANT,
+        "id": B70_WAVE_SWEEP_KERNEL_VARIANT_ID,
+    },
+    "evidence": [
+        {
+            "artifact": (
+                "benchmark-results/kvarn/"
+                "20260904T002554Z-untouched-beta-device-stages/"
+                "dpas-16k-65k-split-sweep.json"
+            ),
+            "sha256": (
+                "eb307d22aba29adf68556013bf4bf1d8"
+                "cf4e31e69e40967d35d56c04a0c07869"
+            ),
+            "scope": "candidate_set_only_pre_id18",
+            "batches": [1, 4],
+            "contexts": [16384, 65023],
+            "num_kv_splits": list(B70_WAVE_SWEEP_SPLITS),
+        },
+        {
+            "artifact": "benchmark-results/kvarn/factory-b70-20260904T153938Z.json",
+            "sha256": (
+                "ec92e73b7b1dd8aceae818dcfd32d5fff"
+                "4024aa5059e5b9f52a4ff923df6c9aa"
+            ),
+            "scope": "matched_id18_endpoint_anchor",
+            "batches": [1, 4],
+            "contexts": [4096, 16384, 65536],
+            "num_kv_splits": [8, 32],
+        },
+        {
+            "artifact": "benchmark-results/kvarn/factory-b70-20260904T155813Z.json",
+            "sha256": (
+                "034feed1e2d15a149573cd5f2cfec905"
+                "be8bc4da24d6b8e6be2048c290a21a52"
+            ),
+            "scope": "matched_id18_only_endpoint_anchor",
+            "batches": [1, 4],
+            "contexts": [4096, 16384, 65023],
+            "num_kv_splits": [8, 32],
+        },
+    ],
+}
+
+
+def factory_split_policy_contract(
+    selector: str, explicit_splits: list[int | None] | None = None
+) -> dict[str, Any]:
+    """Return a factory-enumeration contract without changing runtime policy."""
+    if selector == FACTORY_SPLIT_POLICY_B70_WAVE_SWEEP:
+        return deepcopy(_B70_WAVE_SWEEP_CONTRACT)
+    if selector != FACTORY_SPLIT_POLICY_EXPLICIT:
+        raise ValueError(f"unsupported factory split policy {selector!r}")
+    if not explicit_splits:
+        raise ValueError("explicit factory split policy requires split selections")
+    return {
+        "schema_version": 1,
+        "selector": FACTORY_SPLIT_POLICY_EXPLICIT,
+        "selection_mode": "caller_explicit",
+        "candidate_num_kv_splits": [
+            "auto" if value is None else int(value) for value in explicit_splits
+        ],
+        "winner": None,
+        "kernel_compatibility": {"kind": "explicit_dispatch_compatible"},
+        "evidence": [],
+    }
 
 
 def owns_runtime_selection(selector: str) -> bool:

@@ -562,8 +562,6 @@ def test_nix_artifact_must_belong_to_attested_derivation_and_closure() -> None:
     def command_runner(command) -> str:
         call = tuple(command)
         calls.append(call)
-        if call == ("nix-store", "-q", "--outputs", derivation):
-            return output
         if call == ("nix-store", "-q", "--deriver", output):
             return derivation
         if call == ("nix-store", "-qR", output):
@@ -580,11 +578,9 @@ def test_nix_artifact_must_belong_to_attested_derivation_and_closure() -> None:
     assert verified["output_path"] == output
     assert verified["closure_paths"] == sorted(closure)
     assert verified["closure_sha256"] == expected_digest
-    assert len(calls) == 3
+    assert len(calls) == 2
 
     def wrong_deriver(command) -> str:
-        if "--outputs" in command:
-            return output
         if "--deriver" in command:
             return "/nix/store/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-wrong.drv"
         return "\n".join(closure)
@@ -652,8 +648,6 @@ def test_nix_package_output_must_belong_to_attested_derivation_and_closure(
 
     def command_runner(command) -> str:
         call = tuple(command)
-        if call == ("nix-store", "-q", "--outputs", derivation):
-            return str(output)
         if call == ("nix-store", "-q", "--deriver", str(output)):
             return derivation
         if call == ("nix-store", "-qR", str(output)):

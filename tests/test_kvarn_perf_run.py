@@ -1563,6 +1563,18 @@ def test_sealed_results_are_directly_perf_gate_compatible(tmp_path: Path) -> Non
             ),
             encoding="utf-8",
         )
+        engine_log_scan = run_dir / "engine-log-scan.json"
+        scan = runner.validate_engine_log(
+            engine_log,
+            native=native,
+            expected_layout="xe2_dpas" if native else "natural",
+            expected_kernel_variant="q6_scalar" if native else None,
+            expected_max_splits=32 if native else None,
+            expected_split_policy="b70_q6" if native else None,
+            expected_frontend="reference",
+            expected_forward_pool_ensure="always",
+        )
+        engine_log_scan.write_text(json.dumps(scan), encoding="utf-8")
         raw = _raw_result(
             run_dir / "benchmark.raw.json",
             throughput=99.0 if native else 100.0,
@@ -1617,6 +1629,7 @@ def test_sealed_results_are_directly_perf_gate_compatible(tmp_path: Path) -> Non
             raw_result=raw,
             output=output,
             engine_log=engine_log,
+            engine_log_scan=engine_log_scan,
             run=planned_run,
             args=args,
             candidate_id=candidate_id,
@@ -1634,6 +1647,16 @@ def test_sealed_results_are_directly_perf_gate_compatible(tmp_path: Path) -> Non
         )
         assert sealed["kvarn_max_num_batched_tokens"] == "2048"
         assert sealed["kvarn_evidence_mode"] == "formal"
+        assert sealed["kvarn_engine_log_scan_path"] == str(
+            engine_log_scan.resolve()
+        )
+        assert sealed["kvarn_engine_log_scan_sha256"] == hashlib.sha256(
+            engine_log_scan.read_bytes()
+        ).hexdigest()
+        assert sealed["kvarn_native_frontend_active_verified"] is False
+        assert sealed["kvarn_native_frontend_log_marker"] == "not_applicable"
+        assert sealed["kvarn_forward_pool_ensure_active_verified"] is False
+        assert sealed["kvarn_forward_pool_ensure_log_marker"] == "not_applicable"
         if native:
             candidates.append(output)
             candidate_logs.append(engine_log)
@@ -1693,12 +1716,25 @@ def test_exploratory_seal_omits_formal_correctness_provenance(
         "Current kv cache memory in use is 10.92 GiB.\n",
         encoding="utf-8",
     )
+    engine_log_scan = tmp_path / "engine-log-scan.json"
+    engine_log_scan.write_text(
+        json.dumps(
+            runner.validate_engine_log(
+                engine_log,
+                native=False,
+                expected_frontend="reference",
+                expected_forward_pool_ensure="always",
+            )
+        ),
+        encoding="utf-8",
+    )
 
     planned_run = PlannedRun(workload, "reference", 1)
     sealed = seal_benchmark_result(
         raw_result=raw,
         output=tmp_path / "benchmark.json",
         engine_log=engine_log,
+        engine_log_scan=engine_log_scan,
         run=planned_run,
         args=args,
         candidate_id=None,
@@ -1718,6 +1754,53 @@ def test_exploratory_seal_omits_formal_correctness_provenance(
     assert sealed["kvarn_promotable"] is False
     assert "kvarn_candidate_id" not in sealed
     assert "kvarn_correctness_sha256" not in sealed
+
+
+def test_seal_rejects_tampered_engine_log_scan(tmp_path: Path) -> None:
+    args = _args(tmp_path)
+    args.exploratory = True
+    workload = Workload(4096, 1, 4, 1, 17)
+    raw = _raw_result(
+        tmp_path / "benchmark.raw.json", throughput=100.0, workload=workload
+    )
+    engine_log = tmp_path / "engine.log"
+    engine_log.write_text(
+        "INFO config: device_config=xpu\n"
+        "INFO Actual usage is 17.54 GiB for consumed memory. "
+        "Current kv cache memory in use is 10.92 GiB.\n",
+        encoding="utf-8",
+    )
+    scan = runner.validate_engine_log(
+        engine_log,
+        native=False,
+        expected_frontend="reference",
+        expected_forward_pool_ensure="always",
+    )
+    scan["native_frontend_active_verified"] = True
+    engine_log_scan = tmp_path / "engine-log-scan.json"
+    engine_log_scan.write_text(json.dumps(scan), encoding="utf-8")
+    planned_run = PlannedRun(workload, "reference", 1)
+
+    with pytest.raises(RunnerError, match="differs from the verified engine log"):
+        seal_benchmark_result(
+            raw_result=raw,
+            output=tmp_path / "benchmark.json",
+            engine_log=engine_log,
+            engine_log_scan=engine_log_scan,
+            run=planned_run,
+            args=args,
+            candidate_id=None,
+            correctness_sha256=None,
+            scheduler={"peak_running": 1},
+            run_uuid="tampered-scan",
+            started_at="2026-09-03T00:00:00Z",
+            identity=IDENTITY,
+            profile={
+                **PROFILE,
+                "variant_provenance": variant_provenance_for_run(planned_run, args),
+            },
+            warmup_result=None,
+        )
 
 
 def test_exploratory_summary_is_descriptive_and_non_promotable(

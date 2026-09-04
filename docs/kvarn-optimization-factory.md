@@ -85,6 +85,9 @@ always use `reference` plus `always`. The proof selector is accepted only with
 `qkv_scatter` or `qkv_scatter_inline`, and a result counts only when the engine
 reports the exact active pool-elision marker. Direct primitive factory results
 neither accept nor report this service-only axis.
+Service benchmark provenance includes the active frontend and pool-proof
+attestations and a hashed engine-log scan; selectors alone are not accepted as
+execution proof.
 
 `b70_q6` allocates for 32 and selects B1=32, B2=16, B3--4=8,
 B5--8=4, and B9--12=2. It is valid only with a Q6 DPAS reader. The named

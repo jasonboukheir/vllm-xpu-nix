@@ -2223,6 +2223,7 @@ def validate_engine_log(
         if expected_forward_pool_ensure_active
         else "not_applicable"
     )
+    result["engine_log_sha256"] = sha256_file(path)
     result["native_layout_evidence"] = (
         "captured-process-environment-plus-factory-marker-plus-native-dispatch"
         if native and marker is not None
@@ -2334,6 +2335,7 @@ def seal_benchmark_result(
     raw_result: Path,
     output: Path,
     engine_log: Path,
+    engine_log_scan: Path,
     run: PlannedRun,
     args: argparse.Namespace,
     candidate_id: str | None,
@@ -2418,6 +2420,35 @@ def seal_benchmark_result(
         raise RunnerError("engine log lacks positive XPU runtime evidence")
     if not args.exploratory and warmup_result is None:
         raise RunnerError("formal performance evidence requires a full-width warmup")
+    scan_path = engine_log_scan.resolve()
+    if (
+        scan_path.parent != engine_log.resolve().parent
+        or scan_path.parent != output.resolve().parent
+    ):
+        raise RunnerError(
+            "engine-log scan, engine log, and benchmark must share a directory"
+        )
+    try:
+        scan_bytes = scan_path.read_bytes()
+        scan_document = json.loads(scan_bytes)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RunnerError(f"cannot read engine-log scan: {exc}") from exc
+    expected_scan = validate_engine_log(
+        engine_log,
+        native=run.arm == "candidate",
+        expected_layout=expected_layout,
+        expected_kernel_variant=(
+            expected_kernel_variant if run.arm == "candidate" else None
+        ),
+        expected_max_splits=(expected_max_splits if run.arm == "candidate" else None),
+        expected_split_policy=(
+            expected_split_policy if run.arm == "candidate" else None
+        ),
+        expected_frontend=native_frontend_for_run(run, args),
+        expected_forward_pool_ensure=forward_pool_ensure_for_run(run, args),
+    )
+    if scan_document != expected_scan:
+        raise RunnerError("engine-log scan differs from the verified engine log")
     direct_bf16 = native_direct_bf16_evidence(
         engine_log.read_text(encoding="utf-8", errors="replace"),
         native=run.arm == "candidate",
@@ -2486,6 +2517,24 @@ def seal_benchmark_result(
         "kvarn_prefill_store": prefill_store_for_run(run, args),
         "kvarn_native_frontend": native_frontend_for_run(run, args),
         "kvarn_forward_pool_ensure": forward_pool_ensure_for_run(run, args),
+        "kvarn_native_frontend_active_verified": scan_document[
+            "native_frontend_active_verified"
+        ],
+        "kvarn_native_frontend_log_marker": scan_document[
+            "native_frontend_log_marker"
+        ],
+        "kvarn_native_frontend_inline_active_verified": scan_document[
+            "native_frontend_inline_active_verified"
+        ],
+        "kvarn_native_frontend_inline_log_marker": scan_document[
+            "native_frontend_inline_log_marker"
+        ],
+        "kvarn_forward_pool_ensure_active_verified": scan_document[
+            "forward_pool_ensure_active_verified"
+        ],
+        "kvarn_forward_pool_ensure_log_marker": scan_document[
+            "forward_pool_ensure_log_marker"
+        ],
         "kvarn_vllm_use_v2_model_runner": VLLM_USE_V2_MODEL_RUNNER,
         "kvarn_native_layout_log_marker": (
             kvarn_factory_marker(
@@ -2507,6 +2556,8 @@ def seal_benchmark_result(
         "kvarn_run_uuid": run_uuid,
         "kvarn_run_started_at": started_at,
         "kvarn_engine_log_sha256": sha256_file(engine_log),
+        "kvarn_engine_log_scan_path": str(scan_path),
+        "kvarn_engine_log_scan_sha256": hashlib.sha256(scan_bytes).hexdigest(),
         "kvarn_process_executable": identity["process_executable"],
         "kvarn_process_package": identity["process_package"],
         "kvarn_process_closure_sha256": identity["process_closure_sha256"],
@@ -2692,6 +2743,7 @@ def run_one(
             raw_result=raw_result,
             output=sealed_result,
             engine_log=run_dir / "engine.log",
+            engine_log_scan=run_dir / "engine-log-scan.json",
             run=run,
             args=args,
             candidate_id=candidate_id,

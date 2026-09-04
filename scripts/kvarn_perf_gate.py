@@ -447,6 +447,12 @@ ARM_PROVENANCE_FIELDS = (
     "kvarn_prefill_store",
     "kvarn_native_frontend",
     "kvarn_forward_pool_ensure",
+    "kvarn_native_frontend_active_verified",
+    "kvarn_native_frontend_log_marker",
+    "kvarn_native_frontend_inline_active_verified",
+    "kvarn_native_frontend_inline_log_marker",
+    "kvarn_forward_pool_ensure_active_verified",
+    "kvarn_forward_pool_ensure_log_marker",
     "kvarn_native_layout_log_marker",
     "kvarn_native_layout_evidence",
     "kvarn_kernel_strategy",
@@ -1685,6 +1691,8 @@ class Run:
     run_uuid: str
     run_started_at: dt.datetime
     engine_log_sha256: str
+    engine_log_scan_path: str
+    engine_log_scan_sha256: str
 
     def metrics(self) -> dict[str, float]:
         request_rates = list(self.request_decode_throughputs)
@@ -2047,14 +2055,60 @@ def _load_run(path: Path) -> Run:
             provenance[name] = value
         else:
             provenance[name] = _required_text(document, name, path)
+    boolean_arm_fields = {
+        "kvarn_native_direct_bf16_verified",
+        "kvarn_native_frontend_active_verified",
+        "kvarn_native_frontend_inline_active_verified",
+        "kvarn_forward_pool_ensure_active_verified",
+    }
     for name in ARM_PROVENANCE_FIELDS:
-        if name == "kvarn_native_direct_bf16_verified":
+        if name in boolean_arm_fields:
             value = document.get(name)
             if not isinstance(value, bool):
                 raise GateError(f"{path}: {name} must be boolean")
             provenance[name] = value
         else:
             provenance[name] = _required_text(document, name, path)
+    native = provenance["kvarn_native_xpu"] == "1"
+    if provenance["kvarn_native_xpu"] not in {"0", "1"}:
+        raise GateError(f"{path}: kvarn_native_xpu must be 0 or 1")
+    frontend = provenance["kvarn_native_frontend"]
+    forward_pool_ensure = provenance["kvarn_forward_pool_ensure"]
+    if frontend not in NATIVE_FRONTEND_VARIANTS:
+        raise GateError(f"{path}: native frontend is unsupported")
+    if forward_pool_ensure not in FORWARD_POOL_ENSURE_VARIANTS:
+        raise GateError(f"{path}: forward pool ensure is unsupported")
+    if forward_pool_ensure == "fused_qkv_proof" and frontend not in {
+        "qkv_scatter",
+        "qkv_scatter_inline",
+    }:
+        raise GateError(f"{path}: fused pool proof requires a fused QKV frontend")
+    frontend_active = native and frontend in {"qkv_scatter", "qkv_scatter_inline"}
+    frontend_inline_active = native and frontend == "qkv_scatter_inline"
+    forward_pool_ensure_active = native and forward_pool_ensure == "fused_qkv_proof"
+    expected_execution_provenance = {
+        "kvarn_native_frontend_active_verified": frontend_active,
+        "kvarn_native_frontend_log_marker": (
+            NATIVE_FRONTEND_ACTIVE_MARKER if frontend_active else "not_applicable"
+        ),
+        "kvarn_native_frontend_inline_active_verified": frontend_inline_active,
+        "kvarn_native_frontend_inline_log_marker": (
+            NATIVE_FRONTEND_INLINE_ACTIVE_MARKER
+            if frontend_inline_active
+            else "not_applicable"
+        ),
+        "kvarn_forward_pool_ensure_active_verified": forward_pool_ensure_active,
+        "kvarn_forward_pool_ensure_log_marker": (
+            FORWARD_POOL_ENSURE_ACTIVE_MARKER
+            if forward_pool_ensure_active
+            else "not_applicable"
+        ),
+    }
+    if any(
+        provenance[name] != expected
+        for name, expected in expected_execution_provenance.items()
+    ):
+        raise GateError(f"{path}: runtime execution provenance is inconsistent")
 
     for name in (
         "kvarn_process_closure_sha256",
@@ -2115,6 +2169,54 @@ def _load_run(path: Path) -> Run:
     engine_log_sha256 = _required_text(document, "kvarn_engine_log_sha256", path)
     if not re.fullmatch(r"[0-9a-f]{64}", engine_log_sha256):
         raise GateError(f"{path}: kvarn_engine_log_sha256 must be lowercase SHA-256")
+    engine_log_scan_path = Path(
+        _required_text(document, "kvarn_engine_log_scan_path", path)
+    ).expanduser().resolve()
+    engine_log_scan_sha256 = _required_sha256(
+        document, "kvarn_engine_log_scan_sha256", path
+    )
+    if engine_log_scan_path.parent != path.resolve().parent:
+        raise GateError(f"{path}: engine-log scan is not in the benchmark directory")
+    try:
+        engine_log_scan_bytes = engine_log_scan_path.read_bytes()
+        engine_log_scan = json.loads(engine_log_scan_bytes)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise GateError(f"{path}: cannot read engine-log scan: {exc}") from exc
+    if hashlib.sha256(engine_log_scan_bytes).hexdigest() != engine_log_scan_sha256:
+        raise GateError(f"{path}: engine-log scan SHA-256 differs")
+    expected_scan_evidence = {
+        "native_frontend_expected": provenance["kvarn_native_frontend"],
+        "native_frontend_active_verified": provenance[
+            "kvarn_native_frontend_active_verified"
+        ],
+        "native_frontend_log_marker": provenance[
+            "kvarn_native_frontend_log_marker"
+        ],
+        "native_frontend_inline_active_verified": provenance[
+            "kvarn_native_frontend_inline_active_verified"
+        ],
+        "native_frontend_inline_log_marker": provenance[
+            "kvarn_native_frontend_inline_log_marker"
+        ],
+        "forward_pool_ensure_expected": provenance["kvarn_forward_pool_ensure"],
+        "forward_pool_ensure_active_verified": provenance[
+            "kvarn_forward_pool_ensure_active_verified"
+        ],
+        "forward_pool_ensure_log_marker": provenance[
+            "kvarn_forward_pool_ensure_log_marker"
+        ],
+        "engine_log_sha256": engine_log_sha256,
+    }
+    if (
+        not isinstance(engine_log_scan, dict)
+        or engine_log_scan.get("status") != "passed"
+        or engine_log_scan.get("fatal_findings") != []
+        or any(
+            engine_log_scan.get(name) != expected
+            for name, expected in expected_scan_evidence.items()
+        )
+    ):
+        raise GateError(f"{path}: engine-log scan execution evidence differs")
     started_text = _required_text(document, "kvarn_run_started_at", path)
     try:
         run_started_at = dt.datetime.fromisoformat(started_text.replace("Z", "+00:00"))
@@ -2140,6 +2242,8 @@ def _load_run(path: Path) -> Run:
         run_uuid=run_uuid,
         run_started_at=run_started_at,
         engine_log_sha256=engine_log_sha256,
+        engine_log_scan_path=str(engine_log_scan_path),
+        engine_log_scan_sha256=engine_log_scan_sha256,
     )
 
 
@@ -2170,6 +2274,9 @@ def _load_arm(paths: list[Path], name: str) -> list[Run]:
     warmup_paths = [run.provenance["kvarn_warmup_path"] for run in runs]
     if len(set(warmup_paths)) != len(warmup_paths):
         raise GateError(f"{name} runs must have distinct warmup evidence")
+    scan_paths = [run.engine_log_scan_path for run in runs]
+    if len(set(scan_paths)) != len(scan_paths):
+        raise GateError(f"{name} runs must have distinct engine-log scans")
     return runs
 
 
@@ -3085,6 +3192,13 @@ def compare(
         "reference": {
             "runs": [run.path for run in reference],
             "engine_log_sha256": reference_log_sha256,
+            "engine_log_scan": [
+                {
+                    "path": run.engine_log_scan_path,
+                    "sha256": run.engine_log_scan_sha256,
+                }
+                for run in reference
+            ],
             "arm": {
                 field: first_ref.provenance[field] for field in ARM_PROVENANCE_FIELDS
             },
@@ -3093,6 +3207,13 @@ def compare(
         "candidate": {
             "runs": [run.path for run in candidate],
             "engine_log_sha256": candidate_log_sha256,
+            "engine_log_scan": [
+                {
+                    "path": run.engine_log_scan_path,
+                    "sha256": run.engine_log_scan_sha256,
+                }
+                for run in candidate
+            ],
             "arm": {
                 field: first_cand.provenance[field] for field in ARM_PROVENANCE_FIELDS
             },

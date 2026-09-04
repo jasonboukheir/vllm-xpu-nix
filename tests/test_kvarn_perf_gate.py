@@ -1103,6 +1103,53 @@ def _result(
         if arm == "candidate"
         else "unavailable"
     )
+    effective_frontend = "reference" if arm == "reference" else native_frontend
+    effective_forward_pool_ensure = (
+        "always" if arm == "reference" else forward_pool_ensure
+    )
+    frontend_active = arm == "candidate" and effective_frontend in {
+        "qkv_scatter",
+        "qkv_scatter_inline",
+    }
+    frontend_inline_active = (
+        arm == "candidate" and effective_frontend == "qkv_scatter_inline"
+    )
+    forward_pool_ensure_active = (
+        arm == "candidate" and effective_forward_pool_ensure == "fused_qkv_proof"
+    )
+    engine_log_scan = path.with_name(f"{path.stem}-engine-log-scan.json")
+    engine_log_scan.write_text(
+        json.dumps(
+            {
+                "status": "passed",
+                "fatal_findings": [],
+                "native_frontend_expected": effective_frontend,
+                "native_frontend_active_verified": frontend_active,
+                "native_frontend_log_marker": (
+                    gate_module.NATIVE_FRONTEND_ACTIVE_MARKER
+                    if frontend_active
+                    else "not_applicable"
+                ),
+                "native_frontend_inline_active_verified": frontend_inline_active,
+                "native_frontend_inline_log_marker": (
+                    gate_module.NATIVE_FRONTEND_INLINE_ACTIVE_MARKER
+                    if frontend_inline_active
+                    else "not_applicable"
+                ),
+                "forward_pool_ensure_expected": effective_forward_pool_ensure,
+                "forward_pool_ensure_active_verified": (
+                    forward_pool_ensure_active
+                ),
+                "forward_pool_ensure_log_marker": (
+                    gate_module.FORWARD_POOL_ENSURE_ACTIVE_MARKER
+                    if forward_pool_ensure_active
+                    else "not_applicable"
+                ),
+                "engine_log_sha256": engine_log_sha256,
+            }
+        ),
+        encoding="utf-8",
+    )
     document = {
         "completed": completed,
         "failed": 0,
@@ -1147,11 +1194,25 @@ def _result(
         "kvarn_prefill_store": (
             "reference" if arm == "reference" else prefill_store
         ),
-        "kvarn_native_frontend": (
-            "reference" if arm == "reference" else native_frontend
+        "kvarn_native_frontend": effective_frontend,
+        "kvarn_forward_pool_ensure": effective_forward_pool_ensure,
+        "kvarn_native_frontend_active_verified": frontend_active,
+        "kvarn_native_frontend_log_marker": (
+            gate_module.NATIVE_FRONTEND_ACTIVE_MARKER
+            if frontend_active
+            else "not_applicable"
         ),
-        "kvarn_forward_pool_ensure": (
-            "always" if arm == "reference" else forward_pool_ensure
+        "kvarn_native_frontend_inline_active_verified": frontend_inline_active,
+        "kvarn_native_frontend_inline_log_marker": (
+            gate_module.NATIVE_FRONTEND_INLINE_ACTIVE_MARKER
+            if frontend_inline_active
+            else "not_applicable"
+        ),
+        "kvarn_forward_pool_ensure_active_verified": forward_pool_ensure_active,
+        "kvarn_forward_pool_ensure_log_marker": (
+            gate_module.FORWARD_POOL_ENSURE_ACTIVE_MARKER
+            if forward_pool_ensure_active
+            else "not_applicable"
         ),
         "kvarn_onednn_deterministic": "1",
         "kvarn_request_stable_projection_rows": request_stable_projection_rows,
@@ -1230,6 +1291,10 @@ def _result(
         "kvarn_run_uuid": f"run-{run_order}",
         "kvarn_run_started_at": f"2026-08-31T00:00:{run_order:02d}Z",
         "kvarn_engine_log_sha256": engine_log_sha256,
+        "kvarn_engine_log_scan_path": str(engine_log_scan.resolve()),
+        "kvarn_engine_log_scan_sha256": hashlib.sha256(
+            engine_log_scan.read_bytes()
+        ).hexdigest(),
     }
     path.write_text(json.dumps(document), encoding="utf-8")
     return path
@@ -1278,6 +1343,20 @@ def _log(
             )
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return path
+
+
+def _rebind_result_engine_log(result_path: Path, engine_log: Path) -> None:
+    document = json.loads(result_path.read_text(encoding="utf-8"))
+    engine_log_sha256 = hashlib.sha256(engine_log.read_bytes()).hexdigest()
+    scan_path = Path(document["kvarn_engine_log_scan_path"])
+    scan = json.loads(scan_path.read_text(encoding="utf-8"))
+    scan["engine_log_sha256"] = engine_log_sha256
+    scan_path.write_text(json.dumps(scan), encoding="utf-8")
+    document["kvarn_engine_log_sha256"] = engine_log_sha256
+    document["kvarn_engine_log_scan_sha256"] = hashlib.sha256(
+        scan_path.read_bytes()
+    ).hexdigest()
+    result_path.write_text(json.dumps(document), encoding="utf-8")
 
 
 def _arms(
@@ -1498,6 +1577,64 @@ def test_match_gate_accepts_inline_frontend_and_fused_pool_proof(
         result["candidate"]["arm"]["kvarn_forward_pool_ensure"]
         == "fused_qkv_proof"
     )
+    assert result["candidate"]["arm"][
+        "kvarn_native_frontend_active_verified"
+    ] is True
+    assert result["candidate"]["arm"][
+        "kvarn_native_frontend_inline_active_verified"
+    ] is True
+    assert result["candidate"]["arm"][
+        "kvarn_forward_pool_ensure_active_verified"
+    ] is True
+    assert result["reference"]["arm"][
+        "kvarn_forward_pool_ensure_active_verified"
+    ] is False
+    assert len(result["candidate"]["engine_log_scan"]) == 8
+    assert all(
+        set(reference) == {"path", "sha256"}
+        for reference in result["candidate"]["engine_log_scan"]
+    )
+
+
+def test_match_gate_rejects_self_consistent_execution_proof_tamper(
+    tmp_path: Path,
+) -> None:
+    arms = _arms(
+        tmp_path,
+        native_frontend="qkv_scatter_inline",
+        forward_pool_ensure="fused_qkv_proof",
+    )
+    candidate_result_path = arms[1][0]
+    candidate_result = json.loads(
+        candidate_result_path.read_text(encoding="utf-8")
+    )
+    scan_path = Path(candidate_result["kvarn_engine_log_scan_path"])
+    scan = json.loads(scan_path.read_text(encoding="utf-8"))
+    scan["forward_pool_ensure_active_verified"] = False
+    scan["forward_pool_ensure_log_marker"] = "not_applicable"
+    scan_path.write_text(json.dumps(scan), encoding="utf-8")
+    candidate_result["kvarn_forward_pool_ensure_active_verified"] = False
+    candidate_result["kvarn_forward_pool_ensure_log_marker"] = "not_applicable"
+    candidate_result["kvarn_engine_log_scan_sha256"] = hashlib.sha256(
+        scan_path.read_bytes()
+    ).hexdigest()
+    candidate_result_path.write_text(json.dumps(candidate_result), encoding="utf-8")
+
+    with pytest.raises(GateError, match="runtime execution provenance"):
+        _compare(arms)
+
+
+def test_match_gate_rejects_engine_log_scan_digest_tamper(tmp_path: Path) -> None:
+    arms = _arms(tmp_path)
+    candidate_result = json.loads(arms[1][0].read_text(encoding="utf-8"))
+    scan_path = Path(candidate_result["kvarn_engine_log_scan_path"])
+    scan_path.write_text(
+        scan_path.read_text(encoding="utf-8") + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(GateError, match="engine-log scan SHA-256 differs"):
+        _compare(arms)
 
 
 def test_match_gate_requires_inline_marker_in_addition_to_active_qkv(
@@ -2118,11 +2255,7 @@ def test_gate_allows_unrelated_fallback_but_rejects_kvarn_fallback(
         + "WARNING sampler is Falling back to PyTorch-native implementation\n",
         encoding="utf-8",
     )
-    candidate_result = json.loads(arms[1][0].read_text(encoding="utf-8"))
-    candidate_result["kvarn_engine_log_sha256"] = hashlib.sha256(
-        candidate_log.read_bytes()
-    ).hexdigest()
-    arms[1][0].write_text(json.dumps(candidate_result), encoding="utf-8")
+    _rebind_result_engine_log(arms[1][0], candidate_log)
 
     assert _compare(arms)["status"] == "passed"
 
@@ -2131,10 +2264,7 @@ def test_gate_allows_unrelated_fallback_but_rejects_kvarn_fallback(
         + "WARNING Falling back from the Kvarn native decoder\n",
         encoding="utf-8",
     )
-    candidate_result["kvarn_engine_log_sha256"] = hashlib.sha256(
-        candidate_log.read_bytes()
-    ).hexdigest()
-    arms[1][0].write_text(json.dumps(candidate_result), encoding="utf-8")
+    _rebind_result_engine_log(arms[1][0], candidate_log)
     with pytest.raises(GateError, match="fallback"):
         _compare(arms)
 

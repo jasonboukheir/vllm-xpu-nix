@@ -499,6 +499,10 @@ a fused QKV frontend and the runtime marker
 `[KVARN_FORWARD_POOL_ENSURE] active=fused_qkv_proof; action=elide_ensure_pool;`.
 Both service-only axes are deliberately absent from direct primitive results;
 reference and inapplicable paths must not emit their active markers.
+Every sealed performance result records the verified execution booleans and
+marker strings plus the run-local engine-log scan path and SHA-256. The scan
+also binds the engine-log SHA-256, so either artifact changing invalidates the
+result before comparison.
 
 Use `--plan-only` to realize immutable launcher programs and materialize and
 inspect `session.json` without starting a service. `--context` and `--batch`

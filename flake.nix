@@ -216,6 +216,32 @@
             mcpPackage = python312PackagesXpu.mcp-v2;
           };
 
+          # Kvarn optimization factory for Brutus's frozen Qwen3.8 profile.
+          # The static attention sources contain every runtime-selectable
+          # Kvarn candidate; these config files narrow only upstream's
+          # generated FA2 Cartesian sweep.  Keep the two arms in the same
+          # package so auto and Kvarn cannot accidentally benchmark different
+          # builds.
+          kvarnFactoryKernelConfig = {
+            chunkPrefill = builtins.toFile "brutus-kvarn-chunk-prefill.conf" ''
+              # auto paged prompt/chunk processing
+              256,true,true,false,false,false
+
+              # Kvarn raw first prefill and materialized cached continuation
+              256,false,true,false,false,false
+            '';
+            pagedDecode = builtins.toFile "brutus-auto-paged-decode.conf" ''
+              # Hq24/Hkv4 -> qgroup 8; qlen=1 XPU decode is non-causal
+              8,256,64,false,false,false
+            '';
+          };
+
+          vllm-xpu-kvarn-factory = vllm-xpu-unstable.override {
+            withTorchvision = true;
+            aotDevices = [ "bmg" ];
+            kernelConfig = kvarnFactoryKernelConfig;
+          };
+
           kv-kernel-ab = pkgs.callPackage ./nix/kv-kernel-ab.nix { };
 
           # ---- shells, checks, and misc helpers ----
@@ -274,6 +300,7 @@
               vllm-xpu-kernels-unstable
               vllm-xpu
               vllm-xpu-unstable
+              vllm-xpu-kvarn-factory
               ;
             inherit (stableLibs)
               attn-kernels-xe-2
@@ -398,6 +425,7 @@
         // pick "vllm-xpu-kernels"
         // pick "vllm-xpu-kernels-unstable"
         // pick "vllm-xpu"
-        // pick "vllm-xpu-unstable";
+        // pick "vllm-xpu-unstable"
+        // pick "vllm-xpu-kvarn-factory";
     };
 }

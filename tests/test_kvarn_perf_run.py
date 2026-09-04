@@ -60,6 +60,10 @@ PROFILE = {
     "canonical_matched_profile_sha256": "3" * 64,
     "native_layout": "natural",
     "native_layout_environment": "0",
+    "native_cache_layout_environment": "natural",
+    "native_kernel_variant_environment": "baseline",
+    "native_max_splits_environment": "1",
+    "native_split_policy_environment": "fixed",
     "variant_provenance": {
         "kernel_strategy": "vllm_auto",
         "split_policy": "neutral_1",
@@ -94,6 +98,8 @@ def _args(tmp_path: Path) -> argparse.Namespace:
         packaging_repo=tmp_path,
         exploratory=False,
         native_layout="natural",
+        native_kernel_variant="baseline",
+        native_split_policy="fixed",
         max_model_len=65536,
         max_num_batched_tokens=2048,
         model=MODEL,
@@ -217,6 +223,12 @@ def test_correctness_is_optional_only_for_exploratory_cli(tmp_path: Path) -> Non
         "1",
         "--repeats",
         "2",
+        "--native-layout",
+        "xe2_dpas",
+        "--native-kernel-variant",
+        "q6_scalar",
+        "--native-split-policy",
+        "b70_q6",
     ]
 
     exploratory = runner.parse_args(
@@ -230,10 +242,70 @@ def test_correctness_is_optional_only_for_exploratory_cli(tmp_path: Path) -> Non
     assert exploratory.exploratory is True
     assert exploratory.correctness is None
     assert exploratory.repeats == 2
-    assert exploratory.native_layout == "natural"
+    assert exploratory.native_layout == "xe2_dpas"
 
     with pytest.raises(SystemExit):
         runner.parse_args([*common, "--output-dir", str(tmp_path / "formal-output")])
+
+    b70 = runner.parse_args(
+        [
+            *common,
+            "--exploratory",
+            "--native-layout",
+            "xe2_dpas",
+            "--native-kernel-variant",
+            "q6_scalar",
+            "--native-split-policy",
+            "b70_q6",
+            "--output-dir",
+            str(tmp_path / "b70-output"),
+        ]
+    )
+    assert b70.native_splits == {1: 32}
+
+    with pytest.raises(SystemExit):
+        runner.parse_args(
+            [
+                *common,
+                "--exploratory",
+                "--native-layout",
+                "xe2_dpas",
+                "--native-kernel-variant",
+                "q6_scalar",
+                "--native-split-policy",
+                "b70_q6",
+                "--native-splits",
+                "32",
+                "--output-dir",
+                str(tmp_path / "b70-conflict"),
+            ]
+        )
+    with pytest.raises(SystemExit):
+        runner.parse_args(
+            [
+                *common,
+                "--exploratory",
+                "--native-kernel-variant",
+                "q6_scalar",
+                "--native-layout",
+                "natural",
+                "--native-split-policy",
+                "fixed",
+                "--output-dir",
+                str(tmp_path / "natural-q6"),
+            ]
+        )
+    with pytest.raises(SystemExit):
+        runner.parse_args(
+            [
+                *common,
+                "--exploratory",
+                "--native-kernel-variant",
+                "page128",
+                "--output-dir",
+                str(tmp_path / "reserved-page128"),
+            ]
+        )
 
 
 def test_exploratory_plan_session_has_no_formal_claims(
@@ -255,6 +327,12 @@ def test_exploratory_plan_session_has_no_formal_claims(
             "1",
             "--repeats",
             "2",
+            "--native-layout",
+            "xe2_dpas",
+            "--native-kernel-variant",
+            "q6_scalar",
+            "--native-split-policy",
+            "b70_q6",
             "--allow-tmp",
             "--runtime-cache",
             str(tmp_path / "runtime-cache"),
@@ -324,9 +402,10 @@ def test_commands_pin_launcher_and_deterministic_workload(tmp_path: Path) -> Non
     assert warmup[warmup.index("--result-filename") + 1] == warmup_raw.name
 
     args.native_layout = "xe2_dpas"
+    args.native_kernel_variant = "q6_scalar"
     assert (
         service_command(run, args)[3]
-        == "path:/config#vllm-xpu-brutus-kvarn-native-dpas-b4"
+        == "path:/config#vllm-xpu-brutus-kvarn-native-dpas-q6_scalar-b4"
     )
     reference = PlannedRun(run.workload, "reference", 1)
     assert service_command(reference, args)[3] == (
@@ -336,13 +415,39 @@ def test_commands_pin_launcher_and_deterministic_workload(tmp_path: Path) -> Non
     candidate_variant = variant_provenance_for_run(run, args)
     reference_variant = variant_provenance_for_run(reference, args)
     assert candidate_variant == {
-        "kernel_strategy": "native_xe2_qlen1",
+        "kernel_strategy": "native_xe2_qlen1_q6_scalar",
         "split_policy": "fixed_b1s24_b4s16",
         "fusion_strategy": "native_materializer_persistent_scratch",
         "scheduling_variant": "eager_mnbt2048",
-        "variant_id": ("native-xe2-xe2_dpas-fixed_b1s24_b4s16-eager_mnbt2048"),
+        "variant_id": (
+            "native-xe2-xe2_dpas-q6_scalar-fixed_b1s24_b4s16-eager_mnbt2048"
+        ),
     }
     assert reference_variant["variant_id"] == "auto-control-eager_mnbt2048"
+
+
+@pytest.mark.parametrize(
+    ("variant", "variant_id"),
+    [
+        ("q6_scalar", 2),
+        ("q6_vector", 4),
+        ("q6_cached_weights", 6),
+        ("q6_exact_rows", 7),
+        ("q6_cached_weights_exact_rows", 8),
+    ],
+)
+def test_perf_launcher_name_binds_each_factory_variant(
+    tmp_path: Path, variant: str, variant_id: int
+) -> None:
+    args = _args(tmp_path)
+    args.native_layout = "xe2_dpas"
+    args.native_kernel_variant = variant
+    run = PlannedRun(Workload(4096, 4, 512, 4, 17), "candidate", 1)
+
+    assert runner.launcher_name(run, args) == (
+        f"vllm-xpu-brutus-kvarn-native-dpas-{variant}-b4"
+    )
+    assert runner.NATIVE_KERNEL_VARIANTS[variant] == variant_id
 
 
 @pytest.mark.parametrize("arm", ["reference", "candidate"])
@@ -377,6 +482,12 @@ def test_scheduler_budget_cli_defaults_overrides_and_rejects_zero(
         "--plan-only",
         "--runtime-cache",
         str(tmp_path / "runtime-cache"),
+        "--native-layout",
+        "xe2_dpas",
+        "--native-kernel-variant",
+        "q6_scalar",
+        "--native-split-policy",
+        "b70_q6",
     ]
 
     default = runner.parse_args(
@@ -524,6 +635,10 @@ def test_exploratory_cli_retains_flexible_non_promotable_shape(
             "2",
             "--native-layout",
             "xe2_dpas",
+            "--native-kernel-variant",
+            "q6_scalar",
+            "--native-split-policy",
+            "b70_q6",
         ]
     )
 
@@ -626,11 +741,14 @@ def test_profile_verification_uses_actual_argv_and_environment(tmp_path: Path) -
         "HF_HOME": "/var/cache/huggingface",
         "HOME": str(args.runtime_cache / "vllm-xpu-brutus-kvarn"),
         "KVARN_NATIVE_XPU": "1",
+        "KVARN_NATIVE_XPU_CACHE_LAYOUT": "natural",
         "KVARN_NATIVE_XPU_DECODE": "1",
         "KVARN_NATIVE_XPU_DPAS_LAYOUT": "0",
+        "KVARN_NATIVE_XPU_KERNEL_VARIANT": "baseline",
         "KVARN_NATIVE_XPU_MATERIALIZE": "1",
         "KVARN_NATIVE_XPU_PERSISTENT_SCRATCH": "1",
         "KVARN_NATIVE_XPU_SPLITS": "16",
+        "KVARN_NATIVE_XPU_SPLIT_POLICY": "fixed",
         "KVARN_PREFILL_FP16_WINDOW_BLOCKS": "16",
         "VLLM_CACHE_ROOT": str(args.runtime_cache / "vllm-xpu-brutus-kvarn"),
         "VLLM_TARGET_DEVICE": "xpu",
@@ -645,14 +763,17 @@ def test_profile_verification_uses_actual_argv_and_environment(tmp_path: Path) -
     with pytest.raises(RunnerError, match="profile mismatch"):
         verify_service_profile(argv, environment, run, args)
     args.native_layout = "xe2_dpas"
+    environment["KVARN_NATIVE_XPU_CACHE_LAYOUT"] = "xe2_dpas"
     verify_service_profile(argv, environment, run, args)
     args.native_layout = "natural"
+    environment["KVARN_NATIVE_XPU_CACHE_LAYOUT"] = "natural"
     environment["KVARN_NATIVE_XPU_DPAS_LAYOUT"] = "0"
     argv[argv.index("--max-num-batched-tokens") + 1] = "8192"
     with pytest.raises(RunnerError, match="profile mismatch"):
         verify_service_profile(argv, environment, run, args)
     argv[argv.index("--max-num-batched-tokens") + 1] = "2048"
     environment["KVARN_NATIVE_XPU_SPLITS"] = "1"
+    environment["KVARN_NATIVE_XPU_SPLIT_POLICY"] = "fixed"
     with pytest.raises(RunnerError, match="profile mismatch"):
         verify_service_profile(argv, environment, run, args)
     environment["KVARN_NATIVE_XPU_SPLITS"] = "16"
@@ -683,12 +804,16 @@ def test_profile_verification_uses_actual_argv_and_environment(tmp_path: Path) -
     argv[argv.index("--kv-cache-dtype") + 1] = "auto"
     for name in (
         "KVARN_NATIVE_XPU",
+        "KVARN_NATIVE_XPU_CACHE_LAYOUT",
         "KVARN_NATIVE_XPU_DECODE",
         "KVARN_NATIVE_XPU_DPAS_LAYOUT",
+        "KVARN_NATIVE_XPU_KERNEL_VARIANT",
         "KVARN_NATIVE_XPU_MATERIALIZE",
         "KVARN_NATIVE_XPU_PERSISTENT_SCRATCH",
     ):
         environment[name] = "0"
+    environment["KVARN_NATIVE_XPU_CACHE_LAYOUT"] = "natural"
+    environment["KVARN_NATIVE_XPU_KERNEL_VARIANT"] = "baseline"
     environment["KVARN_NATIVE_XPU_SPLITS"] = "1"
     verify_service_profile(argv, environment, reference, args)
     environment["KVARN_NATIVE_XPU_SPLITS"] = "16"
@@ -762,7 +887,8 @@ def test_native_log_allows_unrelated_fallback_but_rejects_kvarn_fallback(
         "Current kv cache memory in use is 10.92 GiB.\n"
         "INFO Falling back to the Triton GDN decode path\n"
         "WARNING sampler is Falling back to PyTorch-native implementation\n"
-        "INFO Using the native Xe2 KVarN qlen=1 decoder\n"
+        "INFO Using the native Xe2 KVarN qlen=1 decoder "
+        "(direct bf16 output=True)\n"
     )
     engine_log.write_text(base, encoding="utf-8")
 
@@ -775,6 +901,8 @@ def test_native_log_allows_unrelated_fallback_but_rejects_kvarn_fallback(
     assert scan["native_layout_evidence"] == (
         "captured-process-environment-plus-native-dispatch"
     )
+    assert scan["native_direct_bf16_verified"] is True
+    assert scan["native_direct_bf16_log_marker"] == runner.NATIVE_DIRECT_BF16_MARKER
 
     for kvarn_fallback in (
         "WARNING Kvarn decoder used a fallback path\n",
@@ -783,6 +911,27 @@ def test_native_log_allows_unrelated_fallback_but_rejects_kvarn_fallback(
         engine_log.write_text(base + kvarn_fallback, encoding="utf-8")
         with pytest.raises(RunnerError, match="Kvarn fallback"):
             runner.validate_engine_log(engine_log, native=True)
+
+
+@pytest.mark.parametrize(
+    "decoder_suffix",
+    [" (direct bf16 output=False)", ""],
+    ids=("disabled", "missing"),
+)
+def test_native_log_rejects_disabled_or_missing_direct_bf16(
+    tmp_path: Path, decoder_suffix: str
+) -> None:
+    engine_log = tmp_path / "engine.log"
+    engine_log.write_text(
+        "INFO config: device_config=xpu\n"
+        "INFO Actual usage is 17.54 GiB for consumed memory. "
+        "Current kv cache memory in use is 10.92 GiB.\n"
+        f"INFO {runner.NATIVE_DISPATCH}{decoder_suffix}\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RunnerError, match="direct BF16 decoder path"):
+        runner.validate_engine_log(engine_log, native=True)
 
 
 def test_execute_rejects_correctness_from_another_candidate(tmp_path: Path) -> None:
@@ -800,7 +949,7 @@ def test_execute_rejects_correctness_from_another_native_layout(
     tmp_path: Path,
 ) -> None:
     args = _args(tmp_path)
-    args.native_layout = "xe2_dpas"
+    args.native_layout = "natural"
     args.candidate_id = None
     args.correctness = _correctness(
         tmp_path / "correctness.json", str(args.candidate_env)
@@ -828,6 +977,10 @@ def test_runner_binds_correctness_to_actual_service_closures() -> None:
 
 def test_sealed_results_are_directly_perf_gate_compatible(tmp_path: Path) -> None:
     args = _args(tmp_path)
+    args.native_layout = "xe2_dpas"
+    args.native_kernel_variant = "q6_scalar"
+    args.native_split_policy = "b70_q6"
+    args.native_splits = dict(runner.B70_Q6_SPLITS)
     candidate_id = "candidate-store-path"
     correctness = _correctness(tmp_path / "correctness.json", candidate_id)
     correctness_sha256 = hashlib.sha256(correctness.read_bytes()).hexdigest()
@@ -848,7 +1001,15 @@ def test_sealed_results_are_directly_perf_gate_compatible(tmp_path: Path) -> Non
             "INFO config: device_config=xpu\n"
             "INFO Actual usage is 17.54 GiB for consumed memory. "
             "Current kv cache memory in use is 10.92 GiB.\n"
-            + ("INFO Using the native Xe2 KVarN qlen=1 decoder\n" if native else ""),
+            + (
+                "INFO [KVARN_FACTORY] selected_cache_layout=xe2_dpas; "
+                "selected_kernel_variant=q6_scalar(2); max_decode_splits=32; "
+                "selected_split_policy=b70_q6; immutable for engine lifetime\n"
+                "INFO Using the native Xe2 KVarN qlen=1 decoder "
+                "(direct bf16 output=True)\n"
+                if native
+                else ""
+            ),
             encoding="utf-8",
         )
         raw = _raw_result(
@@ -866,6 +1027,14 @@ def test_sealed_results_are_directly_perf_gate_compatible(tmp_path: Path) -> Non
         planned_run = PlannedRun(workload, arm, order)
         profile = {
             **PROFILE,
+            "native_layout": "xe2_dpas" if native else "natural",
+            "native_layout_environment": "1" if native else "0",
+            "native_cache_layout_environment": "xe2_dpas" if native else "natural",
+            "native_kernel_variant_environment": (
+                "q6_scalar" if native else "baseline"
+            ),
+            "native_max_splits_environment": None if native else "1",
+            "native_split_policy_environment": "b70_q6" if native else "fixed",
             "variant_provenance": variant_provenance_for_run(planned_run, args),
         }
         persist_warmup_result(
@@ -1141,8 +1310,11 @@ def test_matched_profile_normalizes_only_declared_arm_differences(
     ]
     environment = {
         "KVARN_NATIVE_XPU": "0",
+        "KVARN_NATIVE_XPU_CACHE_LAYOUT": "natural",
         "KVARN_NATIVE_XPU_DPAS_LAYOUT": "0",
+        "KVARN_NATIVE_XPU_KERNEL_VARIANT": "baseline",
         "KVARN_NATIVE_XPU_SPLITS": "1",
+        "KVARN_NATIVE_XPU_SPLIT_POLICY": "fixed",
         "HF_HOME": str(args.hf_home),
     }
     reference = service_profile_evidence(argv, environment)
@@ -1168,6 +1340,7 @@ def test_matched_profile_normalizes_only_declared_arm_differences(
     )
 
     environment["KVARN_NATIVE_XPU_DPAS_LAYOUT"] = "1"
+    environment["KVARN_NATIVE_XPU_CACHE_LAYOUT"] = "xe2_dpas"
     dpas_candidate = service_profile_evidence(argv, environment)
     assert dpas_candidate["native_layout"] == "xe2_dpas"
     assert (

@@ -51,11 +51,171 @@ def _correctness_comparison(fixture_id: str) -> dict[str, object]:
     }
 
 
+def _factory_result(
+    path: Path,
+    *,
+    native_library: Path,
+    revisions: dict[str, str],
+    native_kernel_variant: str,
+    native_splits: dict[int, int],
+    output_dtype: str = "bf16",
+) -> Path:
+    variant_id = gate_module.NATIVE_KERNEL_VARIANTS[native_kernel_variant]
+    cases: list[dict[str, object]] = []
+    for batch in (1, 4):
+        for context in gate_module.FACTORY_QUALIFICATION_CONTEXTS:
+            splits = native_splits[batch]
+            case = {
+                "case_id": (
+                    f"b{batch}-c{context}-s{splits}-v{variant_id}-"
+                    f"{native_kernel_variant}-{output_dtype}"
+                ),
+                "batch": batch,
+                "context": context,
+                "requested_num_kv_splits": splits,
+                "effective_num_kv_splits": splits,
+                "kernel_variant": variant_id,
+                "variant_name": native_kernel_variant,
+                "dpas_layout": True,
+                "output_dtype": output_dtype,
+                "status": "correctness_passed_and_timed",
+                "scope": "xpu_primitive_device_stage",
+                "matched_primitive_ratio_eligible": True,
+                "correctness": {
+                    name: {"finite": True}
+                    for name in (
+                        "structured_candidate_vs_natural",
+                        "dense_candidate_vs_natural",
+                        "matched_auto_vs_quantized_natural",
+                    )
+                },
+                "explicit_native_op_args": {
+                    "num_kv_splits": splits,
+                    "kernel_variant": variant_id,
+                    "dpas_layout": True,
+                    "natural_oracle": False,
+                    "unrotate_output": True,
+                    "write_bf16_output": output_dtype == "bf16",
+                },
+                "fixture": {
+                    "fixture_mode": "matched-production",
+                    "matched_primitive_fixture_eligible": True,
+                    "logical_kv_payloads_matched_between_auto_and_kvarn": True,
+                },
+                "timing": {"source": "torch.xpu.Event device elapsed time"},
+            }
+            case["correctness"]["matched_auto_vs_quantized_natural_passed"] = True
+            cases.append(case)
+    matrix_fields = (
+        "batch",
+        "context",
+        "requested_num_kv_splits",
+        "effective_num_kv_splits",
+        "kernel_variant",
+        "variant_name",
+        "dpas_layout",
+        "output_dtype",
+    )
+    sources = {
+        "vllm-xpu-nix": revisions["vllm-xpu-release"],
+        "vllm": revisions["vllm-xpu-unstable-src"],
+        "vllm-xpu-kernels": revisions["vllm-xpu-kernels-unstable-src"],
+    }
+    library_sha256 = hashlib.sha256(native_library.read_bytes()).hexdigest()
+    factory_output = "/nix/store/factory-kernels"
+    document = {
+        "schema_version": 2,
+        "artifact_kind": "kvarn_b70_primitive_factory_run",
+        "status": "completed_primitive_diagnostic",
+        "identity_stable_through_sweep": True,
+        "evidence_identity_sha256": "9" * 64,
+        "ending_evidence_identity_sha256": "9" * 64,
+        "source_revisions": {
+            "verified": True,
+            "expected": sources,
+            "actual": sources,
+        },
+        "repositories": [
+            {
+                "name": name,
+                "head": revision,
+                "dirty": False,
+                "status_porcelain": [],
+            }
+            for name, revision in sources.items()
+        ],
+        "runtime_environment": {
+            "prefixed_environment_clean": True,
+            "kvarn_or_vllm_prefixed_variables": {},
+        },
+        "hardware_preflight": {
+            "passed": True,
+            "selected_device": "xpu:0",
+            "selected_device_name": gate_module.EXPECTED_XPU_DEVICE_NAME,
+        },
+        "fixture_matching": {
+            "fixture_mode": "matched-production",
+            "validation_status": "passed",
+            "logical_kv_payloads_matched_between_auto_and_kvarn": True,
+            "matched_primitive_fixture_eligible": True,
+            "matched_primitive_ratio_eligible": True,
+        },
+        "kernel_kill_suite": {
+            "status": "passed",
+            "passed": True,
+            "returncode": 0,
+            "skipped_count": 0,
+        },
+        "libraries": {
+            "flash": {
+                "path": str(native_library.resolve()),
+                "sha256": library_sha256,
+            }
+        },
+        "build_attestations": {
+            "package": {
+                "verified": True,
+                "output_path": "/nix/store/package",
+                "closure_paths": ["/nix/store/package", factory_output],
+            },
+            "flash": {
+                "verified": True,
+                "output_path": factory_output,
+                "library_path": str(native_library.resolve()),
+            },
+        },
+        "source_ownership": {
+            "verified": True,
+            "artifacts": {
+                name: {"verified": True, "member_of_package_closure": True}
+                for name in ("package", "base", "flash")
+            },
+        },
+        "requested_settings": {
+            "fixture_mode": "matched-production",
+            "output_dtypes": [output_dtype],
+            "matrix": [
+                {field: case[field] for field in matrix_fields} for case in cases
+            ],
+        },
+        "completed_cases": len(cases),
+        "results": cases,
+    }
+    path.write_text(json.dumps(document), encoding="utf-8")
+    return path
+
+
 def _correctness(
     path: Path,
     candidate_id: str = "candidate-store-path",
-    native_layout: str = "natural",
+    native_layout: str = "xe2_dpas",
+    native_kernel_variant: str = "q6_scalar",
+    native_split_policy: str = "b70_q6",
+    native_splits: dict[int, int] | None = None,
 ) -> Path:
+    selected_splits = (
+        dict(gate_module.B70_Q6_SPLITS) if native_splits is None else native_splits
+    )
     root = path.parent / "correctness-evidence"
     root.mkdir()
     short = gate_module.CORRECTNESS_SHORT_FIXTURES
@@ -110,8 +270,23 @@ def _correctness(
 
     phases: dict[str, dict[str, str]] = {}
     for phase_name in gate_module.CORRECTNESS_PHASE_SPECS:
-        spec = gate_module._correctness_phase_spec(phase_name, native_layout)
+        spec = gate_module._correctness_phase_spec(
+            phase_name,
+            native_layout,
+            native_kernel_variant,
+            native_split_policy,
+            selected_splits,
+        )
         effective_layout = spec["native_layout"]
+        effective_kernel = spec["native_kernel_variant"]
+        effective_policy = spec["native_split_policy"]
+        max_splits = spec["max_decode_splits"]
+        splits_environment = (
+            None if spec["native"] and effective_policy == "b70_q6" else str(max_splits)
+        )
+        marker = gate_module._factory_marker(
+            effective_layout, effective_kernel, max_splits, effective_policy
+        )
         variant = {field: spec[field] for field in gate_module.VARIANT_FIELDS}
         phase_dir = root / phase_name
         phase_dir.mkdir()
@@ -123,10 +298,18 @@ def _correctness(
                     "native_layout_environment": gate_module.NATIVE_LAYOUT_ENV[
                         effective_layout
                     ],
+                    "native_cache_layout_environment": effective_layout,
+                    "native_kernel_variant_environment": effective_kernel,
+                    "native_max_splits_environment": splits_environment,
+                    "native_split_policy_environment": effective_policy,
                     "redacted_environment": {
                         "KVARN_NATIVE_XPU_DPAS_LAYOUT": gate_module.NATIVE_LAYOUT_ENV[
                             effective_layout
-                        ]
+                        ],
+                        "KVARN_NATIVE_XPU_CACHE_LAYOUT": effective_layout,
+                        "KVARN_NATIVE_XPU_KERNEL_VARIANT": effective_kernel,
+                        "KVARN_NATIVE_XPU_SPLITS": splits_environment,
+                        "KVARN_NATIVE_XPU_SPLIT_POLICY": effective_policy,
                     },
                     "variant_provenance": variant,
                 }
@@ -145,14 +328,28 @@ def _correctness(
         )
         engine_log = phase_dir / "engine.log"
         engine_log.write_text(
-            "INFO " + gate_module.NATIVE_DISPATCH + "\n"
-            if spec["native"]
-            else "INFO reference reader\n",
+            f"INFO {marker}\n"
+            + (
+                "INFO " + gate_module.NATIVE_DISPATCH + " (direct bf16 output=True)\n"
+                if spec["native"]
+                else "INFO reference reader\n"
+            ),
             encoding="utf-8",
         )
         log_scan = phase_dir / "log-scan.json"
         log_scan.write_text(
-            json.dumps({"status": "passed", "fatal_findings": []}),
+            json.dumps(
+                {
+                    "status": "passed",
+                    "fatal_findings": [],
+                    "native_direct_bf16_verified": spec["native"],
+                    "native_direct_bf16_log_marker": (
+                        gate_module.NATIVE_DIRECT_BF16_MARKER
+                        if spec["native"]
+                        else "not_applicable"
+                    ),
+                }
+            ),
             encoding="utf-8",
         )
         phase = phase_dir / "phase.json"
@@ -166,11 +363,27 @@ def _correctness(
                     "native_layout_environment": gate_module.NATIVE_LAYOUT_ENV[
                         effective_layout
                     ],
-                    "native_layout_log_marker": "unavailable",
-                    "native_layout_evidence": (
-                        "captured-process-environment-plus-native-dispatch"
+                    "native_cache_layout_environment": effective_layout,
+                    "native_kernel_variant": effective_kernel,
+                    "native_kernel_variant_id": spec["native_kernel_variant_id"],
+                    "native_kernel_variant_environment": effective_kernel,
+                    "native_max_splits": max_splits,
+                    "native_nominal_splits": spec["nominal_decode_splits"],
+                    "native_output_dtype": "bf16",
+                    "native_direct_bf16_verified": spec["native"],
+                    "native_direct_bf16_log_marker": (
+                        gate_module.NATIVE_DIRECT_BF16_MARKER
                         if spec["native"]
-                        else "captured-process-environment"
+                        else "not_applicable"
+                    ),
+                    "native_max_splits_environment": splits_environment,
+                    "native_split_policy": variant["split_policy"],
+                    "native_split_policy_environment": effective_policy,
+                    "native_layout_log_marker": marker,
+                    "native_layout_evidence": (
+                        "captured-process-environment-plus-factory-marker-plus-native-dispatch"
+                        if spec["native"]
+                        else "captured-process-environment-plus-factory-marker"
                     ),
                     "profile": _artifact(profile),
                     "identity": _artifact(identity),
@@ -207,8 +420,9 @@ def _correctness(
             "status": "passed",
             "gate": name,
             "candidate_id": candidate_id,
-            "native_layout": native_layout,
-            **gate_module._candidate_variant_provenance(native_layout),
+            "qualification_scope": "combined_library_variant_matrix",
+            "variant_selection": "explicit_per_op_arguments",
+            "factory_variant_matrix": gate_module.COMBINED_LIBRARY_VARIANT_MATRIX,
             "command": [
                 "/nix/store/python/bin/python",
                 "-m",
@@ -313,14 +527,65 @@ def _correctness(
         "sha256": "5" * 64,
         "unexpected_changes": [],
     }
+    factory_path = _factory_result(
+        root / "factory-result.json",
+        native_library=Path(primitive_files["native.so"]["path"]),
+        revisions=revisions,
+        native_kernel_variant=native_kernel_variant,
+        native_splits=selected_splits,
+    )
+    factory_qualification = gate_module.validate_factory_qualification(
+        factory_path,
+        native_layout=native_layout,
+        native_kernel_variant=native_kernel_variant,
+        native_split_policy=native_split_policy,
+        native_splits=selected_splits,
+        output_dtype="bf16",
+        expected_revisions={
+            "vllm-xpu-nix": revisions["vllm-xpu-release"],
+            "vllm": revisions["vllm-xpu-unstable-src"],
+            "vllm-xpu-kernels": revisions["vllm-xpu-kernels-unstable-src"],
+        },
+        expected_package="/nix/store/package",
+        expected_native_library=primitive_files["native.so"]["path"],
+        expected_native_library_sha256=primitive_files["native.so"]["sha256"],
+    )
     document = {
         "status": "passed",
         "candidate_id": candidate_id,
         "native_layout": native_layout,
-        **gate_module._candidate_variant_provenance(native_layout),
+        "native_kernel_variant": native_kernel_variant,
+        "native_kernel_variant_id": gate_module.NATIVE_KERNEL_VARIANTS[
+            native_kernel_variant
+        ],
+        "native_nominal_splits_by_batch": {
+            str(batch): splits for batch, splits in sorted(selected_splits.items())
+        },
+        "native_output_dtype": "bf16",
+        "native_split_policy": native_split_policy,
+        "native_scratch_max_splits": (
+            gate_module.B70_Q6_MAX_SPLITS
+            if native_split_policy == "b70_q6"
+            else max(selected_splits.values())
+        ),
+        **gate_module._candidate_variant_provenance(
+            native_layout,
+            native_kernel_variant,
+            native_split_policy,
+            selected_splits,
+        ),
         "native_dispatch_verified": True,
+        "native_direct_bf16_verified": True,
+        "native_direct_bf16_log_marker": gate_module.NATIVE_DIRECT_BF16_MARKER,
+        "factory_qualification": factory_qualification,
         "service_start_plan": [
-            gate_module._correctness_phase_spec(name, native_layout)
+            gate_module._correctness_phase_spec(
+                name,
+                native_layout,
+                native_kernel_variant,
+                native_split_policy,
+                selected_splits,
+            )
             for name in gate_module.CORRECTNESS_PHASE_SPECS
         ],
         "gates": gates,
@@ -363,6 +628,9 @@ def _result(
     kv_cache_dtype: str | None = None,
     native_splits: int | None = None,
     native_layout: str = "natural",
+    native_kernel_variant: str = "q6_scalar",
+    native_split_policy: str = "b70_q6",
+    native_split_map: dict[int, int] | None = None,
 ) -> Path:
     completed = 8
     context = 4096
@@ -450,11 +718,45 @@ def _result(
                 "variant_provenance": (
                     gate_module._performance_reference_variant_provenance()
                     if arm == "reference"
-                    else gate_module._candidate_variant_provenance(native_layout)
+                    else gate_module._candidate_variant_provenance(
+                        native_layout,
+                        native_kernel_variant,
+                        native_split_policy,
+                        (
+                            dict(gate_module.B70_Q6_SPLITS)
+                            if native_split_map is None
+                            else native_split_map
+                        ),
+                    )
                 ),
             }
         ),
         encoding="utf-8",
+    )
+    selected_layout = "natural" if arm == "reference" else native_layout
+    selected_kernel = "baseline" if arm == "reference" else native_kernel_variant
+    selected_policy = "fixed" if arm == "reference" else native_split_policy
+    selected_split_map = (
+        dict(gate_module.B70_Q6_SPLITS)
+        if native_split_map is None
+        else native_split_map
+    )
+    effective_splits = (
+        native_splits
+        if native_splits is not None
+        else (1 if arm == "reference" else selected_split_map[4])
+    )
+    max_splits = (
+        gate_module.B70_Q6_MAX_SPLITS
+        if arm == "candidate" and selected_policy == "b70_q6"
+        else effective_splits
+    )
+    marker = (
+        gate_module._factory_marker(
+            selected_layout, selected_kernel, max_splits, selected_policy
+        )
+        if arm == "candidate"
+        else "unavailable"
     )
     document = {
         "completed": completed,
@@ -513,29 +815,46 @@ def _result(
         "kvarn_kv_cache_dtype": kv_cache_dtype
         or ("auto" if arm == "reference" else "kvarn_k4v4_g128_compact"),
         "kvarn_native_xpu": "0" if arm == "reference" else "1",
-        "kvarn_native_layout": "natural" if arm == "reference" else native_layout,
+        "kvarn_native_layout": selected_layout,
         "kvarn_native_layout_environment": (
             "0" if arm == "reference" else gate_module.NATIVE_LAYOUT_ENV[native_layout]
         ),
-        "kvarn_native_layout_log_marker": "unavailable",
+        "kvarn_native_cache_layout_environment": selected_layout,
+        "kvarn_native_kernel_variant": selected_kernel,
+        "kvarn_native_kernel_variant_id": str(
+            gate_module.NATIVE_KERNEL_VARIANTS[selected_kernel]
+        ),
+        "kvarn_native_max_splits": str(max_splits),
+        "kvarn_native_nominal_splits": str(effective_splits),
+        "kvarn_native_output_dtype": (
+            "not_applicable" if arm == "reference" else "bf16"
+        ),
+        "kvarn_native_direct_bf16_verified": arm == "candidate",
+        "kvarn_native_direct_bf16_log_marker": (
+            gate_module.NATIVE_DIRECT_BF16_MARKER
+            if arm == "candidate"
+            else "not_applicable"
+        ),
+        "kvarn_native_split_policy": selected_policy,
+        "kvarn_native_layout_log_marker": marker,
         "kvarn_native_layout_evidence": (
             "captured-process-environment"
             if arm == "reference"
-            else "captured-process-environment-plus-native-dispatch"
+            else "captured-process-environment-plus-factory-marker-plus-native-dispatch"
         ),
         **{
             f"kvarn_{field}": value
             for field, value in (
                 gate_module._performance_reference_variant_provenance()
                 if arm == "reference"
-                else gate_module._candidate_variant_provenance(native_layout)
+                else gate_module._candidate_variant_provenance(
+                    native_layout,
+                    native_kernel_variant,
+                    native_split_policy,
+                    selected_split_map,
+                )
             ).items()
         },
-        "kvarn_native_splits": str(
-            native_splits
-            if native_splits is not None
-            else (1 if arm == "reference" else 16)
-        ),
         "kvarn_run_order": str(run_order),
         "kvarn_run_uuid": f"run-{run_order}",
         "kvarn_run_started_at": f"2026-08-31T00:00:{run_order:02d}Z",
@@ -545,7 +864,15 @@ def _result(
     return path
 
 
-def _log(path: Path, *, native: bool) -> Path:
+def _log(
+    path: Path,
+    *,
+    native: bool,
+    native_layout: str = "xe2_dpas",
+    native_kernel_variant: str = "q6_scalar",
+    native_split_policy: str = "b70_q6",
+    native_max_splits: int = 32,
+) -> Path:
     lines = [
         "INFO config: device_config=xpu",
         (
@@ -554,7 +881,18 @@ def _log(path: Path, *, native: bool) -> Path:
         ),
     ]
     if native:
-        lines.append("INFO Using the native Xe2 KVarN qlen=1 decoder")
+        lines.append(
+            "INFO "
+            + gate_module._factory_marker(
+                native_layout,
+                native_kernel_variant,
+                native_max_splits,
+                native_split_policy,
+            )
+        )
+        lines.append(
+            "INFO Using the native Xe2 KVarN qlen=1 decoder (direct bf16 output=True)"
+        )
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return path
 
@@ -568,10 +906,20 @@ def _arms(
     candidate_ttft: float = 0.105,
     reference_itl: float = 0.050,
     candidate_itl: float = 0.052,
-    native_layout: str = "natural",
+    native_layout: str = "xe2_dpas",
+    native_kernel_variant: str = "q6_scalar",
+    native_split_policy: str = "b70_q6",
+    native_splits: dict[int, int] | None = None,
 ) -> tuple[list[Path], list[Path], list[Path], list[Path], Path]:
+    selected_splits = (
+        dict(gate_module.B70_Q6_SPLITS) if native_splits is None else native_splits
+    )
     correctness = _correctness(
-        tmp_path / "correctness.json", native_layout=native_layout
+        tmp_path / "correctness.json",
+        native_layout=native_layout,
+        native_kernel_variant=native_kernel_variant,
+        native_split_policy=native_split_policy,
+        native_splits=selected_splits,
     )
     digest = hashlib.sha256(correctness.read_bytes()).hexdigest()
     reference_orders = (1, 4, 5, 8, 9, 12, 13, 16)
@@ -581,7 +929,18 @@ def _arms(
         for index in range(len(reference_orders))
     ]
     candidate_logs = [
-        _log(tmp_path / f"candidate-{index}.log", native=True)
+        _log(
+            tmp_path / f"candidate-{index}.log",
+            native=True,
+            native_layout=native_layout,
+            native_kernel_variant=native_kernel_variant,
+            native_split_policy=native_split_policy,
+            native_max_splits=(
+                gate_module.B70_Q6_MAX_SPLITS
+                if native_split_policy == "b70_q6"
+                else selected_splits[4]
+            ),
+        )
         for index in range(len(candidate_orders))
     ]
     references = [
@@ -614,6 +973,9 @@ def _arms(
             ttft=candidate_ttft,
             itl=candidate_itl,
             native_layout=native_layout,
+            native_kernel_variant=native_kernel_variant,
+            native_split_policy=native_split_policy,
+            native_split_map=selected_splits,
         )
         for index, order in enumerate(candidate_orders)
     ]
@@ -664,15 +1026,133 @@ def test_gate_accepts_dpas_only_with_matching_correctness_layout(
 
     natural_root = tmp_path / "natural"
     natural_root.mkdir()
-    natural_correctness = _correctness(natural_root / "correctness.json")
+    natural_correctness = _correctness(
+        natural_root / "correctness.json", native_kernel_variant="q6_vector"
+    )
     natural_digest = hashlib.sha256(natural_correctness.read_bytes()).hexdigest()
     for result_path in (*arms[0], *arms[1]):
         result = json.loads(result_path.read_text(encoding="utf-8"))
         result["kvarn_correctness_sha256"] = natural_digest
         result_path.write_text(json.dumps(result), encoding="utf-8")
     mismatched = (*arms[:4], natural_correctness)
-    with pytest.raises(GateError, match="layout must match correctness"):
+    with pytest.raises(GateError, match="variant provenance must match"):
         _compare(mismatched)
+
+
+def test_gate_accepts_b70_q6_with_exact_factory_provenance(tmp_path: Path) -> None:
+    arms = _arms(
+        tmp_path,
+        native_layout="xe2_dpas",
+        native_kernel_variant="q6_scalar",
+        native_split_policy="b70_q6",
+        native_splits={1: 32, 4: 8},
+    )
+
+    result = _compare(arms)
+
+    assert result["status"] == "passed"
+    assert result["candidate"]["arm"]["kvarn_native_max_splits"] == "32"
+    assert result["candidate"]["arm"]["kvarn_native_nominal_splits"] == "8"
+    assert result["candidate"]["arm"]["kvarn_native_split_policy"] == "b70_q6"
+
+
+@pytest.mark.parametrize(
+    ("override", "expected_error"),
+    [
+        ({"native_layout": "natural"}, "requires xe2_dpas"),
+        ({"native_kernel_variant": "q6_vector"}, "coverage is incomplete"),
+        ({"output_dtype": "fp16"}, "result matrix is incomplete"),
+        (
+            {"expected_revisions": {"vllm-xpu-nix": "a" * 40}},
+            "source revisions differ",
+        ),
+        ({"expected_native_library_sha256": "0" * 64}, "library identity differs"),
+    ],
+)
+def test_factory_qualification_fails_closed_on_selected_identity_mismatch(
+    tmp_path: Path, override: dict[str, object], expected_error: str
+) -> None:
+    library = tmp_path / "native.so"
+    library.write_bytes(b"selected native library")
+    revisions = {
+        "vllm-xpu-release": "1" * 40,
+        "vllm-xpu-unstable-src": "2" * 40,
+        "vllm-xpu-kernels-unstable-src": "3" * 40,
+    }
+    factory = _factory_result(
+        tmp_path / "factory.json",
+        native_library=library,
+        revisions=revisions,
+        native_kernel_variant="q6_scalar",
+        native_splits=dict(gate_module.B70_Q6_SPLITS),
+    )
+    arguments: dict[str, object] = {
+        "native_layout": "xe2_dpas",
+        "native_kernel_variant": "q6_scalar",
+        "native_split_policy": "b70_q6",
+        "native_splits": dict(gate_module.B70_Q6_SPLITS),
+        "output_dtype": "bf16",
+        "expected_revisions": {
+            "vllm-xpu-nix": revisions["vllm-xpu-release"],
+            "vllm": revisions["vllm-xpu-unstable-src"],
+            "vllm-xpu-kernels": revisions["vllm-xpu-kernels-unstable-src"],
+        },
+        "expected_package": "/nix/store/package",
+        "expected_native_library": str(library.resolve()),
+        "expected_native_library_sha256": hashlib.sha256(
+            library.read_bytes()
+        ).hexdigest(),
+    }
+    if "expected_revisions" in override:
+        requested_revisions = dict(arguments["expected_revisions"])
+        requested_revisions.update(override["expected_revisions"])
+        arguments["expected_revisions"] = requested_revisions
+    else:
+        arguments.update(override)
+
+    with pytest.raises(GateError, match=expected_error):
+        gate_module.validate_factory_qualification(factory, **arguments)
+
+
+def test_correctness_rehashes_bound_factory_artifact(tmp_path: Path) -> None:
+    correctness = _correctness(tmp_path / "correctness.json")
+    document = json.loads(correctness.read_text(encoding="utf-8"))
+    factory = Path(document["factory_qualification"]["factory_artifact"]["path"])
+    factory_document = json.loads(factory.read_text(encoding="utf-8"))
+    factory_document["tampered_after_binding"] = True
+    factory.write_text(json.dumps(factory_document), encoding="utf-8")
+
+    with pytest.raises(GateError, match="artifact SHA differs"):
+        _load_correctness(correctness)
+
+
+def test_gate_rejects_incompatible_or_unmarked_factory_selection(
+    tmp_path: Path,
+) -> None:
+    invalid = _correctness(tmp_path / "invalid.json")
+    invalid_document = json.loads(invalid.read_text(encoding="utf-8"))
+    invalid_document["native_layout"] = "natural"
+    invalid.write_text(json.dumps(invalid_document), encoding="utf-8")
+    with pytest.raises(GateError, match="require.*xe2_dpas"):
+        _load_correctness(invalid)
+
+    marked_root = tmp_path / "marked"
+    marked_root.mkdir()
+    arms = _arms(
+        marked_root,
+        native_layout="xe2_dpas",
+        native_kernel_variant="q6_scalar",
+        native_split_policy="b70_q6",
+        native_splits={1: 32, 4: 8},
+    )
+    arms[3][0].write_text(
+        arms[3][0]
+        .read_text(encoding="utf-8")
+        .replace("max_decode_splits=32", "max_decode_splits=8"),
+        encoding="utf-8",
+    )
+    with pytest.raises(GateError, match="exact factory marker"):
+        _compare(arms)
 
 
 def test_correctness_manifest_binds_dpas_service_plan(tmp_path: Path) -> None:
@@ -785,20 +1265,20 @@ def test_gate_requires_neutral_reference_and_supported_candidate_splits(
     arms = _arms(tmp_path)
     for path in arms[0]:
         document = json.loads(path.read_text(encoding="utf-8"))
-        document["kvarn_native_splits"] = "16"
+        document["kvarn_native_nominal_splits"] = "16"
         path.write_text(json.dumps(document), encoding="utf-8")
-    with pytest.raises(GateError, match="neutral split count 1"):
+    with pytest.raises(GateError, match="native-layout evidence is inconsistent"):
         _compare(arms)
 
     for path in arms[0]:
         document = json.loads(path.read_text(encoding="utf-8"))
-        document["kvarn_native_splits"] = "1"
+        document["kvarn_native_nominal_splits"] = "1"
         path.write_text(json.dumps(document), encoding="utf-8")
     for path in arms[1]:
         document = json.loads(path.read_text(encoding="utf-8"))
-        document["kvarn_native_splits"] = "3"
+        document["kvarn_native_nominal_splits"] = "3"
         path.write_text(json.dumps(document), encoding="utf-8")
-    with pytest.raises(GateError, match="supported native split count"):
+    with pytest.raises(GateError, match="native-layout evidence is inconsistent"):
         _compare(arms)
 
 
@@ -806,11 +1286,36 @@ def test_gate_rejects_missing_native_dispatch(tmp_path: Path) -> None:
     arms = _arms(tmp_path)
     text = arms[3][0].read_text(encoding="utf-8")
     arms[3][0].write_text(
-        text.replace("INFO Using the native Xe2 KVarN qlen=1 decoder\n", ""),
+        text.replace(
+            "INFO Using the native Xe2 KVarN qlen=1 decoder "
+            "(direct bf16 output=True)\n",
+            "",
+        ),
         encoding="utf-8",
     )
 
     with pytest.raises(GateError, match="must contain native dispatch"):
+        _compare(arms)
+
+
+@pytest.mark.parametrize(
+    "replacement",
+    ["direct bf16 output=False", "direct output path unavailable"],
+    ids=("disabled", "missing"),
+)
+def test_gate_rejects_disabled_or_missing_direct_bf16(
+    tmp_path: Path, replacement: str
+) -> None:
+    arms = _arms(tmp_path)
+    candidate_log = arms[3][0]
+    candidate_log.write_text(
+        candidate_log.read_text(encoding="utf-8").replace(
+            gate_module.NATIVE_DIRECT_BF16_MARKER, replacement
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(GateError, match="direct BF16 runtime proof"):
         _compare(arms)
 
 

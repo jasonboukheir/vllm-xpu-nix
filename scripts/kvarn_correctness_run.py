@@ -25,7 +25,12 @@ from typing import Any
 
 try:
     from scripts import kvarn_perf_run as perf
-    from scripts.kvarn_perf_gate import GateError, validate_correctness_gate_evidence
+    from scripts.kvarn_perf_gate import (
+        COMBINED_LIBRARY_VARIANT_MATRIX,
+        GateError,
+        validate_correctness_gate_evidence,
+        validate_factory_qualification,
+    )
     from scripts.kvarn_service_gate import (
         cancel_stream,
         completion,
@@ -35,7 +40,12 @@ try:
     )
 except ModuleNotFoundError:  # Direct execution from the scripts directory.
     import kvarn_perf_run as perf
-    from kvarn_perf_gate import GateError, validate_correctness_gate_evidence
+    from kvarn_perf_gate import (
+        COMBINED_LIBRARY_VARIANT_MATRIX,
+        GateError,
+        validate_correctness_gate_evidence,
+        validate_factory_qualification,
+    )
     from kvarn_service_gate import (
         cancel_stream,
         completion,
@@ -49,9 +59,6 @@ DEFAULT_MODEL = (
     "jasonboukheir/Qwen3.8-27B-AEON-Ultimate-Uncensored-BF16-W4A16-AutoRound"
 )
 DEFAULT_MODEL_REVISION = "6b0622f4354481d5d04577d48ba0db844efc1330"
-DEFAULT_PACKAGING_COMMIT = "e7ede6103f889088f16231d11c704b1b866b318e"
-DEFAULT_VLLM_COMMIT = "b8e590102d644eb9db83d3796a5d8350f61d8360"
-DEFAULT_KERNELS_COMMIT = "0ee4b8cc1e2efa8e39123a80c36120491b9e0d2f"
 DEFAULT_FIXTURE_SHA256 = (
     "51a64c614f11eb0bee363fc2142afd1d03086c0efc165c66a316b6f3b5f3f7bd"
 )
@@ -100,7 +107,6 @@ class ServiceSpec:
     native: bool
     batch: int
     max_model_len: int
-    splits: int
 
 
 SERVICE_PLAN = (
@@ -110,7 +116,6 @@ SERVICE_PLAN = (
         True,
         1,
         65536,
-        24,
     ),
     ServiceSpec(
         "native-65k-b1-restart",
@@ -118,7 +123,6 @@ SERVICE_PLAN = (
         True,
         1,
         65536,
-        24,
     ),
     ServiceSpec(
         "native-65k-b4",
@@ -126,7 +130,6 @@ SERVICE_PLAN = (
         True,
         4,
         65536,
-        16,
     ),
     ServiceSpec(
         "reference-262k-b1",
@@ -134,7 +137,6 @@ SERVICE_PLAN = (
         False,
         1,
         262144,
-        1,
     ),
     ServiceSpec(
         "native-262k-b1-first",
@@ -142,7 +144,6 @@ SERVICE_PLAN = (
         True,
         1,
         262144,
-        24,
     ),
     ServiceSpec(
         "native-262k-b1-restart",
@@ -150,7 +151,6 @@ SERVICE_PLAN = (
         True,
         1,
         262144,
-        24,
     ),
 )
 
@@ -170,15 +170,59 @@ def native_layout_for_spec(spec: ServiceSpec, args: argparse.Namespace) -> str:
     return args.native_layout if spec.native else "natural"
 
 
+def native_kernel_variant_for_spec(spec: ServiceSpec, args: argparse.Namespace) -> str:
+    return (
+        args.native_kernel_variant
+        if spec.native
+        else perf.REFERENCE_NATIVE_KERNEL_VARIANT
+    )
+
+
+def native_splits_for_spec(spec: ServiceSpec, args: argparse.Namespace) -> int:
+    if not spec.native:
+        return perf.REFERENCE_NATIVE_SPLITS
+    try:
+        return int(args.native_splits[spec.batch])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise CorrectnessError(
+            f"no native split count configured for B{spec.batch}"
+        ) from exc
+
+
+def native_split_policy_for_spec(spec: ServiceSpec, args: argparse.Namespace) -> str:
+    return "fixed" if not spec.native else args.native_split_policy
+
+
+def native_max_splits_for_spec(spec: ServiceSpec, args: argparse.Namespace) -> int:
+    if native_split_policy_for_spec(spec, args) == "b70_q6":
+        return perf.B70_Q6_MAX_SPLITS
+    return native_splits_for_spec(spec, args)
+
+
+def native_splits_environment_for_spec(
+    spec: ServiceSpec, args: argparse.Namespace
+) -> str | None:
+    if native_split_policy_for_spec(spec, args) == "b70_q6":
+        return None
+    return str(native_max_splits_for_spec(spec, args))
+
+
 def candidate_variant_provenance(args: argparse.Namespace) -> dict[str, str]:
-    split_policy = "fixed_b1s24_b4s16"
+    split_policy = args.native_split_policy
+    if split_policy == "fixed":
+        split_policy += "_" + "_".join(
+            f"b{batch}s{splits}" for batch, splits in sorted(args.native_splits.items())
+        )
     scheduling = f"eager_mnbt{args.max_num_batched_tokens}"
     return {
-        "kernel_strategy": "native_xe2_qlen1",
+        "kernel_strategy": f"native_xe2_qlen1_{args.native_kernel_variant}",
         "split_policy": split_policy,
         "fusion_strategy": "native_materializer_persistent_scratch",
         "scheduling_variant": scheduling,
-        "variant_id": f"native-xe2-{args.native_layout}-{split_policy}-{scheduling}",
+        "variant_id": (
+            f"native-xe2-{args.native_layout}-{args.native_kernel_variant}-"
+            f"{split_policy}-{scheduling}"
+        ),
     }
 
 
@@ -199,7 +243,11 @@ def service_variant_provenance(
 
 def launcher_name(spec: ServiceSpec, args: argparse.Namespace) -> str:
     if spec.native and args.native_layout == "xe2_dpas":
-        return spec.launcher.replace("kvarn-native", "kvarn-native-dpas", 1)
+        suffix = "-262k" if spec.max_model_len == 262144 else ""
+        return (
+            "vllm-xpu-brutus-kvarn-native-dpas-"
+            f"{args.native_kernel_variant}{suffix}-b{spec.batch}"
+        )
     return spec.launcher
 
 
@@ -210,6 +258,14 @@ def service_spec_evidence(
         **dataclasses.asdict(spec),
         "launcher": launcher_name(spec, args),
         "native_layout": native_layout_for_spec(spec, args),
+        "native_kernel_variant": native_kernel_variant_for_spec(spec, args),
+        "native_kernel_variant_id": perf.NATIVE_KERNEL_VARIANTS[
+            native_kernel_variant_for_spec(spec, args)
+        ],
+        "native_output_dtype": args.native_output_dtype,
+        "max_decode_splits": native_max_splits_for_spec(spec, args),
+        "nominal_decode_splits": native_splits_for_spec(spec, args),
+        "native_split_policy": native_split_policy_for_spec(spec, args),
         **service_variant_provenance(spec, args),
     }
 
@@ -276,6 +332,10 @@ def passed_artifact(
     candidate_id: str,
     process_package: str,
     native_layout: str,
+    native_kernel_variant: str,
+    native_split_policy: str,
+    native_splits: Mapping[int, int],
+    native_output_dtype: str,
 ) -> dict[str, str]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
@@ -292,6 +352,10 @@ def passed_artifact(
             candidate_id=candidate_id,
             process_package=process_package,
             native_layout=native_layout,
+            native_kernel_variant=native_kernel_variant,
+            native_split_policy=native_split_policy,
+            native_splits=native_splits,
+            native_output_dtype=native_output_dtype,
         )
     except GateError as exc:
         raise CorrectnessError(str(exc)) from exc
@@ -474,16 +538,32 @@ def verify_source_identity(args: argparse.Namespace) -> dict[str, Any]:
     lock_snapshot = identity_dir / "flake.lock"
     lock_snapshot.write_bytes(lock_path.read_bytes())
     revisions = read_lock_revisions(lock_path)
-    expected = {
+    if any(
+        not isinstance(revision, str) or not re.fullmatch(r"[0-9a-f]{40}", revision)
+        for revision in revisions.values()
+    ):
+        raise CorrectnessError(
+            "configuration lock lacks complete immutable source revisions: "
+            + json.dumps(revisions, sort_keys=True)
+        )
+    overrides = {
         "vllm-xpu-release": args.packaging_commit,
         "vllm-xpu-unstable-src": args.vllm_commit,
         "vllm-xpu-kernels-unstable-src": args.kernels_commit,
     }
-    if revisions != expected:
+    mismatches = {
+        name: {"locked": revisions[name], "requested": requested}
+        for name, requested in overrides.items()
+        if requested is not None and requested != revisions[name]
+    }
+    if mismatches:
         raise CorrectnessError(
-            "configuration lock does not identify the requested candidate: "
-            + json.dumps({"actual": revisions, "expected": expected}, sort_keys=True)
+            "explicit source revisions differ from the verified configuration lock: "
+            + json.dumps(mismatches, sort_keys=True)
         )
+    args.packaging_commit = revisions["vllm-xpu-release"]
+    args.vllm_commit = revisions["vllm-xpu-unstable-src"]
+    args.kernels_commit = revisions["vllm-xpu-kernels-unstable-src"]
 
     test_path = (args.kernels_repo / NATIVE_TEST).resolve()
     try:
@@ -697,7 +777,12 @@ def verify_candidate_preflight(
 
 
 def resolve_expected_package(args: argparse.Namespace) -> Path:
-    installable = f"{args.config_ref}#vllm-xpu-brutus"
+    package_name = (
+        "vllm-xpu-kvarn-factory"
+        if args.native_layout == "xe2_dpas"
+        else "vllm-xpu-brutus"
+    )
+    installable = f"{args.config_ref}#{package_name}"
     verify_config_identity(args)
     try:
         result = subprocess.run(
@@ -885,13 +970,16 @@ def verify_service_profile(
         "HF_HOME": str(args.hf_home),
         "HOME": str(args.runtime_cache / "vllm-xpu-brutus-kvarn"),
         "KVARN_NATIVE_XPU": native,
+        "KVARN_NATIVE_XPU_CACHE_LAYOUT": native_layout_for_spec(spec, args),
         "KVARN_NATIVE_XPU_DECODE": native,
         "KVARN_NATIVE_XPU_DPAS_LAYOUT": perf.NATIVE_LAYOUT_ENV[
             native_layout_for_spec(spec, args)
         ],
+        "KVARN_NATIVE_XPU_KERNEL_VARIANT": native_kernel_variant_for_spec(spec, args),
         "KVARN_NATIVE_XPU_MATERIALIZE": native,
         "KVARN_NATIVE_XPU_PERSISTENT_SCRATCH": native,
-        "KVARN_NATIVE_XPU_SPLITS": str(spec.splits),
+        "KVARN_NATIVE_XPU_SPLITS": native_splits_environment_for_spec(spec, args),
+        "KVARN_NATIVE_XPU_SPLIT_POLICY": native_split_policy_for_spec(spec, args),
         "KVARN_PREFILL_FP16_WINDOW_BLOCKS": str(DEFAULT_PREFILL_WINDOW_BLOCKS),
         "VLLM_CACHE_ROOT": str(args.runtime_cache / "vllm-xpu-brutus-kvarn"),
         "VLLM_TARGET_DEVICE": "xpu",
@@ -1024,6 +1112,18 @@ def run_service_phase(
         captured_layout_environment = service.environment.get(
             "KVARN_NATIVE_XPU_DPAS_LAYOUT"
         )
+        captured_cache_layout_environment = service.environment.get(
+            "KVARN_NATIVE_XPU_CACHE_LAYOUT"
+        )
+        captured_kernel_variant_environment = service.environment.get(
+            "KVARN_NATIVE_XPU_KERNEL_VARIANT"
+        )
+        captured_max_splits_environment = service.environment.get(
+            "KVARN_NATIVE_XPU_SPLITS"
+        )
+        captured_split_policy_environment = service.environment.get(
+            "KVARN_NATIVE_XPU_SPLIT_POLICY"
+        )
         write_json_atomic(phase_dir / "service-profile.json", profile)
         write_json_atomic(phase_dir / "candidate-identity.json", identity)
         engine_pid = service.engine_pid
@@ -1034,6 +1134,9 @@ def run_service_phase(
             phase_dir / "engine.log",
             native=spec.native,
             expected_layout=native_layout_for_spec(spec, args),
+            expected_kernel_variant=native_kernel_variant_for_spec(spec, args),
+            expected_max_splits=native_max_splits_for_spec(spec, args),
+            expected_split_policy=native_split_policy_for_spec(spec, args),
         )
         native_dispatch_verified = spec.native and perf.NATIVE_DISPATCH in (
             phase_dir / "engine.log"
@@ -1050,11 +1153,30 @@ def run_service_phase(
             native_dispatch_verified=native_dispatch_verified,
             native_layout=native_layout_for_spec(spec, args),
             native_layout_environment=captured_layout_environment,
-            native_layout_log_marker="unavailable",
+            native_cache_layout_environment=captured_cache_layout_environment,
+            native_kernel_variant=native_kernel_variant_for_spec(spec, args),
+            native_kernel_variant_id=perf.NATIVE_KERNEL_VARIANTS[
+                native_kernel_variant_for_spec(spec, args)
+            ],
+            native_output_dtype=args.native_output_dtype,
+            native_direct_bf16_verified=log_scan["native_direct_bf16_verified"],
+            native_direct_bf16_log_marker=log_scan["native_direct_bf16_log_marker"],
+            native_kernel_variant_environment=captured_kernel_variant_environment,
+            native_max_splits=native_max_splits_for_spec(spec, args),
+            native_nominal_splits=native_splits_for_spec(spec, args),
+            native_max_splits_environment=captured_max_splits_environment,
+            native_split_policy=service_variant_provenance(spec, args)["split_policy"],
+            native_split_policy_environment=captured_split_policy_environment,
+            native_layout_log_marker=perf.kvarn_factory_marker(
+                cache_layout=native_layout_for_spec(spec, args),
+                kernel_variant=native_kernel_variant_for_spec(spec, args),
+                max_decode_splits=native_max_splits_for_spec(spec, args),
+                split_policy=native_split_policy_for_spec(spec, args),
+            ),
             native_layout_evidence=(
-                "captured-process-environment-plus-native-dispatch"
+                "captured-process-environment-plus-factory-marker-plus-native-dispatch"
                 if spec.native
-                else "captured-process-environment"
+                else "captured-process-environment-plus-factory-marker"
             ),
             workload=payload,
         )
@@ -1408,8 +1530,9 @@ def run_primitive_gate(gate: str, expression: str, args: argparse.Namespace) -> 
             "status": "passed",
             "gate": gate,
             "candidate_id": str(args.candidate_env),
-            "native_layout": args.native_layout,
-            **candidate_variant_provenance(args),
+            "qualification_scope": "combined_library_variant_matrix",
+            "variant_selection": "explicit_per_op_arguments",
+            "factory_variant_matrix": COMBINED_LIBRARY_VARIANT_MATRIX,
             "command": command,
             "native_library": artifact(args.native_library),
             "test_source": artifact(args.kernels_repo / NATIVE_TEST),
@@ -1681,14 +1804,23 @@ def build_manifest(
         )
     identities = verify_phase_identities(args)
     native_phases = [spec for spec in SERVICE_PLAN if spec.native]
-    if not all(
-        json.loads(_phase_path(args, spec).read_text(encoding="utf-8")).get(
-            "native_dispatch_verified"
-        )
-        is True
+    native_phase_documents = [
+        json.loads(_phase_path(args, spec).read_text(encoding="utf-8"))
         for spec in native_phases
+    ]
+    if not all(
+        phase.get("native_dispatch_verified") is True
+        for phase in native_phase_documents
     ):
         raise CorrectnessError("not every native service phase verified dispatch")
+    if not all(
+        phase.get("native_direct_bf16_verified") is True
+        and phase.get("native_direct_bf16_log_marker") == perf.NATIVE_DIRECT_BF16_MARKER
+        for phase in native_phase_documents
+    ):
+        raise CorrectnessError(
+            "not every native service phase verified direct BF16 output"
+        )
     gates = {
         name: passed_artifact(
             gate_paths[name],
@@ -1696,6 +1828,10 @@ def build_manifest(
             candidate_id=str(args.candidate_env),
             process_package=str(args.expected_package),
             native_layout=args.native_layout,
+            native_kernel_variant=args.native_kernel_variant,
+            native_split_policy=args.native_split_policy,
+            native_splits=args.native_splits,
+            native_output_dtype=args.native_output_dtype,
         )
         for name in REQUIRED_GATES
     }
@@ -1704,6 +1840,8 @@ def build_manifest(
         "status": "passed",
         "candidate_id": str(args.candidate_env),
         "native_dispatch_verified": True,
+        "native_direct_bf16_verified": True,
+        "native_direct_bf16_log_marker": perf.NATIVE_DIRECT_BF16_MARKER,
         "gates": gates,
         "candidate_identity": {
             name: identities[0][name]
@@ -1714,7 +1852,22 @@ def build_manifest(
             )
         },
         "source_identity": args.source_identity,
+        "factory_qualification": args.factory_qualification,
         "native_layout": args.native_layout,
+        "native_kernel_variant": args.native_kernel_variant,
+        "native_kernel_variant_id": perf.NATIVE_KERNEL_VARIANTS[
+            args.native_kernel_variant
+        ],
+        "native_nominal_splits_by_batch": {
+            str(batch): splits for batch, splits in sorted(args.native_splits.items())
+        },
+        "native_output_dtype": args.native_output_dtype,
+        "native_split_policy": args.native_split_policy,
+        "native_scratch_max_splits": (
+            perf.B70_Q6_MAX_SPLITS
+            if args.native_split_policy == "b70_q6"
+            else max(args.native_splits.values())
+        ),
         **candidate_variant_provenance(args),
         "service_start_plan": [
             service_spec_evidence(spec, args) for spec in SERVICE_PLAN
@@ -1751,6 +1904,25 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         args.native_library,
         args.expected_package,
     )
+    try:
+        args.factory_qualification = validate_factory_qualification(
+            args.factory_result,
+            native_layout=args.native_layout,
+            native_kernel_variant=args.native_kernel_variant,
+            native_split_policy=args.native_split_policy,
+            native_splits=args.native_splits,
+            output_dtype=args.native_output_dtype,
+            expected_revisions={
+                "vllm-xpu-nix": args.packaging_commit,
+                "vllm": args.vllm_commit,
+                "vllm-xpu-kernels": args.kernels_commit,
+            },
+            expected_package=str(args.expected_package),
+            expected_native_library=str(args.native_library),
+            expected_native_library_sha256=preflight["native_library_sha256"],
+        )
+    except GateError as exc:
+        raise CorrectnessError(str(exc)) from exc
     preflight["primitive_imports"] = probe_primitive_imports(args)
     args.resolved_launchers = {
         launcher: resolve_launcher(launcher, args)
@@ -1765,11 +1937,26 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         "candidate_id": str(args.candidate_env),
         "preflight": preflight,
         "source_identity": args.source_identity,
+        "factory_qualification": args.factory_qualification,
         "primitive_plan": [
             {"gate": gate, "pytest_expression": expression}
             for gate, expression in PRIMITIVE_PLAN
         ],
         "native_layout": args.native_layout,
+        "native_kernel_variant": args.native_kernel_variant,
+        "native_kernel_variant_id": perf.NATIVE_KERNEL_VARIANTS[
+            args.native_kernel_variant
+        ],
+        "native_nominal_splits_by_batch": {
+            str(batch): splits for batch, splits in sorted(args.native_splits.items())
+        },
+        "native_output_dtype": args.native_output_dtype,
+        "native_split_policy": args.native_split_policy,
+        "native_scratch_max_splits": (
+            perf.B70_Q6_MAX_SPLITS
+            if args.native_split_policy == "b70_q6"
+            else max(args.native_splits.values())
+        ),
         **candidate_variant_provenance(args),
         "service_start_plan": [
             service_spec_evidence(spec, args) for spec in SERVICE_PLAN
@@ -1808,6 +1995,12 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--candidate-env", type=Path, required=True)
+    parser.add_argument(
+        "--factory-result",
+        type=Path,
+        required=True,
+        help="completed direct XPU factory artifact for the selected kernel ID",
+    )
     parser.add_argument("--primitive-python", type=Path)
     parser.add_argument("--native-library", type=Path)
     parser.add_argument("--output-dir", type=Path, required=True)
@@ -1817,11 +2010,35 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--native-layout",
         choices=perf.NATIVE_LAYOUTS,
-        default="natural",
+        required=True,
         help=(
             "native service cache layout; xe2_dpas requires dedicated Brutus "
-            "native-dpas launcher outputs (default: natural)"
+            "variant-specific native-dpas launcher outputs"
         ),
+    )
+    parser.add_argument(
+        "--native-kernel-variant",
+        choices=tuple(perf.NATIVE_KERNEL_VARIANTS),
+        required=True,
+        help="engine-lifetime native decoder specialization",
+    )
+    parser.add_argument(
+        "--native-split-policy",
+        choices=perf.NATIVE_SPLIT_POLICIES,
+        required=True,
+        help="engine-lifetime split policy",
+    )
+    parser.add_argument(
+        "--native-output-dtype",
+        choices=("fp16", "bf16"),
+        default="bf16",
+        help="direct native output path that must be qualified (default: bf16)",
+    )
+    parser.add_argument(
+        "--native-splits",
+        action="append",
+        metavar="SPLITS|BATCH=SPLITS",
+        help="fixed maximum split count; repeat BATCH=SPLITS for B1/B4",
     )
     parser.add_argument("--output-tokens", type=int, default=DEFAULT_OUTPUT_TOKENS)
     parser.add_argument(
@@ -1844,9 +2061,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=Path("benchmark-results/kvarn-runtime-cache"),
     )
     parser.add_argument("--hf-home", type=Path, default=Path("/var/cache/huggingface"))
-    parser.add_argument("--packaging-commit", default=DEFAULT_PACKAGING_COMMIT)
-    parser.add_argument("--vllm-commit", default=DEFAULT_VLLM_COMMIT)
-    parser.add_argument("--kernels-commit", default=DEFAULT_KERNELS_COMMIT)
+    parser.add_argument("--packaging-commit")
+    parser.add_argument("--vllm-commit")
+    parser.add_argument("--kernels-commit")
     parser.add_argument("--startup-timeout", type=float, default=1800.0)
     parser.add_argument("--startup-attempts", type=int, default=1)
     parser.add_argument("--readiness-poll-interval", type=float, default=2.0)
@@ -1877,7 +2094,33 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--allow-tmp", action="store_true")
     args = parser.parse_args(argv)
     try:
+        if args.native_output_dtype != "bf16":
+            raise CorrectnessError(
+                "finalist service qualification requires --native-output-dtype bf16"
+            )
+        if (
+            args.native_layout != "xe2_dpas"
+            or args.native_kernel_variant not in perf.B70_Q6_KERNEL_VARIANTS
+            or args.native_split_policy != "b70_q6"
+        ):
+            raise CorrectnessError(
+                "Round-2 finalist qualification requires xe2_dpas, a Q6 kernel "
+                "variant, and b70_q6; natural/fixed is reference-only"
+            )
+        if args.native_split_policy == "b70_q6":
+            if args.native_splits:
+                raise CorrectnessError(
+                    "--native-splits must be absent with --native-split-policy b70_q6"
+                )
+            if args.native_kernel_variant not in perf.B70_Q6_KERNEL_VARIANTS:
+                raise CorrectnessError(
+                    "b70_q6 split policy requires a q6 native kernel variant"
+                )
+            args.native_splits = dict(perf.B70_Q6_SPLITS)
+        else:
+            args.native_splits = perf._parse_native_splits(args.native_splits, (1, 4))
         args.candidate_env = args.candidate_env.expanduser().resolve()
+        args.factory_result = args.factory_result.expanduser().resolve()
         args.primitive_python = (
             args.primitive_python.expanduser().resolve()
             if args.primitive_python is not None
@@ -1910,6 +2153,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                 "--primitive-python must be a wrapped Python containing pytest, "
                 "transformers, torch XPU, and the candidate kernel package"
             )
+        if not args.factory_result.is_file():
+            raise CorrectnessError("--factory-result must be a readable JSON file")
         if not args.fixtures.is_file():
             raise CorrectnessError("--fixtures must be a readable JSON file")
         if sha256_file(args.fixtures) != DEFAULT_FIXTURE_SHA256:
@@ -1943,11 +2188,14 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             args.packaging_commit,
             args.vllm_commit,
             args.kernels_commit,
-            args.model_revision,
         ):
-            if not re.fullmatch(r"[0-9a-f]{40}", commit):
-                raise CorrectnessError("all revisions must be 40 lowercase hex digits")
-    except CorrectnessError as exc:
+            if commit is not None and not re.fullmatch(r"[0-9a-f]{40}", commit):
+                raise CorrectnessError(
+                    "explicit source revisions must be 40 lowercase hex digits"
+                )
+        if not re.fullmatch(r"[0-9a-f]{40}", args.model_revision):
+            raise CorrectnessError("model revision must be 40 lowercase hex digits")
+    except (CorrectnessError, argparse.ArgumentTypeError) as exc:
         parser.error(str(exc))
     args.output_dir.mkdir(parents=True, exist_ok=False)
     args.runtime_cache.mkdir(parents=True, exist_ok=True)

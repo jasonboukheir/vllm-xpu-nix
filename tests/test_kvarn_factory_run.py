@@ -51,10 +51,19 @@ def test_named_factory_ids_are_complete_and_stable() -> None:
         "q8_vector": 3,
         "q6_vector": 4,
         "page128": 5,
+        "q6_cached_weights": 6,
+        "q6_exact_rows": 7,
+        "q6_cached_weights_exact_rows": 8,
     }
-    assert set(factory.VARIANTS_BY_ID) == set(range(6))
+    assert set(factory.VARIANTS_BY_ID) == set(range(9))
     assert all(spec.dpas_layout for spec in factory.VARIANTS.values())
-    assert factory.DEFAULT_VARIANT_NAMES == tuple(list(factory.VARIANTS)[:5])
+    assert factory.DEFAULT_VARIANT_NAMES == (
+        "q6_scalar",
+        "q6_vector",
+        "q6_cached_weights",
+        "q6_exact_rows",
+        "q6_cached_weights_exact_rows",
+    )
 
 
 def test_variant_parser_accepts_names_and_all_but_not_numeric_aliases() -> None:
@@ -64,7 +73,13 @@ def test_variant_parser_accepts_names_and_all_but_not_numeric_aliases() -> None:
         0,
         3,
     ]
-    assert [item.variant_id for item in factory.parse_variants("all")] == list(range(5))
+    assert [item.variant_id for item in factory.parse_variants("all")] == [
+        2,
+        4,
+        6,
+        7,
+        8,
+    ]
     assert factory.parse_variants("page128") == [factory.VARIANTS["page128"]]
     with pytest.raises(factory.FactoryError, match="unknown variant"):
         factory.parse_variants("3")
@@ -90,6 +105,7 @@ def test_matrix_expands_auto_and_explicit_split_sweeps() -> None:
         (4, 8, 3),
     ]
     assert all(case.effective_splits == case.requested_splits for case in cases)
+    assert all(case.output_dtype == "fp16" for case in cases)
     assert factory.effective_split_count(64, 24) == 1
     with pytest.raises(factory.FactoryError, match="only B1 and B4"):
         factory.build_matrix(
@@ -98,6 +114,29 @@ def test_matrix_expands_auto_and_explicit_split_sweeps() -> None:
             splits=[None],
             variants=[factory.VARIANTS["baseline"]],
         )
+
+
+def test_output_dtype_is_an_explicit_runtime_matrix_axis() -> None:
+    assert factory.parse_output_dtypes("bf16,fp16,bf16") == ["bf16", "fp16"]
+    cases = factory.build_matrix(
+        batches=[1],
+        contexts=[4096],
+        splits=[32],
+        variants=[factory.VARIANTS["q6_scalar"]],
+        output_dtypes=["fp16", "bf16"],
+    )
+    assert [case.output_dtype for case in cases] == ["fp16", "bf16"]
+    assert [case.as_dict()["output_dtype"] for case in cases] == ["fp16", "bf16"]
+    with pytest.raises(factory.FactoryError, match="multi-split"):
+        factory.build_matrix(
+            batches=[1],
+            contexts=[1],
+            splits=[32],
+            variants=[factory.VARIANTS["q6_scalar"]],
+            output_dtypes=["bf16"],
+        )
+    with pytest.raises(factory.FactoryError, match="unsupported output dtype"):
+        factory.parse_output_dtypes("tf32")
 
 
 def test_split_parser_is_fail_closed() -> None:
@@ -240,13 +279,14 @@ def test_native_decode_invocation_uses_all_explicit_factory_args() -> None:
         **values,
         context=65_023,
         unrotate_output=True,
+        write_bf16_output=True,
         num_kv_splits=24,
         kernel_variant=3,
         dpas_layout=True,
     )
     assert len(calls) == 1
     assert calls[0][-3:] == (24, 3, True)
-    assert calls[0][-6:-3] == (factory.SOFTMAX_SCALE, True, False)
+    assert calls[0][-6:-3] == (factory.SOFTMAX_SCALE, True, True)
 
 
 class _Packet:
@@ -757,6 +797,9 @@ def test_matched_fixture_is_default_and_unmatched_is_explicit_diagnostic(
     matched = factory.parse_args(common)
     assert matched.fixture_mode == factory.MATCHED_FIXTURE_MODE
     assert matched.auto_block_size == 64
+    assert matched.output_dtype_values == ["bf16"]
+    assert matched.warmup_rounds == 16
+    assert matched.sample_rounds == 20
     with pytest.raises(SystemExit):
         factory.parse_args([*common, "--auto-block-size", "832"])
     diagnostic = factory.parse_args(

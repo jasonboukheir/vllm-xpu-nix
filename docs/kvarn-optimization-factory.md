@@ -38,13 +38,15 @@ Every artifact records these axes explicitly:
 | hardware | exact device name plus a successful candidate XPU tensor operation |
 
 The expensive build is the round boundary, not the variant boundary. One
-extension contains the baseline and every compatible round specialization.
-At engine initialization the host resolves a named cache layout, named kernel
-variant, and split policy, freezes them on the attention implementation, and
-passes their explicit IDs plus the exact split count to every native operator.
-The C++ hot path does not read environment variables. A factory launcher may
-set the names, but changing the cache layout always requires a fresh engine and
-fresh cache allocation.
+extension contains the baseline and every layout-compatible round
+specialization. The native dispatch ABI receives explicit layout, variant, and
+split values, so the direct factory can change reader and scheduling candidates
+between calls without rebuilding or re-packing the cache. The service resolves
+named selectors once at startup for reproducibility, but a batch-aware split
+policy may choose an effective split count at each decode call from scratch
+allocated for the declared maximum. The C++ hot path does not read environment
+variables. Cache layout is the exception: changing it always requires a fresh
+engine and fresh cache allocation.
 
 The public beta remains simple: selecting a Kvarn KV-cache dtype is sufficient
 to enable the conservative natural-layout/reference implementation. Factory
@@ -57,22 +59,31 @@ variants and split counts do not require rebuilding the extension:
 | Selector | Values in the combined build | Lifetime |
 |---|---|---|
 | `KVARN_NATIVE_XPU_CACHE_LAYOUT` | `natural`, `xe2_dpas` | engine/cache ABI; restart and allocate a fresh cache to change |
-| `KVARN_NATIVE_XPU_KERNEL_VARIANT` | `baseline`, `qk_i8u4`, `q6_scalar`, `q8_vector`, `q6_vector` | frozen at engine initialization |
-| `KVARN_NATIVE_XPU_SPLITS` | `1`, `2`, `4`, `8`, `16`, `17`, `24`, `32` | frozen maximum at engine initialization |
+| `KVARN_NATIVE_XPU_KERNEL_VARIANT` | `baseline`, `qk_i8u4`, `q6_scalar`, `q8_vector`, `q6_vector`, `q6_cached_weights`, `q6_exact_rows`, `q6_cached_weights_exact_rows` | startup selector; every listed specialization is in the same library |
+| `KVARN_NATIVE_XPU_SPLIT_POLICY` | `fixed`, `b70_q6` | startup policy; `b70_q6` selects the effective count per decode batch |
+| `KVARN_NATIVE_XPU_SPLITS` | `1`, `2`, `4`, `8`, `16`, `17`, `24`, `32` | scratch-allocation maximum; effective count may be selected per call |
+
+`b70_q6` allocates for 32 and selects B1=32, B2=16, B3--4=8,
+B5--8=4, and B9--12=2. It is valid only with a Q6 DPAS reader. The named
+policy and `KVARN_NATIVE_XPU_SPLITS` are mutually exclusive so a launcher
+cannot present two different scheduling contracts.
 
 The direct B70 factory runner bypasses service startup and passes the same
 explicit variant ID, layout bit, and split count to the operator, allowing all
-compatible cells to be swept in one process. Variant IDs are `0` through `4`
-in the order listed above. ID `5` is reserved for the page-128 experiment and
-fails closed in the round-1 library because that specialization is not ready.
+compatible cells to be swept in one process. `--output-dtypes fp16,bf16`
+likewise exercises both output paths from that same binary; production BF16 is
+the default. Round-1 variant IDs are `0` through `4` in the order listed above;
+ID `5` is reserved for the page-128 experiment and fails closed. Round-2 IDs
+`6`, `7`, and `8` are cached weights, exact rows, and their combination.
 
-Build `.#vllm-xpu-kvarn-factory` for the complete round-1 matrix. It compiles
-all five decode variants and the fused-QKV operator into one BMG-AOT attention
-library. Runtime selection therefore does not start another Nix build. The
-package also freezes the generated upstream FA2 buildout to Brutus's text-only
-Qwen3.8 profile: two head-dimension-256 chunk-prefill policies and one
-qgroup-8, block-64 paged-decode policy. This reduces the attention target from
-663 Ninja actions to about 12 while retaining matched auto and Kvarn paths.
+Build `.#vllm-xpu-kvarn-factory` for the complete current-layout matrix. It
+compiles every implemented Round-1 and Round-2 decode specialization plus the
+fused-QKV operator into one BMG-AOT attention library. Runtime selection
+therefore does not start another Nix build. The package also freezes the
+generated upstream FA2 buildout to Brutus's text-only Qwen3.8 profile: two
+head-dimension-256 chunk-prefill policies and one qgroup-8, block-64
+paged-decode policy. This reduces the attention target from 663 Ninja actions
+to about 12 while retaining matched auto and Kvarn paths.
 
 That partial buildout is deliberately fail-narrow. It is valid for the frozen
 eager, no-MTP, no-prefix-cache, no-DCP Brutus profile and requires the startup
@@ -107,10 +118,16 @@ nix run .#kvarn-factory -- \
   --kernels-repo /tmp/vllm-xpu-kernels-upstream-sync
 ```
 
-This realizes one BMG-AOT package, then tests all five kernel variants and the
-configured split sweep in one pinned Python/Torch/XPU process. Pytest is
-included for the mandatory native kill suite, and inherited Python, loader,
-service, and Kvarn-selector variables are scrubbed before launch. The launcher
+This realizes one BMG-AOT package, then tests every selected kernel variant and
+the configured split sweep in one pinned Python/Torch/XPU process. Round-2
+defaults run the Q6 control, vector runner-up, and three new Q6 candidates at
+split 8 and 32 with direct BF16 output. Sixteen warmup rounds precede twenty
+measured rounds per arm because the first B70 sweep showed material
+short-context clock settling after four warmups. Override `--variants`,
+`--splits`, `--output-dtypes`, `--warmup-rounds`, or `--sample-rounds` to change
+the runtime matrix without rebuilding the native library. Pytest is included
+for the mandatory native kill suite, and inherited Python, loader, service,
+and Kvarn-selector variables are scrubbed before launch. The launcher
 refuses to run beside a vLLM service, against dirty or source-mismatched
 repositories, with ambiguous shared libraries, or without exact Nix
 derivation and closure attestations. Evidence is written atomically under
@@ -202,6 +219,96 @@ stays clear:
 3. Persistent decode across heads/layers only if the XPU trace shows queue
    starvation rather than dominant device work.
 
+## Round 1 B70 result
+
+The sealed one-build factory run
+`benchmark-results/kvarn/factory-b70-20260904T060939Z.json` used project
+`7b0c7a872a48053aae9a8459e459c607ddd4ffbd`, vLLM
+`0d72e5b102a1b5cde06ee97f1ae8304efe9a3dbb`, and kernels
+`3df85eecd749fbe4a8b10cd1223c5925b2e765e7`. The top-level package and both
+native libraries were independently bound to their real Nix derivers and
+closure digests. The hardware preflight named exactly one Arc Pro B70 and
+completed a real XPU tensor operation.
+
+The mandatory native kill suite passed 41 tests with zero skips, including
+ragged batches, page boundaries, FP16 tails, all round-1 variants, fused QKV,
+and 262K addressing. The matched-production fixture then completed all 120
+deduplicated B1/B4, context, split, and variant cells. Every timed cell passed
+candidate-versus-natural and quantized-natural-versus-auto correctness. The
+following ratios are unprofiled XPU event medians; higher is better and 100%
+means equal device time to auto. They rank primitives only and are not service
+parity evidence.
+
+| Context / batch | Winning variant | Split | Candidate | Auto | Decode performance | Fused device-stage performance |
+|---|---|---:|---:|---:|---:|---:|
+| 4K / B1 | `q6_scalar` | 32 | 81.9 us | 77.6 us | 94.8% | 97.0% |
+| 4K / B4 | `q6_vector` (observed) | 8 | 141.5 us | 162.4 us | 114.8% | 110.1% |
+| 16K / B1 | `q6_scalar` | 32 | 156.7 us | 190.7 us | 121.7% | 115.5% |
+| 16K / B4 | `q6_scalar` | 8 | 342.3 us | 531.8 us | 155.4% | 147.2% |
+| 65K / B1 | `q6_scalar` | 32 | 339.7 us | 521.0 us | 153.4% | 145.5% |
+| 65K / B4 | `q6_scalar` | 8 | 1205.2 us | 1888.9 us | 156.7% | 154.2% |
+
+For one coherent service candidate, `q6_scalar` wins five of six raw medians
+and is also correct in the sixth: its best decode performance is 94.8%, 104.5%,
+121.7%, 155.4%, 153.4%, and 156.7% in table order. Its geometric mean across
+those six cells is 128.5% of auto. `q6_vector` is retained as a useful
+short-context B4 runner-up, where it beats scalar, but trails scalar by roughly
+1--5% elsewhere. The apparent 4K/B4 vector win is not yet promotable: the
+short-context candidates continued warming during their recorded samples, and
+the scalar last-half median beat the vector last-half median. One fully warmed
+confirmation is required before retaining a context-specific vector branch.
+The DPAS q8 baseline, integer-QK, and q8 vector candidates
+are eliminated from promotion: their best-per-cell geometric means are 70.2%,
+58.3%, and 68.3% of auto respectively.
+
+Round-1 promotion is therefore:
+
+- kernel strategy: `q6_scalar`;
+- split policy: fixed 32 for B1 and fixed 8 for B4 pending a service-level
+  context-bucket result;
+- fusion strategy: retain fused QKV because it raises the short B1 floor from
+  94.8% for decode alone to 97.0% for the measured fused device stage;
+- runner-up: retain `q6_vector` only until the 4K/B4 service cell resolves
+  whether its primitive advantage survives end to end;
+- dead experiments: do not carry integer-QK or either q8 DPAS variant into a
+  finalist service matrix. Natural layout remains the correctness oracle.
+
+Two gaps must be closed before service promotion. The production BF16 model
+selects the native decoder's direct BF16 output path, while this factory round
+timed the FP16 output path. Output dtype is now an explicit runtime factory
+axis, and the finalist confirmation must run BF16. Also, production currently
+freezes one split count for
+the whole engine, whereas this round consistently wants B1 split 32 and B4
+split 8. The next service candidate must allocate for 32 splits and select a
+batch-aware `B * splits = 32` policy at decode time; this scheduling choice
+does not change the immutable cache-layout ABI.
+
+## Round 2 one-build queue
+
+Round 2 preserves ID 2 byte-for-byte as the Q6 control and compiles new,
+independently dispatched IDs into the same Xe2 attention library. The ranked
+queue is deliberately wider than one conservative edit:
+
+1. Cache the four Q6 split-reduction softmax weights once per row instead of
+   recomputing global max and `exp2` weights for every output-fragment value.
+2. Remove loops over the two padded Q8 rows where the compiler has not already
+   eliminated them; kill this candidate immediately if generated code and XPU
+   time are flat.
+3. Reuse scaled Q and page metadata across both 64-token halves of each packed
+   128-token record.
+4. Stage scaled Q and page-constant K/V metadata cooperatively in workgroup
+   memory, isolated from the page-pair experiment until each effect is known.
+5. Replace the Q6 epilogue's coordinate scalar output writes with a specialized
+   two-row plus one-row block-message path.
+6. Prefetch the next packed page only as an isolated long-context candidate;
+   reject it if extra GRF/SLM pressure reduces occupancy.
+
+The page-128 topology remains a higher-risk candidate after these. Persistent
+decode and a new integer-DPAS cache ABI stay parked until profiling justifies
+their complexity. Existing measurements already disprove integer QK over the
+current FP16-DPAS-oriented record layout; reviving it requires a distinct
+engine-lifetime layout, not a reader flag.
+
 ## Round loop and elimination gates
 
 1. Build all round specializations in one package and record its exact source
@@ -225,14 +332,14 @@ Rows are appended from immutable JSON artifacts; `pending` is not a zero.
 | Variant | Correctness | B1 throughput | B1 decode tok/s | B4 throughput | B4 decode tok/s | p99 TTFT | p99 ITL | XPU kernel time | launches | idle | Decision |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
 | `auto-control` | control | pending | pending | pending | pending | pending | pending | pending | pending | pending | performance control |
-| `natural-oracle` | primitive reference | pending | pending | pending | pending | pending | pending | pending | pending | pending | correctness only |
-| `r1-p0-dpas-q8-t64` | primitive pass at 262K | pending | pending | pending | pending | pending | pending | pending | pending | pending | round baseline |
-| `r1-p1-dpas-qk-i8u4` | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending |
-| `r1-p2-dpas-q6-t64` | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending |
-| `r1-p3-dpas-fused-qkv-store` | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending |
-| `r1-p4-dpas-bucket-split` | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending |
-| `r1-p5-dpas-vector-load` | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending |
-| `r1-p6-dpas-page128` | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending |
+| `natural-oracle` | 41/41 suite; reference | pending | pending | pending | pending | pending | pending | measured per cell | pending | pending | correctness only |
+| `r1-p0-dpas-q8-t64` | pass through 262K | pending | pending | pending | pending | pending | pending | 105--2572 us | pending | pending | eliminate: 70.2% geometric-mean primitive performance |
+| `r1-p1-dpas-qk-i8u4` | pass through 262K | pending | pending | pending | pending | pending | pending | 128--3302 us | pending | pending | eliminate: 58.3% geometric-mean primitive performance |
+| `r1-p2-dpas-q6-t64` | pass through 262K | pending | pending | pending | pending | pending | pending | 81.9--1205 us | pending | pending | finalist: 128.5% geometric mean; B1 split32/B4 split8 |
+| `r1-p3-dpas-fused-qkv-store` | 41/41 suite; exact boundary | pending | pending | pending | pending | pending | pending | 97.0--154.2% of auto with winning reader | pending | pending | retain with finalist |
+| `r1-p4-dpas-bucket-split` | all split cells pass | pending | pending | pending | pending | pending | pending | B1 split32/B4 split8 win | pending | pending | retain; validate service buckets |
+| `r1-p5-dpas-vector-load` | pass through 262K | pending | pending | pending | pending | pending | pending | 81.2--1259 us with q6 | pending | pending | runner-up for 4K/B4 only |
+| `r1-p6-dpas-page128` | not compiled | pending | pending | pending | pending | pending | pending | pending | pending | pending | defer to later round |
 
 Final promotion still requires native Kvarn statistical parity or better with
 auto on the B70: paired ratio at least 98%, hard throughput and per-request

@@ -23,10 +23,15 @@ from typing import NoReturn
 
 BASE_LIBRARY = "_C.abi3.so"
 FLASH_LIBRARY = "_vllm_fa2_C.abi3.so"
-DEFAULT_VARIANTS = "baseline,qk_i8u4,q6_scalar,q8_vector,q6_vector"
-DEFAULT_SPLITS = "auto,8,16,24,32"
+DEFAULT_VARIANTS = (
+    "q6_scalar,q6_vector,q6_cached_weights,q6_exact_rows,q6_cached_weights_exact_rows"
+)
+DEFAULT_SPLITS = "8,32"
 DEFAULT_CONTEXTS = "4096,16384,65023"
 DEFAULT_BATCHES = "1,4"
+DEFAULT_OUTPUT_DTYPES = "bf16"
+DEFAULT_WARMUP_ROUNDS = 16
+DEFAULT_SAMPLE_ROUNDS = 20
 STORE_NAME = re.compile(r"^[a-z0-9]{32}-.+")
 DERIVATION = re.compile(r"^/nix/store/[a-z0-9]{32}-.+\.drv$")
 GIT_COMMIT = re.compile(r"^[0-9a-f]{40}$")
@@ -372,6 +377,9 @@ def build_runner_command(
     expected_project_revision: str,
     expected_vllm_revision: str,
     expected_kernels_revision: str,
+    output_dtypes: str = DEFAULT_OUTPUT_DTYPES,
+    warmup_rounds: int = DEFAULT_WARMUP_ROUNDS,
+    sample_rounds: int = DEFAULT_SAMPLE_ROUNDS,
 ) -> list[str]:
     return [
         sys.executable,
@@ -414,6 +422,12 @@ def build_runner_command(
         contexts,
         "--batches",
         batches,
+        "--output-dtypes",
+        output_dtypes,
+        "--warmup-rounds",
+        str(warmup_rounds),
+        "--sample-rounds",
+        str(sample_rounds),
         "--fixture-mode",
         "matched-production",
         "--output",
@@ -451,6 +465,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--splits", default=DEFAULT_SPLITS)
     parser.add_argument("--contexts", default=DEFAULT_CONTEXTS)
     parser.add_argument("--batches", default=DEFAULT_BATCHES)
+    parser.add_argument("--output-dtypes", default=DEFAULT_OUTPUT_DTYPES)
+    parser.add_argument("--warmup-rounds", type=int, default=DEFAULT_WARMUP_ROUNDS)
+    parser.add_argument("--sample-rounds", type=int, default=DEFAULT_SAMPLE_ROUNDS)
     return parser.parse_args(argv)
 
 
@@ -519,6 +536,9 @@ def launch(
         splits=args.splits,
         contexts=args.contexts,
         batches=args.batches,
+        output_dtypes=args.output_dtypes,
+        warmup_rounds=args.warmup_rounds,
+        sample_rounds=args.sample_rounds,
         expected_project_revision=args.expected_project_revision,
         expected_vllm_revision=args.expected_vllm_revision,
         expected_kernels_revision=args.expected_kernels_revision,

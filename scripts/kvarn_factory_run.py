@@ -36,6 +36,7 @@ KVARN_PAGE = 128
 KVARN_RECORD_STRIDE = 35_072
 SOFTMAX_SCALE = 1.0 / 16.0
 VALID_SPLITS = (1, 2, 4, 8, 16, 17, 24, 32)
+VALID_OUTPUT_DTYPES = ("fp16", "bf16")
 MATCHED_FIXTURE_MODE = "matched-production"
 UNMATCHED_FIXTURE_MODE = "unmatched-diagnostic"
 CORPUS_SEED = 20_260_903
@@ -84,20 +85,27 @@ VARIANTS = {
         VariantSpec(3, "q8_vector", "q8 vector packed-word loads"),
         VariantSpec(4, "q6_vector", "q6 vector packed-word loads"),
         VariantSpec(5, "page128", "128-token decode-tile candidate"),
+        VariantSpec(6, "q6_cached_weights", "q6 cached epilogue weights"),
+        VariantSpec(7, "q6_exact_rows", "q6 exact live-row loops"),
+        VariantSpec(
+            8,
+            "q6_cached_weights_exact_rows",
+            "q6 cached epilogue weights plus exact live-row loops",
+        ),
     )
 }
 VARIANTS_BY_ID = {spec.variant_id: spec for spec in VARIANTS.values()}
 DEFAULT_VARIANT_NAMES = (
-    "baseline",
-    "qk_i8u4",
     "q6_scalar",
-    "q8_vector",
     "q6_vector",
+    "q6_cached_weights",
+    "q6_exact_rows",
+    "q6_cached_weights_exact_rows",
 )
 FOCUSED_XPU_TESTS = (
     "tests/flash_attn/test_kvarn_decode_xpu.py::test_structured_permuted_pages",
     "tests/flash_attn/test_kvarn_decode_xpu.py::test_nonuniform_kvarn_factors_across_page_boundary",
-    "tests/flash_attn/test_kvarn_decode_xpu.py::test_round1_dpas_variants_match_canonical_ragged_and_hybrid",
+    "tests/flash_attn/test_kvarn_decode_xpu.py::test_factory_dpas_variants_match_canonical_ragged_and_hybrid",
     "tests/flash_attn/test_kvarn_decode_xpu.py::test_q6_multisplit_lse_owns_all_six_distinct_query_rows",
     "tests/flash_attn/test_kvarn_decode_xpu.py::test_full_precision_tail_and_packed_history_share_softmax",
     "tests/flash_attn/test_kvarn_decode_xpu.py::test_long_context_ragged_b4_matches_structured_oracle[natural-split24]",
@@ -153,6 +161,7 @@ class MatrixCase:
     requested_splits: int
     effective_splits: int
     variant: VariantSpec
+    output_dtype: str = "fp16"
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -163,6 +172,7 @@ class MatrixCase:
             "kernel_variant": self.variant.variant_id,
             "variant_name": self.variant.name,
             "dpas_layout": self.variant.dpas_layout,
+            "output_dtype": self.output_dtype,
         }
 
 
@@ -565,6 +575,19 @@ def parse_split_tokens(value: str) -> list[int | None]:
     return result
 
 
+def parse_output_dtypes(value: str) -> list[str]:
+    names = value.split(",")
+    if not names or any(not name for name in names):
+        raise FactoryError("--output-dtypes must not contain empty entries")
+    unknown = [name for name in names if name not in VALID_OUTPUT_DTYPES]
+    if unknown:
+        raise FactoryError(
+            f"unsupported output dtype {unknown[0]!r}; choose from "
+            + ", ".join(VALID_OUTPUT_DTYPES)
+        )
+    return list(dict.fromkeys(names))
+
+
 def effective_split_count(context: int, requested: int) -> int:
     kv_tiles = math.ceil(context / 64)
     return 1 if requested > 1 and kv_tiles < requested else requested
@@ -576,13 +599,18 @@ def build_matrix(
     contexts: Sequence[int],
     splits: Sequence[int | None],
     variants: Sequence[VariantSpec],
+    output_dtypes: Sequence[str] = ("fp16",),
 ) -> list[MatrixCase]:
     if any(batch not in (1, 4) for batch in batches):
         raise FactoryError("this factory runner supports only B1 and B4")
     if any(context <= 0 for context in contexts):
         raise FactoryError("contexts must be positive")
     cases: list[MatrixCase] = []
-    seen: set[tuple[int, int, int, int]] = set()
+    if not output_dtypes or any(
+        dtype not in VALID_OUTPUT_DTYPES for dtype in output_dtypes
+    ):
+        raise FactoryError("output dtypes must be explicit fp16 or bf16 values")
+    seen: set[tuple[int, int, int, int, str]] = set()
     for context in contexts:
         for batch in batches:
             for requested_value in splits:
@@ -591,20 +619,34 @@ def build_matrix(
                     if requested_value is None
                     else requested_value
                 )
-                for variant in variants:
-                    key = (batch, context, requested, variant.variant_id)
-                    if key in seen:
-                        continue
-                    seen.add(key)
-                    cases.append(
-                        MatrixCase(
-                            batch=batch,
-                            context=context,
-                            requested_splits=requested,
-                            effective_splits=effective_split_count(context, requested),
-                            variant=variant,
+                effective = effective_split_count(context, requested)
+                for output_dtype in output_dtypes:
+                    if output_dtype == "bf16" and effective == 1:
+                        raise FactoryError(
+                            "direct bf16 output requires a multi-split decode so the "
+                            "native reducer can fuse the output H256 transform"
                         )
-                    )
+                    for variant in variants:
+                        key = (
+                            batch,
+                            context,
+                            requested,
+                            variant.variant_id,
+                            output_dtype,
+                        )
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        cases.append(
+                            MatrixCase(
+                                batch=batch,
+                                context=context,
+                                requested_splits=requested,
+                                effective_splits=effective,
+                                variant=variant,
+                                output_dtype=output_dtype,
+                            )
+                        )
     return cases
 
 
@@ -1635,6 +1677,7 @@ def invoke_native_decode(
     output: Any,
     context: int,
     unrotate_output: bool,
+    write_bf16_output: bool,
     num_kv_splits: int,
     kernel_variant: int,
     dpas_layout: bool,
@@ -1654,7 +1697,7 @@ def invoke_native_decode(
         context,
         SOFTMAX_SCALE,
         unrotate_output,
-        False,
+        write_bf16_output,
         num_kv_splits,
         kernel_variant,
         dpas_layout,
@@ -1691,6 +1734,7 @@ def run_case(
     context = case.context
     splits = case.requested_splits
     dpas_layout = case.variant.dpas_layout
+    write_bf16_output = case.output_dtype == "bf16"
     native_pages = math.ceil(context / KVARN_PAGE)
     native_total_pages = batch * native_pages
     seq_lens = torch_module.full(
@@ -1847,7 +1891,9 @@ def run_case(
             ),
             output=torch_module.empty(
                 (batch, H_Q, HEAD_DIM),
-                dtype=torch_module.float16,
+                dtype=(
+                    torch_module.bfloat16 if write_bf16_output else torch_module.float16
+                ),
                 device="xpu:0",
             ),
         )
@@ -1882,6 +1928,7 @@ def run_case(
             output=buffers.output,
             context=context,
             unrotate_output=unrotate_output,
+            write_bf16_output=write_bf16_output,
             num_kv_splits=splits,
             kernel_variant=variant,
             dpas_layout=dpas,
@@ -2234,7 +2281,7 @@ def run_case(
         **case.as_dict(),
         "case_id": (
             f"b{batch}-c{context}-s{splits}-"
-            f"v{case.variant.variant_id}-{case.variant.name}"
+            f"v{case.variant.variant_id}-{case.variant.name}-{case.output_dtype}"
         ),
         "status": "correctness_passed_and_timed",
         "scope": "xpu_primitive_device_stage",
@@ -2252,7 +2299,7 @@ def run_case(
                 "dpas_layout": False,
             },
             "unrotate_output": unrotate_output,
-            "write_bf16_output": False,
+            "write_bf16_output": write_bf16_output,
         },
         "allocation_evidence": {
             "natural_and_candidate_cache_distinct": True,
@@ -2374,9 +2421,14 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--splits", default="auto")
     parser.add_argument("--contexts", default="4096,16384,65023")
     parser.add_argument("--batches", default="1,4")
+    parser.add_argument(
+        "--output-dtypes",
+        default="bf16",
+        help="comma-separated runtime output paths: fp16,bf16 (default: bf16)",
+    )
     parser.add_argument("--auto-block-size", type=int, default=64)
-    parser.add_argument("--warmup-rounds", type=int, default=4)
-    parser.add_argument("--sample-rounds", type=int, default=10)
+    parser.add_argument("--warmup-rounds", type=int, default=16)
+    parser.add_argument("--sample-rounds", type=int, default=20)
     parser.add_argument("--correctness-atol", type=float, default=0.08)
     parser.add_argument("--correctness-rtol", type=float, default=0.03)
     parser.add_argument(
@@ -2396,11 +2448,13 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         args.split_values = parse_split_tokens(args.splits)
         args.context_values = parse_int_list(args.contexts, label="--contexts")
         args.batch_values = parse_int_list(args.batches, label="--batches")
+        args.output_dtype_values = parse_output_dtypes(args.output_dtypes)
         args.matrix = build_matrix(
             batches=args.batch_values,
             contexts=args.context_values,
             splits=args.split_values,
             variants=args.variant_specs,
+            output_dtypes=args.output_dtype_values,
         )
         args.output = ensure_durable_output(args.output, allow_tmp=args.allow_tmp)
         if args.auto_block_size <= 0:
@@ -2498,6 +2552,7 @@ def initial_document(args: argparse.Namespace) -> dict[str, Any]:
             "splits": args.splits,
             "contexts": args.context_values,
             "batches": args.batch_values,
+            "output_dtypes": args.output_dtype_values,
             "auto_block_size": args.auto_block_size,
             "warmup_rounds": args.warmup_rounds,
             "sample_rounds": args.sample_rounds,

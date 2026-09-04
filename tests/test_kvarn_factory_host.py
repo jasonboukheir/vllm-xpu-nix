@@ -291,6 +291,9 @@ def test_runner_command_forwards_matrix_and_exact_attestations(tmp_path: Path) -
         splits="auto,24",
         contexts="4096,65023",
         batches="1,4",
+        output_dtypes="fp16,bf16",
+        warmup_rounds=12,
+        sample_rounds=24,
         expected_project_revision=PROJECT_REVISION,
         expected_vllm_revision=VLLM_REVISION,
         expected_kernels_revision=KERNELS_REVISION,
@@ -305,6 +308,9 @@ def test_runner_command_forwards_matrix_and_exact_attestations(tmp_path: Path) -
     assert command[command.index("--splits") + 1] == "auto,24"
     assert command[command.index("--contexts") + 1] == "4096,65023"
     assert command[command.index("--batches") + 1] == "1,4"
+    assert command[command.index("--output-dtypes") + 1] == "fp16,bf16"
+    assert command[command.index("--warmup-rounds") + 1] == "12"
+    assert command[command.index("--sample-rounds") + 1] == "24"
     assert (
         command[command.index("--expected-vllm-xpu-nix-revision") + 1]
         == PROJECT_REVISION
@@ -327,6 +333,9 @@ def test_default_cli_is_the_matched_b70_factory_matrix() -> None:
     assert args.splits == host.DEFAULT_SPLITS
     assert args.contexts == host.DEFAULT_CONTEXTS
     assert args.batches == host.DEFAULT_BATCHES
+    assert args.output_dtypes == host.DEFAULT_OUTPUT_DTYPES
+    assert args.warmup_rounds == host.DEFAULT_WARMUP_ROUNDS
+    assert args.sample_rounds == host.DEFAULT_SAMPLE_ROUNDS
 
 
 def test_launch_executes_once_with_resolved_provenance(
@@ -402,6 +411,9 @@ def test_launch_executes_once_with_resolved_provenance(
         splits=host.DEFAULT_SPLITS,
         contexts=host.DEFAULT_CONTEXTS,
         batches=host.DEFAULT_BATCHES,
+        output_dtypes=host.DEFAULT_OUTPUT_DTYPES,
+        warmup_rounds=host.DEFAULT_WARMUP_ROUNDS,
+        sample_rounds=host.DEFAULT_SAMPLE_ROUNDS,
         expected_project_revision=PROJECT_REVISION,
         expected_vllm_revision=VLLM_REVISION,
         expected_kernels_revision=KERNELS_REVISION,

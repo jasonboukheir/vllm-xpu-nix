@@ -29,32 +29,54 @@
   triton-xpu,
   flash-linear-attention,
   python3Packages,
-}: let
+}:
+let
   inherit (pkgs) lib;
-  mkVllm = lib.makeOverridable ({
-    src,
-    version,
-    kernels,
-    withTorchvision ? false,
-    withAudio ? false,
-    aotDevices ? null,
-    kernelConfig ? null,
-  }: let
-    kernelOverrides =
-      lib.optionalAttrs (aotDevices != null) {inherit aotDevices;}
-      // lib.optionalAttrs (kernelConfig != null) {inherit kernelConfig;};
-    kernels' =
-      if kernelOverrides != {} && kernels ? override
-      then kernels.override kernelOverrides
-      else kernels;
-  in
-    pkgs.callPackage ./vllm-xpu.nix {
+  mkVllm = lib.makeOverridable (
+    args@{
+      src,
+      version,
+      kernels,
+      withTorchvision ? false,
+      withAudio ? false,
+      aotDevices ? null,
+      kernelConfig ? null,
+      mcpPackage ? python3Packages.mcp,
+    }:
+    let
+      kernelOverrides =
+        lib.optionalAttrs (aotDevices != null) { inherit aotDevices; }
+        // lib.optionalAttrs (kernelConfig != null) { inherit kernelConfig; };
+      kernels' =
+        if kernelOverrides != { } && kernels ? override then kernels.override kernelOverrides else kernels;
+    in
+    (pkgs.callPackage ./vllm-xpu.nix {
       intel-oneapi-base = intel-oneapi;
-      inherit intel-pti torch-xpu triton-xpu flash-linear-attention;
+      inherit
+        intel-pti
+        torch-xpu
+        triton-xpu
+        flash-linear-attention
+        ;
       inherit python3Packages;
       vllm-xpu-kernels = kernels';
-      inherit src version withTorchvision withAudio;
+      inherit
+        src
+        version
+        withTorchvision
+        withAudio
+        mcpPackage
+        ;
       inherit (pkgs) level-zero intel-graphics-compiler intel-compute-runtime;
-    });
+    }).overrideAttrs
+      (old: {
+        passthru = (old.passthru or { }) // {
+          # The NixOS module uses this narrow hook instead of assuming every
+          # user-supplied package's generic `.override` accepts `aotDevices`.
+          # Re-enter mkVllm so the setting cascades into the paired kernels.
+          withAotDevices = devices: mkVllm (args // { aotDevices = devices; });
+        };
+      })
+  );
 in
-  mkVllm
+mkVllm

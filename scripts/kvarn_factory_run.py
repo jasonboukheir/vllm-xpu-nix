@@ -36,6 +36,11 @@ KVARN_PAGE = 128
 KVARN_RECORD_STRIDE = 35_072
 SOFTMAX_SCALE = 1.0 / 16.0
 VALID_SPLITS = (1, 2, 4, 8, 16, 17, 24, 32)
+MATCHED_FIXTURE_MODE = "matched-production"
+UNMATCHED_FIXTURE_MODE = "unmatched-diagnostic"
+CORPUS_SEED = 20_260_903
+CORPUS_PACK_TILE_BATCH = 256
+CORPUS_ROTATE_ROW_BATCH = 8_192
 SCOPE_WARNING = (
     "Primitive/device-stage diagnostic only: these measurements exclude the "
     "vLLM scheduler, model layers, service transport, and Kvarn page flushes. "
@@ -98,6 +103,32 @@ UNMATCHED_FIXTURE_WARNING = (
     "only and are not matched-parity evidence. A production Kvarn packer fixture "
     "is required before promoting these ratios to a parity gate."
 )
+
+
+@dataclasses.dataclass(frozen=True)
+class TailFixture:
+    block_to_slot: Any
+    tail_key: Any
+    tail_value: Any
+    provenance: dict[str, Any]
+
+
+@dataclasses.dataclass(frozen=True)
+class MatchedCorpus:
+    auto_base: Any
+    auto_key_cache: Any
+    auto_value_cache: Any
+    auto_block_table: Any
+    natural_cache: Any
+    dpas_cache: Any
+    native_block_table: Any
+    tail_fixtures: dict[int, TailFixture]
+    frontier_key: dict[int, Any]
+    frontier_value: dict[int, Any]
+    max_batch: int
+    max_context: int
+    auto_block_size: int
+    provenance: dict[str, Any]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -708,6 +739,50 @@ def load_fixture_helpers(kernels_repo: Path) -> SimpleNamespace:
     )
 
 
+def load_production_packers(vllm_repo: Path) -> SimpleNamespace:
+    """Load the attested production Sinkhorn and batched RTN packers.
+
+    Importing these from the source repository (and verifying every module's
+    path) prevents a stale site-packages copy from silently defining the
+    benchmark corpus ABI.
+    """
+    resolved = vllm_repo.expanduser().resolve(strict=True)
+    sys.path.insert(0, str(resolved))
+    try:
+        config_module = importlib.import_module(
+            "vllm.model_executor.layers.quantization.kvarn.config"
+        )
+        sinkhorn_module = importlib.import_module(
+            "vllm.v1.attention.ops.triton_kvarn_sinkhorn"
+        )
+        store_module = importlib.import_module("vllm.v1.attention.ops.kvarn_store")
+    finally:
+        sys.path.pop(0)
+    module_paths = {
+        "config": Path("vllm/model_executor/layers/quantization/kvarn/config.py"),
+        "sinkhorn": Path("vllm/v1/attention/ops/triton_kvarn_sinkhorn.py"),
+        "store": Path("vllm/v1/attention/ops/kvarn_store.py"),
+    }
+    modules = {
+        "config": config_module,
+        "sinkhorn": sinkhorn_module,
+        "store": store_module,
+    }
+    for name, module in modules.items():
+        _require_module_from_repo(module, resolved, module_paths[name])
+    sources = {
+        name: stable_file_record((resolved / relative).resolve(strict=True))
+        for name, relative in module_paths.items()
+    }
+    return SimpleNamespace(
+        make_config=config_module.KVarNConfig.from_cache_dtype,
+        sinkhorn=sinkhorn_module.kvarn_sinkhorn_triton,
+        pack_k=store_module.kvarn_store_tile_k_batch_from_sinkhorn,
+        pack_v=store_module.kvarn_store_tile_v_batch_from_sinkhorn,
+        sources=sources,
+    )
+
+
 def _require_module_from_repo(module: Any, repo: Path, relative_path: Path) -> None:
     module_file = getattr(module, "__file__", None)
     if module_file is None:
@@ -718,6 +793,146 @@ def _require_module_from_repo(module: Any, repo: Path, relative_path: Path) -> N
         raise FactoryError(
             f"fixture helper {module.__name__!r} came from {loaded}, expected {expected}"
         )
+
+
+def tail_page_assignments(
+    *, batch: int, context: int, pages_per_request: int
+) -> list[dict[str, Any]]:
+    """Describe the live fp16 sink/tail ownership for a decode snapshot."""
+    if batch <= 0 or context <= 0 or pages_per_request <= 0:
+        raise FactoryError("tail assignment dimensions must be positive")
+    used_pages = math.ceil(context / KVARN_PAGE)
+    if used_pages > pages_per_request:
+        raise FactoryError("tail assignment exceeds the corpus page table")
+    result: list[dict[str, Any]] = []
+    slot = 0
+    for request in range(batch):
+        local_pages = [0]
+        if used_pages > 1:
+            local_pages.append(used_pages - 1)
+        for local_page in local_pages:
+            valid_tokens = min(
+                KVARN_PAGE,
+                max(context - local_page * KVARN_PAGE, 0),
+            )
+            roles = ["sink"] if local_page == 0 else []
+            if local_page == used_pages - 1:
+                roles.append("current_tail")
+            result.append(
+                {
+                    "request": request,
+                    "local_page": local_page,
+                    "physical_page": request * pages_per_request + local_page,
+                    "pool_slot": slot,
+                    "roles": roles,
+                    "valid_tokens": valid_tokens,
+                }
+            )
+            slot += 1
+    return result
+
+
+def _update_cpu_tensor_digest(torch_module: Any, digest: Any, tensor: Any) -> int:
+    """Hash every byte of one contiguous CPU tensor with bounded scratch."""
+    contiguous = tensor.detach().contiguous()
+    if contiguous.device.type != "cpu":
+        raise FactoryError("logical corpus hashing requires a CPU tensor")
+    # Reinterpret through uint8 without requiring NumPy to understand BF16.
+    raw = contiguous.view(torch_module.uint8).reshape(-1)
+    chunk_bytes = 64 * 1024 * 1024
+    for start in range(0, raw.numel(), chunk_bytes):
+        digest.update(raw[start : start + chunk_bytes].numpy().tobytes())
+    return raw.numel()
+
+
+def _sha256_device_tensor(torch_module: Any, tensor: Any) -> str:
+    """Hash a device tensor in bounded first-axis chunks, outside timing."""
+    digest = hashlib.sha256()
+    if tensor.ndim == 0:
+        chunks = (tensor.reshape(1),)
+    else:
+        row_bytes = max(1, tensor[0].numel() * tensor.element_size())
+        rows = max(1, (64 * 1024 * 1024) // row_bytes)
+        chunks = (
+            tensor[index : index + rows] for index in range(0, tensor.size(0), rows)
+        )
+    for chunk in chunks:
+        cpu = chunk.detach().contiguous().cpu()
+        raw = cpu.view(torch_module.uint8).reshape(-1)
+        digest.update(raw.numpy().tobytes())
+    return digest.hexdigest()
+
+
+def _corpus_identity(provenance: dict[str, Any]) -> str:
+    identity = {
+        "generator": provenance["generator"],
+        "logical_shape": provenance["logical_shape"],
+        "logical_dtype": provenance["logical_dtype"],
+        "key_sha256": provenance["key_sha256"],
+        "value_sha256": provenance["value_sha256"],
+        "logical_bytes_hashed": provenance["logical_bytes_hashed"],
+    }
+    return sha256_text(json.dumps(identity, sort_keys=True, separators=(",", ":")))
+
+
+def validate_matched_corpus_manifest(manifest: dict[str, Any]) -> None:
+    """Fail closed before any matched-corpus result becomes parity eligible."""
+    required_hashes = (
+        "key_sha256",
+        "value_sha256",
+        "logical_corpus_sha256",
+        "auto_key_cache_sha256",
+        "auto_value_cache_sha256",
+        "natural_packed_cache_sha256",
+        "dpas_packed_cache_sha256",
+    )
+    if manifest.get("fixture_mode") != MATCHED_FIXTURE_MODE:
+        raise FactoryError("matched corpus manifest has the wrong fixture mode")
+    for name in required_hashes:
+        if not re.fullmatch(r"[0-9a-f]{64}", str(manifest.get(name, ""))):
+            raise FactoryError(f"matched corpus manifest lacks a valid {name}")
+    if manifest["logical_corpus_sha256"] != _corpus_identity(manifest):
+        raise FactoryError("matched logical corpus identity does not verify")
+    shape = manifest.get("logical_shape", [])
+    if len(shape) != 4 or any(
+        not isinstance(value, int) or value <= 0 for value in shape
+    ):
+        raise FactoryError("matched corpus logical shape is invalid")
+    expected_bytes = math.prod(shape) * 2
+    byte_counts = manifest.get("logical_bytes_hashed", {})
+    if byte_counts != {"key": expected_bytes, "value": expected_bytes}:
+        raise FactoryError("matched corpus hashes do not cover every logical BF16 byte")
+    invariants = manifest.get("invariants", {})
+    required_invariants = (
+        "auto_populated_by_reshape_and_cache_flash",
+        "natural_populated_by_production_packers",
+        "dpas_populated_by_production_packers",
+        "natural_and_dpas_share_sinkhorn_results",
+        "sink_page_mapped_to_fp16_pool",
+        "current_tail_mapped_to_fp16_pool",
+        "partial_tail_valid_token_counts_verified",
+        "all_setup_and_hashing_outside_timing",
+    )
+    failed = [name for name in required_invariants if invariants.get(name) is not True]
+    if failed:
+        raise FactoryError("matched corpus invariants failed: " + ", ".join(failed))
+    sources = manifest.get("production_packer_sources", {})
+    if set(sources) != {"config", "sinkhorn", "store"}:
+        raise FactoryError("matched corpus production packer provenance is incomplete")
+    if any(
+        not re.fullmatch(r"[0-9a-f]{64}", str(record.get("sha256", "")))
+        for record in sources.values()
+    ):
+        raise FactoryError("matched corpus production packer source hash is invalid")
+    contexts = manifest.get("tail_mapping_by_context", {})
+    if not contexts or any(not value.get("validated") for value in contexts.values()):
+        raise FactoryError("matched corpus tail mappings are not fully validated")
+    for context, value in contexts.items():
+        for field in ("block_to_slot_sha256", "tail_key_sha256", "tail_value_sha256"):
+            if not re.fullmatch(r"[0-9a-f]{64}", str(value.get(field, ""))):
+                raise FactoryError(
+                    f"matched corpus tail mapping {context} lacks {field}"
+                )
 
 
 def _layout_pattern(pattern: Any, layout: Any, helpers: Any, dpas: bool) -> Any:
@@ -733,6 +948,461 @@ def _allocate_packed_cache(pattern: Any, *, total_pages: int, torch_module: Any)
     device_pattern = pattern.to(device="xpu:0")
     repeats = math.ceil(total_pages / pattern.size(0))
     return device_pattern.repeat(repeats, 1, 1)[:total_pages].contiguous()
+
+
+def _assemble_packed_records(
+    torch_module: Any,
+    config: Any,
+    packed_key: dict[str, Any],
+    packed_value: dict[str, Any],
+) -> Any:
+    count = packed_key["q_packed_uint8"].size(0)
+    parts = (
+        packed_key["q_packed_uint8"].reshape(count, config.k_packed_bytes),
+        packed_key["s_col_K"].contiguous().view(torch_module.uint8),
+        packed_key["zp_K"].contiguous().view(torch_module.uint8),
+        packed_key["s_row_K"].contiguous().view(torch_module.uint8),
+        packed_value["q_packed_uint8"].reshape(count, config.v_packed_bytes),
+        packed_value["s_col_V"].contiguous().view(torch_module.uint8),
+        packed_value["s_row_V"].contiguous().view(torch_module.uint8),
+        packed_value["zp_V"].contiguous().view(torch_module.uint8),
+    )
+    active = torch_module.cat(parts, dim=1)
+    if active.size(1) != config.tile_bytes:
+        raise FactoryError(
+            "production packers produced an invalid active record size: "
+            f"{active.size(1)} != {config.tile_bytes}"
+        )
+    records = torch_module.zeros(
+        (count, config.record_bytes),
+        dtype=torch_module.uint8,
+        device=active.device,
+    )
+    records[:, : config.tile_bytes] = active
+    return records
+
+
+def _require_same_quantization_metadata(
+    torch_module: Any,
+    natural_key: dict[str, Any],
+    natural_value: dict[str, Any],
+    dpas_key: dict[str, Any],
+    dpas_value: dict[str, Any],
+) -> None:
+    for field in ("s_col_K", "zp_K", "s_row_K"):
+        if not bool(torch_module.equal(natural_key[field], dpas_key[field])):
+            raise FactoryError(f"natural/DPAS K metadata diverged at {field}")
+    for field in ("s_col_V", "s_row_V", "zp_V"):
+        if not bool(torch_module.equal(natural_value[field], dpas_value[field])):
+            raise FactoryError(f"natural/DPAS V metadata diverged at {field}")
+
+
+def _build_tail_fixture(
+    torch_module: Any,
+    *,
+    rotated_key: Any,
+    rotated_value: Any,
+    context: int,
+    pages_per_request: int,
+) -> TailFixture:
+    batch = rotated_key.size(0)
+    assignments = tail_page_assignments(
+        batch=batch,
+        context=context,
+        pages_per_request=pages_per_request,
+    )
+    block_to_slot = torch_module.full(
+        (batch * pages_per_request,),
+        -1,
+        dtype=torch_module.int32,
+        device="xpu:0",
+    )
+    tail_key = torch_module.empty(
+        (len(assignments), KVARN_PAGE, H_KV, HEAD_DIM),
+        dtype=torch_module.float16,
+        device="xpu:0",
+    )
+    tail_value = torch_module.empty_like(tail_key)
+    for assignment in assignments:
+        request = assignment["request"]
+        local_page = assignment["local_page"]
+        pool_slot = assignment["pool_slot"]
+        physical_page = assignment["physical_page"]
+        start = local_page * KVARN_PAGE
+        stop = start + KVARN_PAGE
+        block_to_slot[physical_page] = pool_slot
+        tail_key[pool_slot].copy_(rotated_key[request, start:stop])
+        tail_value[pool_slot].copy_(rotated_value[request, start:stop])
+    sink_ok = all(
+        int(block_to_slot[item["physical_page"]].item()) == item["pool_slot"]
+        for item in assignments
+        if "sink" in item["roles"]
+    )
+    tail_ok = all(
+        int(block_to_slot[item["physical_page"]].item()) == item["pool_slot"]
+        for item in assignments
+        if "current_tail" in item["roles"]
+    )
+    expected_tail_tokens = context % KVARN_PAGE or KVARN_PAGE
+    tail_count_ok = all(
+        item["valid_tokens"] == expected_tail_tokens
+        for item in assignments
+        if "current_tail" in item["roles"]
+    )
+    provenance = {
+        "context": context,
+        "used_pages_per_request": math.ceil(context / KVARN_PAGE),
+        "assignments": assignments,
+        "sink_mapping_verified": sink_ok,
+        "current_tail_mapping_verified": tail_ok,
+        "tail_valid_token_count_verified": tail_count_ok,
+        "partial_tail_tokens": expected_tail_tokens,
+        "block_to_slot_sha256": _sha256_device_tensor(torch_module, block_to_slot),
+        "tail_key_sha256": _sha256_device_tensor(torch_module, tail_key),
+        "tail_value_sha256": _sha256_device_tensor(torch_module, tail_value),
+        "validated": sink_ok and tail_ok and tail_count_ok,
+    }
+    if not provenance["validated"]:
+        raise FactoryError(
+            f"failed to validate fp16 tail mapping for context {context}"
+        )
+    return TailFixture(block_to_slot, tail_key, tail_value, provenance)
+
+
+def build_matched_corpus(
+    torch_module: Any,
+    operations: Any,
+    production: Any,
+    *,
+    batches: Sequence[int],
+    contexts: Sequence[int],
+    auto_block_size: int,
+) -> MatchedCorpus:
+    """Materialize one logical BF16 corpus into every timed cache layout."""
+    max_batch = max(batches)
+    max_context = max(contexts)
+    native_pages = math.ceil(max_context / KVARN_PAGE)
+    padded_context = native_pages * KVARN_PAGE
+    total_native_pages = max_batch * native_pages
+    config = production.make_config("kvarn_k4v4_g128_compact", HEAD_DIM)
+    actual_config = (
+        config.head_dim,
+        config.group,
+        config.key_bits,
+        config.value_bits,
+        config.record_bytes,
+        config.sink_tokens,
+    )
+    expected_config = (
+        HEAD_DIM,
+        KVARN_PAGE,
+        4,
+        4,
+        KVARN_RECORD_STRIDE,
+        KVARN_PAGE,
+    )
+    if actual_config != expected_config:
+        raise FactoryError(
+            "production compact Kvarn config does not match the factory ABI: "
+            f"{actual_config} != {expected_config}"
+        )
+
+    logical_shape = (max_batch, max_context, H_KV, HEAD_DIM)
+    key_rotated_input = torch_module.zeros(
+        (max_batch, padded_context, H_KV, HEAD_DIM),
+        dtype=torch_module.bfloat16,
+        device="xpu:0",
+    )
+    value_rotated_input = torch_module.zeros_like(key_rotated_input)
+    key_digest = hashlib.sha256()
+    value_digest = hashlib.sha256()
+    key_bytes = 0
+    value_bytes = 0
+    key_generator = torch_module.Generator(device="cpu").manual_seed(CORPUS_SEED)
+    value_generator = torch_module.Generator(device="cpu").manual_seed(CORPUS_SEED + 1)
+    for request in range(max_batch):
+        key_cpu = torch_module.randn(
+            (max_context, H_KV, HEAD_DIM),
+            generator=key_generator,
+            dtype=torch_module.bfloat16,
+        )
+        key_bytes += _update_cpu_tensor_digest(torch_module, key_digest, key_cpu)
+        key_rotated_input[request, :max_context].copy_(key_cpu)
+        del key_cpu
+    for request in range(max_batch):
+        value_cpu = torch_module.randn(
+            (max_context, H_KV, HEAD_DIM),
+            generator=value_generator,
+            dtype=torch_module.bfloat16,
+        )
+        value_bytes += _update_cpu_tensor_digest(torch_module, value_digest, value_cpu)
+        value_rotated_input[request, :max_context].copy_(value_cpu)
+        del value_cpu
+
+    auto_pages = math.ceil(max_context / auto_block_size)
+    auto_base = torch_module.zeros(
+        (max_batch * auto_pages, H_KV, auto_block_size, 2 * HEAD_DIM),
+        dtype=torch_module.bfloat16,
+        device="xpu:0",
+    )
+    auto_key_cache, auto_value_cache = auto_base.transpose(1, 2).split(HEAD_DIM, dim=-1)
+    auto_block_table = torch_module.arange(
+        max_batch * auto_pages,
+        dtype=torch_module.int32,
+        device="xpu:0",
+    ).view(max_batch, auto_pages)
+    k_scale = torch_module.ones((), dtype=torch_module.float32, device="xpu:0")
+    v_scale = torch_module.ones((), dtype=torch_module.float32, device="xpu:0")
+    for request in range(max_batch):
+        slots = (
+            torch_module.arange(max_context, dtype=torch_module.int64, device="xpu:0")
+            + request * auto_pages * auto_block_size
+        )
+        operations.auto_store(
+            key_rotated_input[request, :max_context],
+            value_rotated_input[request, :max_context],
+            auto_key_cache,
+            auto_value_cache,
+            slots,
+            "auto",
+            k_scale,
+            v_scale,
+        )
+    torch_module.xpu.synchronize()
+    sample_positions = sorted(
+        {
+            0,
+            min(127, max_context - 1),
+            min(128, max_context - 1),
+            max_context - 1,
+        }
+    )
+    for request in range(max_batch):
+        for position in sample_positions:
+            page, offset = divmod(position, auto_block_size)
+            physical = request * auto_pages + page
+            torch_module.testing.assert_close(
+                auto_key_cache[physical, offset],
+                key_rotated_input[request, position],
+                atol=0,
+                rtol=0,
+            )
+            torch_module.testing.assert_close(
+                auto_value_cache[physical, offset],
+                value_rotated_input[request, position],
+                atol=0,
+                rtol=0,
+            )
+
+    key_rotated = torch_module.empty(
+        key_rotated_input.shape,
+        dtype=torch_module.float16,
+        device="xpu:0",
+    )
+    value_rotated = torch_module.empty_like(key_rotated)
+    flat_key_input = key_rotated_input.reshape(-1, HEAD_DIM)
+    flat_value_input = value_rotated_input.reshape(-1, HEAD_DIM)
+    flat_key_rotated = key_rotated.reshape(-1, HEAD_DIM)
+    flat_value_rotated = value_rotated.reshape(-1, HEAD_DIM)
+    for start in range(0, flat_key_input.size(0), CORPUS_ROTATE_ROW_BATCH):
+        stop = min(start + CORPUS_ROTATE_ROW_BATCH, flat_key_input.size(0))
+        operations.hadamard(flat_key_input[start:stop], flat_key_rotated[start:stop])
+        operations.hadamard(
+            flat_value_input[start:stop], flat_value_rotated[start:stop]
+        )
+    torch_module.xpu.synchronize()
+
+    natural_cache = torch_module.empty(
+        (total_native_pages, H_KV, config.record_bytes),
+        dtype=torch_module.uint8,
+        device="xpu:0",
+    )
+    dpas_cache = torch_module.empty_like(natural_cache)
+    key_pages = key_rotated.view(
+        max_batch, native_pages, KVARN_PAGE, H_KV, HEAD_DIM
+    ).reshape(total_native_pages, KVARN_PAGE, H_KV, HEAD_DIM)
+    value_pages = value_rotated.view(
+        max_batch, native_pages, KVARN_PAGE, H_KV, HEAD_DIM
+    ).reshape(total_native_pages, KVARN_PAGE, H_KV, HEAD_DIM)
+    pages_per_pack = max(1, CORPUS_PACK_TILE_BATCH // H_KV)
+    for page_start in range(0, total_native_pages, pages_per_pack):
+        page_stop = min(page_start + pages_per_pack, total_native_pages)
+        page_count = page_stop - page_start
+        key_tiles = (
+            key_pages[page_start:page_stop]
+            .permute(0, 2, 3, 1)
+            .reshape(page_count * H_KV, HEAD_DIM, KVARN_PAGE)
+            .contiguous()
+        )
+        value_tiles = (
+            value_pages[page_start:page_stop]
+            .permute(0, 2, 1, 3)
+            .reshape(page_count * H_KV, KVARN_PAGE, HEAD_DIM)
+            .contiguous()
+        )
+        key_balanced, key_s_col, key_s_row = production.sinkhorn(
+            key_tiles, iterations=config.sinkhorn_iters
+        )
+        value_balanced, value_s_col, value_s_row = production.sinkhorn(
+            value_tiles, iterations=config.sinkhorn_iters
+        )
+        natural_key = production.pack_k(
+            key_balanced,
+            key_s_col,
+            key_s_row,
+            bits=config.key_bits,
+            dpas_layout=False,
+        )
+        natural_value = production.pack_v(
+            value_balanced,
+            value_s_col,
+            value_s_row,
+            bits=config.value_bits,
+            dpas_layout=False,
+        )
+        dpas_key = production.pack_k(
+            key_balanced,
+            key_s_col,
+            key_s_row,
+            bits=config.key_bits,
+            dpas_layout=True,
+        )
+        dpas_value = production.pack_v(
+            value_balanced,
+            value_s_col,
+            value_s_row,
+            bits=config.value_bits,
+            dpas_layout=True,
+        )
+        _require_same_quantization_metadata(
+            torch_module, natural_key, natural_value, dpas_key, dpas_value
+        )
+        natural_cache[page_start:page_stop] = _assemble_packed_records(
+            torch_module, config, natural_key, natural_value
+        ).view(page_count, H_KV, config.record_bytes)
+        dpas_cache[page_start:page_stop] = _assemble_packed_records(
+            torch_module, config, dpas_key, dpas_value
+        ).view(page_count, H_KV, config.record_bytes)
+    torch_module.xpu.synchronize()
+
+    native_block_table = torch_module.arange(
+        total_native_pages,
+        dtype=torch_module.int32,
+        device="xpu:0",
+    ).view(max_batch, native_pages)
+    tail_fixtures = {
+        context: _build_tail_fixture(
+            torch_module,
+            rotated_key=key_rotated,
+            rotated_value=value_rotated,
+            context=context,
+            pages_per_request=native_pages,
+        )
+        for context in sorted(set(contexts))
+    }
+    frontier_key = {
+        context: key_rotated_input[:, context - 1].clone()
+        for context in sorted(set(contexts))
+    }
+    frontier_value = {
+        context: value_rotated_input[:, context - 1].clone()
+        for context in sorted(set(contexts))
+    }
+    generator_provenance = {
+        "algorithm": "torch CPU Generator.randn request-major",
+        "key_seed": CORPUS_SEED,
+        "value_seed": CORPUS_SEED + 1,
+        "generation_dtype": "torch.bfloat16",
+    }
+    provenance: dict[str, Any] = {
+        "fixture_mode": MATCHED_FIXTURE_MODE,
+        "logical_shape": list(logical_shape),
+        "logical_dtype": "torch.bfloat16",
+        "logical_tokens": max_batch * max_context,
+        "padded_context_for_kvarn": padded_context,
+        "padding_policy": "zero; never addressable beyond each case seq_len",
+        "generator": generator_provenance,
+        "key_sha256": key_digest.hexdigest(),
+        "value_sha256": value_digest.hexdigest(),
+        "logical_bytes_hashed": {"key": key_bytes, "value": value_bytes},
+        "production_packer_sources": production.sources,
+        "production_config": {
+            "cache_dtype": "kvarn_k4v4_g128_compact",
+            "head_dim": config.head_dim,
+            "group": config.group,
+            "key_bits": config.key_bits,
+            "value_bits": config.value_bits,
+            "sinkhorn_iters": config.sinkhorn_iters,
+            "record_bytes": config.record_bytes,
+            "sink_tokens": config.sink_tokens,
+            "rtn_quantile_environment": os.environ.get("KVARN_RTN_QUANTILE"),
+        },
+        "materialization_batches": {
+            "rotation_rows": CORPUS_ROTATE_ROW_BATCH,
+            "sinkhorn_rtn_tiles": CORPUS_PACK_TILE_BATCH,
+        },
+        "auto_store_operator": "_C_cache_ops::reshape_and_cache_flash",
+        "auto_block_size": auto_block_size,
+        "auto_store_sample_positions": sample_positions,
+        "auto_key_cache_sha256": _sha256_device_tensor(torch_module, auto_key_cache),
+        "auto_value_cache_sha256": _sha256_device_tensor(
+            torch_module, auto_value_cache
+        ),
+        "natural_packed_cache_sha256": _sha256_device_tensor(
+            torch_module, natural_cache
+        ),
+        "dpas_packed_cache_sha256": _sha256_device_tensor(torch_module, dpas_cache),
+        "tail_mapping_by_context": {
+            str(context): fixture.provenance
+            for context, fixture in tail_fixtures.items()
+        },
+        "invariants": {
+            "auto_populated_by_reshape_and_cache_flash": True,
+            "natural_populated_by_production_packers": True,
+            "dpas_populated_by_production_packers": True,
+            "natural_and_dpas_share_sinkhorn_results": True,
+            "sink_page_mapped_to_fp16_pool": all(
+                fixture.provenance["sink_mapping_verified"]
+                for fixture in tail_fixtures.values()
+            ),
+            "current_tail_mapped_to_fp16_pool": all(
+                fixture.provenance["current_tail_mapping_verified"]
+                for fixture in tail_fixtures.values()
+            ),
+            "partial_tail_valid_token_counts_verified": all(
+                fixture.provenance["tail_valid_token_count_verified"]
+                for fixture in tail_fixtures.values()
+            ),
+            "all_setup_and_hashing_outside_timing": True,
+        },
+        "logical_kv_payloads_matched_between_auto_and_kvarn": True,
+        "matched_primitive_fixture_eligible": False,
+        "matched_parity_eligible": False,
+        "validation_status": "pending",
+    }
+    provenance["logical_corpus_sha256"] = _corpus_identity(provenance)
+    validate_matched_corpus_manifest(provenance)
+    provenance["matched_primitive_fixture_eligible"] = True
+    provenance["validation_status"] = "passed"
+    del key_rotated_input, value_rotated_input, key_rotated, value_rotated
+    gc.collect()
+    torch_module.xpu.empty_cache()
+    return MatchedCorpus(
+        auto_base=auto_base,
+        auto_key_cache=auto_key_cache,
+        auto_value_cache=auto_value_cache,
+        auto_block_table=auto_block_table,
+        natural_cache=natural_cache,
+        dpas_cache=dpas_cache,
+        native_block_table=native_block_table,
+        tail_fixtures=tail_fixtures,
+        frontier_key=frontier_key,
+        frontier_value=frontier_value,
+        max_batch=max_batch,
+        max_context=max_context,
+        auto_block_size=auto_block_size,
+        provenance=provenance,
+    )
 
 
 def ensure_distinct_storage(reference: Any, candidate: Any) -> None:
@@ -851,6 +1521,7 @@ def run_case(
     operations: Any,
     case: MatrixCase,
     *,
+    corpus: MatchedCorpus | None,
     auto_block_size: int,
     warmup_rounds: int,
     sample_rounds: int,
@@ -863,59 +1534,92 @@ def run_case(
     dpas_layout = case.variant.dpas_layout
     native_pages = math.ceil(context / KVARN_PAGE)
     native_total_pages = batch * native_pages
-    native_table = torch_module.arange(
-        native_total_pages, dtype=torch_module.int32, device="xpu:0"
-    ).view(batch, native_pages)
     seq_lens = torch_module.full(
         (batch,), context, dtype=torch_module.int32, device="xpu:0"
     )
-    block_to_slot = torch_module.full(
-        (native_total_pages,), -1, dtype=torch_module.int32, device="xpu:0"
-    )
-    tail_key = torch_module.zeros(
-        (1, KVARN_PAGE, H_KV, HEAD_DIM),
-        dtype=torch_module.float16,
-        device="xpu:0",
-    )
-    tail_value = torch_module.zeros_like(tail_key)
+    if corpus is None:
+        native_table = torch_module.arange(
+            native_total_pages, dtype=torch_module.int32, device="xpu:0"
+        ).view(batch, native_pages)
+        block_to_slot = torch_module.full(
+            (native_total_pages,), -1, dtype=torch_module.int32, device="xpu:0"
+        )
+        tail_key = torch_module.zeros(
+            (1, KVARN_PAGE, H_KV, HEAD_DIM),
+            dtype=torch_module.float16,
+            device="xpu:0",
+        )
+        tail_value = torch_module.zeros_like(tail_key)
+        fixture_mode = UNMATCHED_FIXTURE_MODE
+        tail_provenance = None
+    else:
+        if (
+            batch > corpus.max_batch
+            or context > corpus.max_context
+            or auto_block_size != corpus.auto_block_size
+        ):
+            raise FactoryError("case exceeds the validated matched corpus")
+        native_table = corpus.native_block_table[:batch, :native_pages].contiguous()
+        tail_fixture = corpus.tail_fixtures[context]
+        block_to_slot = tail_fixture.block_to_slot
+        tail_key = tail_fixture.tail_key
+        tail_value = tail_fixture.tail_value
+        fixture_mode = MATCHED_FIXTURE_MODE
+        tail_provenance = tail_fixture.provenance
 
-    generator = torch_module.Generator().manual_seed(20260903 + batch + context)
+    query_seed = CORPUS_SEED + batch + context
+    generator = torch_module.Generator().manual_seed(query_seed)
     qkv_cpu = torch_module.randn(
         (batch, H_Q * HEAD_DIM + 2 * H_KV * HEAD_DIM), generator=generator
     ).to(torch_module.bfloat16)
     qkv = qkv_cpu.to(device="xpu:0")
     query = qkv[:, : H_Q * HEAD_DIM].view(batch, H_Q, HEAD_DIM)
-    key = qkv[:, H_Q * HEAD_DIM : (H_Q + H_KV) * HEAD_DIM].view(batch, H_KV, HEAD_DIM)
-    value = qkv[:, (H_Q + H_KV) * HEAD_DIM :].view(batch, H_KV, HEAD_DIM)
+    if corpus is None:
+        key = qkv[:, H_Q * HEAD_DIM : (H_Q + H_KV) * HEAD_DIM].view(
+            batch, H_KV, HEAD_DIM
+        )
+        value = qkv[:, (H_Q + H_KV) * HEAD_DIM :].view(batch, H_KV, HEAD_DIM)
+    else:
+        key = corpus.frontier_key[context][:batch]
+        value = corpus.frontier_value[context][:batch]
     query_rotated = torch_module.empty(
         (batch * H_Q, HEAD_DIM), dtype=torch_module.float16, device="xpu:0"
     )
     operations.hadamard(query.reshape(-1, HEAD_DIM), query_rotated)
     query_rotated = query_rotated.view(batch, H_Q, HEAD_DIM)
 
-    auto_base, auto_key_cache, auto_value_cache, auto_table = (
-        _make_interleaved_auto_cache(
-            torch_module,
-            batch=batch,
-            context=context,
-            block_size=auto_block_size,
+    if corpus is None:
+        auto_base, auto_key_cache, auto_value_cache, auto_table = (
+            _make_interleaved_auto_cache(
+                torch_module,
+                batch=batch,
+                context=context,
+                block_size=auto_block_size,
+            )
         )
-    )
+    else:
+        auto_pages = math.ceil(context / auto_block_size)
+        auto_base = corpus.auto_base
+        auto_key_cache = corpus.auto_key_cache
+        auto_value_cache = corpus.auto_value_cache
+        auto_table = corpus.auto_block_table[:batch, :auto_pages].contiguous()
     cu_q = torch_module.arange(batch + 1, dtype=torch_module.int32, device="xpu:0")
     dummy_cu_k = torch_module.empty_like(cu_q)
     auto_output = torch_module.empty_like(query)
 
-    def auto_decode() -> None:
+    def auto_launch(
+        key_cache: Any, value_cache: Any, block_table: Any, output: Any
+    ) -> None:
         operations.auto_decode(
             query,
-            auto_key_cache,
-            auto_value_cache,
-            auto_output,
+            key_cache,
+            value_cache,
+            output,
             cu_q,
             dummy_cu_k,
             seq_lens,
             None,
-            auto_table,
+            block_table,
             None,
             1,
             context,
@@ -936,6 +1640,34 @@ def run_case(
             None,
             None,
         )
+
+    def auto_decode() -> None:
+        auto_launch(auto_key_cache, auto_value_cache, auto_table, auto_output)
+
+    (
+        structured_auto_base,
+        structured_auto_key,
+        structured_auto_value,
+        structured_auto_table,
+    ) = _make_interleaved_auto_cache(
+        torch_module,
+        batch=batch,
+        context=context,
+        block_size=auto_block_size,
+    )
+    structured_auto_output = torch_module.empty_like(query)
+    structured_native_table = torch_module.arange(
+        native_total_pages, dtype=torch_module.int32, device="xpu:0"
+    ).view(batch, native_pages)
+    structured_block_to_slot = torch_module.full(
+        (native_total_pages,), -1, dtype=torch_module.int32, device="xpu:0"
+    )
+    structured_tail_key = torch_module.zeros(
+        (1, KVARN_PAGE, H_KV, HEAD_DIM),
+        dtype=torch_module.float16,
+        device="xpu:0",
+    )
+    structured_tail_value = torch_module.zeros_like(structured_tail_key)
 
     def make_buffers() -> SimpleNamespace:
         return SimpleNamespace(
@@ -964,17 +1696,27 @@ def run_case(
     unrotate_output = case.effective_splits > 1
 
     def native_launch(
-        cache: Any, buffers: SimpleNamespace, variant: int, dpas: bool
+        cache: Any,
+        buffers: SimpleNamespace,
+        variant: int,
+        dpas: bool,
+        *,
+        launch_table: Any | None = None,
+        launch_block_to_slot: Any | None = None,
+        launch_tail_key: Any | None = None,
+        launch_tail_value: Any | None = None,
     ) -> None:
         invoke_native_decode(
             operations.native_decode,
             query=query_rotated,
             cache=cache,
-            block_table=native_table,
+            block_table=native_table if launch_table is None else launch_table,
             seq_lens=seq_lens,
-            block_to_slot=block_to_slot,
-            tail_key=tail_key,
-            tail_value=tail_value,
+            block_to_slot=(
+                block_to_slot if launch_block_to_slot is None else launch_block_to_slot
+            ),
+            tail_key=tail_key if launch_tail_key is None else launch_tail_key,
+            tail_value=tail_value if launch_tail_value is None else launch_tail_value,
             temp_output=buffers.temp,
             exp_sums=buffers.lse,
             max_logits=buffers.legacy,
@@ -1011,14 +1753,32 @@ def run_case(
     ensure_distinct_storage(structured_natural, structured_candidate)
     structured_natural_buffers = make_buffers()
     structured_candidate_buffers = make_buffers()
-    native_launch(structured_natural, structured_natural_buffers, 0, False)
+    native_launch(
+        structured_natural,
+        structured_natural_buffers,
+        0,
+        False,
+        launch_table=structured_native_table,
+        launch_block_to_slot=structured_block_to_slot,
+        launch_tail_key=structured_tail_key,
+        launch_tail_value=structured_tail_value,
+    )
     native_launch(
         structured_candidate,
         structured_candidate_buffers,
         case.variant.variant_id,
         dpas_layout,
+        launch_table=structured_native_table,
+        launch_block_to_slot=structured_block_to_slot,
+        launch_tail_key=structured_tail_key,
+        launch_tail_value=structured_tail_value,
     )
-    auto_decode()
+    auto_launch(
+        structured_auto_key,
+        structured_auto_value,
+        structured_auto_table,
+        structured_auto_output,
+    )
     torch_module.xpu.synchronize()
     structured_natural_output = normalized_output(structured_natural_buffers)
     structured_candidate_output = normalized_output(structured_candidate_buffers)
@@ -1036,7 +1796,7 @@ def run_case(
         rtol=correctness_rtol,
     )
     torch_module.testing.assert_close(
-        auto_output.float().cpu(),
+        structured_auto_output.float().cpu(),
         expected,
         atol=correctness_atol,
         rtol=correctness_rtol,
@@ -1045,7 +1805,7 @@ def run_case(
         torch_module, structured_candidate_output, structured_natural_output
     )
     auto_metrics = _difference_metrics(
-        torch_module, auto_output, structured_natural_output
+        torch_module, structured_auto_output, structured_natural_output
     )
     del (
         structured_natural,
@@ -1054,20 +1814,31 @@ def run_case(
         structured_candidate_buffers,
         structured_natural_output,
         structured_candidate_output,
+        structured_auto_base,
+        structured_auto_key,
+        structured_auto_value,
+        structured_auto_table,
+        structured_auto_output,
     )
     gc.collect()
     torch_module.xpu.empty_cache()
 
-    dense_cpu, dense_layout = helpers.make_random_cache(2, KVARN_RECORD_STRIDE)
-    dense_candidate_cpu = _layout_pattern(dense_cpu, dense_layout, helpers, dpas_layout)
-    natural_cache = _allocate_packed_cache(
-        dense_cpu, total_pages=native_total_pages, torch_module=torch_module
-    )
-    candidate_cache = _allocate_packed_cache(
-        dense_candidate_cpu,
-        total_pages=native_total_pages,
-        torch_module=torch_module,
-    )
+    if corpus is None:
+        dense_cpu, dense_layout = helpers.make_random_cache(2, KVARN_RECORD_STRIDE)
+        dense_candidate_cpu = _layout_pattern(
+            dense_cpu, dense_layout, helpers, dpas_layout
+        )
+        natural_cache = _allocate_packed_cache(
+            dense_cpu, total_pages=native_total_pages, torch_module=torch_module
+        )
+        candidate_cache = _allocate_packed_cache(
+            dense_candidate_cpu,
+            total_pages=native_total_pages,
+            torch_module=torch_module,
+        )
+    else:
+        natural_cache = corpus.natural_cache
+        candidate_cache = corpus.dpas_cache
     ensure_distinct_storage(natural_cache, candidate_cache)
     natural_buffers = make_buffers()
     candidate_buffers = make_buffers()
@@ -1085,6 +1856,7 @@ def run_case(
 
     natural_decode()
     candidate_decode()
+    auto_decode()
     torch_module.xpu.synchronize()
     natural_normalized = normalized_output(natural_buffers)
     candidate_normalized = normalized_output(candidate_buffers)
@@ -1097,13 +1869,29 @@ def run_case(
     dense_metrics = _difference_metrics(
         torch_module, candidate_normalized, natural_normalized
     )
+    matched_auto_metrics = (
+        _difference_metrics(torch_module, auto_output, natural_normalized)
+        if corpus is not None
+        else None
+    )
+    matched_auto_correctness_passed = False
+    if matched_auto_metrics is not None:
+        if not matched_auto_metrics["finite"]:
+            raise FactoryError("matched auto-control output is non-finite")
+        torch_module.testing.assert_close(
+            natural_normalized.float().cpu(),
+            auto_output.float().cpu(),
+            atol=correctness_atol,
+            rtol=correctness_rtol,
+        )
+        matched_auto_correctness_passed = True
     del natural_normalized, candidate_normalized
 
+    frontier_offset = (context - 1) % KVARN_PAGE
     scatter_slots = (
         torch_module.arange(batch, dtype=torch_module.int64, device="xpu:0")
         * KVARN_PAGE
-        + KVARN_PAGE
-        - 1
+        + frontier_offset
     )
     scatter_lookup = torch_module.arange(
         batch, dtype=torch_module.int32, device="xpu:0"
@@ -1216,8 +2004,9 @@ def run_case(
             "reason": "kvarn_hadamard_qkv_scatter symbol absent",
         }
 
-    torch_module.xpu.manual_seed_all(20260903 + batch + context)
-    auto_base.normal_()
+    if corpus is None:
+        torch_module.xpu.manual_seed_all(20260903 + batch + context)
+        auto_base.normal_()
     torch_module.xpu.synchronize()
     decode_timing = measure_interleaved(
         torch_module,
@@ -1290,6 +2079,11 @@ def run_case(
         ),
         "status": "correctness_passed_and_timed",
         "scope": "xpu_primitive_device_stage",
+        "matched_primitive_ratio_eligible": (
+            corpus is not None
+            and corpus.provenance["matched_primitive_fixture_eligible"] is True
+            and matched_auto_correctness_passed
+        ),
         "explicit_native_op_args": {
             "num_kv_splits": splits,
             "kernel_variant": case.variant.variant_id,
@@ -1315,6 +2109,10 @@ def run_case(
             "structured_candidate_vs_natural": structured_candidate_metrics,
             "structured_auto_vs_natural": auto_metrics,
             "dense_candidate_vs_natural": dense_metrics,
+            "matched_auto_vs_quantized_natural": matched_auto_metrics,
+            "matched_auto_vs_quantized_natural_passed": (
+                matched_auto_correctness_passed if corpus is not None else None
+            ),
             "fused_qkv": fused_correctness,
         },
         "timing": {
@@ -1355,16 +2153,39 @@ def run_case(
             ),
         },
         "fixture": {
-            "auto_timing_cache": "dense_random_bfloat16",
-            "kvarn_timing_cache": "dense_random_packed_k4v4",
+            "fixture_mode": fixture_mode,
+            "auto_timing_cache": (
+                "shared_deterministic_logical_bfloat16_corpus"
+                if corpus is not None
+                else "dense_random_bfloat16"
+            ),
+            "kvarn_timing_cache": (
+                "production_sinkhorn_rtn_from_shared_logical_corpus"
+                if corpus is not None
+                else "dense_random_packed_k4v4"
+            ),
             "structured_correctness_cache_timed": False,
             "kvarn_page_size": KVARN_PAGE,
             "kvarn_record_stride": KVARN_RECORD_STRIDE,
             "auto_block_size": auto_block_size,
             "natural_and_dpas_caches_allocated_separately": True,
-            "logical_kv_payloads_matched_between_auto_and_kvarn": False,
+            "logical_kv_payloads_matched_between_auto_and_kvarn": corpus is not None,
+            "matched_primitive_fixture_eligible": (
+                corpus.provenance["matched_primitive_fixture_eligible"]
+                if corpus is not None
+                else False
+            ),
             "matched_parity_eligible": False,
-            "limitation": UNMATCHED_FIXTURE_WARNING,
+            "logical_corpus_sha256": (
+                corpus.provenance["logical_corpus_sha256"]
+                if corpus is not None
+                else None
+            ),
+            "query_seed": query_seed,
+            "frontend_kv_logical_position": context - 1 if corpus is not None else None,
+            "frontend_kv_page_offset": frontier_offset,
+            "tail_mapping": tail_provenance,
+            "limitation": UNMATCHED_FIXTURE_WARNING if corpus is None else None,
         },
     }
     return result
@@ -1388,11 +2209,20 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--splits", default="auto")
     parser.add_argument("--contexts", default="4096,16384,65023")
     parser.add_argument("--batches", default="1,4")
-    parser.add_argument("--auto-block-size", type=int, default=832)
+    parser.add_argument("--auto-block-size", type=int, default=64)
     parser.add_argument("--warmup-rounds", type=int, default=4)
     parser.add_argument("--sample-rounds", type=int, default=10)
     parser.add_argument("--correctness-atol", type=float, default=0.08)
     parser.add_argument("--correctness-rtol", type=float, default=0.03)
+    parser.add_argument(
+        "--fixture-mode",
+        choices=(MATCHED_FIXTURE_MODE, UNMATCHED_FIXTURE_MODE),
+        default=MATCHED_FIXTURE_MODE,
+        help=(
+            "matched-production is the fail-closed default; unmatched-diagnostic "
+            "retains the older candidate-ranking fixture"
+        ),
+    )
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--allow-tmp", action="store_true")
     args = parser.parse_args(argv)
@@ -1410,6 +2240,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         args.output = ensure_durable_output(args.output, allow_tmp=args.allow_tmp)
         if args.auto_block_size <= 0:
             raise FactoryError("--auto-block-size must be positive")
+        if args.fixture_mode == MATCHED_FIXTURE_MODE and args.auto_block_size != 64:
+            raise FactoryError(
+                "matched-production requires Brutus's effective auto block size 64; "
+                "other sizes require an explicitly broader build and runner contract"
+            )
         if args.warmup_rounds < 1 or args.sample_rounds < 1:
             raise FactoryError("warmup and sample rounds must be positive")
         if args.correctness_atol < 0 or args.correctness_rtol < 0:
@@ -1431,7 +2266,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 
 def initial_document(args: argparse.Namespace) -> dict[str, Any]:
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "artifact_kind": "kvarn_b70_primitive_factory_run",
         "status": "running",
         "started_at": utc_now(),
@@ -1456,9 +2291,20 @@ def initial_document(args: argparse.Namespace) -> dict[str, Any]:
             ],
         },
         "fixture_matching": {
+            "requested_mode": args.fixture_mode,
             "logical_kv_payloads_matched_between_auto_and_kvarn": False,
+            "matched_primitive_fixture_eligible": False,
             "matched_parity_eligible": False,
-            "warning": UNMATCHED_FIXTURE_WARNING,
+            "validation_status": (
+                "pending"
+                if args.fixture_mode == MATCHED_FIXTURE_MODE
+                else "not_applicable"
+            ),
+            "warning": (
+                UNMATCHED_FIXTURE_WARNING
+                if args.fixture_mode == UNMATCHED_FIXTURE_MODE
+                else None
+            ),
         },
         "command": {"argv": sys.argv, "cwd": os.getcwd()},
         "requested_settings": {
@@ -1472,6 +2318,7 @@ def initial_document(args: argparse.Namespace) -> dict[str, Any]:
             "samples_per_arm": args.sample_rounds * 2,
             "correctness_atol": args.correctness_atol,
             "correctness_rtol": args.correctness_rtol,
+            "fixture_mode": args.fixture_mode,
             "matrix": [case.as_dict() for case in args.matrix],
         },
         "build_attestations": {
@@ -1534,6 +2381,27 @@ def execute(args: argparse.Namespace) -> int:
             "fused_qkv_scatter": operations.fused_qkv_scatter is not None
         }
         helpers = load_fixture_helpers(args.kernels_repo)
+        corpus: MatchedCorpus | None = None
+        if args.fixture_mode == MATCHED_FIXTURE_MODE:
+            production = load_production_packers(args.vllm_repo)
+            corpus = build_matched_corpus(
+                torch,
+                operations,
+                production,
+                batches=args.batch_values,
+                contexts=args.context_values,
+                auto_block_size=args.auto_block_size,
+            )
+            document["fixture_matching"] = corpus.provenance
+        else:
+            document["fixture_matching"] = {
+                "fixture_mode": UNMATCHED_FIXTURE_MODE,
+                "logical_kv_payloads_matched_between_auto_and_kvarn": False,
+                "matched_primitive_fixture_eligible": False,
+                "matched_parity_eligible": False,
+                "validation_status": "not_applicable",
+                "warning": UNMATCHED_FIXTURE_WARNING,
+            }
         write_json_atomic(args.output, document)
 
         for index, case in enumerate(args.matrix, start=1):
@@ -1546,6 +2414,7 @@ def execute(args: argparse.Namespace) -> int:
                 helpers,
                 operations,
                 case,
+                corpus=corpus,
                 auto_block_size=args.auto_block_size,
                 warmup_rounds=args.warmup_rounds,
                 sample_rounds=args.sample_rounds,
@@ -1558,6 +2427,14 @@ def execute(args: argparse.Namespace) -> int:
             gc.collect()
             torch.xpu.empty_cache()
             torch.xpu.synchronize()
+        document["fixture_matching"]["matched_primitive_ratio_eligible"] = bool(
+            corpus is not None
+            and document["results"]
+            and all(
+                result["matched_primitive_ratio_eligible"]
+                for result in document["results"]
+            )
+        )
         ending_libraries = {
             "base": stable_file_record(args.base_library),
             "flash": stable_file_record(args.flash_library),

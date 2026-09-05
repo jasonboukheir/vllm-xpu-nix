@@ -347,6 +347,7 @@ def _correctness(
     native_frontend: str = "reference",
     forward_pool_ensure: str = "always",
     qlen1_inline_plan: str = "reference",
+    decode_flush_scope: str = "per_row",
     decode_fp16_window_blocks: str = "0",
     decode_fp16_low_water_blocks: str = "0",
     decode_flush_batch_executed: bool = False,
@@ -424,6 +425,7 @@ def _correctness(
             prefill_store,
             forward_pool_ensure,
             qlen1_inline_plan,
+            decode_flush_scope,
             decode_fp16_window_blocks,
             decode_fp16_low_water_blocks,
         )
@@ -435,6 +437,7 @@ def _correctness(
         effective_prefill_store = spec["prefill_store"]
         effective_forward_pool_ensure = spec["forward_pool_ensure"]
         effective_qlen1_inline_plan = spec["qlen1_inline_plan"]
+        effective_decode_flush_scope = spec["decode_flush_scope"]
         effective_decode_fp16_window_blocks = spec["decode_fp16_window_blocks"]
         effective_decode_fp16_low_water_blocks = spec["decode_fp16_low_water_blocks"]
         max_splits = spec["max_decode_splits"]
@@ -470,6 +473,7 @@ def _correctness(
                     "native_frontend_environment": effective_frontend,
                     "forward_pool_ensure_environment": (effective_forward_pool_ensure),
                     "qlen1_inline_plan_environment": effective_qlen1_inline_plan,
+                    "decode_flush_scope_environment": effective_decode_flush_scope,
                     "decode_fp16_low_water_blocks_environment": (
                         effective_decode_fp16_low_water_blocks
                     ),
@@ -491,6 +495,7 @@ def _correctness(
                         "KVARN_NATIVE_XPU_FRONTEND": effective_frontend,
                         "KVARN_FORWARD_POOL_ENSURE": (effective_forward_pool_ensure),
                         "KVARN_QLEN1_INLINE_PLAN": effective_qlen1_inline_plan,
+                        "KVARN_DECODE_FLUSH_SCOPE": effective_decode_flush_scope,
                         "KVARN_DECODE_FP16_LOW_WATER_BLOCKS": (
                             effective_decode_fp16_low_water_blocks
                         ),
@@ -526,6 +531,7 @@ def _correctness(
                     "decode_fp16_low_water_blocks": (
                         effective_decode_fp16_low_water_blocks
                     ),
+                    "decode_flush_scope": effective_decode_flush_scope,
                     "qlen1_inline_plan": effective_qlen1_inline_plan,
                 }
             ),
@@ -574,9 +580,10 @@ def _correctness(
             )
             + (
                 "INFO [KVARN_DECODE_FLUSH_BATCH] "
+                f"scope={effective_decode_flush_scope}; "
                 f"high_water={effective_decode_fp16_window_blocks}; "
                 f"low_water={effective_decode_fp16_low_water_blocks}; "
-                "flushed_pages=4; layer=test\n"
+                "triggering_rows=1; flushed_rows=4; flushed_pages=4; layer=test\n"
                 if decode_flush_batch_active
                 else ""
             ),
@@ -645,6 +652,7 @@ def _correctness(
                     "decode_fp16_window_blocks_expected": (
                         effective_decode_fp16_window_blocks
                     ),
+                    "decode_flush_scope_expected": effective_decode_flush_scope,
                     "decode_fp16_low_water_blocks_expected": (
                         effective_decode_fp16_low_water_blocks
                     ),
@@ -656,10 +664,13 @@ def _correctness(
                     "decode_flush_batch_events": (
                         [
                             {
+                                "scope": effective_decode_flush_scope,
                                 "high_water": int(effective_decode_fp16_window_blocks),
                                 "low_water": int(
                                     effective_decode_fp16_low_water_blocks
                                 ),
+                                "triggering_rows": 1,
+                                "flushed_rows": 4,
                                 "flushed_pages": 4,
                             }
                         ]
@@ -712,6 +723,7 @@ def _correctness(
                     "native_frontend": effective_frontend,
                     "forward_pool_ensure": effective_forward_pool_ensure,
                     "qlen1_inline_plan": effective_qlen1_inline_plan,
+                    "decode_flush_scope": effective_decode_flush_scope,
                     "decode_fp16_low_water_blocks": (
                         effective_decode_fp16_low_water_blocks
                     ),
@@ -724,10 +736,13 @@ def _correctness(
                     "decode_flush_batch_events": (
                         [
                             {
+                                "scope": effective_decode_flush_scope,
                                 "high_water": int(effective_decode_fp16_window_blocks),
                                 "low_water": int(
                                     effective_decode_fp16_low_water_blocks
                                 ),
+                                "triggering_rows": 1,
+                                "flushed_rows": 4,
                                 "flushed_pages": 4,
                             }
                         ]
@@ -977,6 +992,7 @@ def _correctness(
         "native_frontend": native_frontend,
         "forward_pool_ensure": forward_pool_ensure,
         "qlen1_inline_plan": qlen1_inline_plan,
+        "decode_flush_scope": decode_flush_scope,
         "decode_fp16_low_water_blocks": int(decode_fp16_low_water_blocks),
         "decode_fp16_window_blocks": int(decode_fp16_window_blocks),
         "request_stability_qualification": (
@@ -985,6 +1001,7 @@ def _correctness(
             else "replay-qualified"
         ),
         "service_controls": {
+            "kvarn_decode_flush_scope": decode_flush_scope,
             "kvarn_decode_fp16_low_water_blocks": decode_fp16_low_water_blocks,
             "kvarn_decode_fp16_window_blocks": decode_fp16_window_blocks,
             "kvarn_flush_index_materialization": flush_index_materialization,
@@ -1012,6 +1029,7 @@ def _correctness(
             prefill_store,
             forward_pool_ensure,
             qlen1_inline_plan,
+            decode_flush_scope,
             decode_fp16_window_blocks,
             decode_fp16_low_water_blocks,
         ),
@@ -1034,6 +1052,7 @@ def _correctness(
                 prefill_store,
                 forward_pool_ensure,
                 qlen1_inline_plan,
+                decode_flush_scope,
                 decode_fp16_window_blocks,
                 decode_fp16_low_water_blocks,
             )
@@ -1088,6 +1107,7 @@ def _result(
     native_frontend: str = "reference",
     forward_pool_ensure: str = "always",
     qlen1_inline_plan: str = "reference",
+    decode_flush_scope: str = "per_row",
     decode_fp16_window_blocks: str = "0",
     decode_fp16_low_water_blocks: str = "0",
     decode_flush_batch_executed: bool = False,
@@ -1195,6 +1215,7 @@ def _result(
                         prefill_store,
                         forward_pool_ensure,
                         qlen1_inline_plan,
+                        decode_flush_scope,
                         decode_fp16_window_blocks,
                         decode_fp16_low_water_blocks,
                     )
@@ -1246,6 +1267,9 @@ def _result(
     )
     effective_qlen1_inline_plan = (
         "reference" if arm == "reference" else qlen1_inline_plan
+    )
+    effective_decode_flush_scope = (
+        "per_row" if arm == "reference" else decode_flush_scope
     )
     effective_decode_fp16_window_blocks = (
         "0" if arm == "reference" else decode_fp16_window_blocks
@@ -1314,6 +1338,7 @@ def _result(
                 "decode_fp16_window_blocks_expected": (
                     effective_decode_fp16_window_blocks
                 ),
+                "decode_flush_scope_expected": effective_decode_flush_scope,
                 "decode_fp16_low_water_blocks_expected": (
                     effective_decode_fp16_low_water_blocks
                 ),
@@ -1325,8 +1350,11 @@ def _result(
                 "decode_flush_batch_events": (
                     [
                         {
+                            "scope": effective_decode_flush_scope,
                             "high_water": int(effective_decode_fp16_window_blocks),
                             "low_water": int(effective_decode_fp16_low_water_blocks),
+                            "triggering_rows": 1,
+                            "flushed_rows": 4,
                             "flushed_pages": 4,
                         }
                     ]
@@ -1383,6 +1411,7 @@ def _result(
         "kvarn_native_frontend": effective_frontend,
         "kvarn_forward_pool_ensure": effective_forward_pool_ensure,
         "kvarn_qlen1_inline_plan": effective_qlen1_inline_plan,
+        "kvarn_decode_flush_scope": effective_decode_flush_scope,
         "kvarn_decode_fp16_low_water_blocks": (effective_decode_fp16_low_water_blocks),
         "kvarn_decode_fp16_window_blocks": effective_decode_fp16_window_blocks,
         "kvarn_decode_flush_batch_active_verified": decode_flush_batch_active,
@@ -1491,6 +1520,7 @@ def _result(
                     prefill_store,
                     forward_pool_ensure,
                     qlen1_inline_plan,
+                    decode_flush_scope,
                     decode_fp16_window_blocks,
                     decode_fp16_low_water_blocks,
                 )
@@ -1520,6 +1550,7 @@ def _log(
     native_frontend: str = "reference",
     forward_pool_ensure: str = "always",
     qlen1_inline_plan: str = "reference",
+    decode_flush_scope: str = "per_row",
     decode_fp16_window_blocks: str = "0",
     decode_fp16_low_water_blocks: str = "0",
     decode_flush_batch_executed: bool = False,
@@ -1563,9 +1594,10 @@ def _log(
         if decode_flush_batch_executed:
             lines.append(
                 "INFO [KVARN_DECODE_FLUSH_BATCH] "
+                f"scope={decode_flush_scope}; "
                 f"high_water={decode_fp16_window_blocks}; "
                 f"low_water={decode_fp16_low_water_blocks}; "
-                "flushed_pages=4; layer=test"
+                "triggering_rows=1; flushed_rows=4; flushed_pages=4; layer=test"
             )
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return path
@@ -1604,6 +1636,7 @@ def _arms(
     prefill_store: str = "reference",
     forward_pool_ensure: str = "always",
     qlen1_inline_plan: str = "reference",
+    decode_flush_scope: str = "per_row",
     decode_fp16_window_blocks: str = "0",
     decode_fp16_low_water_blocks: str = "0",
     decode_flush_batch_executed: bool = False,
@@ -1625,6 +1658,7 @@ def _arms(
         prefill_store=prefill_store,
         forward_pool_ensure=forward_pool_ensure,
         qlen1_inline_plan=qlen1_inline_plan,
+        decode_flush_scope=decode_flush_scope,
         decode_fp16_window_blocks=decode_fp16_window_blocks,
         decode_fp16_low_water_blocks=decode_fp16_low_water_blocks,
         decode_flush_batch_executed=decode_flush_batch_executed,
@@ -1655,6 +1689,7 @@ def _arms(
             native_frontend=native_frontend,
             forward_pool_ensure=forward_pool_ensure,
             qlen1_inline_plan=qlen1_inline_plan,
+            decode_flush_scope=decode_flush_scope,
             decode_fp16_window_blocks=decode_fp16_window_blocks,
             decode_fp16_low_water_blocks=decode_fp16_low_water_blocks,
             decode_flush_batch_executed=decode_flush_batch_executed,
@@ -1679,6 +1714,7 @@ def _arms(
             prefill_store=prefill_store,
             forward_pool_ensure=forward_pool_ensure,
             qlen1_inline_plan=qlen1_inline_plan,
+            decode_flush_scope=decode_flush_scope,
             decode_fp16_window_blocks=decode_fp16_window_blocks,
             decode_fp16_low_water_blocks=decode_fp16_low_water_blocks,
             decode_flush_batch_executed=decode_flush_batch_executed,
@@ -1710,6 +1746,7 @@ def _arms(
             prefill_store=prefill_store,
             forward_pool_ensure=forward_pool_ensure,
             qlen1_inline_plan=qlen1_inline_plan,
+            decode_flush_scope=decode_flush_scope,
             decode_fp16_window_blocks=decode_fp16_window_blocks,
             decode_fp16_low_water_blocks=decode_fp16_low_water_blocks,
             decode_flush_batch_executed=decode_flush_batch_executed,
@@ -1791,7 +1828,7 @@ def test_match_gate_accepts_qkv_candidate_with_unfused_reference(
         "native_materializer_persistent_scratch_shared_indices_"
             "reference_writer_reference_prefill_store_qkv_scatter_frontend_"
             "always_forward_pool_ensure_reference_qlen1_inline_plan_"
-            "decode_fp16_window_0_low_water_0"
+            "decode_fp16_window_0_low_water_0_flush_scope_per_row"
     )
     assert (
         "-shared-indices-reference-writer-reference-prefill-store-"
@@ -1808,12 +1845,15 @@ def test_formal_512_gate_records_decode_window_without_false_execution_claim(
             tmp_path,
             decode_fp16_window_blocks="20",
             decode_fp16_low_water_blocks="12",
+            decode_flush_scope="batch_cohort",
         )
     )
 
     assert result["status"] == "passed"
     assert result["candidate"]["arm"]["kvarn_decode_fp16_window_blocks"] == "20"
     assert result["candidate"]["arm"]["kvarn_decode_fp16_low_water_blocks"] == "12"
+    assert result["candidate"]["arm"]["kvarn_decode_flush_scope"] == "batch_cohort"
+    assert result["reference"]["arm"]["kvarn_decode_flush_scope"] == "per_row"
     assert (
         result["candidate"]["arm"]["kvarn_decode_flush_batch_active_verified"] is False
     )
@@ -1831,6 +1871,7 @@ def test_formal_512_gate_accepts_optional_decode_flush_execution_proof(
             tmp_path,
             decode_fp16_window_blocks="20",
             decode_fp16_low_water_blocks="12",
+            decode_flush_scope="batch_cohort",
             decode_flush_batch_executed=True,
         )
     )

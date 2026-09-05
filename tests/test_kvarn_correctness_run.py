@@ -263,6 +263,9 @@ def _service_environment(
             spec, args
         ),
         "KVARN_QLEN1_INLINE_PLAN": correctness.qlen1_inline_plan_for_spec(spec, args),
+        "KVARN_DECODE_FLUSH_SCOPE": correctness.decode_flush_scope_for_spec(
+            spec, args
+        ),
         "KVARN_DECODE_FP16_LOW_WATER_BLOCKS": (
             correctness.decode_fp16_low_water_blocks_for_spec(spec, args)
         ),
@@ -353,7 +356,7 @@ def test_dpas_mode_uses_separate_launchers_and_keeps_reference_natural(
         "per_layer-indices-reference-writer-reference-prefill-store-"
         "reference-frontend-always-forward-pool-ensure-"
         "qip-r-"
-        "dw0-lw0-eager_mnbt2048"
+        "dw0-lw0-dfs-r-eager_mnbt2048"
     )
     assert correctness.service_variant_provenance(reference, args)["variant_id"] == (
         "natural-kvarn-correctness-reference-eager_mnbt2048"
@@ -385,6 +388,7 @@ def test_runtime_factory_reuses_generic_launcher_but_preserves_triton_reference(
         forward_pool_ensure="fused_qkv_proof",
         decode_fp16_window_blocks=20,
         decode_fp16_low_water_blocks=12,
+        decode_flush_scope="batch_cohort",
         model="model",
         served_model="sunny-chat",
         model_revision="1" * 40,
@@ -414,6 +418,7 @@ def test_runtime_factory_reuses_generic_launcher_but_preserves_triton_reference(
     assert axes["KVARN_FACTORY_FORWARD_POOL_ENSURE"] == "fused_qkv_proof"
     assert axes["KVARN_FACTORY_DECODE_FP16_LOW_WATER_BLOCKS"] == "12"
     assert axes["KVARN_FACTORY_DECODE_FP16_WINDOW_BLOCKS"] == "20"
+    assert axes["KVARN_FACTORY_DECODE_FLUSH_SCOPE"] == "batch_cohort"
     assert axes["KVARN_FACTORY_KERNEL_VARIANT"] == "q6_page_pair"
     assert axes["KVARN_FACTORY_SPLIT_POLICY"] == "b70_q6"
     assert axes["KVARN_FACTORY_SPLITS"] is None
@@ -471,6 +476,7 @@ def test_qkv_frontend_is_native_only_and_reference_phase_is_unfused(
         forward_pool_ensure="fused_qkv_proof",
         decode_fp16_window_blocks=20,
         decode_fp16_low_water_blocks=12,
+        decode_flush_scope="batch_cohort",
         model="model",
         served_model="sunny-chat",
         model_revision="1" * 40,
@@ -489,10 +495,24 @@ def test_qkv_frontend_is_native_only_and_reference_phase_is_unfused(
     assert correctness.decode_fp16_window_blocks_for_spec(reference, args) == "0"
     assert correctness.decode_fp16_low_water_blocks_for_spec(native, args) == "12"
     assert correctness.decode_fp16_low_water_blocks_for_spec(reference, args) == "0"
+    assert correctness.decode_flush_scope_for_spec(native, args) == "batch_cohort"
+    assert correctness.decode_flush_scope_for_spec(reference, args) == "per_row"
     assert correctness.flush_writer_for_spec(native, args) == "native_xe2"
     assert correctness.flush_writer_for_spec(reference, args) == "reference"
     assert correctness.prefill_store_for_spec(native, args) == "hadamard_scatter"
     assert correctness.prefill_store_for_spec(reference, args) == "reference"
+    assert (
+        correctness.service_environment(native, args)[
+            "KVARN_FACTORY_DECODE_FLUSH_SCOPE"
+        ]
+        == "batch_cohort"
+    )
+    assert (
+        correctness.service_environment(reference, args)[
+            "KVARN_FACTORY_DECODE_FLUSH_SCOPE"
+        ]
+        == "per_row"
+    )
     assert (
         correctness.service_environment(native, args)[
             "KVARN_FACTORY_DECODE_FP16_LOW_WATER_BLOCKS"

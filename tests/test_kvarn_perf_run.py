@@ -73,6 +73,7 @@ PROFILE = {
     "native_frontend_environment": "reference",
     "forward_pool_ensure_environment": "always",
     "qlen1_inline_plan_environment": "reference",
+    "decode_flush_scope_environment": "per_row",
     "decode_fp16_low_water_blocks_environment": "0",
     "decode_fp16_window_blocks_environment": "0",
     "vllm_use_v2_model_runner_environment": "0",
@@ -119,6 +120,7 @@ def _args(tmp_path: Path) -> argparse.Namespace:
         native_frontend="reference",
         forward_pool_ensure="always",
         qlen1_inline_plan="reference",
+        decode_flush_scope="per_row",
         decode_fp16_low_water_blocks=0,
         decode_fp16_window_blocks=0,
         model=MODEL,
@@ -379,6 +381,7 @@ def test_exploratory_plan_session_has_no_formal_claims(
     assert session["promotable"] is False
     assert session["formal_gates_skipped"] is True
     assert session["service_controls"] == {
+        "kvarn_decode_flush_scope": "per_row",
         "kvarn_decode_fp16_low_water_blocks": "0",
         "kvarn_decode_fp16_window_blocks": "0",
         "kvarn_flush_index_materialization": "per_layer",
@@ -454,7 +457,7 @@ def test_commands_pin_launcher_and_deterministic_workload(tmp_path: Path) -> Non
             "native_materializer_persistent_scratch_per_layer_indices_"
             "reference_writer_reference_prefill_store_reference_frontend"
             "_always_forward_pool_ensure_reference_qlen1_inline_plan_"
-            "decode_fp16_window_0_low_water_0"
+            "decode_fp16_window_0_low_water_0_flush_scope_per_row"
         ),
         "scheduling_variant": "eager_mnbt2048",
         "variant_id": (
@@ -462,7 +465,7 @@ def test_commands_pin_launcher_and_deterministic_workload(tmp_path: Path) -> Non
             "per_layer-indices-reference-writer-reference-prefill-store-"
             "reference-frontend-always-forward-pool-ensure-"
             "qip-r-"
-            "dw0-lw0-eager_mnbt2048"
+            "dw0-lw0-dfs-r-eager_mnbt2048"
         ),
     }
     assert reference_variant["variant_id"] == "auto-control-eager_mnbt2048"
@@ -473,7 +476,8 @@ def test_commands_pin_launcher_and_deterministic_workload(tmp_path: Path) -> Non
     assert shared_variant["fusion_strategy"] == (
         "native_materializer_persistent_scratch_shared_indices_reference_writer_"
         "reference_prefill_store_reference_frontend_always_forward_pool_ensure_"
-        "reference_qlen1_inline_plan_decode_fp16_window_0_low_water_0"
+        "reference_qlen1_inline_plan_decode_fp16_window_0_low_water_0_"
+        "flush_scope_per_row"
     )
     assert (
         "-shared-indices-reference-writer-reference-prefill-store-"
@@ -978,6 +982,7 @@ def test_profile_verification_uses_actual_argv_and_environment(tmp_path: Path) -
         "KVARN_NATIVE_XPU_FRONTEND": "reference",
         "KVARN_FORWARD_POOL_ENSURE": "always",
         "KVARN_QLEN1_INLINE_PLAN": "reference",
+        "KVARN_DECODE_FLUSH_SCOPE": "per_row",
         "KVARN_DECODE_FP16_LOW_WATER_BLOCKS": "0",
         "KVARN_DECODE_FP16_WINDOW_BLOCKS": "0",
         "KVARN_NATIVE_XPU_KERNEL_VARIANT": "baseline",
@@ -1140,6 +1145,7 @@ def test_service_environment_pins_window_and_scrubs_full_defer(
     args.qlen1_inline_plan = "trusted_native"
     args.decode_fp16_window_blocks = 20
     args.decode_fp16_low_water_blocks = 12
+    args.decode_flush_scope = "batch_cohort"
     assert (
         runner.service_environment(run, args)["KVARN_FACTORY_NATIVE_XPU_FRONTEND"]
         == "qkv_scatter_inline"
@@ -1158,6 +1164,14 @@ def test_service_environment_pins_window_and_scrubs_full_defer(
         == "always"
     )
     assert "KVARN_FORWARD_POOL_ENSURE" not in runner.service_environment(run, args)
+    assert (
+        runner.service_environment(run, args)["KVARN_FACTORY_DECODE_FLUSH_SCOPE"]
+        == "batch_cohort"
+    )
+    assert (
+        runner.service_environment(reference, args)["KVARN_FACTORY_DECODE_FLUSH_SCOPE"]
+        == "per_row"
+    )
     assert (
         runner.service_environment(run, args)[
             "KVARN_FACTORY_DECODE_FP16_LOW_WATER_BLOCKS"
@@ -1202,12 +1216,14 @@ def test_runtime_factory_environment_carries_exact_per_process_axes(
     args.qlen1_inline_plan = "trusted_native"
     args.decode_fp16_window_blocks = 20
     args.decode_fp16_low_water_blocks = 12
+    args.decode_flush_scope = "batch_cohort"
     candidate = PlannedRun(Workload(65023, 4, 32, 4, 17), "candidate", 1)
     reference = PlannedRun(candidate.workload, "reference", 2)
 
     candidate_axes = runner.runtime_factory_axes_for_run(candidate, args)
     assert candidate_axes == {
         "KVARN_FACTORY_CACHE_LAYOUT": "xe2_dpas",
+        "KVARN_FACTORY_DECODE_FLUSH_SCOPE": "batch_cohort",
         "KVARN_FACTORY_DECODE_FP16_LOW_WATER_BLOCKS": "12",
         "KVARN_FACTORY_DECODE_FP16_WINDOW_BLOCKS": "20",
         "KVARN_FACTORY_FLUSH_INDEX_MATERIALIZATION": "shared",
@@ -1240,6 +1256,7 @@ def test_runtime_factory_environment_carries_exact_per_process_axes(
     assert candidate_environment["KVARN_FACTORY_PREFILL_STORE"] == "hadamard_scatter"
     assert runner.runtime_factory_axes_for_run(reference, args) == {
         "KVARN_FACTORY_CACHE_LAYOUT": "natural",
+        "KVARN_FACTORY_DECODE_FLUSH_SCOPE": "per_row",
         "KVARN_FACTORY_DECODE_FP16_LOW_WATER_BLOCKS": "0",
         "KVARN_FACTORY_DECODE_FP16_WINDOW_BLOCKS": "0",
         "KVARN_FACTORY_FLUSH_INDEX_MATERIALIZATION": "per_layer",
@@ -1282,6 +1299,17 @@ def test_decode_fp16_low_water_requires_a_valid_high_water_window(
 
     args.decode_fp16_low_water_blocks = 20
     assert runner.decode_fp16_low_water_blocks_environment(args) == "20"
+
+
+def test_decode_flush_scope_defaults_and_rejects_unknown_value(tmp_path: Path) -> None:
+    args = _args(tmp_path)
+
+    assert runner.decode_flush_scope_environment(args) == "per_row"
+    args.decode_flush_scope = "batch_cohort"
+    assert runner.decode_flush_scope_environment(args) == "batch_cohort"
+    args.decode_flush_scope = "global"
+    with pytest.raises(RunnerError, match="unsupported decode flush scope"):
+        runner.decode_flush_scope_environment(args)
 
 
 @pytest.mark.parametrize(
@@ -1604,13 +1632,15 @@ def test_decode_fp16_window_requires_workload_appropriate_execution_proof(
 
     engine_log.write_text(
         base + "INFO [KVARN_DECODE_FLUSH_BATCH] "
-        "high_water=20; low_water=12; flushed_pages=8; layer=0\n",
+        "scope=batch_cohort; high_water=20; low_water=12; "
+        "triggering_rows=1; flushed_rows=4; flushed_pages=8; layer=0\n",
         encoding="utf-8",
     )
     screening_scan = runner.validate_engine_log(
         engine_log,
         native=True,
         expected_frontend="reference",
+        expected_decode_flush_scope="batch_cohort",
         expected_decode_fp16_low_water_blocks="12",
         expected_decode_fp16_window_blocks="20",
         require_decode_flush_batch_execution=True,
@@ -1619,16 +1649,44 @@ def test_decode_fp16_window_requires_workload_appropriate_execution_proof(
     assert screening_scan["decode_flush_batch_execution_status"] == "verified"
     assert screening_scan["decode_flush_batch_active_verified"] is True
     assert screening_scan["decode_flush_batch_events"] == [
-        {"high_water": 20, "low_water": 12, "flushed_pages": 8}
+        {
+            "scope": "batch_cohort",
+            "high_water": 20,
+            "low_water": 12,
+            "triggering_rows": 1,
+            "flushed_rows": 4,
+            "flushed_pages": 8,
+        }
     ]
 
 
 @pytest.mark.parametrize(
     "marker",
     [
-        "high_water=19; low_water=12; flushed_pages=8;",
-        "high_water=20; low_water=11; flushed_pages=8;",
-        "high_water=20; low_water=12; flushed_pages=0;",
+        (
+            "scope=per_row; high_water=19; low_water=12; triggering_rows=1; "
+            "flushed_rows=1; flushed_pages=8;"
+        ),
+        (
+            "scope=per_row; high_water=20; low_water=11; triggering_rows=1; "
+            "flushed_rows=1; flushed_pages=8;"
+        ),
+        (
+            "scope=batch_cohort; high_water=20; low_water=12; triggering_rows=1; "
+            "flushed_rows=4; flushed_pages=8;"
+        ),
+        (
+            "scope=per_row; high_water=20; low_water=12; triggering_rows=0; "
+            "flushed_rows=1; flushed_pages=8;"
+        ),
+        (
+            "scope=per_row; high_water=20; low_water=12; triggering_rows=1; "
+            "flushed_rows=0; flushed_pages=8;"
+        ),
+        (
+            "scope=per_row; high_water=20; low_water=12; triggering_rows=1; "
+            "flushed_rows=1; flushed_pages=0;"
+        ),
     ],
 )
 def test_decode_fp16_window_rejects_mismatched_execution_marker(
@@ -1665,7 +1723,8 @@ def test_decode_fp16_window_zero_rejects_batch_marker_contamination(
         "Current kv cache memory in use is 10.92 GiB.\n"
         f"INFO {runner.NATIVE_DISPATCH} (direct bf16 output=True)\n"
         "INFO [KVARN_DECODE_FLUSH_BATCH] "
-        "high_water=20; low_water=16; flushed_pages=4;\n",
+        "scope=per_row; high_water=20; low_water=16; triggering_rows=1; "
+        "flushed_rows=1; flushed_pages=4;\n",
         encoding="utf-8",
     )
 

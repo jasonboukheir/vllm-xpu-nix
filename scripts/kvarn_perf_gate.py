@@ -76,9 +76,13 @@ QLEN1_INLINE_PLAN_IDS = {"reference": "qip-r", "trusted_native": "qip-t"}
 QLEN1_INLINE_PLAN_ACTIVE_MARKER = (
     "[KVARN_TRUSTED_QLEN1_INLINE] active=trusted_native;"
 )
+DECODE_FLUSH_SCOPES = ("per_row", "batch_cohort")
+DECODE_FLUSH_SCOPE_IDS = {"per_row": "dfs-r", "batch_cohort": "dfs-b"}
 DECODE_FLUSH_BATCH_MARKER_PATTERN = re.compile(
-    r"\[KVARN_DECODE_FLUSH_BATCH\] high_water=([0-9]+); "
-    r"low_water=([0-9]+); flushed_pages=([0-9]+)(?:;|\b)"
+    r"\[KVARN_DECODE_FLUSH_BATCH\] scope=(per_row|batch_cohort); "
+    r"high_water=([0-9]+); low_water=([0-9]+); "
+    r"triggering_rows=([0-9]+); flushed_rows=([0-9]+); "
+    r"flushed_pages=([0-9]+)(?:;|\b)"
 )
 FILTERED_SOURCE_SCHEME = "nix-filtered-source-store-hash-v1"
 NIX_STORE_HASH = re.compile(r"^[0-9abcdfghijklmnpqrsvwxyz]{32}$")
@@ -160,6 +164,8 @@ PRIMITIVE_SERVICE_ONLY_FIELDS = (
     "kvarn_decode_fp16_window_blocks",
     "decode_fp16_low_water_blocks",
     "kvarn_decode_fp16_low_water_blocks",
+    "decode_flush_scope",
+    "kvarn_decode_flush_scope",
     "decode_flush_batch_active_verified",
     "decode_flush_batch_events",
 )
@@ -241,6 +247,7 @@ def _candidate_variant_provenance(
     prefill_store: str = "reference",
     forward_pool_ensure: str = "always",
     qlen1_inline_plan: str = "reference",
+    decode_flush_scope: str = "per_row",
     decode_fp16_window_blocks: str = "0",
     decode_fp16_low_water_blocks: str = "0",
 ) -> dict[str, str]:
@@ -261,7 +268,8 @@ def _candidate_variant_provenance(
             f"{forward_pool_ensure}_forward_pool_ensure_"
             f"{qlen1_inline_plan}_qlen1_inline_plan_"
             f"decode_fp16_window_{decode_fp16_window_blocks}_"
-            f"low_water_{decode_fp16_low_water_blocks}"
+            f"low_water_{decode_fp16_low_water_blocks}_"
+            f"flush_scope_{decode_flush_scope}"
         ),
         "scheduling_variant": scheduling,
         "variant_id": (
@@ -272,7 +280,8 @@ def _candidate_variant_provenance(
             f"{forward_pool_ensure}-forward-pool-ensure-"
             f"{QLEN1_INLINE_PLAN_IDS[qlen1_inline_plan]}-"
             f"dw{decode_fp16_window_blocks}-"
-            f"lw{decode_fp16_low_water_blocks}-{scheduling}"
+            f"lw{decode_fp16_low_water_blocks}-"
+            f"{DECODE_FLUSH_SCOPE_IDS[decode_flush_scope]}-{scheduling}"
         ),
     }
 
@@ -311,6 +320,7 @@ def _correctness_phase_spec(
     prefill_store: str = "reference",
     forward_pool_ensure: str = "always",
     qlen1_inline_plan: str = "reference",
+    decode_flush_scope: str = "per_row",
     decode_fp16_window_blocks: str = "0",
     decode_fp16_low_water_blocks: str = "0",
 ) -> dict[str, Any]:
@@ -322,6 +332,7 @@ def _correctness_phase_spec(
     effective_prefill_store = prefill_store if spec["native"] else "reference"
     effective_forward_pool_ensure = forward_pool_ensure if spec["native"] else "always"
     effective_qlen1_inline_plan = qlen1_inline_plan if spec["native"] else "reference"
+    effective_decode_flush_scope = decode_flush_scope if spec["native"] else "per_row"
     effective_decode_fp16_window_blocks = (
         decode_fp16_window_blocks if spec["native"] else "0"
     )
@@ -370,6 +381,7 @@ def _correctness_phase_spec(
         prefill_store=effective_prefill_store,
         forward_pool_ensure=effective_forward_pool_ensure,
         qlen1_inline_plan=effective_qlen1_inline_plan,
+        decode_flush_scope=effective_decode_flush_scope,
         decode_fp16_window_blocks=effective_decode_fp16_window_blocks,
         decode_fp16_low_water_blocks=effective_decode_fp16_low_water_blocks,
         native_split_policy=selected_policy,
@@ -391,6 +403,7 @@ def _correctness_phase_spec(
             prefill_store,
             forward_pool_ensure,
             qlen1_inline_plan,
+            decode_flush_scope,
             decode_fp16_window_blocks,
             decode_fp16_low_water_blocks,
         )
@@ -490,6 +503,7 @@ ARM_PROVENANCE_FIELDS = (
     "kvarn_prefill_store",
     "kvarn_native_frontend",
     "kvarn_forward_pool_ensure",
+    "kvarn_decode_flush_scope",
     "kvarn_decode_fp16_low_water_blocks",
     "kvarn_decode_fp16_window_blocks",
     "kvarn_decode_flush_batch_active_verified",
@@ -520,12 +534,15 @@ class GateError(ValueError):
     """Raised when inputs do not form a valid matched comparison."""
 
 
-def _decode_flush_batch_events(text: str) -> list[dict[str, int]]:
+def _decode_flush_batch_events(text: str) -> list[dict[str, Any]]:
     return [
         {
-            "high_water": int(match.group(1)),
-            "low_water": int(match.group(2)),
-            "flushed_pages": int(match.group(3)),
+            "scope": match.group(1),
+            "high_water": int(match.group(2)),
+            "low_water": int(match.group(3)),
+            "triggering_rows": int(match.group(4)),
+            "flushed_rows": int(match.group(5)),
+            "flushed_pages": int(match.group(6)),
         }
         for match in DECODE_FLUSH_BATCH_MARKER_PATTERN.finditer(text)
     ]
@@ -534,12 +551,15 @@ def _decode_flush_batch_events(text: str) -> list[dict[str, int]]:
 def _validate_decode_flush_batch_events(
     value: Any,
     *,
+    expected_scope: str,
     expected_window: str,
     expected_low_water: str,
     expect_native: bool,
     owner: Path,
     require_execution: bool = True,
-) -> list[dict[str, int]]:
+) -> list[dict[str, Any]]:
+    if expected_scope not in DECODE_FLUSH_SCOPES:
+        raise GateError(f"{owner}: decode flush scope is unsupported")
     if not re.fullmatch(r"0|[1-9][0-9]*", expected_window):
         raise GateError(f"{owner}: decode FP16 window is unsupported")
     if not re.fullmatch(r"0|[1-9][0-9]*", expected_low_water):
@@ -557,9 +577,24 @@ def _validate_decode_flush_batch_events(
         (bool(value) and not expected_active)
         or (require_execution and expected_active and not value)
         or any(
-            set(item) != {"high_water", "low_water", "flushed_pages"}
+            set(item)
+            != {
+                "scope",
+                "high_water",
+                "low_water",
+                "triggering_rows",
+                "flushed_rows",
+                "flushed_pages",
+            }
+            or item["scope"] != expected_scope
             or item["high_water"] != expected_high_water
             or item["low_water"] != expected_low_water_value
+            or isinstance(item["triggering_rows"], bool)
+            or not isinstance(item["triggering_rows"], int)
+            or item["triggering_rows"] <= 0
+            or isinstance(item["flushed_rows"], bool)
+            or not isinstance(item["flushed_rows"], int)
+            or item["flushed_rows"] <= 0
             or isinstance(item["flushed_pages"], bool)
             or not isinstance(item["flushed_pages"], int)
             or item["flushed_pages"] <= 0
@@ -1144,6 +1179,7 @@ def _validate_correctness_phase(
     native_frontend: str,
     forward_pool_ensure: str,
     qlen1_inline_plan: str,
+    decode_flush_scope: str,
     decode_fp16_window_blocks: str,
     decode_fp16_low_water_blocks: str,
     request_stable_projection_rows: str,
@@ -1166,6 +1202,7 @@ def _validate_correctness_phase(
         prefill_store,
         forward_pool_ensure,
         qlen1_inline_plan,
+        decode_flush_scope,
         decode_fp16_window_blocks,
         decode_fp16_low_water_blocks,
     )
@@ -1201,6 +1238,7 @@ def _validate_correctness_phase(
     effective_prefill_store = expected_spec["prefill_store"]
     effective_forward_pool_ensure = expected_spec["forward_pool_ensure"]
     effective_qlen1_inline_plan = expected_spec["qlen1_inline_plan"]
+    effective_decode_flush_scope = expected_spec["decode_flush_scope"]
     effective_decode_fp16_window_blocks = expected_spec["decode_fp16_window_blocks"]
     effective_decode_fp16_low_water_blocks = expected_spec[
         "decode_fp16_low_water_blocks"
@@ -1223,6 +1261,7 @@ def _validate_correctness_phase(
     )
     phase_decode_flush_events = _validate_decode_flush_batch_events(
         phase.get("decode_flush_batch_events"),
+        expected_scope=effective_decode_flush_scope,
         expected_window=effective_decode_fp16_window_blocks,
         expected_low_water=effective_decode_fp16_low_water_blocks,
         expect_native=expected_spec["native"],
@@ -1261,6 +1300,7 @@ def _validate_correctness_phase(
         or phase.get("native_frontend") != effective_frontend
         or phase.get("forward_pool_ensure") != effective_forward_pool_ensure
         or phase.get("qlen1_inline_plan") != effective_qlen1_inline_plan
+        or phase.get("decode_flush_scope") != effective_decode_flush_scope
         or phase.get("decode_fp16_window_blocks") != effective_decode_fp16_window_blocks
         or phase.get("decode_fp16_low_water_blocks")
         != effective_decode_fp16_low_water_blocks
@@ -1338,6 +1378,8 @@ def _validate_correctness_phase(
         != effective_forward_pool_ensure
         or profile.get("qlen1_inline_plan_environment")
         != effective_qlen1_inline_plan
+        or profile.get("decode_flush_scope_environment")
+        != effective_decode_flush_scope
         or profile.get("decode_fp16_window_blocks_environment")
         != effective_decode_fp16_window_blocks
         or profile.get("decode_fp16_low_water_blocks_environment")
@@ -1371,6 +1413,8 @@ def _validate_correctness_phase(
         != effective_forward_pool_ensure
         or captured_environment.get("KVARN_QLEN1_INLINE_PLAN")
         != effective_qlen1_inline_plan
+        or captured_environment.get("KVARN_DECODE_FLUSH_SCOPE")
+        != effective_decode_flush_scope
         or captured_environment.get("KVARN_DECODE_FP16_WINDOW_BLOCKS")
         != effective_decode_fp16_window_blocks
         or captured_environment.get("KVARN_DECODE_FP16_LOW_WATER_BLOCKS")
@@ -1394,6 +1438,7 @@ def _validate_correctness_phase(
         != effective_decode_fp16_window_blocks
         or identity.get("decode_fp16_low_water_blocks")
         != effective_decode_fp16_low_water_blocks
+        or identity.get("decode_flush_scope") != effective_decode_flush_scope
         or identity.get("qlen1_inline_plan") != effective_qlen1_inline_plan
     ):
         raise GateError(f"{owner}: {phase_name} identity differs from the candidate")
@@ -1430,6 +1475,7 @@ def _validate_correctness_phase(
         raise GateError(f"{owner}: {phase_name} qlen1 plan runtime proof differs")
     log_decode_flush_events = _validate_decode_flush_batch_events(
         _decode_flush_batch_events(log_text),
+        expected_scope=effective_decode_flush_scope,
         expected_window=effective_decode_fp16_window_blocks,
         expected_low_water=effective_decode_fp16_low_water_blocks,
         expect_native=expected_spec["native"],
@@ -1445,6 +1491,7 @@ def _validate_correctness_phase(
     )
     scan_decode_flush_events = _validate_decode_flush_batch_events(
         log_scan.get("decode_flush_batch_events"),
+        expected_scope=effective_decode_flush_scope,
         expected_window=effective_decode_fp16_window_blocks,
         expected_low_water=effective_decode_fp16_low_water_blocks,
         expect_native=expected_spec["native"],
@@ -1501,6 +1548,8 @@ def _validate_correctness_phase(
         )
         or log_scan.get("decode_fp16_window_blocks_expected")
         != effective_decode_fp16_window_blocks
+        or log_scan.get("decode_flush_scope_expected")
+        != effective_decode_flush_scope
         or log_scan.get("decode_fp16_low_water_blocks_expected")
         != effective_decode_fp16_low_water_blocks
         or log_scan.get("decode_flush_batch_active_verified")
@@ -1532,6 +1581,7 @@ def validate_correctness_gate_evidence(
     native_frontend: str = "reference",
     forward_pool_ensure: str = "always",
     qlen1_inline_plan: str = "reference",
+    decode_flush_scope: str = "per_row",
     decode_fp16_window_blocks: str = "0",
     decode_fp16_low_water_blocks: str = "0",
     request_stable_projection_rows: str = "1",
@@ -1556,6 +1606,8 @@ def validate_correctness_gate_evidence(
         raise GateError(f"{path}: qlen1 inline plan is unsupported")
     if qlen1_inline_plan == "trusted_native" and native_frontend != "qkv_scatter_inline":
         raise GateError(f"{path}: trusted qlen1 plan requires qkv_scatter_inline")
+    if decode_flush_scope not in DECODE_FLUSH_SCOPES:
+        raise GateError(f"{path}: decode flush scope is unsupported")
     if not isinstance(decode_fp16_window_blocks, str) or not re.fullmatch(
         r"0|[1-9][0-9]*", decode_fp16_window_blocks
     ):
@@ -1685,6 +1737,7 @@ def validate_correctness_gate_evidence(
             native_frontend,
             forward_pool_ensure,
             qlen1_inline_plan,
+            decode_flush_scope,
             decode_fp16_window_blocks,
             decode_fp16_low_water_blocks,
             request_stable_projection_rows,
@@ -2340,6 +2393,9 @@ def _load_run(path: Path) -> Run:
         raise GateError(f"{path}: qlen1 inline plan is unsupported")
     if qlen1_inline_plan == "trusted_native" and frontend != "qkv_scatter_inline":
         raise GateError(f"{path}: trusted qlen1 plan requires qkv_scatter_inline")
+    decode_flush_scope = provenance["kvarn_decode_flush_scope"]
+    if decode_flush_scope not in DECODE_FLUSH_SCOPES:
+        raise GateError(f"{path}: decode flush scope is unsupported")
     decode_fp16_window_blocks = provenance["kvarn_decode_fp16_window_blocks"]
     if not re.fullmatch(r"0|[1-9][0-9]*", decode_fp16_window_blocks):
         raise GateError(f"{path}: decode FP16 window is unsupported")
@@ -2476,6 +2532,7 @@ def _load_run(path: Path) -> Run:
         raise GateError(f"{path}: engine-log scan SHA-256 differs")
     scan_decode_flush_events = _validate_decode_flush_batch_events(
         engine_log_scan.get("decode_flush_batch_events"),
+        expected_scope=decode_flush_scope,
         expected_window=decode_fp16_window_blocks,
         expected_low_water=decode_fp16_low_water_blocks,
         expect_native=native,
@@ -2517,6 +2574,7 @@ def _load_run(path: Path) -> Run:
             "kvarn_qlen1_inline_plan_active_log_marker"
         ],
         "decode_fp16_window_blocks_expected": decode_fp16_window_blocks,
+        "decode_flush_scope_expected": decode_flush_scope,
         "decode_fp16_low_water_blocks_expected": decode_fp16_low_water_blocks,
         "decode_flush_batch_active_verified": provenance[
             "kvarn_decode_flush_batch_active_verified"
@@ -2687,6 +2745,9 @@ def _load_correctness(path: Path) -> tuple[dict[str, Any], str]:
     if decode_fp16_low_water_blocks > decode_fp16_window_blocks:
         raise GateError(f"{path}: decode FP16 low-water exceeds the window")
     decode_fp16_low_water_blocks_text = str(decode_fp16_low_water_blocks)
+    decode_flush_scope = document.get("decode_flush_scope")
+    if decode_flush_scope not in DECODE_FLUSH_SCOPES:
+        raise GateError(f"{path}: decode flush scope is unsupported")
     service_controls = document.get("service_controls")
     correctness_onednn = (
         service_controls.get("kvarn_onednn_deterministic")
@@ -2724,6 +2785,7 @@ def _load_correctness(path: Path) -> tuple[dict[str, Any], str]:
     if correctness_qlen1_inline_plan != qlen1_inline_plan:
         raise GateError(f"{path}: correctness qlen1 plan selector is inconsistent")
     expected_service_controls = {
+        "kvarn_decode_flush_scope": decode_flush_scope,
         "kvarn_decode_fp16_low_water_blocks": decode_fp16_low_water_blocks_text,
         "kvarn_decode_fp16_window_blocks": decode_fp16_window_blocks_text,
         "kvarn_flush_index_materialization": flush_index_materialization,
@@ -2802,6 +2864,7 @@ def _load_correctness(path: Path) -> tuple[dict[str, Any], str]:
             prefill_store,
             forward_pool_ensure,
             qlen1_inline_plan,
+            decode_flush_scope,
             decode_fp16_window_blocks_text,
             decode_fp16_low_water_blocks_text,
         )
@@ -2820,6 +2883,7 @@ def _load_correctness(path: Path) -> tuple[dict[str, Any], str]:
         prefill_store,
         forward_pool_ensure,
         qlen1_inline_plan,
+        decode_flush_scope,
         decode_fp16_window_blocks_text,
         decode_fp16_low_water_blocks_text,
     )
@@ -2902,6 +2966,7 @@ def _load_correctness(path: Path) -> tuple[dict[str, Any], str]:
             native_frontend=native_frontend,
             forward_pool_ensure=forward_pool_ensure,
             qlen1_inline_plan=qlen1_inline_plan,
+            decode_flush_scope=decode_flush_scope,
             decode_fp16_window_blocks=decode_fp16_window_blocks_text,
             decode_fp16_low_water_blocks=decode_fp16_low_water_blocks_text,
             request_stable_projection_rows=correctness_projection_rows,
@@ -2976,6 +3041,7 @@ def _validate_logs(
     expected_frontend: str,
     expected_forward_pool_ensure: str,
     expected_qlen1_inline_plan: str,
+    expected_decode_flush_scope: str,
     expected_decode_fp16_window_blocks: str,
     expected_decode_fp16_low_water_blocks: str,
 ) -> list[dict[str, Any]]:
@@ -3021,6 +3087,8 @@ def _validate_logs(
     )
     if expected_qlen1_inline_plan not in QLEN1_INLINE_PLAN_VARIANTS:
         raise GateError(f"{arm} has an invalid qlen1-plan log expectation")
+    if expected_decode_flush_scope not in DECODE_FLUSH_SCOPES:
+        raise GateError(f"{arm} has an invalid decode-flush-scope expectation")
     if (
         expected_qlen1_inline_plan == "trusted_native"
         and expected_frontend != "qkv_scatter_inline"
@@ -3100,6 +3168,7 @@ def _validate_logs(
             raise GateError(f"{path}: {arm} qlen1 plan runtime proof differs")
         decode_flush_batch_events = _validate_decode_flush_batch_events(
             _decode_flush_batch_events(text),
+            expected_scope=expected_decode_flush_scope,
             expected_window=expected_decode_fp16_window_blocks,
             expected_low_water=expected_decode_fp16_low_water_blocks,
             expect_native=expect_native,
@@ -3153,6 +3222,7 @@ def _validate_logs(
                 "decode_fp16_window_blocks_expected": (
                     expected_decode_fp16_window_blocks
                 ),
+                "decode_flush_scope_expected": expected_decode_flush_scope,
                 "decode_fp16_low_water_blocks_expected": (
                     expected_decode_fp16_low_water_blocks
                 ),
@@ -3333,6 +3403,9 @@ def compare(
         )
     correctness_controls = correctness["service_controls"]
     benchmark_controls = {
+        "kvarn_decode_flush_scope": first_cand.provenance[
+            "kvarn_decode_flush_scope"
+        ],
         "kvarn_decode_fp16_low_water_blocks": first_cand.provenance[
             "kvarn_decode_fp16_low_water_blocks"
         ],
@@ -3414,6 +3487,8 @@ def compare(
         raise GateError("reference must use the conservative forward pool guard")
     if first_ref.provenance["kvarn_qlen1_inline_plan"] != "reference":
         raise GateError("reference must use the checked qlen1 plan")
+    if first_ref.provenance["kvarn_decode_flush_scope"] != "per_row":
+        raise GateError("reference must use per-row decode flushing")
     if first_ref.provenance["kvarn_decode_fp16_window_blocks"] != "0":
         raise GateError("reference must use immediate page flushes")
     if first_ref.provenance["kvarn_decode_fp16_low_water_blocks"] != "0":
@@ -3434,6 +3509,10 @@ def compare(
         != correctness["qlen1_inline_plan"]
     ):
         raise GateError("candidate qlen1 inline plan must match correctness")
+    if first_cand.provenance["kvarn_decode_flush_scope"] != correctness[
+        "decode_flush_scope"
+    ]:
+        raise GateError("candidate decode flush scope must match correctness")
     if first_cand.provenance["kvarn_decode_fp16_window_blocks"] != str(
         correctness["decode_fp16_window_blocks"]
     ):
@@ -3558,6 +3637,7 @@ def compare(
         expected_frontend="reference",
         expected_forward_pool_ensure="always",
         expected_qlen1_inline_plan="reference",
+        expected_decode_flush_scope="per_row",
         expected_decode_fp16_window_blocks="0",
         expected_decode_fp16_low_water_blocks="0",
     )
@@ -3569,6 +3649,7 @@ def compare(
         expected_frontend=correctness["native_frontend"],
         expected_forward_pool_ensure=correctness["forward_pool_ensure"],
         expected_qlen1_inline_plan=correctness["qlen1_inline_plan"],
+        expected_decode_flush_scope=correctness["decode_flush_scope"],
         expected_decode_fp16_window_blocks=str(
             correctness["decode_fp16_window_blocks"]
         ),

@@ -414,6 +414,7 @@ def variant_provenance(
     qlen1_inline_plan = perf.qlen1_inline_plan_for_run(run, args)
     decode_window = perf.decode_fp16_window_blocks_for_run(run, args)
     decode_low_water = perf.decode_fp16_low_water_blocks_for_run(run, args)
+    decode_flush_scope = perf.decode_flush_scope_for_run(run, args)
     if run.arm == "reference":
         kernel_strategy = "auto_vllm_backend"
         fusion_selection = "backend_default"
@@ -429,7 +430,8 @@ def variant_provenance(
             f"{native_frontend}_frontend_"
             f"{forward_pool_ensure}_forward_pool_ensure_"
             f"{qlen1_inline_plan}_qlen1_inline_plan_"
-            f"decode_fp16_window_{decode_window}_low_water_{decode_low_water}"
+            f"decode_fp16_window_{decode_window}_low_water_{decode_low_water}_"
+            f"flush_scope_{decode_flush_scope}"
         )
         scheduling_selection = "split_k"
         generated_id = (
@@ -440,6 +442,7 @@ def variant_provenance(
             f"{forward_pool_ensure}-forward-pool-ensure-"
             f"{perf.QLEN1_INLINE_PLAN_IDS[qlen1_inline_plan]}-"
             f"dw{decode_window}-lw{decode_low_water}-"
+            f"{perf.DECODE_FLUSH_SCOPE_IDS[decode_flush_scope]}-"
             f"b{run.workload.batch}"
         )
     variant_id = args.variant_id or generated_id
@@ -458,6 +461,7 @@ def variant_provenance(
         "native_frontend": native_frontend,
         "forward_pool_ensure": forward_pool_ensure,
         "qlen1_inline_plan": qlen1_inline_plan,
+        "decode_flush_scope": decode_flush_scope,
         "decode_fp16_low_water_blocks": decode_low_water,
         "decode_fp16_window_blocks": decode_window,
         "request_stable_projection_rows": (
@@ -674,6 +678,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         "native_frontend": native_frontend,
         "forward_pool_ensure": forward_pool_ensure,
         "qlen1_inline_plan": qlen1_inline_plan,
+        "decode_flush_scope": perf.decode_flush_scope_for_run(run, args),
         "decode_fp16_low_water_blocks": (
             perf.decode_fp16_low_water_blocks_for_run(run, args)
         ),
@@ -729,6 +734,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         identity["decode_fp16_low_water_blocks"] = (
             perf.decode_fp16_low_water_blocks_for_run(run, args)
         )
+        identity["decode_flush_scope"] = perf.decode_flush_scope_for_run(run, args)
         identity["qlen1_inline_plan"] = qlen1_inline_plan
         perf.write_json_atomic(run_dir / "candidate-identity.json", identity)
 
@@ -803,6 +809,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             expected_frontend=native_frontend,
             expected_forward_pool_ensure=forward_pool_ensure,
             expected_qlen1_inline_plan=qlen1_inline_plan,
+            expected_decode_flush_scope=perf.decode_flush_scope_for_run(run, args),
             expected_decode_fp16_low_water_blocks=(
                 perf.decode_fp16_low_water_blocks_for_run(run, args)
             ),
@@ -866,6 +873,10 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
                 ],
                 "forward_pool_ensure_environment": service_profile[
                     "forward_pool_ensure_environment"
+                ],
+                "decode_flush_scope": perf.decode_flush_scope_for_run(run, args),
+                "decode_flush_scope_environment": service_profile[
+                    "decode_flush_scope_environment"
                 ],
                 "decode_fp16_low_water_blocks": (
                     perf.decode_fp16_low_water_blocks_for_run(run, args)
@@ -969,6 +980,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             native_frontend=native_frontend,
             forward_pool_ensure=forward_pool_ensure,
             qlen1_inline_plan=qlen1_inline_plan,
+            decode_flush_scope=perf.decode_flush_scope_for_run(run, args),
             decode_fp16_low_water_blocks=(
                 perf.decode_fp16_low_water_blocks_for_run(run, args)
             ),
@@ -1103,6 +1115,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--decode-flush-scope",
+        choices=perf.DECODE_FLUSH_SCOPES,
+        default=perf.DEFAULT_DECODE_FLUSH_SCOPE,
+        help=(
+            "qlen=1 decode flush coordination scope for the candidate; "
+            "the auto reference is pinned to per_row"
+        ),
+    )
+    parser.add_argument(
         "--flush-index-materialization",
         choices=perf.FLUSH_INDEX_MATERIALIZATION_VARIANTS,
         default="per_layer",
@@ -1215,6 +1236,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         perf.forward_pool_ensure_environment(args)
         perf.qlen1_inline_plan_environment(args)
         perf.decode_fp16_low_water_blocks_environment(args)
+        perf.decode_flush_scope_environment(args)
         if perf.launcher_mode(args) != "runtime-factory" and (
             not args.request_stable_projection_rows or not args.request_stable_rmsnorm
         ):

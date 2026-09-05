@@ -23,10 +23,13 @@ from scripts.kvarn_perf_run import (
     abba_arms,
     benchmark_command,
     build_plan,
+    configured_max_num_seqs_for_run,
     gate_workload,
     native_splits_for_run,
     paired_noninferiority,
     parse_running_metric,
+    parse_scheduler_metrics,
+    parse_startup_capacity,
     persist_warmup_result,
     pooled_tail_latency,
     probe_xpu_hardware,
@@ -56,6 +59,7 @@ IDENTITY = {
     "candidate_closure_sha256": "b" * 64,
 }
 PROFILE = {
+    "max_num_seqs": "1",
     "max_num_batched_tokens": "2048",
     "canonical_matched_profile_sha256": "3" * 64,
     "native_layout": "natural",
@@ -115,6 +119,7 @@ def _args(tmp_path: Path) -> argparse.Namespace:
         native_kernel_variant="baseline",
         native_split_policy="fixed",
         max_model_len=65536,
+        max_num_seqs=None,
         max_num_batched_tokens=2048,
         onednn_deterministic=True,
         flush_index_materialization="per_layer",
@@ -174,6 +179,46 @@ def _raw_result(path: Path, *, throughput: float, workload: Workload) -> Path:
         encoding="utf-8",
     )
     return path
+
+
+def _scheduler_evidence(
+    path: Path, *, offered: int, configured: int, peak: float | None = None
+) -> tuple[dict[str, object], Path]:
+    sample = {
+        "at": "2026-09-05T00:00:00Z",
+        "elapsed_seconds": 0.0,
+        "running": float(offered if peak is None else peak),
+        "waiting": 0.0,
+        "kv_cache_usage_perc": 0.5,
+        "preemptions_total": 0.0,
+    }
+    summary = runner.scheduler_summary(
+        [sample], [], offered, configured_max_num_seqs=configured
+    )
+    runner.write_json_atomic(path, summary)
+    return summary, path
+
+
+def _startup_capacity_evidence(
+    path: Path, *, offered: int, configured: int, maximum: float | None = None
+) -> tuple[dict[str, object], Path]:
+    maximum = float(configured if maximum is None else maximum)
+    capacity = {
+        "schema_version": 1,
+        "source": "vllm-engine-startup-log",
+        "kv_cache_tokens": 65536 * configured,
+        "request_tokens": 65536,
+        "maximum_concurrency": maximum,
+        "log_marker": (
+            f"GPU KV cache size: {65536 * configured:,} tokens, Maximum "
+            f"concurrency for 65,536 tokens per request: {maximum:.2f}x"
+        ),
+        "offered_concurrency": offered,
+        "configured_max_num_seqs": configured,
+        "capacity_covers_offered": maximum >= offered,
+    }
+    runner.write_json_atomic(path, capacity)
+    return capacity, path
 
 
 def test_plan_repeats_abba_independently_for_every_cell() -> None:
@@ -439,6 +484,15 @@ def test_commands_pin_launcher_and_deterministic_workload(tmp_path: Path) -> Non
     assert warmup[warmup.index("--result-dir") + 1] == str(warmup_raw.parent)
     assert warmup[warmup.index("--result-filename") + 1] == warmup_raw.name
 
+    args.max_num_seqs = 4
+    b1 = PlannedRun(Workload(4096, 1, 32, 1, 17), "candidate", 1)
+    b1_service = service_command(b1, args)
+    b1_benchmark = benchmark_command(b1, args, raw)
+    assert configured_max_num_seqs_for_run(b1, args) == 4
+    assert "-b4" in b1_service[3]
+    assert b1_benchmark[b1_benchmark.index("--max-concurrency") + 1] == "1"
+    args.max_num_seqs = None
+
     args.native_layout = "xe2_dpas"
     args.native_kernel_variant = "q6_scalar"
     assert (
@@ -629,6 +683,26 @@ def test_scheduler_budget_cli_defaults_overrides_and_rejects_zero(
             "4096",
         ]
     )
+    explicit_width = runner.parse_args(
+        [
+            *common,
+            "--output-dir",
+            str(tmp_path / "explicit-width-output"),
+            "--max-num-seqs",
+            "4",
+        ]
+    )
+    explicit_client = runner.parse_args(
+        [
+            *common,
+            "--output-dir",
+            str(tmp_path / "explicit-client-output"),
+            "--client-concurrency",
+            "1",
+            "--client-concurrency",
+            "4",
+        ]
+    )
     nondeterministic = runner.parse_args(
         [
             *common,
@@ -661,6 +735,9 @@ def test_scheduler_budget_cli_defaults_overrides_and_rejects_zero(
     )
 
     assert default.max_num_batched_tokens == 2048
+    assert default.max_num_seqs is None
+    assert explicit_width.max_num_seqs == 4
+    assert explicit_client.batch == [1, 4]
     assert default.onednn_deterministic is True
     assert default.request_stable_projection_rows is True
     assert default.request_stable_rmsnorm is True
@@ -724,6 +801,16 @@ def test_scheduler_budget_cli_defaults_overrides_and_rejects_zero(
                 str(tmp_path / "invalid-output"),
                 "--max-num-batched-tokens",
                 "0",
+            ]
+        )
+    with pytest.raises(SystemExit):
+        runner.parse_args(
+            [
+                *common,
+                "--output-dir",
+                str(tmp_path / "undersized-max-num-seqs"),
+                "--max-num-seqs",
+                "1",
             ]
         )
     with pytest.raises(SystemExit):
@@ -943,6 +1030,66 @@ def test_scheduler_metric_sums_labeled_workers() -> None:
     )
     with pytest.raises(RunnerError, match="missing"):
         parse_running_metric("vllm:num_requests_waiting 0\n")
+
+
+def test_scheduler_metrics_and_summary_cover_capacity_pressure() -> None:
+    text = """
+vllm:num_requests_running{engine="0"} 2
+vllm:num_requests_waiting{engine="0"} 2
+vllm:kv_cache_usage_perc{engine="0"} 0.97
+vllm:num_preemptions_total{engine="0"} 3
+"""
+    assert parse_scheduler_metrics(text) == {
+        "vllm:num_requests_running": 2,
+        "vllm:num_requests_waiting": 2,
+        "vllm:kv_cache_usage_perc": 0.97,
+        "vllm:num_preemptions_total": 3,
+    }
+    samples = [
+        {
+            "at": "2026-09-05T00:00:00Z",
+            "elapsed_seconds": 0.0,
+            "running": 0,
+            "waiting": 0,
+            "kv_cache_usage_perc": 0.0,
+            "preemptions_total": 1,
+        },
+        {
+            "at": "2026-09-05T00:00:01Z",
+            "elapsed_seconds": 1.0,
+            "running": 2,
+            "waiting": 2,
+            "kv_cache_usage_perc": 0.97,
+            "preemptions_total": 3,
+        },
+    ]
+    summary = runner.scheduler_summary(
+        samples, [], 4, configured_max_num_seqs=4
+    )
+    assert summary["sampling_scope"] == "full-client-process-lifetime"
+    assert summary["peak_running"] == 2
+    assert summary["peak_waiting"] == 2
+    assert summary["peak_kv_cache_usage_perc"] == 0.97
+    assert summary["preemptions_total_delta"] == 2
+    assert summary["required_overlap_observed"] is False
+    assert summary["capture_complete"] is True
+
+
+def test_startup_capacity_is_explicit_and_bound_to_model_length() -> None:
+    parsed = parse_startup_capacity(
+        "GPU KV cache size: 172,631 tokens, Maximum concurrency for "
+        "65,536 tokens per request: 2.63x",
+        expected_request_tokens=65536,
+    )
+    assert parsed["kv_cache_tokens"] == 172631
+    assert parsed["request_tokens"] == 65536
+    assert parsed["maximum_concurrency"] == 2.63
+    with pytest.raises(RunnerError, match="differs from max-model-len"):
+        parse_startup_capacity(
+            "GPU KV cache size: 172,631 tokens, Maximum concurrency for "
+            "65,536 tokens per request: 2.63x",
+            expected_request_tokens=262144,
+        )
 
 
 def test_profile_verification_uses_actual_argv_and_environment(tmp_path: Path) -> None:
@@ -2112,6 +2259,7 @@ def test_sealed_results_are_directly_perf_gate_compatible(tmp_path: Path) -> Non
         planned_run = PlannedRun(workload, arm, order)
         profile = {
             **PROFILE,
+            "max_num_seqs": "4",
             "native_layout": "xe2_dpas" if native else "natural",
             "native_layout_environment": "1" if native else "0",
             "native_cache_layout_environment": "xe2_dpas" if native else "natural",
@@ -2122,6 +2270,15 @@ def test_sealed_results_are_directly_perf_gate_compatible(tmp_path: Path) -> Non
             "native_split_policy_environment": "b70_q6" if native else "fixed",
             "variant_provenance": variant_provenance_for_run(planned_run, args),
         }
+        warmup_scheduler, warmup_scheduler_path = _scheduler_evidence(
+            run_dir / "warmup-scheduler-metrics.json", offered=4, configured=4
+        )
+        scheduler, scheduler_path = _scheduler_evidence(
+            run_dir / "scheduler-metrics.json", offered=4, configured=4
+        )
+        startup_capacity, startup_capacity_path = _startup_capacity_evidence(
+            run_dir / "startup-capacity.json", offered=4, configured=4
+        )
         persist_warmup_result(
             raw_result=warmup_raw,
             output=warmup_result,
@@ -2145,6 +2302,11 @@ def test_sealed_results_are_directly_perf_gate_compatible(tmp_path: Path) -> Non
             run_uuid=f"run-{order}",
             identity=IDENTITY,
             profile=profile,
+            configured_max_num_seqs=4,
+            scheduler=warmup_scheduler,
+            scheduler_path=warmup_scheduler_path,
+            startup_capacity=startup_capacity,
+            startup_capacity_path=startup_capacity_path,
         )
         output = run_dir / "benchmark.json"
         sealed = seal_benchmark_result(
@@ -2156,12 +2318,15 @@ def test_sealed_results_are_directly_perf_gate_compatible(tmp_path: Path) -> Non
             args=args,
             candidate_id=candidate_id,
             correctness_sha256=correctness_sha256,
-            scheduler={"peak_running": 4},
+            scheduler=scheduler,
             run_uuid=f"run-{order}",
             started_at=f"2026-08-31T00:00:{order:02d}Z",
             identity=IDENTITY,
             profile=profile,
             warmup_result=warmup_result,
+            scheduler_path=scheduler_path,
+            startup_capacity=startup_capacity,
+            startup_capacity_path=startup_capacity_path,
         )
         assert (
             sealed["kvarn_engine_log_sha256"]
@@ -2251,6 +2416,12 @@ def test_exploratory_seal_omits_formal_correctness_provenance(
     )
 
     planned_run = PlannedRun(workload, "reference", 1)
+    scheduler, scheduler_path = _scheduler_evidence(
+        tmp_path / "scheduler-metrics.json", offered=1, configured=1
+    )
+    startup_capacity, startup_capacity_path = _startup_capacity_evidence(
+        tmp_path / "startup-capacity.json", offered=1, configured=1
+    )
     sealed = seal_benchmark_result(
         raw_result=raw,
         output=tmp_path / "benchmark.json",
@@ -2260,7 +2431,7 @@ def test_exploratory_seal_omits_formal_correctness_provenance(
         args=args,
         candidate_id=None,
         correctness_sha256=None,
-        scheduler={"peak_running": 1},
+        scheduler=scheduler,
         run_uuid="exploratory-run",
         started_at="2026-09-03T00:00:00Z",
         identity=IDENTITY,
@@ -2269,6 +2440,9 @@ def test_exploratory_seal_omits_formal_correctness_provenance(
             "variant_provenance": variant_provenance_for_run(planned_run, args),
         },
         warmup_result=None,
+        scheduler_path=scheduler_path,
+        startup_capacity=startup_capacity,
+        startup_capacity_path=startup_capacity_path,
     )
 
     assert sealed["kvarn_evidence_mode"] == "exploratory"
@@ -2301,6 +2475,12 @@ def test_seal_rejects_tampered_engine_log_scan(tmp_path: Path) -> None:
     engine_log_scan = tmp_path / "engine-log-scan.json"
     engine_log_scan.write_text(json.dumps(scan), encoding="utf-8")
     planned_run = PlannedRun(workload, "reference", 1)
+    scheduler, scheduler_path = _scheduler_evidence(
+        tmp_path / "scheduler-metrics.json", offered=1, configured=1
+    )
+    startup_capacity, startup_capacity_path = _startup_capacity_evidence(
+        tmp_path / "startup-capacity.json", offered=1, configured=1
+    )
 
     with pytest.raises(RunnerError, match="differs from the verified engine log"):
         seal_benchmark_result(
@@ -2312,7 +2492,7 @@ def test_seal_rejects_tampered_engine_log_scan(tmp_path: Path) -> None:
             args=args,
             candidate_id=None,
             correctness_sha256=None,
-            scheduler={"peak_running": 1},
+            scheduler=scheduler,
             run_uuid="tampered-scan",
             started_at="2026-09-03T00:00:00Z",
             identity=IDENTITY,
@@ -2321,6 +2501,9 @@ def test_seal_rejects_tampered_engine_log_scan(tmp_path: Path) -> None:
                 "variant_provenance": variant_provenance_for_run(planned_run, args),
             },
             warmup_result=None,
+            scheduler_path=scheduler_path,
+            startup_capacity=startup_capacity,
+            startup_capacity_path=startup_capacity_path,
         )
 
 
@@ -2783,6 +2966,39 @@ def test_warmup_result_is_validated_and_persisted(tmp_path: Path) -> None:
     workload = Workload(4096, 1, 4, 1, 17)
     raw = _raw_result(tmp_path / "warmup.raw.json", throughput=100.0, workload=workload)
     output = tmp_path / "warmup.json"
+    scheduler_path = tmp_path / "warmup-scheduler-metrics.json"
+    scheduler = runner.scheduler_summary(
+        [
+            {
+                "at": "2026-09-05T00:00:00Z",
+                "elapsed_seconds": 0.0,
+                "running": 1,
+                "waiting": 0,
+                "kv_cache_usage_perc": 0.5,
+                "preemptions_total": 0,
+            }
+        ],
+        [],
+        1,
+        configured_max_num_seqs=1,
+    )
+    runner.write_json_atomic(scheduler_path, scheduler)
+    startup_capacity_path = tmp_path / "startup-capacity.json"
+    startup_capacity = {
+        "schema_version": 1,
+        "source": "vllm-engine-startup-log",
+        "kv_cache_tokens": 65536,
+        "request_tokens": 65536,
+        "maximum_concurrency": 1.0,
+        "log_marker": (
+            "GPU KV cache size: 65,536 tokens, Maximum concurrency for "
+            "65,536 tokens per request: 1.00x"
+        ),
+        "offered_concurrency": 1,
+        "configured_max_num_seqs": 1,
+        "capacity_covers_offered": True,
+    }
+    runner.write_json_atomic(startup_capacity_path, startup_capacity)
 
     result = persist_warmup_result(
         raw_result=raw,
@@ -2793,11 +3009,27 @@ def test_warmup_result_is_validated_and_persisted(tmp_path: Path) -> None:
         run_uuid="warmup-run",
         identity=IDENTITY,
         profile=PROFILE,
+        configured_max_num_seqs=1,
+        scheduler=scheduler,
+        scheduler_path=scheduler_path,
+        startup_capacity=startup_capacity,
+        startup_capacity_path=startup_capacity_path,
     )
 
     assert result["status"] == "passed"
     assert result["raw_result_sha256"] == hashlib.sha256(raw.read_bytes()).hexdigest()
     assert result["process_closure_sha256"] == IDENTITY["process_closure_sha256"]
+    assert result["concurrency_evidence"] == {
+        "offered_client_concurrency": 1,
+        "observed_client_concurrency": 1,
+        "configured_max_num_seqs": 1,
+        "scheduler_peak_running": 1.0,
+        "client_concurrency_is_residency_proof": False,
+        "residency_semantics": (
+            "startup capacity and sampled scheduler occupancy are recorded "
+            "separately; client in-flight concurrency is not simultaneous KV residency"
+        ),
+    }
     assert "secret" not in output.read_text(encoding="utf-8")
 
 

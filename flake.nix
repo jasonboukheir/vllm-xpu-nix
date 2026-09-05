@@ -66,6 +66,14 @@
             config.allowUnfree = true;
             overlays = [ (import ./nix/python-test-workarounds-overlay.nix) ];
           };
+          sourceRevision =
+            source:
+            if source ? rev then
+              source.rev
+            else if source ? dirtyRev then
+              source.dirtyRev
+            else
+              "dirty";
 
           # ---- source narrowing + version stamping ----
           mkKernelsSrc = import ./nix/lib/kernels-src.nix { inherit (pkgs) lib; };
@@ -176,23 +184,23 @@
           stableLibs = mkKernelLibs {
             src = vllm-xpu-kernels-src';
             version = kernelsStableVersion;
-            sourceRevision = vllm-xpu-kernels-src.rev;
+            sourceRevision = sourceRevision vllm-xpu-kernels-src;
           };
           unstableLibs = mkKernelLibs {
             src = vllm-xpu-kernels-unstable-src';
             version = kernelsUnstableVersion;
-            sourceRevision = vllm-xpu-kernels-unstable-src.rev;
+            sourceRevision = sourceRevision vllm-xpu-kernels-unstable-src;
           };
 
           vllm-xpu-kernels = mkVllmXpuKernels {
             src = vllm-xpu-kernels-src';
             version = kernelsStableVersion;
-            sourceRevision = vllm-xpu-kernels-src.rev;
+            sourceRevision = sourceRevision vllm-xpu-kernels-src;
           };
           vllm-xpu-kernels-unstable = mkVllmXpuKernels {
             src = vllm-xpu-kernels-unstable-src';
             version = kernelsUnstableVersion;
-            sourceRevision = vllm-xpu-kernels-unstable-src.rev;
+            sourceRevision = sourceRevision vllm-xpu-kernels-unstable-src;
           };
 
           mkVllm = import ./nix/mk-vllm.nix {
@@ -335,9 +343,9 @@
               exec ${kvarnFactoryPython}/bin/python \
                 ${./scripts/kvarn_factory_host.py} \
                 ${vllm-xpu-kvarn-factory} \
-                ${self.rev} \
-                ${vllm-xpu-unstable-src.rev} \
-                ${vllm-xpu-kernels-unstable-src.rev} \
+                ${sourceRevision self} \
+                ${sourceRevision vllm-xpu-unstable-src} \
+                ${sourceRevision vllm-xpu-kernels-unstable-src} \
                 "$@" \
                 --expected-native-attention-output \
                 ${kvarnFactoryAttentionLibrary} \

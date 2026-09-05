@@ -75,7 +75,6 @@ DECODE_FLUSH_BATCH_MARKER_PATTERN = re.compile(
     r"\[KVARN_DECODE_FLUSH_BATCH\] high_water=([0-9]+); "
     r"low_water=([0-9]+); flushed_pages=([0-9]+)(?:;|\b)"
 )
-DECODE_FLUSH_LOW_WATER = 16
 FILTERED_SOURCE_SCHEME = "nix-filtered-source-store-hash-v1"
 NIX_STORE_HASH = re.compile(r"^[0-9abcdfghijklmnpqrsvwxyz]{32}$")
 DEFAULT_NATIVE_SPLITS = {1: 24, 4: 16}
@@ -148,6 +147,8 @@ PRIMITIVE_SERVICE_ONLY_FIELDS = (
     "forward_pool_ensure_log_marker",
     "decode_fp16_window_blocks",
     "kvarn_decode_fp16_window_blocks",
+    "decode_fp16_low_water_blocks",
+    "kvarn_decode_fp16_low_water_blocks",
     "decode_flush_batch_active_verified",
     "decode_flush_batch_events",
 )
@@ -229,6 +230,7 @@ def _candidate_variant_provenance(
     prefill_store: str = "reference",
     forward_pool_ensure: str = "always",
     decode_fp16_window_blocks: str = "0",
+    decode_fp16_low_water_blocks: str = "0",
 ) -> dict[str, str]:
     selected_splits = DEFAULT_NATIVE_SPLITS if native_splits is None else native_splits
     split_policy = native_split_policy
@@ -245,7 +247,8 @@ def _candidate_variant_provenance(
             f"{flush_index_materialization}_indices_{flush_writer}_writer_"
             f"{prefill_store}_prefill_store_{native_frontend}_frontend_"
             f"{forward_pool_ensure}_forward_pool_ensure_"
-            f"decode_fp16_window_{decode_fp16_window_blocks}"
+            f"decode_fp16_window_{decode_fp16_window_blocks}_"
+            f"low_water_{decode_fp16_low_water_blocks}"
         ),
         "scheduling_variant": scheduling,
         "variant_id": (
@@ -254,7 +257,8 @@ def _candidate_variant_provenance(
             f"{flush_writer}-writer-{prefill_store}-prefill-store-"
             f"{native_frontend}-frontend-"
             f"{forward_pool_ensure}-forward-pool-ensure-"
-            f"decode-fp16-window-{decode_fp16_window_blocks}-{scheduling}"
+            f"dw{decode_fp16_window_blocks}-"
+            f"lw{decode_fp16_low_water_blocks}-{scheduling}"
         ),
     }
 
@@ -293,6 +297,7 @@ def _correctness_phase_spec(
     prefill_store: str = "reference",
     forward_pool_ensure: str = "always",
     decode_fp16_window_blocks: str = "0",
+    decode_fp16_low_water_blocks: str = "0",
 ) -> dict[str, Any]:
     spec = dict(CORRECTNESS_PHASE_SPECS[phase_name])
     selected_splits = DEFAULT_NATIVE_SPLITS if native_splits is None else native_splits
@@ -303,6 +308,9 @@ def _correctness_phase_spec(
     effective_forward_pool_ensure = forward_pool_ensure if spec["native"] else "always"
     effective_decode_fp16_window_blocks = (
         decode_fp16_window_blocks if spec["native"] else "0"
+    )
+    effective_decode_fp16_low_water_blocks = (
+        decode_fp16_low_water_blocks if spec["native"] else "0"
     )
     effective_projection_rows = (
         request_stable_projection_rows if spec["native"] else "1"
@@ -346,6 +354,7 @@ def _correctness_phase_spec(
         prefill_store=effective_prefill_store,
         forward_pool_ensure=effective_forward_pool_ensure,
         decode_fp16_window_blocks=effective_decode_fp16_window_blocks,
+        decode_fp16_low_water_blocks=effective_decode_fp16_low_water_blocks,
         native_split_policy=selected_policy,
         native_split_policy_contract=policy_contract,
         max_decode_splits=max_splits,
@@ -365,6 +374,7 @@ def _correctness_phase_spec(
             prefill_store,
             forward_pool_ensure,
             decode_fp16_window_blocks,
+            decode_fp16_low_water_blocks,
         )
         if spec["native"]
         else _correctness_reference_variant_provenance()
@@ -462,6 +472,7 @@ ARM_PROVENANCE_FIELDS = (
     "kvarn_prefill_store",
     "kvarn_native_frontend",
     "kvarn_forward_pool_ensure",
+    "kvarn_decode_fp16_low_water_blocks",
     "kvarn_decode_fp16_window_blocks",
     "kvarn_decode_flush_batch_active_verified",
     "kvarn_decode_flush_batch_execution_required",
@@ -501,15 +512,23 @@ def _validate_decode_flush_batch_events(
     value: Any,
     *,
     expected_window: str,
+    expected_low_water: str,
     expect_native: bool,
     owner: Path,
     require_execution: bool = True,
 ) -> list[dict[str, int]]:
     if not re.fullmatch(r"0|[1-9][0-9]*", expected_window):
         raise GateError(f"{owner}: decode FP16 window is unsupported")
+    if not re.fullmatch(r"0|[1-9][0-9]*", expected_low_water):
+        raise GateError(f"{owner}: decode FP16 low-water is unsupported")
     if not isinstance(value, list) or any(not isinstance(item, dict) for item in value):
         raise GateError(f"{owner}: decode flush batch events are malformed")
     expected_high_water = int(expected_window)
+    expected_low_water_value = int(expected_low_water)
+    if expected_high_water == 0 and expected_low_water_value != 0:
+        raise GateError(f"{owner}: decode FP16 low-water requires a window")
+    if expected_high_water > 0 and expected_low_water_value > expected_high_water:
+        raise GateError(f"{owner}: decode FP16 low-water exceeds the window")
     expected_active = expect_native and expected_high_water > 0
     if (
         (bool(value) and not expected_active)
@@ -517,7 +536,7 @@ def _validate_decode_flush_batch_events(
         or any(
             set(item) != {"high_water", "low_water", "flushed_pages"}
             or item["high_water"] != expected_high_water
-            or item["low_water"] != DECODE_FLUSH_LOW_WATER
+            or item["low_water"] != expected_low_water_value
             or isinstance(item["flushed_pages"], bool)
             or not isinstance(item["flushed_pages"], int)
             or item["flushed_pages"] <= 0
@@ -1102,6 +1121,7 @@ def _validate_correctness_phase(
     native_frontend: str,
     forward_pool_ensure: str,
     decode_fp16_window_blocks: str,
+    decode_fp16_low_water_blocks: str,
     request_stable_projection_rows: str,
     request_stable_rmsnorm: str,
     *,
@@ -1122,6 +1142,7 @@ def _validate_correctness_phase(
         prefill_store,
         forward_pool_ensure,
         decode_fp16_window_blocks,
+        decode_fp16_low_water_blocks,
     )
     expected_layout = expected_spec["native_layout"]
     expected_kernel = expected_spec["native_kernel_variant"]
@@ -1155,6 +1176,9 @@ def _validate_correctness_phase(
     effective_prefill_store = expected_spec["prefill_store"]
     effective_forward_pool_ensure = expected_spec["forward_pool_ensure"]
     effective_decode_fp16_window_blocks = expected_spec["decode_fp16_window_blocks"]
+    effective_decode_fp16_low_water_blocks = expected_spec[
+        "decode_fp16_low_water_blocks"
+    ]
     expected_frontend_active = expected_spec["native"] and effective_frontend in {
         "qkv_scatter",
         "qkv_scatter_inline",
@@ -1168,6 +1192,7 @@ def _validate_correctness_phase(
     phase_decode_flush_events = _validate_decode_flush_batch_events(
         phase.get("decode_flush_batch_events"),
         expected_window=effective_decode_fp16_window_blocks,
+        expected_low_water=effective_decode_fp16_low_water_blocks,
         expect_native=expected_spec["native"],
         owner=path,
         require_execution=False,
@@ -1204,6 +1229,8 @@ def _validate_correctness_phase(
         or phase.get("native_frontend") != effective_frontend
         or phase.get("forward_pool_ensure") != effective_forward_pool_ensure
         or phase.get("decode_fp16_window_blocks") != effective_decode_fp16_window_blocks
+        or phase.get("decode_fp16_low_water_blocks")
+        != effective_decode_fp16_low_water_blocks
         or phase.get("decode_flush_batch_active_verified")
         is not expected_decode_flush_batch_active
         or phase.get("decode_flush_batch_execution_required") is not False
@@ -1262,6 +1289,8 @@ def _validate_correctness_phase(
         != effective_forward_pool_ensure
         or profile.get("decode_fp16_window_blocks_environment")
         != effective_decode_fp16_window_blocks
+        or profile.get("decode_fp16_low_water_blocks_environment")
+        != effective_decode_fp16_low_water_blocks
         or profile.get("request_stable_projection_rows_environment")
         not in (
             {"1", None}
@@ -1291,6 +1320,8 @@ def _validate_correctness_phase(
         != effective_forward_pool_ensure
         or captured_environment.get("KVARN_DECODE_FP16_WINDOW_BLOCKS")
         != effective_decode_fp16_window_blocks
+        or captured_environment.get("KVARN_DECODE_FP16_LOW_WATER_BLOCKS")
+        != effective_decode_fp16_low_water_blocks
         or captured_environment.get("KVARN_ONEDNN_DETERMINISTIC") != "1"
         or captured_environment.get("KVARN_REQUEST_STABLE_PROJECTION_ROWS")
         != profile.get("request_stable_projection_rows_environment")
@@ -1306,6 +1337,10 @@ def _validate_correctness_phase(
     if (
         identity.get("candidate_env") != candidate_id
         or identity.get("process_package") != process_package
+        or identity.get("decode_fp16_window_blocks")
+        != effective_decode_fp16_window_blocks
+        or identity.get("decode_fp16_low_water_blocks")
+        != effective_decode_fp16_low_water_blocks
     ):
         raise GateError(f"{owner}: {phase_name} identity differs from the candidate")
     log_path, _digest = _artifact_reference(
@@ -1336,6 +1371,7 @@ def _validate_correctness_phase(
     log_decode_flush_events = _validate_decode_flush_batch_events(
         _decode_flush_batch_events(log_text),
         expected_window=effective_decode_fp16_window_blocks,
+        expected_low_water=effective_decode_fp16_low_water_blocks,
         expect_native=expected_spec["native"],
         owner=log_path,
         require_execution=False,
@@ -1350,6 +1386,7 @@ def _validate_correctness_phase(
     scan_decode_flush_events = _validate_decode_flush_batch_events(
         log_scan.get("decode_flush_batch_events"),
         expected_window=effective_decode_fp16_window_blocks,
+        expected_low_water=effective_decode_fp16_low_water_blocks,
         expect_native=expected_spec["native"],
         owner=_scan_path,
         require_execution=False,
@@ -1387,6 +1424,8 @@ def _validate_correctness_phase(
         )
         or log_scan.get("decode_fp16_window_blocks_expected")
         != effective_decode_fp16_window_blocks
+        or log_scan.get("decode_fp16_low_water_blocks_expected")
+        != effective_decode_fp16_low_water_blocks
         or log_scan.get("decode_flush_batch_active_verified")
         is not bool(scan_decode_flush_events)
         or log_scan.get("decode_flush_batch_execution_required") is not False
@@ -1416,6 +1455,7 @@ def validate_correctness_gate_evidence(
     native_frontend: str = "reference",
     forward_pool_ensure: str = "always",
     decode_fp16_window_blocks: str = "0",
+    decode_fp16_low_water_blocks: str = "0",
     request_stable_projection_rows: str = "1",
     request_stable_rmsnorm: str = "1",
 ) -> None:
@@ -1438,6 +1478,14 @@ def validate_correctness_gate_evidence(
         r"0|[1-9][0-9]*", decode_fp16_window_blocks
     ):
         raise GateError(f"{path}: decode FP16 window is unsupported")
+    if not isinstance(decode_fp16_low_water_blocks, str) or not re.fullmatch(
+        r"0|[1-9][0-9]*", decode_fp16_low_water_blocks
+    ):
+        raise GateError(f"{path}: decode FP16 low-water is unsupported")
+    if decode_fp16_window_blocks == "0" and decode_fp16_low_water_blocks != "0":
+        raise GateError(f"{path}: decode FP16 low-water requires a window")
+    if int(decode_fp16_low_water_blocks) > int(decode_fp16_window_blocks):
+        raise GateError(f"{path}: decode FP16 low-water exceeds the window")
     if request_stable_projection_rows not in {"0", "1"}:
         raise GateError(f"{path}: projection-row selector is unsupported")
     if request_stable_rmsnorm not in {"0", "1"}:
@@ -1555,6 +1603,7 @@ def validate_correctness_gate_evidence(
             native_frontend,
             forward_pool_ensure,
             decode_fp16_window_blocks,
+            decode_fp16_low_water_blocks,
             request_stable_projection_rows,
             request_stable_rmsnorm,
             owner=path,
@@ -2204,6 +2253,13 @@ def _load_run(path: Path) -> Run:
     decode_fp16_window_blocks = provenance["kvarn_decode_fp16_window_blocks"]
     if not re.fullmatch(r"0|[1-9][0-9]*", decode_fp16_window_blocks):
         raise GateError(f"{path}: decode FP16 window is unsupported")
+    decode_fp16_low_water_blocks = provenance["kvarn_decode_fp16_low_water_blocks"]
+    if not re.fullmatch(r"0|[1-9][0-9]*", decode_fp16_low_water_blocks):
+        raise GateError(f"{path}: decode FP16 low-water is unsupported")
+    if decode_fp16_window_blocks == "0" and decode_fp16_low_water_blocks != "0":
+        raise GateError(f"{path}: decode FP16 low-water requires a window")
+    if int(decode_fp16_low_water_blocks) > int(decode_fp16_window_blocks):
+        raise GateError(f"{path}: decode FP16 low-water exceeds the window")
     frontend_active = native and frontend in {"qkv_scatter", "qkv_scatter_inline"}
     frontend_inline_active = native and frontend == "qkv_scatter_inline"
     forward_pool_ensure_active = native and forward_pool_ensure == "fused_qkv_proof"
@@ -2317,6 +2373,7 @@ def _load_run(path: Path) -> Run:
     scan_decode_flush_events = _validate_decode_flush_batch_events(
         engine_log_scan.get("decode_flush_batch_events"),
         expected_window=decode_fp16_window_blocks,
+        expected_low_water=decode_fp16_low_water_blocks,
         expect_native=native,
         owner=engine_log_scan_path,
         require_execution=False,
@@ -2343,6 +2400,7 @@ def _load_run(path: Path) -> Run:
             "kvarn_forward_pool_ensure_log_marker"
         ],
         "decode_fp16_window_blocks_expected": decode_fp16_window_blocks,
+        "decode_fp16_low_water_blocks_expected": decode_fp16_low_water_blocks,
         "decode_flush_batch_active_verified": provenance[
             "kvarn_decode_flush_batch_active_verified"
         ],
@@ -2495,6 +2553,18 @@ def _load_correctness(path: Path) -> tuple[dict[str, Any], str]:
     ):
         raise GateError(f"{path}: decode FP16 window is unsupported")
     decode_fp16_window_blocks_text = str(decode_fp16_window_blocks)
+    decode_fp16_low_water_blocks = document.get("decode_fp16_low_water_blocks")
+    if (
+        isinstance(decode_fp16_low_water_blocks, bool)
+        or not isinstance(decode_fp16_low_water_blocks, int)
+        or decode_fp16_low_water_blocks < 0
+    ):
+        raise GateError(f"{path}: decode FP16 low-water is unsupported")
+    if decode_fp16_window_blocks == 0 and decode_fp16_low_water_blocks != 0:
+        raise GateError(f"{path}: decode FP16 low-water requires a window")
+    if decode_fp16_low_water_blocks > decode_fp16_window_blocks:
+        raise GateError(f"{path}: decode FP16 low-water exceeds the window")
+    decode_fp16_low_water_blocks_text = str(decode_fp16_low_water_blocks)
     service_controls = document.get("service_controls")
     correctness_onednn = (
         service_controls.get("kvarn_onednn_deterministic")
@@ -2525,6 +2595,7 @@ def _load_correctness(path: Path) -> tuple[dict[str, Any], str]:
     if correctness_forward_pool_ensure != forward_pool_ensure:
         raise GateError(f"{path}: correctness forward-pool selector is inconsistent")
     expected_service_controls = {
+        "kvarn_decode_fp16_low_water_blocks": decode_fp16_low_water_blocks_text,
         "kvarn_decode_fp16_window_blocks": decode_fp16_window_blocks_text,
         "kvarn_flush_index_materialization": flush_index_materialization,
         "kvarn_flush_writer": flush_writer,
@@ -2601,6 +2672,7 @@ def _load_correctness(path: Path) -> tuple[dict[str, Any], str]:
             prefill_store,
             forward_pool_ensure,
             decode_fp16_window_blocks_text,
+            decode_fp16_low_water_blocks_text,
         )
         for phase_name in CORRECTNESS_PHASE_SPECS
     ]
@@ -2617,6 +2689,7 @@ def _load_correctness(path: Path) -> tuple[dict[str, Any], str]:
         prefill_store,
         forward_pool_ensure,
         decode_fp16_window_blocks_text,
+        decode_fp16_low_water_blocks_text,
     )
     if any(document.get(field) != value for field, value in expected_variant.items()):
         raise GateError(f"{path}: correctness variant provenance is inconsistent")
@@ -2697,6 +2770,7 @@ def _load_correctness(path: Path) -> tuple[dict[str, Any], str]:
             native_frontend=native_frontend,
             forward_pool_ensure=forward_pool_ensure,
             decode_fp16_window_blocks=decode_fp16_window_blocks_text,
+            decode_fp16_low_water_blocks=decode_fp16_low_water_blocks_text,
             request_stable_projection_rows=correctness_projection_rows,
             request_stable_rmsnorm=correctness_rmsnorm,
         )
@@ -2769,6 +2843,7 @@ def _validate_logs(
     expected_frontend: str,
     expected_forward_pool_ensure: str,
     expected_decode_fp16_window_blocks: str,
+    expected_decode_fp16_low_water_blocks: str,
 ) -> list[dict[str, Any]]:
     if expected_layout not in NATIVE_LAYOUTS or (
         not expect_native and expected_layout != "natural"
@@ -2812,6 +2887,17 @@ def _validate_logs(
     )
     if not re.fullmatch(r"0|[1-9][0-9]*", expected_decode_fp16_window_blocks):
         raise GateError(f"{arm} has an invalid decode-window log expectation")
+    if not re.fullmatch(r"0|[1-9][0-9]*", expected_decode_fp16_low_water_blocks):
+        raise GateError(f"{arm} has an invalid decode low-water log expectation")
+    if (
+        expected_decode_fp16_window_blocks == "0"
+        and expected_decode_fp16_low_water_blocks != "0"
+    ):
+        raise GateError(f"{arm} decode low-water requires a window")
+    if int(expected_decode_fp16_low_water_blocks) > int(
+        expected_decode_fp16_window_blocks
+    ):
+        raise GateError(f"{arm} decode low-water exceeds the window")
     resolved = [path.resolve() for path in paths]
     if len(set(resolved)) != len(resolved):
         raise GateError(f"{arm} engine-log paths must be unique")
@@ -2860,6 +2946,7 @@ def _validate_logs(
         decode_flush_batch_events = _validate_decode_flush_batch_events(
             _decode_flush_batch_events(text),
             expected_window=expected_decode_fp16_window_blocks,
+            expected_low_water=expected_decode_fp16_low_water_blocks,
             expect_native=expect_native,
             owner=path,
             require_execution=False,
@@ -2897,6 +2984,9 @@ def _validate_logs(
                 ),
                 "decode_fp16_window_blocks_expected": (
                     expected_decode_fp16_window_blocks
+                ),
+                "decode_fp16_low_water_blocks_expected": (
+                    expected_decode_fp16_low_water_blocks
                 ),
                 "decode_flush_batch_active_verified": bool(decode_flush_batch_events),
                 "decode_flush_batch_execution_required": False,
@@ -3075,6 +3165,9 @@ def compare(
         )
     correctness_controls = correctness["service_controls"]
     benchmark_controls = {
+        "kvarn_decode_fp16_low_water_blocks": first_cand.provenance[
+            "kvarn_decode_fp16_low_water_blocks"
+        ],
         "kvarn_decode_fp16_window_blocks": first_cand.provenance[
             "kvarn_decode_fp16_window_blocks"
         ],
@@ -3150,6 +3243,8 @@ def compare(
         raise GateError("reference must use the conservative forward pool guard")
     if first_ref.provenance["kvarn_decode_fp16_window_blocks"] != "0":
         raise GateError("reference must use immediate page flushes")
+    if first_ref.provenance["kvarn_decode_fp16_low_water_blocks"] != "0":
+        raise GateError("reference must use a zero decode low-water mark")
     if first_ref.provenance["kvarn_flush_writer"] != "reference":
         raise GateError("reference must use the reference flush writer")
     if first_ref.provenance["kvarn_prefill_store"] != "reference":
@@ -3165,6 +3260,10 @@ def compare(
         correctness["decode_fp16_window_blocks"]
     ):
         raise GateError("candidate decode FP16 window must match correctness")
+    if first_cand.provenance["kvarn_decode_fp16_low_water_blocks"] != str(
+        correctness["decode_fp16_low_water_blocks"]
+    ):
+        raise GateError("candidate decode FP16 low-water must match correctness")
     if first_cand.provenance["kvarn_flush_writer"] != correctness["flush_writer"]:
         raise GateError("candidate flush writer must match correctness")
     if first_cand.provenance["kvarn_prefill_store"] != correctness["prefill_store"]:
@@ -3281,6 +3380,7 @@ def compare(
         expected_frontend="reference",
         expected_forward_pool_ensure="always",
         expected_decode_fp16_window_blocks="0",
+        expected_decode_fp16_low_water_blocks="0",
     )
     candidate_log_evidence = _validate_logs(
         candidate_logs,
@@ -3291,6 +3391,9 @@ def compare(
         expected_forward_pool_ensure=correctness["forward_pool_ensure"],
         expected_decode_fp16_window_blocks=str(
             correctness["decode_fp16_window_blocks"]
+        ),
+        expected_decode_fp16_low_water_blocks=str(
+            correctness["decode_fp16_low_water_blocks"]
         ),
         expected_kernel_variant=correctness_kernel_variant,
         expected_max_splits=correctness_max_splits,

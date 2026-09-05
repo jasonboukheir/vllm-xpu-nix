@@ -307,6 +307,7 @@ def test_profile_command_and_dpas_launcher_provenance(
         native_frontend="qkv_scatter",
         flush_index_materialization="per_layer",
         onednn_deterministic=True,
+        decode_fp16_low_water_blocks=0,
         decode_fp16_window_blocks=0,
         variant_id="factory-dpas-001",
         resolved_launchers={
@@ -334,6 +335,7 @@ def test_profile_command_and_dpas_launcher_provenance(
         "split_policy_selector": "fixed",
         "native_frontend": "qkv_scatter",
         "forward_pool_ensure": "always",
+        "decode_fp16_low_water_blocks": "0",
         "decode_fp16_window_blocks": "0",
         "request_stable_projection_rows": "1",
         "request_stable_rmsnorm": "1",
@@ -344,7 +346,7 @@ def test_profile_command_and_dpas_launcher_provenance(
         "fusion_selection": (
             "fused_attention_decode_per_layer_flush_reference_writer_"
             "reference_prefill_store_qkv_scatter_frontend_"
-            "always_forward_pool_ensure_decode_fp16_window_0"
+            "always_forward_pool_ensure_decode_fp16_window_0_low_water_0"
         ),
         "scheduling_selection": "split_k",
         "scheduler_max_num_batched_tokens": 2048,
@@ -376,6 +378,7 @@ def test_profile_command_and_dpas_launcher_provenance(
         "split_policy_selector": "b70_q6",
         "native_frontend": "qkv_scatter",
         "forward_pool_ensure": "always",
+        "decode_fp16_low_water_blocks": "0",
         "decode_fp16_window_blocks": "0",
         "request_stable_projection_rows": "1",
         "request_stable_rmsnorm": "1",
@@ -386,7 +389,7 @@ def test_profile_command_and_dpas_launcher_provenance(
         "fusion_selection": (
             "fused_attention_decode_per_layer_flush_reference_writer_"
             "reference_prefill_store_qkv_scatter_frontend_"
-            "always_forward_pool_ensure_decode_fp16_window_0"
+            "always_forward_pool_ensure_decode_fp16_window_0_low_water_0"
         ),
         "scheduling_selection": "split_k",
         "scheduler_max_num_batched_tokens": 2048,
@@ -435,6 +438,8 @@ def test_runtime_factory_profile_accepts_runtime_axes_without_named_launcher(
             "fused_qkv_proof",
             "--decode-fp16-window-blocks",
             "20",
+            "--decode-fp16-low-water-blocks",
+            "12",
             "--onednn-deterministic",
             "0",
             "--request-stable-projection-rows",
@@ -449,6 +454,7 @@ def test_runtime_factory_profile_accepts_runtime_axes_without_named_launcher(
     assert args.native_frontend == "qkv_scatter_inline"
     assert args.forward_pool_ensure == "fused_qkv_proof"
     assert args.decode_fp16_window_blocks == 20
+    assert args.decode_fp16_low_water_blocks == 12
     assert (
         perf.service_environment(run, args)["KVARN_FACTORY_FORWARD_POOL_ENSURE"]
         == "fused_qkv_proof"
@@ -456,6 +462,7 @@ def test_runtime_factory_profile_accepts_runtime_axes_without_named_launcher(
     assert "KVARN_FORWARD_POOL_ENSURE" not in perf.service_environment(run, args)
     assert perf.runtime_factory_axes_for_run(run, args) == {
         "KVARN_FACTORY_CACHE_LAYOUT": "natural",
+        "KVARN_FACTORY_DECODE_FP16_LOW_WATER_BLOCKS": "12",
         "KVARN_FACTORY_DECODE_FP16_WINDOW_BLOCKS": "20",
         "KVARN_FACTORY_FLUSH_INDEX_MATERIALIZATION": "shared",
         "KVARN_FACTORY_FLUSH_WRITER": "reference",

@@ -353,6 +353,7 @@ def _correctness(
     decode_flush_batch_executed: bool = False,
     request_stable_projection_rows: str = "1",
     request_stable_rmsnorm: str = "1",
+    metadata_lifecycle: str = "reference",
 ) -> Path:
     selected_splits = (
         dict(gate_module.B70_Q6_SPLITS) if native_splits is None else native_splits
@@ -428,6 +429,7 @@ def _correctness(
             decode_flush_scope,
             decode_fp16_window_blocks,
             decode_fp16_low_water_blocks,
+            metadata_lifecycle,
         )
         effective_layout = spec["native_layout"]
         effective_kernel = spec["native_kernel_variant"]
@@ -436,6 +438,7 @@ def _correctness(
         effective_flush_writer = spec["flush_writer"]
         effective_prefill_store = spec["prefill_store"]
         effective_forward_pool_ensure = spec["forward_pool_ensure"]
+        effective_metadata_lifecycle = spec["metadata_lifecycle"]
         effective_qlen1_inline_plan = spec["qlen1_inline_plan"]
         effective_decode_flush_scope = spec["decode_flush_scope"]
         effective_decode_fp16_window_blocks = spec["decode_fp16_window_blocks"]
@@ -472,6 +475,7 @@ def _correctness(
                     "prefill_store_environment": effective_prefill_store,
                     "native_frontend_environment": effective_frontend,
                     "forward_pool_ensure_environment": (effective_forward_pool_ensure),
+                    "metadata_lifecycle_environment": effective_metadata_lifecycle,
                     "qlen1_inline_plan_environment": effective_qlen1_inline_plan,
                     "decode_flush_scope_environment": effective_decode_flush_scope,
                     "decode_fp16_low_water_blocks_environment": (
@@ -494,6 +498,7 @@ def _correctness(
                         "KVARN_NATIVE_XPU_PREFILL_STORE": effective_prefill_store,
                         "KVARN_NATIVE_XPU_FRONTEND": effective_frontend,
                         "KVARN_FORWARD_POOL_ENSURE": (effective_forward_pool_ensure),
+                        "KVARN_METADATA_LIFECYCLE": effective_metadata_lifecycle,
                         "KVARN_QLEN1_INLINE_PLAN": effective_qlen1_inline_plan,
                         "KVARN_DECODE_FLUSH_SCOPE": effective_decode_flush_scope,
                         "KVARN_DECODE_FP16_LOW_WATER_BLOCKS": (
@@ -567,6 +572,12 @@ def _correctness(
                 else ""
             )
             + (
+                f"INFO {gate_module.METADATA_LIFECYCLE_ACTIVE_MARKER} layer=test\n"
+                if spec["native"]
+                and effective_metadata_lifecycle == "incremental_qlen1"
+                else ""
+            )
+            + (
                 "INFO [KVARN_FACTORY] selected_qlen1_inline_plan="
                 f"{effective_qlen1_inline_plan}; immutable for engine lifetime\n"
                 if spec["native"]
@@ -574,8 +585,7 @@ def _correctness(
             )
             + (
                 f"INFO {gate_module.QLEN1_INLINE_PLAN_ACTIVE_MARKER} layer=test\n"
-                if spec["native"]
-                and effective_qlen1_inline_plan == "trusted_native"
+                if spec["native"] and effective_qlen1_inline_plan == "trusted_native"
                 else ""
             )
             + (
@@ -629,6 +639,17 @@ def _correctness(
                         gate_module.FORWARD_POOL_ENSURE_ACTIVE_MARKER
                         if spec["native"]
                         and effective_forward_pool_ensure == "fused_qkv_proof"
+                        else "not_applicable"
+                    ),
+                    "metadata_lifecycle_expected": effective_metadata_lifecycle,
+                    "metadata_lifecycle_active_verified": (
+                        spec["native"]
+                        and effective_metadata_lifecycle == "incremental_qlen1"
+                    ),
+                    "metadata_lifecycle_log_marker": (
+                        gate_module.METADATA_LIFECYCLE_ACTIVE_MARKER
+                        if spec["native"]
+                        and effective_metadata_lifecycle == "incremental_qlen1"
                         else "not_applicable"
                     ),
                     "qlen1_inline_plan_expected": effective_qlen1_inline_plan,
@@ -722,6 +743,7 @@ def _correctness(
                     "prefill_store": effective_prefill_store,
                     "native_frontend": effective_frontend,
                     "forward_pool_ensure": effective_forward_pool_ensure,
+                    "metadata_lifecycle": effective_metadata_lifecycle,
                     "qlen1_inline_plan": effective_qlen1_inline_plan,
                     "decode_flush_scope": effective_decode_flush_scope,
                     "decode_fp16_low_water_blocks": (
@@ -779,6 +801,16 @@ def _correctness(
                         gate_module.FORWARD_POOL_ENSURE_ACTIVE_MARKER
                         if spec["native"]
                         and effective_forward_pool_ensure == "fused_qkv_proof"
+                        else "not_applicable"
+                    ),
+                    "metadata_lifecycle_active_verified": (
+                        spec["native"]
+                        and effective_metadata_lifecycle == "incremental_qlen1"
+                    ),
+                    "metadata_lifecycle_log_marker": (
+                        gate_module.METADATA_LIFECYCLE_ACTIVE_MARKER
+                        if spec["native"]
+                        and effective_metadata_lifecycle == "incremental_qlen1"
                         else "not_applicable"
                     ),
                     "qlen1_inline_plan_selection_verified": spec["native"],
@@ -991,6 +1023,7 @@ def _correctness(
         "prefill_store": prefill_store,
         "native_frontend": native_frontend,
         "forward_pool_ensure": forward_pool_ensure,
+        "metadata_lifecycle": metadata_lifecycle,
         "qlen1_inline_plan": qlen1_inline_plan,
         "decode_flush_scope": decode_flush_scope,
         "decode_fp16_low_water_blocks": int(decode_fp16_low_water_blocks),
@@ -1009,6 +1042,7 @@ def _correctness(
             "kvarn_prefill_store": prefill_store,
             "kvarn_native_frontend": native_frontend,
             "kvarn_forward_pool_ensure": forward_pool_ensure,
+            "kvarn_metadata_lifecycle": metadata_lifecycle,
             "kvarn_qlen1_inline_plan": qlen1_inline_plan,
             "kvarn_onednn_deterministic": "1",
             "kvarn_request_stable_projection_rows": (request_stable_projection_rows),
@@ -1032,6 +1066,7 @@ def _correctness(
             decode_flush_scope,
             decode_fp16_window_blocks,
             decode_fp16_low_water_blocks,
+            metadata_lifecycle,
         ),
         "native_dispatch_verified": True,
         "native_direct_bf16_verified": True,
@@ -1055,6 +1090,7 @@ def _correctness(
                 decode_flush_scope,
                 decode_fp16_window_blocks,
                 decode_fp16_low_water_blocks,
+                metadata_lifecycle,
             )
             for name in gate_module.CORRECTNESS_PHASE_SPECS
         ],
@@ -1113,6 +1149,7 @@ def _result(
     decode_flush_batch_executed: bool = False,
     request_stable_projection_rows: str = "1",
     request_stable_rmsnorm: str = "1",
+    metadata_lifecycle: str = "reference",
 ) -> Path:
     completed = 8
     context = 4096
@@ -1218,6 +1255,7 @@ def _result(
                         decode_flush_scope,
                         decode_fp16_window_blocks,
                         decode_fp16_low_water_blocks,
+                        metadata_lifecycle,
                     )
                 ),
             }
@@ -1265,6 +1303,9 @@ def _result(
     effective_forward_pool_ensure = (
         "always" if arm == "reference" else forward_pool_ensure
     )
+    effective_metadata_lifecycle = (
+        "reference" if arm == "reference" else metadata_lifecycle
+    )
     effective_qlen1_inline_plan = (
         "reference" if arm == "reference" else qlen1_inline_plan
     )
@@ -1285,7 +1326,13 @@ def _result(
         arm == "candidate" and effective_frontend == "qkv_scatter_inline"
     )
     forward_pool_ensure_active = (
-        arm == "candidate" and effective_forward_pool_ensure == "fused_qkv_proof"
+        arm == "candidate" and effective_forward_pool_ensure != "always"
+    )
+    forward_pool_marker = gate_module.FORWARD_POOL_ENSURE_ACTIVE_MARKERS.get(
+        effective_forward_pool_ensure
+    )
+    metadata_lifecycle_active = (
+        arm == "candidate" and effective_metadata_lifecycle == "incremental_qlen1"
     )
     qlen1_inline_plan_active = (
         arm == "candidate" and effective_qlen1_inline_plan == "trusted_native"
@@ -1317,8 +1364,15 @@ def _result(
                 "forward_pool_ensure_expected": effective_forward_pool_ensure,
                 "forward_pool_ensure_active_verified": (forward_pool_ensure_active),
                 "forward_pool_ensure_log_marker": (
-                    gate_module.FORWARD_POOL_ENSURE_ACTIVE_MARKER
+                    forward_pool_marker
                     if forward_pool_ensure_active
+                    else "not_applicable"
+                ),
+                "metadata_lifecycle_expected": effective_metadata_lifecycle,
+                "metadata_lifecycle_active_verified": metadata_lifecycle_active,
+                "metadata_lifecycle_log_marker": (
+                    gate_module.METADATA_LIFECYCLE_ACTIVE_MARKER
+                    if metadata_lifecycle_active
                     else "not_applicable"
                 ),
                 "qlen1_inline_plan_expected": effective_qlen1_inline_plan,
@@ -1410,6 +1464,7 @@ def _result(
         "kvarn_prefill_store": ("reference" if arm == "reference" else prefill_store),
         "kvarn_native_frontend": effective_frontend,
         "kvarn_forward_pool_ensure": effective_forward_pool_ensure,
+        "kvarn_metadata_lifecycle": effective_metadata_lifecycle,
         "kvarn_qlen1_inline_plan": effective_qlen1_inline_plan,
         "kvarn_decode_flush_scope": effective_decode_flush_scope,
         "kvarn_decode_fp16_low_water_blocks": (effective_decode_fp16_low_water_blocks),
@@ -1433,14 +1488,17 @@ def _result(
         ),
         "kvarn_forward_pool_ensure_active_verified": forward_pool_ensure_active,
         "kvarn_forward_pool_ensure_log_marker": (
-            gate_module.FORWARD_POOL_ENSURE_ACTIVE_MARKER
-            if forward_pool_ensure_active
+            forward_pool_marker if forward_pool_ensure_active else "not_applicable"
+        ),
+        "kvarn_metadata_lifecycle_active_verified": metadata_lifecycle_active,
+        "kvarn_metadata_lifecycle_log_marker": (
+            gate_module.METADATA_LIFECYCLE_ACTIVE_MARKER
+            if metadata_lifecycle_active
             else "not_applicable"
         ),
         "kvarn_qlen1_inline_plan_selection_verified": arm == "candidate",
         "kvarn_qlen1_inline_plan_selection_log_marker": (
-            "[KVARN_FACTORY] selected_qlen1_inline_plan="
-            f"{effective_qlen1_inline_plan};"
+            f"[KVARN_FACTORY] selected_qlen1_inline_plan={effective_qlen1_inline_plan};"
             if arm == "candidate"
             else "not_applicable"
         ),
@@ -1523,6 +1581,7 @@ def _result(
                     decode_flush_scope,
                     decode_fp16_window_blocks,
                     decode_fp16_low_water_blocks,
+                    metadata_lifecycle,
                 )
             ).items()
         },
@@ -1554,6 +1613,7 @@ def _log(
     decode_fp16_window_blocks: str = "0",
     decode_fp16_low_water_blocks: str = "0",
     decode_flush_batch_executed: bool = False,
+    metadata_lifecycle: str = "reference",
 ) -> Path:
     lines = [
         "INFO config: device_config=xpu",
@@ -1585,12 +1645,20 @@ def _log(
             lines.append(
                 f"INFO {gate_module.NATIVE_FRONTEND_INLINE_ACTIVE_MARKER} layer=test"
             )
-        if forward_pool_ensure == "fused_qkv_proof":
+        if forward_pool_ensure != "always":
             lines.append(
-                f"INFO {gate_module.FORWARD_POOL_ENSURE_ACTIVE_MARKER} layer=test"
+                "INFO "
+                f"{gate_module.FORWARD_POOL_ENSURE_ACTIVE_MARKERS[forward_pool_ensure]} "
+                "layer=test"
+            )
+        if metadata_lifecycle == "incremental_qlen1":
+            lines.append(
+                f"INFO {gate_module.METADATA_LIFECYCLE_ACTIVE_MARKER} layer=test"
             )
         if qlen1_inline_plan == "trusted_native":
-            lines.append(f"INFO {gate_module.QLEN1_INLINE_PLAN_ACTIVE_MARKER} layer=test")
+            lines.append(
+                f"INFO {gate_module.QLEN1_INLINE_PLAN_ACTIVE_MARKER} layer=test"
+            )
         if decode_flush_batch_executed:
             lines.append(
                 "INFO [KVARN_DECODE_FLUSH_BATCH] "
@@ -1642,6 +1710,7 @@ def _arms(
     decode_flush_batch_executed: bool = False,
     request_stable_projection_rows: str = "1",
     request_stable_rmsnorm: str = "1",
+    metadata_lifecycle: str = "reference",
 ) -> tuple[list[Path], list[Path], list[Path], list[Path], Path]:
     selected_splits = (
         dict(gate_module.B70_Q6_SPLITS) if native_splits is None else native_splits
@@ -1664,6 +1733,7 @@ def _arms(
         decode_flush_batch_executed=decode_flush_batch_executed,
         request_stable_projection_rows=request_stable_projection_rows,
         request_stable_rmsnorm=request_stable_rmsnorm,
+        metadata_lifecycle=metadata_lifecycle,
     )
     digest = hashlib.sha256(correctness.read_bytes()).hexdigest()
     reference_orders = (1, 4, 5, 8, 9, 12, 13, 16)
@@ -1693,6 +1763,7 @@ def _arms(
             decode_fp16_window_blocks=decode_fp16_window_blocks,
             decode_fp16_low_water_blocks=decode_fp16_low_water_blocks,
             decode_flush_batch_executed=decode_flush_batch_executed,
+            metadata_lifecycle=metadata_lifecycle,
         )
         for index in range(len(candidate_orders))
     ]
@@ -1720,6 +1791,7 @@ def _arms(
             decode_flush_batch_executed=decode_flush_batch_executed,
             request_stable_projection_rows=request_stable_projection_rows,
             request_stable_rmsnorm=request_stable_rmsnorm,
+            metadata_lifecycle=metadata_lifecycle,
         )
         for index, order in enumerate(reference_orders)
     ]
@@ -1752,6 +1824,7 @@ def _arms(
             decode_flush_batch_executed=decode_flush_batch_executed,
             request_stable_projection_rows=request_stable_projection_rows,
             request_stable_rmsnorm=request_stable_rmsnorm,
+            metadata_lifecycle=metadata_lifecycle,
         )
         for index, order in enumerate(candidate_orders)
     ]
@@ -1826,9 +1899,10 @@ def test_match_gate_accepts_qkv_candidate_with_unfused_reference(
     assert result["candidate"]["arm"]["kvarn_native_frontend"] == "qkv_scatter"
     assert result["candidate"]["arm"]["kvarn_fusion_strategy"] == (
         "native_materializer_persistent_scratch_shared_indices_"
-            "reference_writer_reference_prefill_store_qkv_scatter_frontend_"
-            "always_forward_pool_ensure_reference_qlen1_inline_plan_"
-            "decode_fp16_window_0_low_water_0_flush_scope_per_row"
+        "reference_writer_reference_prefill_store_qkv_scatter_frontend_"
+        "always_forward_pool_ensure_reference_metadata_lifecycle_"
+        "reference_qlen1_inline_plan_"
+        "decode_fp16_window_0_low_water_0_flush_scope_per_row"
     )
     assert (
         "-shared-indices-reference-writer-reference-prefill-store-"
@@ -1929,14 +2003,8 @@ def test_match_gate_accepts_trusted_qlen1_inline_plan(tmp_path: Path) -> None:
     )
 
     assert result["reference"]["arm"]["kvarn_qlen1_inline_plan"] == "reference"
-    assert (
-        result["candidate"]["arm"]["kvarn_qlen1_inline_plan"]
-        == "trusted_native"
-    )
-    assert (
-        result["candidate"]["arm"]["kvarn_qlen1_inline_plan_active_verified"]
-        is True
-    )
+    assert result["candidate"]["arm"]["kvarn_qlen1_inline_plan"] == "trusted_native"
+    assert result["candidate"]["arm"]["kvarn_qlen1_inline_plan_active_verified"] is True
     assert len(result["candidate"]["engine_log_scan"]) == 8
     assert all(
         set(reference) == {"path", "sha256"}
@@ -2021,7 +2089,7 @@ def test_match_gate_requires_forward_pool_elision_marker(tmp_path: Path) -> None
         encoding="utf-8",
     )
 
-    with pytest.raises(GateError, match="forward-pool runtime proof differs"):
+    with pytest.raises(GateError, match="forward-pool .*proof"):
         _compare(arms)
 
 

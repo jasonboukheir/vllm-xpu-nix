@@ -86,15 +86,28 @@ NATIVE_FRONTEND_INLINE_ACTIVE_MARKER = (
     "[KVARN_FRONTEND_INLINE] active=qkv_scatter_inline; "
     "wrapper=unified_qkv_attention_with_output;"
 )
-FORWARD_POOL_ENSURE_VARIANTS = ("always", "fused_qkv_proof")
-FORWARD_POOL_ENSURE_ACTIVE_MARKER = (
-    "[KVARN_FORWARD_POOL_ENSURE] active=fused_qkv_proof; action=elide_ensure_pool;"
+FORWARD_POOL_ENSURE_VARIANTS = ("always", "epoch_latch", "fused_qkv_proof")
+FORWARD_POOL_ENSURE_ACTIVE_MARKERS = {
+    "epoch_latch": (
+        "[KVARN_FORWARD_POOL_ENSURE] active=epoch_latch; action=elide_full_validation;"
+    ),
+    "fused_qkv_proof": (
+        "[KVARN_FORWARD_POOL_ENSURE] active=fused_qkv_proof; action=elide_ensure_pool;"
+    ),
+}
+# Compatibility name for existing fused-QKV proof artifacts/tests.
+FORWARD_POOL_ENSURE_ACTIVE_MARKER = FORWARD_POOL_ENSURE_ACTIVE_MARKERS[
+    "fused_qkv_proof"
+]
+METADATA_LIFECYCLE_VARIANTS = ("reference", "incremental_qlen1")
+METADATA_LIFECYCLE_IDS = {"reference": "ml-r", "incremental_qlen1": "ml-i"}
+METADATA_LIFECYCLE_ACTIVE_MARKER = (
+    "[KVARN_METADATA_LIFECYCLE] active=incremental_qlen1; "
+    "action=elide_full_lifecycle_scan"
 )
 QLEN1_INLINE_PLAN_VARIANTS = ("reference", "trusted_native")
 QLEN1_INLINE_PLAN_IDS = {"reference": "qip-r", "trusted_native": "qip-t"}
-QLEN1_INLINE_PLAN_ACTIVE_MARKER = (
-    "[KVARN_TRUSTED_QLEN1_INLINE] active=trusted_native;"
-)
+QLEN1_INLINE_PLAN_ACTIVE_MARKER = "[KVARN_TRUSTED_QLEN1_INLINE] active=trusted_native;"
 DECODE_FLUSH_SCOPES = ("per_row", "batch_cohort")
 DECODE_FLUSH_SCOPE_IDS = {"per_row": "dfs-r", "batch_cohort": "dfs-b"}
 DECODE_FLUSH_BATCH_MARKER_PATTERN = re.compile(
@@ -150,6 +163,7 @@ DEFAULT_DECODE_FP16_WINDOW_BLOCKS = 0
 DEFAULT_DECODE_FP16_LOW_WATER_BLOCKS = 0
 DEFAULT_DECODE_FLUSH_SCOPE = "per_row"
 DEFAULT_QLEN1_INLINE_PLAN = "reference"
+DEFAULT_METADATA_LIFECYCLE = "reference"
 VLLM_USE_V2_MODEL_RUNNER = "0"
 ONEDNN_DETERMINISTIC_LAUNCHER_SUFFIX = "-onednn-nondeterministic"
 LAUNCHER_MODES = ("immutable", "runtime-factory")
@@ -167,6 +181,7 @@ RUNTIME_FACTORY_SELECTORS = (
     "KVARN_FACTORY_FORWARD_POOL_ENSURE",
     "KVARN_FACTORY_KERNEL_VARIANT",
     "KVARN_FACTORY_KV_CACHE_DTYPE",
+    "KVARN_FACTORY_METADATA_LIFECYCLE",
     "KVARN_FACTORY_MAX_MODEL_LEN",
     "KVARN_FACTORY_MAX_NUM_SEQS",
     "KVARN_FACTORY_NATIVE_XPU_FRONTEND",
@@ -212,6 +227,7 @@ CAPTURED_ENVIRONMENT = (
     "KVARN_FLUSH_INDEX_MATERIALIZATION",
     "KVARN_FLUSH_WRITER",
     "KVARN_FORWARD_POOL_ENSURE",
+    "KVARN_METADATA_LIFECYCLE",
     "KVARN_DECODE_FLUSH_SCOPE",
     "KVARN_DECODE_FP16_LOW_WATER_BLOCKS",
     "KVARN_DECODE_FP16_WINDOW_BLOCKS",
@@ -268,6 +284,7 @@ ARM_ENVIRONMENT = {
     "KVARN_FLUSH_INDEX_MATERIALIZATION",
     "KVARN_FLUSH_WRITER",
     "KVARN_FORWARD_POOL_ENSURE",
+    "KVARN_METADATA_LIFECYCLE",
     "KVARN_NATIVE_XPU_PREFILL_STORE",
     "KVARN_NATIVE_XPU",
     "KVARN_NATIVE_XPU_CACHE_LAYOUT",
@@ -791,6 +808,20 @@ def forward_pool_ensure_for_run(run: PlannedRun, args: argparse.Namespace) -> st
     return selected if run.arm == "candidate" else "always"
 
 
+def metadata_lifecycle_environment(args: argparse.Namespace) -> str:
+    """Return the selected engine-lifetime metadata lifecycle strategy."""
+    selection = getattr(args, "metadata_lifecycle", DEFAULT_METADATA_LIFECYCLE)
+    if selection not in METADATA_LIFECYCLE_VARIANTS:
+        raise RunnerError(f"unsupported metadata lifecycle {selection!r}")
+    return selection
+
+
+def metadata_lifecycle_for_run(run: PlannedRun, args: argparse.Namespace) -> str:
+    """Keep the auto control on the complete metadata lifecycle scan."""
+    selected = metadata_lifecycle_environment(args)
+    return selected if run.arm == "candidate" else DEFAULT_METADATA_LIFECYCLE
+
+
 def variant_provenance_for_run(
     run: PlannedRun, args: argparse.Namespace
 ) -> dict[str, str]:
@@ -810,6 +841,7 @@ def variant_provenance_for_run(
     flush_writer = flush_writer_environment(args)
     prefill_store = prefill_store_environment(args)
     forward_pool_ensure = forward_pool_ensure_environment(args)
+    metadata_lifecycle = metadata_lifecycle_environment(args)
     qlen1_inline_plan = qlen1_inline_plan_environment(args)
     decode_window = decode_fp16_window_blocks_environment(args)
     decode_low_water = decode_fp16_low_water_blocks_environment(args)
@@ -823,6 +855,7 @@ def variant_provenance_for_run(
             f"{prefill_store}_prefill_store_"
             f"{native_frontend}_frontend_"
             f"{forward_pool_ensure}_forward_pool_ensure_"
+            f"{metadata_lifecycle}_metadata_lifecycle_"
             f"{qlen1_inline_plan}_qlen1_inline_plan_"
             f"decode_fp16_window_{decode_window}_low_water_{decode_low_water}_"
             f"flush_scope_{decode_flush_scope}"
@@ -834,6 +867,7 @@ def variant_provenance_for_run(
             f"{prefill_store}-prefill-store-"
             f"{native_frontend}-frontend-"
             f"{forward_pool_ensure}-forward-pool-ensure-"
+            f"{METADATA_LIFECYCLE_IDS[metadata_lifecycle]}-"
             f"{QLEN1_INLINE_PLAN_IDS[qlen1_inline_plan]}-"
             f"dw{decode_window}-lw{decode_low_water}-"
             f"{DECODE_FLUSH_SCOPE_IDS[decode_flush_scope]}-"
@@ -942,6 +976,9 @@ def load_correctness(
         raise RunnerError(
             "correctness artifact fused pool proof requires a fused QKV frontend"
         )
+    metadata_lifecycle = document.get("metadata_lifecycle")
+    if metadata_lifecycle not in METADATA_LIFECYCLE_VARIANTS:
+        raise RunnerError("correctness artifact metadata lifecycle is unsupported")
     decode_fp16_window_blocks = document.get("decode_fp16_window_blocks")
     if (
         isinstance(decode_fp16_window_blocks, bool)
@@ -994,6 +1031,7 @@ def load_correctness(
         "kvarn_native_frontend": native_frontend,
         "kvarn_qlen1_inline_plan": qlen1_inline_plan,
         "kvarn_forward_pool_ensure": forward_pool_ensure,
+        "kvarn_metadata_lifecycle": metadata_lifecycle,
         "kvarn_onednn_deterministic": correctness_onednn,
         "kvarn_request_stable_projection_rows": correctness_projection_rows,
         "kvarn_request_stable_rmsnorm": correctness_rmsnorm,
@@ -1122,6 +1160,7 @@ def load_correctness(
             "native_frontend": native_frontend,
             "qlen1_inline_plan": qlen1_inline_plan,
             "forward_pool_ensure": forward_pool_ensure,
+            "metadata_lifecycle": metadata_lifecycle,
             "decode_flush_scope": decode_flush_scope,
             "decode_fp16_low_water_blocks": str(decode_fp16_low_water_blocks),
             "decode_fp16_window_blocks": str(decode_fp16_window_blocks),
@@ -1206,6 +1245,7 @@ def runtime_factory_axes_for_run(
         "KVARN_FACTORY_FORWARD_POOL_ENSURE": forward_pool_ensure_for_run(run, args),
         "KVARN_FACTORY_KERNEL_VARIANT": native_kernel_variant_for_run(run, args),
         "KVARN_FACTORY_KV_CACHE_DTYPE": ARM_SETTINGS[run.arm]["kv_cache_dtype"],
+        "KVARN_FACTORY_METADATA_LIFECYCLE": metadata_lifecycle_for_run(run, args),
         "KVARN_FACTORY_MAX_MODEL_LEN": str(args.max_model_len),
         "KVARN_FACTORY_MAX_NUM_SEQS": str(run.workload.batch),
         "KVARN_FACTORY_NATIVE_XPU_FRONTEND": native_frontend_for_run(run, args),
@@ -1237,6 +1277,7 @@ def runtime_factory_axes_for_run(
         "KVARN_FACTORY_FORWARD_POOL_ENSURE": "always",
         "KVARN_FACTORY_KERNEL_VARIANT": "baseline",
         "KVARN_FACTORY_KV_CACHE_DTYPE": "auto",
+        "KVARN_FACTORY_METADATA_LIFECYCLE": "reference",
         "KVARN_FACTORY_MAX_MODEL_LEN": str(args.max_model_len),
         "KVARN_FACTORY_MAX_NUM_SEQS": str(run.workload.batch),
         "KVARN_FACTORY_NATIVE_XPU_FRONTEND": "reference",
@@ -1285,6 +1326,9 @@ def service_environment(run: PlannedRun, args: argparse.Namespace) -> dict[str, 
         )
         environment["KVARN_FACTORY_FLUSH_WRITER"] = flush_writer_for_run(run, args)
         environment["KVARN_FACTORY_FORWARD_POOL_ENSURE"] = forward_pool_ensure_for_run(
+            run, args
+        )
+        environment["KVARN_FACTORY_METADATA_LIFECYCLE"] = metadata_lifecycle_for_run(
             run, args
         )
         environment["KVARN_FACTORY_PREFILL_STORE"] = prefill_store_for_run(run, args)
@@ -1814,9 +1858,8 @@ def service_profile_evidence(
         "native_frontend_environment": environment.get("KVARN_NATIVE_XPU_FRONTEND"),
         "qlen1_inline_plan_environment": environment.get("KVARN_QLEN1_INLINE_PLAN"),
         "forward_pool_ensure_environment": environment.get("KVARN_FORWARD_POOL_ENSURE"),
-        "decode_flush_scope_environment": environment.get(
-            "KVARN_DECODE_FLUSH_SCOPE"
-        ),
+        "metadata_lifecycle_environment": environment.get("KVARN_METADATA_LIFECYCLE"),
+        "decode_flush_scope_environment": environment.get("KVARN_DECODE_FLUSH_SCOPE"),
         "decode_fp16_low_water_blocks_environment": environment.get(
             "KVARN_DECODE_FP16_LOW_WATER_BLOCKS"
         ),
@@ -1922,6 +1965,7 @@ def verify_service_profile(
         "KVARN_NATIVE_XPU_FRONTEND": native_frontend_for_run(run, args),
         "KVARN_QLEN1_INLINE_PLAN": qlen1_inline_plan_for_run(run, args),
         "KVARN_FORWARD_POOL_ENSURE": forward_pool_ensure_for_run(run, args),
+        "KVARN_METADATA_LIFECYCLE": metadata_lifecycle_for_run(run, args),
         "KVARN_DECODE_FLUSH_SCOPE": decode_flush_scope_for_run(run, args),
         "KVARN_DECODE_FP16_LOW_WATER_BLOCKS": (
             decode_fp16_low_water_blocks_for_run(run, args)
@@ -2306,6 +2350,7 @@ def validate_engine_log(
     expected_frontend: str,
     expected_qlen1_inline_plan: str | None = None,
     expected_forward_pool_ensure: str = "always",
+    expected_metadata_lifecycle: str = DEFAULT_METADATA_LIFECYCLE,
     expected_decode_flush_scope: str = DEFAULT_DECODE_FLUSH_SCOPE,
     expected_decode_fp16_window_blocks: str = "0",
     expected_decode_fp16_low_water_blocks: str = "0",
@@ -2358,9 +2403,7 @@ def validate_engine_log(
             f"{scope} engine log must {expectation} the inline fused QKV frontend"
         )
     validate_qlen1_selection = expected_qlen1_inline_plan is not None
-    expected_qlen1_inline_plan = (
-        expected_qlen1_inline_plan or DEFAULT_QLEN1_INLINE_PLAN
-    )
+    expected_qlen1_inline_plan = expected_qlen1_inline_plan or DEFAULT_QLEN1_INLINE_PLAN
     if expected_qlen1_inline_plan not in QLEN1_INLINE_PLAN_VARIANTS:
         raise RunnerError(
             f"unsupported qlen1 inline plan {expected_qlen1_inline_plan!r}"
@@ -2371,8 +2414,7 @@ def validate_engine_log(
     ):
         raise RunnerError("trusted qlen1 inline plan requires the inline frontend")
     qlen1_selection_marker = (
-        "[KVARN_FACTORY] selected_qlen1_inline_plan="
-        f"{expected_qlen1_inline_plan};"
+        f"[KVARN_FACTORY] selected_qlen1_inline_plan={expected_qlen1_inline_plan};"
     )
     qlen1_selection_verified = native and qlen1_selection_marker in text
     if native and validate_qlen1_selection and not qlen1_selection_verified:
@@ -2398,17 +2440,44 @@ def validate_engine_log(
         "qkv_scatter_inline",
     }:
         raise RunnerError("fused_qkv_proof requires a fused QKV frontend")
-    forward_pool_ensure_active = FORWARD_POOL_ENSURE_ACTIVE_MARKER in text
-    expected_forward_pool_ensure_active = (
-        native and expected_forward_pool_ensure == "fused_qkv_proof"
+    selected_pool_marker = FORWARD_POOL_ENSURE_ACTIVE_MARKERS.get(
+        expected_forward_pool_ensure
     )
+    forward_pool_ensure_active = bool(
+        selected_pool_marker and selected_pool_marker in text
+    )
+    expected_forward_pool_ensure_active = native and selected_pool_marker is not None
+    unexpected_pool_markers = {
+        mode: marker
+        for mode, marker in FORWARD_POOL_ENSURE_ACTIVE_MARKERS.items()
+        if mode != expected_forward_pool_ensure and marker in text
+    }
     if forward_pool_ensure_active != expected_forward_pool_ensure_active:
         expectation = (
             "execute" if expected_forward_pool_ensure_active else "not execute"
         )
         scope = "native" if native else "non-native"
         raise RunnerError(
-            f"{scope} engine log must {expectation} fused QKV pool-check elision"
+            f"{scope} engine log must {expectation} the selected pool-check elision"
+        )
+    if unexpected_pool_markers:
+        raise RunnerError(
+            "engine log must not execute a different pool-check elision mode; "
+            "forward-pool runtime proof differs"
+        )
+    if expected_metadata_lifecycle not in METADATA_LIFECYCLE_VARIANTS:
+        raise RunnerError(
+            f"unsupported metadata lifecycle {expected_metadata_lifecycle!r}"
+        )
+    metadata_lifecycle_active = METADATA_LIFECYCLE_ACTIVE_MARKER in text
+    expected_metadata_lifecycle_active = (
+        native and expected_metadata_lifecycle == "incremental_qlen1"
+    )
+    if metadata_lifecycle_active != expected_metadata_lifecycle_active:
+        expectation = "execute" if expected_metadata_lifecycle_active else "not execute"
+        scope = "native" if native else "non-native"
+        raise RunnerError(
+            f"{scope} engine log must {expectation} incremental metadata lifecycle"
         )
     if not re.fullmatch(r"0|[1-9][0-9]*", expected_decode_fp16_window_blocks):
         raise RunnerError("invalid decode FP16 window engine-log expectation")
@@ -2514,8 +2583,15 @@ def validate_engine_log(
     result["forward_pool_ensure_expected"] = expected_forward_pool_ensure
     result["forward_pool_ensure_active_verified"] = forward_pool_ensure_active
     result["forward_pool_ensure_log_marker"] = (
-        FORWARD_POOL_ENSURE_ACTIVE_MARKER
+        selected_pool_marker
         if expected_forward_pool_ensure_active
+        else "not_applicable"
+    )
+    result["metadata_lifecycle_expected"] = expected_metadata_lifecycle
+    result["metadata_lifecycle_active_verified"] = metadata_lifecycle_active
+    result["metadata_lifecycle_log_marker"] = (
+        METADATA_LIFECYCLE_ACTIVE_MARKER
+        if expected_metadata_lifecycle_active
         else "not_applicable"
     )
     result["decode_fp16_window_blocks_expected"] = expected_decode_fp16_window_blocks
@@ -2705,6 +2781,8 @@ def seal_benchmark_result(
         != qlen1_inline_plan_for_run(run, args)
         or profile.get("forward_pool_ensure_environment")
         != forward_pool_ensure_for_run(run, args)
+        or profile.get("metadata_lifecycle_environment")
+        != metadata_lifecycle_for_run(run, args)
         or profile.get("decode_flush_scope_environment")
         != decode_flush_scope_for_run(run, args)
         or profile.get("decode_fp16_low_water_blocks_environment")
@@ -2761,6 +2839,7 @@ def seal_benchmark_result(
         expected_frontend=native_frontend_for_run(run, args),
         expected_qlen1_inline_plan=qlen1_inline_plan_for_run(run, args),
         expected_forward_pool_ensure=forward_pool_ensure_for_run(run, args),
+        expected_metadata_lifecycle=metadata_lifecycle_for_run(run, args),
         expected_decode_flush_scope=decode_flush_scope_for_run(run, args),
         expected_decode_fp16_low_water_blocks=(
             decode_fp16_low_water_blocks_for_run(run, args)
@@ -2837,6 +2916,7 @@ def seal_benchmark_result(
         "kvarn_native_frontend": native_frontend_for_run(run, args),
         "kvarn_qlen1_inline_plan": qlen1_inline_plan_for_run(run, args),
         "kvarn_forward_pool_ensure": forward_pool_ensure_for_run(run, args),
+        "kvarn_metadata_lifecycle": metadata_lifecycle_for_run(run, args),
         "kvarn_decode_flush_scope": decode_flush_scope_for_run(run, args),
         "kvarn_decode_fp16_low_water_blocks": (
             decode_fp16_low_water_blocks_for_run(run, args)
@@ -2879,6 +2959,12 @@ def seal_benchmark_result(
         ],
         "kvarn_forward_pool_ensure_log_marker": scan_document[
             "forward_pool_ensure_log_marker"
+        ],
+        "kvarn_metadata_lifecycle_active_verified": scan_document[
+            "metadata_lifecycle_active_verified"
+        ],
+        "kvarn_metadata_lifecycle_log_marker": scan_document[
+            "metadata_lifecycle_log_marker"
         ],
         "kvarn_vllm_use_v2_model_runner": VLLM_USE_V2_MODEL_RUNNER,
         "kvarn_native_layout_log_marker": (
@@ -3088,9 +3174,10 @@ def run_one(
                 if run.arm == "candidate"
                 else None
             ),
-        expected_frontend=native_frontend_for_run(run, args),
+            expected_frontend=native_frontend_for_run(run, args),
             expected_qlen1_inline_plan=qlen1_inline_plan_for_run(run, args),
             expected_forward_pool_ensure=forward_pool_ensure_for_run(run, args),
+            expected_metadata_lifecycle=metadata_lifecycle_for_run(run, args),
             expected_decode_flush_scope=decode_flush_scope_for_run(run, args),
             expected_decode_fp16_low_water_blocks=(
                 decode_fp16_low_water_blocks_for_run(run, args)
@@ -3511,6 +3598,8 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             != qlen1_inline_plan_environment(args)
             or correctness_factory["forward_pool_ensure"]
             != forward_pool_ensure_environment(args)
+            or correctness_factory["metadata_lifecycle"]
+            != metadata_lifecycle_environment(args)
             or correctness_factory["decode_flush_scope"]
             != decode_flush_scope_environment(args)
             or correctness_factory["decode_fp16_low_water_blocks"]
@@ -3573,6 +3662,8 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         "native_kernel_variant_id": NATIVE_KERNEL_VARIANTS[args.native_kernel_variant],
         "native_split_policy": args.native_split_policy,
         "qlen1_inline_plan": qlen1_inline_plan_environment(args),
+        "forward_pool_ensure": forward_pool_ensure_environment(args),
+        "metadata_lifecycle": metadata_lifecycle_environment(args),
         "decode_flush_scope": decode_flush_scope_environment(args),
         "native_scratch_max_splits": native_split_policy_contract(args)[
             "scratch_max_splits"
@@ -3599,6 +3690,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             "kvarn_native_frontend": native_frontend_environment(args),
             "kvarn_qlen1_inline_plan": qlen1_inline_plan_environment(args),
             "kvarn_forward_pool_ensure": forward_pool_ensure_environment(args),
+            "kvarn_metadata_lifecycle": metadata_lifecycle_environment(args),
             "vllm_use_v2_model_runner": VLLM_USE_V2_MODEL_RUNNER,
         },
         **selected_variant,
@@ -3621,6 +3713,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
                 "expected_native_frontend": native_frontend_for_run(run, args),
                 "expected_qlen1_inline_plan": qlen1_inline_plan_for_run(run, args),
                 "expected_forward_pool_ensure": forward_pool_ensure_for_run(run, args),
+                "expected_metadata_lifecycle": metadata_lifecycle_for_run(run, args),
                 "expected_decode_flush_scope": decode_flush_scope_for_run(run, args),
                 "expected_decode_fp16_low_water_blocks": (
                     decode_fp16_low_water_blocks_for_run(run, args)
@@ -3997,6 +4090,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--metadata-lifecycle",
+        choices=METADATA_LIFECYCLE_VARIANTS,
+        default=DEFAULT_METADATA_LIFECYCLE,
+        help=(
+            "engine-lifetime metadata lifecycle for the native candidate; "
+            "the auto reference always uses reference (default: reference)"
+        ),
+    )
+    parser.add_argument(
         "--qlen1-inline-plan",
         choices=QLEN1_INLINE_PLAN_VARIANTS,
         default=DEFAULT_QLEN1_INLINE_PLAN,
@@ -4129,6 +4231,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         args.request_stable_projection_rows = bool(args.request_stable_projection_rows)
         args.request_stable_rmsnorm = bool(args.request_stable_rmsnorm)
         forward_pool_ensure_environment(args)
+        metadata_lifecycle_environment(args)
         qlen1_inline_plan_environment(args)
         decode_fp16_low_water_blocks_environment(args)
         decode_flush_scope_environment(args)

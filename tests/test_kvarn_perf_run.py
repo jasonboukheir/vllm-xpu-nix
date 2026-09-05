@@ -72,6 +72,7 @@ PROFILE = {
     "prefill_store_environment": "reference",
     "native_frontend_environment": "reference",
     "forward_pool_ensure_environment": "always",
+    "metadata_lifecycle_environment": "reference",
     "qlen1_inline_plan_environment": "reference",
     "decode_flush_scope_environment": "per_row",
     "decode_fp16_low_water_blocks_environment": "0",
@@ -389,6 +390,7 @@ def test_exploratory_plan_session_has_no_formal_claims(
         "kvarn_prefill_store": "reference",
         "kvarn_native_frontend": "reference",
         "kvarn_forward_pool_ensure": "always",
+        "kvarn_metadata_lifecycle": "reference",
         "kvarn_qlen1_inline_plan": "reference",
         "kvarn_onednn_deterministic": "1",
         "kvarn_request_stable_projection_rows": "1",
@@ -456,7 +458,8 @@ def test_commands_pin_launcher_and_deterministic_workload(tmp_path: Path) -> Non
         "fusion_strategy": (
             "native_materializer_persistent_scratch_per_layer_indices_"
             "reference_writer_reference_prefill_store_reference_frontend"
-            "_always_forward_pool_ensure_reference_qlen1_inline_plan_"
+            "_always_forward_pool_ensure_reference_metadata_lifecycle_"
+            "reference_qlen1_inline_plan_"
             "decode_fp16_window_0_low_water_0_flush_scope_per_row"
         ),
         "scheduling_variant": "eager_mnbt2048",
@@ -464,7 +467,7 @@ def test_commands_pin_launcher_and_deterministic_workload(tmp_path: Path) -> Non
             "native-xe2-xe2_dpas-q6_scalar-fixed_b1s24_b4s16-"
             "per_layer-indices-reference-writer-reference-prefill-store-"
             "reference-frontend-always-forward-pool-ensure-"
-            "qip-r-"
+            "ml-r-qip-r-"
             "dw0-lw0-dfs-r-eager_mnbt2048"
         ),
     }
@@ -476,7 +479,8 @@ def test_commands_pin_launcher_and_deterministic_workload(tmp_path: Path) -> Non
     assert shared_variant["fusion_strategy"] == (
         "native_materializer_persistent_scratch_shared_indices_reference_writer_"
         "reference_prefill_store_reference_frontend_always_forward_pool_ensure_"
-        "reference_qlen1_inline_plan_decode_fp16_window_0_low_water_0_"
+        "reference_metadata_lifecycle_reference_qlen1_inline_plan_"
+        "decode_fp16_window_0_low_water_0_"
         "flush_scope_per_row"
     )
     assert (
@@ -648,6 +652,8 @@ def test_scheduler_budget_cli_defaults_overrides_and_rejects_zero(
             "qkv_scatter_inline",
             "--forward-pool-ensure",
             "fused_qkv_proof",
+            "--metadata-lifecycle",
+            "incremental_qlen1",
             "--qlen1-inline-plan",
             "trusted_native",
         ]
@@ -659,6 +665,7 @@ def test_scheduler_budget_cli_defaults_overrides_and_rejects_zero(
     assert default.request_stable_rmsnorm is True
     assert default.native_frontend == "reference"
     assert default.forward_pool_ensure == "always"
+    assert default.metadata_lifecycle == "reference"
     assert default.qlen1_inline_plan == "reference"
     assert explicit.max_num_batched_tokens == 4096
     assert nondeterministic.onednn_deterministic is False
@@ -666,6 +673,7 @@ def test_scheduler_budget_cli_defaults_overrides_and_rejects_zero(
     assert diagnostic.request_stable_rmsnorm is True
     assert diagnostic.native_frontend == "qkv_scatter_inline"
     assert diagnostic.forward_pool_ensure == "fused_qkv_proof"
+    assert diagnostic.metadata_lifecycle == "incremental_qlen1"
     assert diagnostic.qlen1_inline_plan == "trusted_native"
     for variant in sorted(runner.RUNTIME_FACTORY_ONLY_KERNEL_VARIANTS):
         for split_selector, split_arguments in (
@@ -981,6 +989,7 @@ def test_profile_verification_uses_actual_argv_and_environment(tmp_path: Path) -
         "KVARN_NATIVE_XPU_PREFILL_STORE": "reference",
         "KVARN_NATIVE_XPU_FRONTEND": "reference",
         "KVARN_FORWARD_POOL_ENSURE": "always",
+        "KVARN_METADATA_LIFECYCLE": "reference",
         "KVARN_QLEN1_INLINE_PLAN": "reference",
         "KVARN_DECODE_FLUSH_SCOPE": "per_row",
         "KVARN_DECODE_FP16_LOW_WATER_BLOCKS": "0",
@@ -1231,6 +1240,7 @@ def test_runtime_factory_environment_carries_exact_per_process_axes(
         "KVARN_FACTORY_FORWARD_POOL_ENSURE": "fused_qkv_proof",
         "KVARN_FACTORY_KERNEL_VARIANT": "q6_next_page_prefetch",
         "KVARN_FACTORY_KV_CACHE_DTYPE": runner.COMPACT_DTYPE,
+        "KVARN_FACTORY_METADATA_LIFECYCLE": "reference",
         "KVARN_FACTORY_MAX_MODEL_LEN": "65536",
         "KVARN_FACTORY_MAX_NUM_SEQS": "4",
         "KVARN_FACTORY_NATIVE_XPU_FRONTEND": "qkv_scatter_inline",
@@ -1248,10 +1258,7 @@ def test_runtime_factory_environment_carries_exact_per_process_axes(
         candidate_environment["KVARN_FACTORY_FORWARD_POOL_ENSURE"] == "fused_qkv_proof"
     )
     assert "KVARN_FORWARD_POOL_ENSURE" not in candidate_environment
-    assert (
-        candidate_environment["KVARN_FACTORY_QLEN1_INLINE_PLAN"]
-        == "trusted_native"
-    )
+    assert candidate_environment["KVARN_FACTORY_QLEN1_INLINE_PLAN"] == "trusted_native"
     assert candidate_environment["KVARN_FACTORY_FLUSH_WRITER"] == "sinkhorn_pack_xe2"
     assert candidate_environment["KVARN_FACTORY_PREFILL_STORE"] == "hadamard_scatter"
     assert runner.runtime_factory_axes_for_run(reference, args) == {
@@ -1264,6 +1271,7 @@ def test_runtime_factory_environment_carries_exact_per_process_axes(
         "KVARN_FACTORY_FORWARD_POOL_ENSURE": "always",
         "KVARN_FACTORY_KERNEL_VARIANT": "baseline",
         "KVARN_FACTORY_KV_CACHE_DTYPE": "auto",
+        "KVARN_FACTORY_METADATA_LIFECYCLE": "reference",
         "KVARN_FACTORY_MAX_MODEL_LEN": "65536",
         "KVARN_FACTORY_MAX_NUM_SEQS": "4",
         "KVARN_FACTORY_NATIVE_XPU_FRONTEND": "reference",
@@ -1299,6 +1307,112 @@ def test_decode_fp16_low_water_requires_a_valid_high_water_window(
 
     args.decode_fp16_low_water_blocks = 20
     assert runner.decode_fp16_low_water_blocks_environment(args) == "20"
+
+
+@pytest.mark.parametrize(
+    ("pool_ensure", "metadata_lifecycle"),
+    [
+        ("epoch_latch", "reference"),
+        ("always", "incremental_qlen1"),
+        ("epoch_latch", "incremental_qlen1"),
+    ],
+    ids=("variant-a", "variant-b", "variant-a-plus-b"),
+)
+def test_round7_runtime_factory_maps_a_b_and_combined_without_rebuild(
+    tmp_path: Path, pool_ensure: str, metadata_lifecycle: str
+) -> None:
+    args = _args(tmp_path)
+    args.launcher_mode = "runtime-factory"
+    args.native_layout = "xe2_dpas"
+    args.native_kernel_variant = "q6_scalar"
+    args.native_split_policy = "b70_q6"
+    args.forward_pool_ensure = pool_ensure
+    args.metadata_lifecycle = metadata_lifecycle
+    candidate = PlannedRun(Workload(4096, 1, 32, 1, 17), "candidate", 1)
+    reference = PlannedRun(candidate.workload, "reference", 2)
+
+    candidate_axes = runner.runtime_factory_axes_for_run(candidate, args)
+    assert candidate_axes["KVARN_FACTORY_FORWARD_POOL_ENSURE"] == pool_ensure
+    assert candidate_axes["KVARN_FACTORY_METADATA_LIFECYCLE"] == metadata_lifecycle
+    assert (
+        runner.runtime_factory_axes_for_run(reference, args)[
+            "KVARN_FACTORY_FORWARD_POOL_ENSURE"
+        ]
+        == "always"
+    )
+    assert (
+        runner.runtime_factory_axes_for_run(reference, args)[
+            "KVARN_FACTORY_METADATA_LIFECYCLE"
+        ]
+        == "reference"
+    )
+    candidate_id = runner.variant_provenance_for_run(candidate, args)["variant_id"]
+    assert f"{pool_ensure}-forward-pool-ensure" in candidate_id
+    assert runner.METADATA_LIFECYCLE_IDS[metadata_lifecycle] in candidate_id
+
+
+@pytest.mark.parametrize(
+    ("pool_ensure", "metadata_lifecycle"),
+    [
+        ("epoch_latch", "reference"),
+        ("always", "incremental_qlen1"),
+        ("epoch_latch", "incremental_qlen1"),
+    ],
+    ids=("variant-a", "variant-b", "variant-a-plus-b"),
+)
+def test_round7_engine_log_requires_exact_a_b_markers(
+    tmp_path: Path, pool_ensure: str, metadata_lifecycle: str
+) -> None:
+    log = tmp_path / "engine.log"
+    lines = [
+        "INFO config: device_config=xpu",
+        (
+            "INFO Actual usage is 17.54 GiB for consumed memory. "
+            "Current kv cache memory in use is 10.92 GiB."
+        ),
+        f"INFO {runner.NATIVE_DISPATCH} (direct bf16 output=True)",
+    ]
+    pool_marker = runner.FORWARD_POOL_ENSURE_ACTIVE_MARKERS.get(pool_ensure)
+    if pool_marker:
+        lines.append(f"INFO {pool_marker} layer=0")
+    if metadata_lifecycle == "incremental_qlen1":
+        lines.append(f"INFO {runner.METADATA_LIFECYCLE_ACTIVE_MARKER} layer=0")
+    log.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    scan = runner.validate_engine_log(
+        log,
+        native=True,
+        expected_frontend="reference",
+        expected_forward_pool_ensure=pool_ensure,
+        expected_metadata_lifecycle=metadata_lifecycle,
+    )
+    assert scan["forward_pool_ensure_log_marker"] == (pool_marker or "not_applicable")
+    assert scan["metadata_lifecycle_log_marker"] == (
+        runner.METADATA_LIFECYCLE_ACTIVE_MARKER
+        if metadata_lifecycle == "incremental_qlen1"
+        else "not_applicable"
+    )
+
+
+def test_round7_reference_metadata_mode_rejects_incremental_marker(
+    tmp_path: Path,
+) -> None:
+    log = tmp_path / "engine.log"
+    log.write_text(
+        "INFO config: device_config=xpu\n"
+        "INFO Actual usage is 17.54 GiB for consumed memory. "
+        "Current kv cache memory in use is 10.92 GiB.\n"
+        f"INFO {runner.NATIVE_DISPATCH} (direct bf16 output=True)\n"
+        f"INFO {runner.METADATA_LIFECYCLE_ACTIVE_MARKER} layer=0\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(RunnerError, match="incremental metadata lifecycle"):
+        runner.validate_engine_log(
+            log,
+            native=True,
+            expected_frontend="reference",
+            expected_metadata_lifecycle="reference",
+        )
 
 
 def test_decode_flush_scope_defaults_and_rejects_unknown_value(tmp_path: Path) -> None:
@@ -2237,6 +2351,7 @@ def test_matched_profile_normalizes_only_declared_arm_differences(
         "KVARN_NATIVE_XPU_DPAS_LAYOUT": "0",
         "KVARN_NATIVE_XPU_FRONTEND": "reference",
         "KVARN_FORWARD_POOL_ENSURE": "always",
+        "KVARN_METADATA_LIFECYCLE": "reference",
         "KVARN_NATIVE_XPU_KERNEL_VARIANT": "baseline",
         "KVARN_ONEDNN_DETERMINISTIC": "1",
         "KVARN_NATIVE_XPU_SPLITS": "1",

@@ -49,7 +49,7 @@ TRACE_SUFFIXES = (".pt.trace.json", ".pt.trace.json.gz")
 MIN_PROFILE_STEPS = 20
 MAX_PROFILE_STEPS = 50
 DECODE_SETTLE_STEPS = 4
-VARIANT_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]{0,191}$")
+VARIANT_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]{0,254}$")
 
 
 def profile_delay_iterations(
@@ -411,6 +411,7 @@ def variant_provenance(
     flush_writer = perf.flush_writer_for_run(run, args)
     prefill_store = perf.prefill_store_for_run(run, args)
     forward_pool_ensure = perf.forward_pool_ensure_for_run(run, args)
+    metadata_lifecycle = perf.metadata_lifecycle_for_run(run, args)
     qlen1_inline_plan = perf.qlen1_inline_plan_for_run(run, args)
     decode_window = perf.decode_fp16_window_blocks_for_run(run, args)
     decode_low_water = perf.decode_fp16_low_water_blocks_for_run(run, args)
@@ -429,6 +430,7 @@ def variant_provenance(
             f"{flush_writer}_writer_{prefill_store}_prefill_store_"
             f"{native_frontend}_frontend_"
             f"{forward_pool_ensure}_forward_pool_ensure_"
+            f"{metadata_lifecycle}_metadata_lifecycle_"
             f"{qlen1_inline_plan}_qlen1_inline_plan_"
             f"decode_fp16_window_{decode_window}_low_water_{decode_low_water}_"
             f"flush_scope_{decode_flush_scope}"
@@ -440,6 +442,7 @@ def variant_provenance(
             f"{prefill_store}-prefill-store-"
             f"{native_frontend}-frontend-"
             f"{forward_pool_ensure}-forward-pool-ensure-"
+            f"{perf.METADATA_LIFECYCLE_IDS[metadata_lifecycle]}-"
             f"{perf.QLEN1_INLINE_PLAN_IDS[qlen1_inline_plan]}-"
             f"dw{decode_window}-lw{decode_low_water}-"
             f"{perf.DECODE_FLUSH_SCOPE_IDS[decode_flush_scope]}-"
@@ -448,7 +451,7 @@ def variant_provenance(
     variant_id = args.variant_id or generated_id
     if VARIANT_ID_PATTERN.fullmatch(variant_id) is None:
         raise perf.RunnerError(
-            "variant id must be a lowercase slug of at most 192 characters"
+            "variant id must be a lowercase slug of at most 255 characters"
         )
     return {
         "variant_id": variant_id,
@@ -460,6 +463,7 @@ def variant_provenance(
         "split_policy_selector": perf.native_split_policy_name_for_run(run, args),
         "native_frontend": native_frontend,
         "forward_pool_ensure": forward_pool_ensure,
+        "metadata_lifecycle": metadata_lifecycle,
         "qlen1_inline_plan": qlen1_inline_plan,
         "decode_flush_scope": decode_flush_scope,
         "decode_fp16_low_water_blocks": decode_low_water,
@@ -618,6 +622,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
     run = perf.PlannedRun(workload=workload, arm=args.arm, order=1)
     native_frontend = perf.native_frontend_for_run(run, args)
     forward_pool_ensure = perf.forward_pool_ensure_for_run(run, args)
+    metadata_lifecycle = perf.metadata_lifecycle_for_run(run, args)
     qlen1_inline_plan = perf.qlen1_inline_plan_for_run(run, args)
     expected_launcher = perf.launcher_name(run, args)
     if args.launcher is not None and args.launcher != expected_launcher:
@@ -677,6 +682,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         ],
         "native_frontend": native_frontend,
         "forward_pool_ensure": forward_pool_ensure,
+        "metadata_lifecycle": metadata_lifecycle,
         "qlen1_inline_plan": qlen1_inline_plan,
         "decode_flush_scope": perf.decode_flush_scope_for_run(run, args),
         "decode_fp16_low_water_blocks": (
@@ -808,6 +814,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             ),
             expected_frontend=native_frontend,
             expected_forward_pool_ensure=forward_pool_ensure,
+            expected_metadata_lifecycle=metadata_lifecycle,
             expected_qlen1_inline_plan=qlen1_inline_plan,
             expected_decode_flush_scope=perf.decode_flush_scope_for_run(run, args),
             expected_decode_fp16_low_water_blocks=(
@@ -867,12 +874,16 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
                 ],
                 "native_frontend": native_frontend,
                 "forward_pool_ensure": forward_pool_ensure,
+                "metadata_lifecycle": metadata_lifecycle,
                 "qlen1_inline_plan": qlen1_inline_plan,
                 "qlen1_inline_plan_environment": service_profile[
                     "qlen1_inline_plan_environment"
                 ],
                 "forward_pool_ensure_environment": service_profile[
                     "forward_pool_ensure_environment"
+                ],
+                "metadata_lifecycle_environment": service_profile[
+                    "metadata_lifecycle_environment"
                 ],
                 "decode_flush_scope": perf.decode_flush_scope_for_run(run, args),
                 "decode_flush_scope_environment": service_profile[
@@ -917,6 +928,12 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
                 ],
                 "forward_pool_ensure_log_marker": log_scan[
                     "forward_pool_ensure_log_marker"
+                ],
+                "metadata_lifecycle_active_verified": log_scan[
+                    "metadata_lifecycle_active_verified"
+                ],
+                "metadata_lifecycle_log_marker": log_scan[
+                    "metadata_lifecycle_log_marker"
                 ],
                 "qlen1_inline_plan_selection_verified": log_scan[
                     "qlen1_inline_plan_selection_verified"
@@ -979,6 +996,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             ],
             native_frontend=native_frontend,
             forward_pool_ensure=forward_pool_ensure,
+            metadata_lifecycle=metadata_lifecycle,
             qlen1_inline_plan=qlen1_inline_plan,
             decode_flush_scope=perf.decode_flush_scope_for_run(run, args),
             decode_fp16_low_water_blocks=(
@@ -1009,6 +1027,10 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
                 "forward_pool_ensure_active_verified"
             ],
             forward_pool_ensure_log_marker=log_scan["forward_pool_ensure_log_marker"],
+            metadata_lifecycle_active_verified=log_scan[
+                "metadata_lifecycle_active_verified"
+            ],
+            metadata_lifecycle_log_marker=log_scan["metadata_lifecycle_log_marker"],
             qlen1_inline_plan_selection_verified=log_scan[
                 "qlen1_inline_plan_selection_verified"
             ],
@@ -1084,6 +1106,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help=(
             "engine-lifetime forward pool guard for the native profile; "
             "the auto reference always uses always"
+        ),
+    )
+    parser.add_argument(
+        "--metadata-lifecycle",
+        choices=perf.METADATA_LIFECYCLE_VARIANTS,
+        default=perf.DEFAULT_METADATA_LIFECYCLE,
+        help=(
+            "engine-lifetime metadata lifecycle for the native profile; "
+            "the auto reference always uses reference"
         ),
     )
     parser.add_argument(
@@ -1234,6 +1265,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         args.request_stable_projection_rows = bool(args.request_stable_projection_rows)
         args.request_stable_rmsnorm = bool(args.request_stable_rmsnorm)
         perf.forward_pool_ensure_environment(args)
+        perf.metadata_lifecycle_environment(args)
         perf.qlen1_inline_plan_environment(args)
         perf.decode_fp16_low_water_blocks_environment(args)
         perf.decode_flush_scope_environment(args)
@@ -1321,7 +1353,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             and VARIANT_ID_PATTERN.fullmatch(args.variant_id) is None
         ):
             raise perf.RunnerError(
-                "variant id must be a lowercase slug of at most 192 characters"
+                "variant id must be a lowercase slug of at most 255 characters"
             )
         if perf.split_policy.owns_runtime_selection(args.native_split_policy):
             if args.arm != "candidate":

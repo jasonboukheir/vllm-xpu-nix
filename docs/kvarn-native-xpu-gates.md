@@ -493,12 +493,20 @@ measurement is accepted.
 the existing fused-QKV active marker and
 `[KVARN_FRONTEND_INLINE] active=qkv_scatter_inline; wrapper=unified_qkv_attention_with_output;`,
 which is emitted only when the combined wrapper executes.
-The service-only `--forward-pool-ensure always|fused_qkv_proof` selector is
+The service-only `--forward-pool-ensure always|epoch_latch|fused_qkv_proof`
+selector is
 captured in service profiles and sealed provenance. `fused_qkv_proof` requires
 a fused QKV frontend and the runtime marker
 `[KVARN_FORWARD_POOL_ENSURE] active=fused_qkv_proof; action=elide_ensure_pool;`.
 Both service-only axes are deliberately absent from direct primitive results;
 reference and inapplicable paths must not emit their active markers.
+Round-7 service runs additionally expose `--metadata-lifecycle
+reference|incremental_qlen1`. Variant A is `epoch_latch` with reference
+metadata, Variant B is `always` with incremental metadata, and the combined
+candidate selects both. Auto/non-native reference phases always remain
+`always` plus `reference`. Incremental results require the exact
+`[KVARN_METADATA_LIFECYCLE] active=incremental_qlen1;
+action=elide_full_lifecycle_scan` marker; reference phases reject it.
 Every sealed performance result records the verified execution booleans and
 marker strings plus the run-local engine-log scan path and SHA-256. The scan
 also binds the engine-log SHA-256, so either artifact changing invalidates the

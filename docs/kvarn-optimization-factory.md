@@ -580,6 +580,40 @@ record:
 | `r1-p5-dpas-vector-load` | pass through 262K | 81.2--1259 us with q6 | runner-up for 4K/B4 only |
 | `r1-p6-dpas-page128` | not compiled | no measurement | defer |
 
+### Round 7 service lifecycle decision
+
+Round 7 used one control-isolated Nix closure on the Arc Pro B70 and changed
+only runtime factory selectors. The source was vLLM `d639085d571734f9`,
+kernels `167457d095339956`, packaging `3c81bfc202185209`, and config
+`ce2e2907b587ccae`; the candidate environment was
+`/nix/store/qcwclvh3dwdccc2rlq2bcwjjq2sdjapv-vllm-xpu-kvarn-factory-env`.
+The joint host suite passed 492 tests with 9 hardware-dependent skips before
+the build. All service cells used B4/4K, 1,280 output tokens, ID18, split 24,
+high-water 4, low-water 0, and batch-cohort flushes. Auto was pinned to
+`always` plus `reference` in every comparison.
+
+| Candidate | Evidence | Output / auto | Median request decode / auto | p99 ITL / auto | p99 TTFT / auto | Decision |
+|---|---|---:|---:|---:|---:|---|
+| unchanged Round-6 profile | complete ABBA | 97.733% | 97.968% | 102.499% | 104.797% | retain as service control |
+| A: `epoch_latch` | complete ABBA; active marker on every Kvarn layer | 97.705% | 97.988% | 102.300% | 105.641% | eliminate; no throughput gain |
+| B: `incremental_qlen1` | complete ABBA; active lifecycle marker | 97.769% | 98.010% | 102.301% | 104.696% | eliminate; movement is run noise |
+| A+B | first matched pair; both active markers | 97.756% | not aggregated | 102.092% | 104.833% | eliminate early; reverse pair not warranted |
+
+The exact artifact root is
+`benchmark-results/kvarn/round7-lifecycle-unbiased-20260905T043320Z`.
+The completed cells contain sealed exploratory summaries; A+B was stopped
+after the first matched pair under the fast-elimination rule. These are
+GPU-only exploratory results, not promotion evidence. The controls show that
+neither repeated full pool validation nor the reference lifecycle scan is the
+dominant remaining service gap.
+
+Round 8 therefore ranks launch and dispatch overhead ahead of further reader
+work: a lean O(1) bound qlen1 plan, a current-stream QKV scatter without
+redundant allocator stream recording, a compound scatter/decode dispatcher,
+and an ID18 last-arrival fused reduction. Build compatible variants together,
+retain ID18 unchanged as the native control, and screen B1/B4 at 4K before any
+long-context or formal service matrix.
+
 Final promotion still requires native Kvarn statistical parity or better with
 auto on the B70: paired ratio at least 98%, hard throughput and per-request
 decode floor at least 95%, p99 TTFT/ITL no more than 110% of auto, and service

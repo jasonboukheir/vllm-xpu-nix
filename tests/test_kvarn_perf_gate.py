@@ -10,7 +10,7 @@ from scripts import kvarn_perf_gate as gate_module
 from scripts.kvarn_perf_gate import GateError, _load_correctness, compare
 
 
-def test_combined_library_matrix_registers_runtime_variants_through_id21() -> None:
+def test_combined_library_matrix_registers_runtime_variants_through_id22() -> None:
     assert [
         (item["kernel_variant"], item["kernel_variant_id"])
         for item in gate_module.COMBINED_LIBRARY_VARIANT_MATRIX
@@ -32,10 +32,12 @@ def test_combined_library_matrix_registers_runtime_variants_through_id21() -> No
         ("q6_prefetch_record_cursor", 18),
         ("q6_page_metadata_cursor", 20),
         ("q6_paired_nibble_half2", 21),
+        ("q6_last_arrival_fused_reduce", 22),
     ]
     assert {
         "q6_page_metadata_cursor",
         "q6_paired_nibble_half2",
+        "q6_last_arrival_fused_reduce",
     } <= gate_module.B70_Q6_KERNEL_VARIANTS
 
 
@@ -558,12 +560,21 @@ def _correctness(
             + (
                 f"INFO {gate_module.NATIVE_FRONTEND_ACTIVE_MARKER} layer=test\n"
                 if spec["native"]
-                and effective_frontend in {"qkv_scatter", "qkv_scatter_inline"}
+                and effective_frontend in gate_module.FUSED_QKV_FRONTEND_VARIANTS
                 else ""
             )
             + (
                 f"INFO {gate_module.NATIVE_FRONTEND_INLINE_ACTIVE_MARKER} layer=test\n"
-                if spec["native"] and effective_frontend == "qkv_scatter_inline"
+                if spec["native"]
+                and effective_frontend in gate_module.INLINE_QKV_FRONTEND_VARIANTS
+                else ""
+            )
+            + (
+                "INFO [KVARN_FRONTEND] active=qkv_scatter; layer=test; "
+                f"{gate_module.NATIVE_FRONTEND_CURRENT_STREAM_OP_MARKER} "
+                "cache_layout=xe2_dpas\n"
+                if spec["native"]
+                and effective_frontend == "qkv_scatter_inline_current_stream"
                 else ""
             )
             + (
@@ -584,8 +595,17 @@ def _correctness(
                 else ""
             )
             + (
-                f"INFO {gate_module.QLEN1_INLINE_PLAN_ACTIVE_MARKER} layer=test\n"
-                if spec["native"] and effective_qlen1_inline_plan == "trusted_native"
+                "INFO "
+                f"{gate_module.QLEN1_INLINE_PLAN_ACTIVE_MARKERS[effective_qlen1_inline_plan]} "
+                "layer=test\n"
+                if spec["native"] and effective_qlen1_inline_plan != "reference"
+                else ""
+            )
+            + (
+                f"INFO {gate_module.LAST_ARRIVAL_ACTIVE_MARKER}\n"
+                if spec["native"]
+                and spec["native_kernel_variant"]
+                == gate_module.LAST_ARRIVAL_KERNEL_VARIANT
                 else ""
             )
             + (
@@ -614,20 +634,26 @@ def _correctness(
                     "native_frontend_expected": effective_frontend,
                     "native_frontend_active_verified": (
                         spec["native"]
-                        and effective_frontend in {"qkv_scatter", "qkv_scatter_inline"}
+                        and effective_frontend
+                        in gate_module.FUSED_QKV_FRONTEND_VARIANTS
                     ),
                     "native_frontend_log_marker": (
                         gate_module.NATIVE_FRONTEND_ACTIVE_MARKER
                         if spec["native"]
-                        and effective_frontend in {"qkv_scatter", "qkv_scatter_inline"}
+                        and effective_frontend
+                        in gate_module.FUSED_QKV_FRONTEND_VARIANTS
                         else "not_applicable"
                     ),
                     "native_frontend_inline_active_verified": (
-                        spec["native"] and effective_frontend == "qkv_scatter_inline"
+                        spec["native"]
+                        and effective_frontend
+                        in gate_module.INLINE_QKV_FRONTEND_VARIANTS
                     ),
                     "native_frontend_inline_log_marker": (
                         gate_module.NATIVE_FRONTEND_INLINE_ACTIVE_MARKER
-                        if spec["native"] and effective_frontend == "qkv_scatter_inline"
+                        if spec["native"]
+                        and effective_frontend
+                        in gate_module.INLINE_QKV_FRONTEND_VARIANTS
                         else "not_applicable"
                     ),
                     "forward_pool_ensure_expected": effective_forward_pool_ensure,
@@ -662,12 +688,14 @@ def _correctness(
                     ),
                     "qlen1_inline_plan_active_verified": (
                         spec["native"]
-                        and effective_qlen1_inline_plan == "trusted_native"
+                        and effective_qlen1_inline_plan != "reference"
                     ),
                     "qlen1_inline_plan_active_log_marker": (
-                        gate_module.QLEN1_INLINE_PLAN_ACTIVE_MARKER
+                        gate_module.QLEN1_INLINE_PLAN_ACTIVE_MARKERS[
+                            effective_qlen1_inline_plan
+                        ]
                         if spec["native"]
-                        and effective_qlen1_inline_plan == "trusted_native"
+                        and effective_qlen1_inline_plan != "reference"
                         else "not_applicable"
                     ),
                     "decode_fp16_window_blocks_expected": (
@@ -777,20 +805,26 @@ def _correctness(
                     "request_stable_rmsnorm": spec["request_stable_rmsnorm"],
                     "native_frontend_active_verified": (
                         spec["native"]
-                        and effective_frontend in {"qkv_scatter", "qkv_scatter_inline"}
+                        and effective_frontend
+                        in gate_module.FUSED_QKV_FRONTEND_VARIANTS
                     ),
                     "native_frontend_log_marker": (
                         gate_module.NATIVE_FRONTEND_ACTIVE_MARKER
                         if spec["native"]
-                        and effective_frontend in {"qkv_scatter", "qkv_scatter_inline"}
+                        and effective_frontend
+                        in gate_module.FUSED_QKV_FRONTEND_VARIANTS
                         else "not_applicable"
                     ),
                     "native_frontend_inline_active_verified": (
-                        spec["native"] and effective_frontend == "qkv_scatter_inline"
+                        spec["native"]
+                        and effective_frontend
+                        in gate_module.INLINE_QKV_FRONTEND_VARIANTS
                     ),
                     "native_frontend_inline_log_marker": (
                         gate_module.NATIVE_FRONTEND_INLINE_ACTIVE_MARKER
-                        if spec["native"] and effective_frontend == "qkv_scatter_inline"
+                        if spec["native"]
+                        and effective_frontend
+                        in gate_module.INLINE_QKV_FRONTEND_VARIANTS
                         else "not_applicable"
                     ),
                     "forward_pool_ensure_active_verified": (
@@ -822,12 +856,14 @@ def _correctness(
                     ),
                     "qlen1_inline_plan_active_verified": (
                         spec["native"]
-                        and effective_qlen1_inline_plan == "trusted_native"
+                        and effective_qlen1_inline_plan != "reference"
                     ),
                     "qlen1_inline_plan_active_log_marker": (
-                        gate_module.QLEN1_INLINE_PLAN_ACTIVE_MARKER
+                        gate_module.QLEN1_INLINE_PLAN_ACTIVE_MARKERS[
+                            effective_qlen1_inline_plan
+                        ]
                         if spec["native"]
-                        and effective_qlen1_inline_plan == "trusted_native"
+                        and effective_qlen1_inline_plan != "reference"
                         else "not_applicable"
                     ),
                     "profile": _artifact(profile),
@@ -1318,12 +1354,13 @@ def _result(
     effective_decode_fp16_low_water_blocks = (
         "0" if arm == "reference" else decode_fp16_low_water_blocks
     )
-    frontend_active = arm == "candidate" and effective_frontend in {
-        "qkv_scatter",
-        "qkv_scatter_inline",
-    }
+    frontend_active = (
+        arm == "candidate"
+        and effective_frontend in gate_module.FUSED_QKV_FRONTEND_VARIANTS
+    )
     frontend_inline_active = (
-        arm == "candidate" and effective_frontend == "qkv_scatter_inline"
+        arm == "candidate"
+        and effective_frontend in gate_module.INLINE_QKV_FRONTEND_VARIANTS
     )
     forward_pool_ensure_active = (
         arm == "candidate" and effective_forward_pool_ensure != "always"
@@ -1334,8 +1371,11 @@ def _result(
     metadata_lifecycle_active = (
         arm == "candidate" and effective_metadata_lifecycle == "incremental_qlen1"
     )
-    qlen1_inline_plan_active = (
-        arm == "candidate" and effective_qlen1_inline_plan == "trusted_native"
+    qlen1_active_marker = gate_module.QLEN1_INLINE_PLAN_ACTIVE_MARKERS.get(
+        effective_qlen1_inline_plan
+    )
+    qlen1_inline_plan_active = bool(
+        arm == "candidate" and qlen1_active_marker
     )
     decode_flush_batch_active = (
         decode_flush_batch_executed
@@ -1385,7 +1425,7 @@ def _result(
                 ),
                 "qlen1_inline_plan_active_verified": qlen1_inline_plan_active,
                 "qlen1_inline_plan_active_log_marker": (
-                    gate_module.QLEN1_INLINE_PLAN_ACTIVE_MARKER
+                    qlen1_active_marker
                     if qlen1_inline_plan_active
                     else "not_applicable"
                 ),
@@ -1504,7 +1544,7 @@ def _result(
         ),
         "kvarn_qlen1_inline_plan_active_verified": qlen1_inline_plan_active,
         "kvarn_qlen1_inline_plan_active_log_marker": (
-            gate_module.QLEN1_INLINE_PLAN_ACTIVE_MARKER
+            qlen1_active_marker
             if qlen1_inline_plan_active
             else "not_applicable"
         ),
@@ -1639,11 +1679,17 @@ def _log(
             "INFO [KVARN_FACTORY] selected_qlen1_inline_plan="
             f"{qlen1_inline_plan}; immutable for engine lifetime"
         )
-        if native_frontend in {"qkv_scatter", "qkv_scatter_inline"}:
+        if native_frontend in gate_module.FUSED_QKV_FRONTEND_VARIANTS:
             lines.append(f"INFO {gate_module.NATIVE_FRONTEND_ACTIVE_MARKER} layer=test")
-        if native_frontend == "qkv_scatter_inline":
+        if native_frontend in gate_module.INLINE_QKV_FRONTEND_VARIANTS:
             lines.append(
                 f"INFO {gate_module.NATIVE_FRONTEND_INLINE_ACTIVE_MARKER} layer=test"
+            )
+        if native_frontend == "qkv_scatter_inline_current_stream":
+            lines.append(
+                "INFO [KVARN_FRONTEND] active=qkv_scatter; layer=test; "
+                f"{gate_module.NATIVE_FRONTEND_CURRENT_STREAM_OP_MARKER} "
+                "cache_layout=xe2_dpas"
             )
         if forward_pool_ensure != "always":
             lines.append(
@@ -1655,10 +1701,14 @@ def _log(
             lines.append(
                 f"INFO {gate_module.METADATA_LIFECYCLE_ACTIVE_MARKER} layer=test"
             )
-        if qlen1_inline_plan == "trusted_native":
+        if qlen1_inline_plan != "reference":
             lines.append(
-                f"INFO {gate_module.QLEN1_INLINE_PLAN_ACTIVE_MARKER} layer=test"
+                "INFO "
+                f"{gate_module.QLEN1_INLINE_PLAN_ACTIVE_MARKERS[qlen1_inline_plan]} "
+                "layer=test"
             )
+        if native_kernel_variant == gate_module.LAST_ARRIVAL_KERNEL_VARIANT:
+            lines.append(f"INFO {gate_module.LAST_ARRIVAL_ACTIVE_MARKER}")
         if decode_flush_batch_executed:
             lines.append(
                 "INFO [KVARN_DECODE_FLUSH_BATCH] "
@@ -2010,6 +2060,29 @@ def test_match_gate_accepts_trusted_qlen1_inline_plan(tmp_path: Path) -> None:
         set(reference) == {"path", "sha256"}
         for reference in result["candidate"]["engine_log_scan"]
     )
+
+
+def test_match_gate_accepts_round8_combined_runtime_proofs(tmp_path: Path) -> None:
+    result = _compare(
+        _arms(
+            tmp_path,
+            native_kernel_variant=gate_module.LAST_ARRIVAL_KERNEL_VARIANT,
+            native_frontend="qkv_scatter_inline_current_stream",
+            forward_pool_ensure="fused_qkv_proof",
+            qlen1_inline_plan="bound_native_v2",
+        )
+    )
+
+    assert result["status"] == "passed"
+    assert result["reference"]["arm"]["kvarn_native_kernel_variant"] == "baseline"
+    candidate = result["candidate"]["arm"]
+    assert candidate["kvarn_native_kernel_variant"] == (
+        gate_module.LAST_ARRIVAL_KERNEL_VARIANT
+    )
+    assert candidate["kvarn_native_frontend"] == (
+        "qkv_scatter_inline_current_stream"
+    )
+    assert candidate["kvarn_qlen1_inline_plan"] == "bound_native_v2"
 
 
 def test_match_gate_rejects_self_consistent_execution_proof_tamper(

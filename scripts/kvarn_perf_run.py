@@ -74,17 +74,28 @@ NATIVE_KERNEL_VARIANTS = {
     "q6_prefetch_record_cursor": 18,
     "q6_page_metadata_cursor": 20,
     "q6_paired_nibble_half2": 21,
+    "q6_last_arrival_fused_reduce": 22,
 }
 REFERENCE_NATIVE_KERNEL_VARIANT = "baseline"
 NATIVE_SPLIT_POLICIES = split_policy.NATIVE_SPLIT_POLICIES
 FLUSH_INDEX_MATERIALIZATION_VARIANTS = ("per_layer", "shared")
 FLUSH_WRITER_VARIANTS = ("reference", "native_xe2", "sinkhorn_pack_xe2")
 PREFILL_STORE_VARIANTS = ("reference", "hadamard_scatter")
-NATIVE_FRONTEND_VARIANTS = ("reference", "qkv_scatter", "qkv_scatter_inline")
+NATIVE_FRONTEND_VARIANTS = (
+    "reference",
+    "qkv_scatter",
+    "qkv_scatter_inline",
+    "qkv_scatter_inline_current_stream",
+)
+FUSED_QKV_FRONTEND_VARIANTS = frozenset(NATIVE_FRONTEND_VARIANTS[1:])
+INLINE_QKV_FRONTEND_VARIANTS = frozenset(NATIVE_FRONTEND_VARIANTS[2:])
 NATIVE_FRONTEND_ACTIVE_MARKER = "[KVARN_FRONTEND] active=qkv_scatter;"
 NATIVE_FRONTEND_INLINE_ACTIVE_MARKER = (
     "[KVARN_FRONTEND_INLINE] active=qkv_scatter_inline; "
     "wrapper=unified_qkv_attention_with_output;"
+)
+NATIVE_FRONTEND_CURRENT_STREAM_OP_MARKER = (
+    "native_op=kvarn_hadamard_qkv_scatter_current_stream; qlen=1;"
 )
 FORWARD_POOL_ENSURE_VARIANTS = ("always", "epoch_latch", "fused_qkv_proof")
 FORWARD_POOL_ENSURE_ACTIVE_MARKERS = {
@@ -105,9 +116,21 @@ METADATA_LIFECYCLE_ACTIVE_MARKER = (
     "[KVARN_METADATA_LIFECYCLE] active=incremental_qlen1; "
     "action=elide_full_lifecycle_scan"
 )
-QLEN1_INLINE_PLAN_VARIANTS = ("reference", "trusted_native")
-QLEN1_INLINE_PLAN_IDS = {"reference": "qip-r", "trusted_native": "qip-t"}
+QLEN1_INLINE_PLAN_VARIANTS = ("reference", "trusted_native", "bound_native_v2")
+QLEN1_INLINE_PLAN_IDS = {
+    "reference": "qip-r",
+    "trusted_native": "qip-t",
+    "bound_native_v2": "qip-b2",
+}
 QLEN1_INLINE_PLAN_ACTIVE_MARKER = "[KVARN_TRUSTED_QLEN1_INLINE] active=trusted_native;"
+QLEN1_INLINE_PLAN_ACTIVE_MARKERS = {
+    "trusted_native": QLEN1_INLINE_PLAN_ACTIVE_MARKER,
+    "bound_native_v2": "[KVARN_BOUND_QLEN1_INLINE] active=bound_native_v2;",
+}
+LAST_ARRIVAL_KERNEL_VARIANT = "q6_last_arrival_fused_reduce"
+LAST_ARRIVAL_ACTIVE_MARKER = (
+    "[KVARN_FACTORY] ID22 last-arrival fused reduction active;"
+)
 DECODE_FLUSH_SCOPES = ("per_row", "batch_cohort")
 DECODE_FLUSH_SCOPE_IDS = {"per_row": "dfs-r", "batch_cohort": "dfs-b"}
 DECODE_FLUSH_BATCH_MARKER_PATTERN = re.compile(
@@ -139,10 +162,15 @@ B70_Q6_KERNEL_VARIANTS = frozenset(
         "q6_prefetch_record_cursor",
         "q6_page_metadata_cursor",
         "q6_paired_nibble_half2",
+        "q6_last_arrival_fused_reduce",
     }
 )
 RUNTIME_FACTORY_ONLY_KERNEL_VARIANTS = frozenset(
-    {"q6_page_metadata_cursor", "q6_paired_nibble_half2"}
+    {
+        "q6_page_metadata_cursor",
+        "q6_paired_nibble_half2",
+        "q6_last_arrival_fused_reduce",
+    }
 )
 IMMUTABLE_QUALIFIED_KERNEL_VARIANTS = (
     B70_Q6_KERNEL_VARIANTS - RUNTIME_FACTORY_ONLY_KERNEL_VARIANTS
@@ -770,12 +798,12 @@ def qlen1_inline_plan_environment(args: argparse.Namespace) -> str:
     selection = getattr(args, "qlen1_inline_plan", DEFAULT_QLEN1_INLINE_PLAN)
     if selection not in QLEN1_INLINE_PLAN_VARIANTS:
         raise RunnerError(f"unsupported qlen1 inline plan {selection!r}")
-    if selection == "trusted_native" and native_frontend_environment(args) != (
-        "qkv_scatter_inline"
+    if (
+        selection != "reference"
+        and native_frontend_environment(args) not in INLINE_QKV_FRONTEND_VARIANTS
     ):
         raise RunnerError(
-            "trusted_native qlen1 inline plan requires "
-            "--native-frontend qkv_scatter_inline"
+            f"{selection} qlen1 inline plan requires an inline QKV frontend"
         )
     return selection
 
@@ -791,13 +819,13 @@ def forward_pool_ensure_environment(args: argparse.Namespace) -> str:
     selection = getattr(args, "forward_pool_ensure", "always")
     if selection not in FORWARD_POOL_ENSURE_VARIANTS:
         raise RunnerError(f"unsupported forward pool ensure {selection!r}")
-    if selection == "fused_qkv_proof" and native_frontend_environment(args) not in {
-        "qkv_scatter",
-        "qkv_scatter_inline",
-    }:
+    if (
+        selection == "fused_qkv_proof"
+        and native_frontend_environment(args) not in FUSED_QKV_FRONTEND_VARIANTS
+    ):
         raise RunnerError(
-            "fused_qkv_proof requires --native-frontend qkv_scatter or "
-            "qkv_scatter_inline"
+            "fused_qkv_proof requires --native-frontend qkv_scatter, "
+            "qkv_scatter_inline, or qkv_scatter_inline_current_stream"
         )
     return selection
 
@@ -960,19 +988,20 @@ def load_correctness(
     qlen1_inline_plan = document.get("qlen1_inline_plan")
     if qlen1_inline_plan not in QLEN1_INLINE_PLAN_VARIANTS:
         raise RunnerError("correctness artifact qlen1 inline plan is unsupported")
-    if qlen1_inline_plan == "trusted_native" and native_frontend != (
-        "qkv_scatter_inline"
+    if (
+        qlen1_inline_plan != "reference"
+        and native_frontend not in INLINE_QKV_FRONTEND_VARIANTS
     ):
         raise RunnerError(
-            "correctness artifact trusted qlen1 plan requires inline frontend"
+            "correctness artifact selected qlen1 plan requires inline frontend"
         )
     forward_pool_ensure = document.get("forward_pool_ensure")
     if forward_pool_ensure not in FORWARD_POOL_ENSURE_VARIANTS:
         raise RunnerError("correctness artifact forward pool ensure is unsupported")
-    if forward_pool_ensure == "fused_qkv_proof" and native_frontend not in {
-        "qkv_scatter",
-        "qkv_scatter_inline",
-    }:
+    if (
+        forward_pool_ensure == "fused_qkv_proof"
+        and native_frontend not in FUSED_QKV_FRONTEND_VARIANTS
+    ):
         raise RunnerError(
             "correctness artifact fused pool proof requires a fused QKV frontend"
         )
@@ -2382,10 +2411,9 @@ def validate_engine_log(
     if expected_frontend not in NATIVE_FRONTEND_VARIANTS:
         raise RunnerError(f"unsupported native frontend {expected_frontend!r}")
     frontend_active = NATIVE_FRONTEND_ACTIVE_MARKER in text
-    expected_frontend_active = native and expected_frontend in {
-        "qkv_scatter",
-        "qkv_scatter_inline",
-    }
+    expected_frontend_active = native and expected_frontend in (
+        FUSED_QKV_FRONTEND_VARIANTS
+    )
     if frontend_active != expected_frontend_active:
         expectation = "execute" if expected_frontend_active else "not execute"
         scope = "native" if native else "non-native"
@@ -2394,13 +2422,23 @@ def validate_engine_log(
         )
     frontend_inline_active = NATIVE_FRONTEND_INLINE_ACTIVE_MARKER in text
     expected_frontend_inline_active = (
-        native and expected_frontend == "qkv_scatter_inline"
+        native and expected_frontend in INLINE_QKV_FRONTEND_VARIANTS
     )
     if frontend_inline_active != expected_frontend_inline_active:
         expectation = "execute" if expected_frontend_inline_active else "not execute"
         scope = "native" if native else "non-native"
         raise RunnerError(
             f"{scope} engine log must {expectation} the inline fused QKV frontend"
+        )
+    current_stream_active = NATIVE_FRONTEND_CURRENT_STREAM_OP_MARKER in text
+    expected_current_stream_active = (
+        native and expected_frontend == "qkv_scatter_inline_current_stream"
+    )
+    if current_stream_active != expected_current_stream_active:
+        expectation = "execute" if expected_current_stream_active else "not execute"
+        scope = "native" if native else "non-native"
+        raise RunnerError(
+            f"{scope} engine log must {expectation} the current-stream QKV op"
         )
     validate_qlen1_selection = expected_qlen1_inline_plan is not None
     expected_qlen1_inline_plan = expected_qlen1_inline_plan or DEFAULT_QLEN1_INLINE_PLAN
@@ -2409,10 +2447,10 @@ def validate_engine_log(
             f"unsupported qlen1 inline plan {expected_qlen1_inline_plan!r}"
         )
     if (
-        expected_qlen1_inline_plan == "trusted_native"
-        and expected_frontend != "qkv_scatter_inline"
+        expected_qlen1_inline_plan != "reference"
+        and expected_frontend not in INLINE_QKV_FRONTEND_VARIANTS
     ):
-        raise RunnerError("trusted qlen1 inline plan requires the inline frontend")
+        raise RunnerError("selected qlen1 inline plan requires an inline frontend")
     qlen1_selection_marker = (
         f"[KVARN_FACTORY] selected_qlen1_inline_plan={expected_qlen1_inline_plan};"
     )
@@ -2421,24 +2459,36 @@ def validate_engine_log(
         raise RunnerError(
             "native engine log lacks the selected qlen1 inline plan marker"
         )
-    qlen1_inline_active = QLEN1_INLINE_PLAN_ACTIVE_MARKER in text
-    expected_qlen1_inline_active = (
-        native and expected_qlen1_inline_plan == "trusted_native"
+    expected_qlen1_active_marker = QLEN1_INLINE_PLAN_ACTIVE_MARKERS.get(
+        expected_qlen1_inline_plan
     )
+    qlen1_inline_active = bool(
+        expected_qlen1_active_marker and expected_qlen1_active_marker in text
+    )
+    expected_qlen1_inline_active = bool(native and expected_qlen1_active_marker)
+    unexpected_qlen1_markers = {
+        mode: marker
+        for mode, marker in QLEN1_INLINE_PLAN_ACTIVE_MARKERS.items()
+        if mode != expected_qlen1_inline_plan and marker in text
+    }
     if qlen1_inline_active != expected_qlen1_inline_active:
         expectation = "execute" if expected_qlen1_inline_active else "not execute"
         scope = "native" if native else "non-native"
         raise RunnerError(
-            f"{scope} engine log must {expectation} the trusted qlen1 inline plan"
+            f"{scope} engine log must {expectation} the selected qlen1 inline plan"
+        )
+    if unexpected_qlen1_markers:
+        raise RunnerError(
+            "engine log must not execute a different qlen1 inline plan"
         )
     if expected_forward_pool_ensure not in FORWARD_POOL_ENSURE_VARIANTS:
         raise RunnerError(
             f"unsupported forward pool ensure {expected_forward_pool_ensure!r}"
         )
-    if expected_forward_pool_ensure == "fused_qkv_proof" and expected_frontend not in {
-        "qkv_scatter",
-        "qkv_scatter_inline",
-    }:
+    if (
+        expected_forward_pool_ensure == "fused_qkv_proof"
+        and expected_frontend not in FUSED_QKV_FRONTEND_VARIANTS
+    ):
         raise RunnerError("fused_qkv_proof requires a fused QKV frontend")
     selected_pool_marker = FORWARD_POOL_ENSURE_ACTIVE_MARKERS.get(
         expected_forward_pool_ensure
@@ -2550,6 +2600,15 @@ def validate_engine_log(
                 "engine log lacks the exact immutable Kvarn factory selection: "
                 + marker
             )
+    last_arrival_active = LAST_ARRIVAL_ACTIVE_MARKER in text
+    expected_last_arrival_active = (
+        native and expected_kernel_variant == LAST_ARRIVAL_KERNEL_VARIANT
+    )
+    if last_arrival_active != expected_last_arrival_active:
+        expectation = "execute" if expected_last_arrival_active else "not execute"
+        raise RunnerError(
+            f"engine log must {expectation} the selected ID22 fused reducer"
+        )
     result["xpu_runtime"] = xpu
     result["native_layout_expected"] = expected_layout
     result["native_layout_log_marker"] = marker or "unavailable"
@@ -2569,6 +2628,12 @@ def validate_engine_log(
         if expected_frontend_inline_active
         else "not_applicable"
     )
+    result["native_frontend_current_stream_active_verified"] = current_stream_active
+    result["native_frontend_current_stream_log_marker"] = (
+        NATIVE_FRONTEND_CURRENT_STREAM_OP_MARKER
+        if expected_current_stream_active
+        else "not_applicable"
+    )
     result["qlen1_inline_plan_expected"] = expected_qlen1_inline_plan
     result["qlen1_inline_plan_selection_verified"] = qlen1_selection_verified
     result["qlen1_inline_plan_selection_log_marker"] = (
@@ -2576,8 +2641,14 @@ def validate_engine_log(
     )
     result["qlen1_inline_plan_active_verified"] = qlen1_inline_active
     result["qlen1_inline_plan_active_log_marker"] = (
-        QLEN1_INLINE_PLAN_ACTIVE_MARKER
+        expected_qlen1_active_marker
         if expected_qlen1_inline_active
+        else "not_applicable"
+    )
+    result["native_last_arrival_active_verified"] = last_arrival_active
+    result["native_last_arrival_log_marker"] = (
+        LAST_ARRIVAL_ACTIVE_MARKER
+        if expected_last_arrival_active
         else "not_applicable"
     )
     result["forward_pool_ensure_expected"] = expected_forward_pool_ensure
@@ -2941,6 +3012,18 @@ def seal_benchmark_result(
         ],
         "kvarn_native_frontend_inline_log_marker": scan_document[
             "native_frontend_inline_log_marker"
+        ],
+        "kvarn_native_frontend_current_stream_active_verified": scan_document[
+            "native_frontend_current_stream_active_verified"
+        ],
+        "kvarn_native_frontend_current_stream_log_marker": scan_document[
+            "native_frontend_current_stream_log_marker"
+        ],
+        "kvarn_native_last_arrival_active_verified": scan_document[
+            "native_last_arrival_active_verified"
+        ],
+        "kvarn_native_last_arrival_log_marker": scan_document[
+            "native_last_arrival_log_marker"
         ],
         "kvarn_qlen1_inline_plan_selection_verified": scan_document[
             "qlen1_inline_plan_selection_verified"
@@ -4104,7 +4187,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=DEFAULT_QLEN1_INLINE_PLAN,
         help=(
             "engine-lifetime qlen=1 inline execution plan for the native "
-            "candidate; trusted_native requires qkv_scatter_inline and the "
+            "candidate; optimized plans require an inline QKV frontend and the "
             "auto reference always uses reference (default: reference)"
         ),
     )

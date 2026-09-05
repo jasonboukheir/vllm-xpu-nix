@@ -347,6 +347,7 @@ def _correctness(
     native_frontend: str = "reference",
     forward_pool_ensure: str = "always",
     decode_fp16_window_blocks: str = "0",
+    decode_fp16_low_water_blocks: str = "0",
     decode_flush_batch_executed: bool = False,
     request_stable_projection_rows: str = "1",
     request_stable_rmsnorm: str = "1",
@@ -422,6 +423,7 @@ def _correctness(
             prefill_store,
             forward_pool_ensure,
             decode_fp16_window_blocks,
+            decode_fp16_low_water_blocks,
         )
         effective_layout = spec["native_layout"]
         effective_kernel = spec["native_kernel_variant"]
@@ -431,6 +433,7 @@ def _correctness(
         effective_prefill_store = spec["prefill_store"]
         effective_forward_pool_ensure = spec["forward_pool_ensure"]
         effective_decode_fp16_window_blocks = spec["decode_fp16_window_blocks"]
+        effective_decode_fp16_low_water_blocks = spec["decode_fp16_low_water_blocks"]
         max_splits = spec["max_decode_splits"]
         splits_environment = (
             None
@@ -463,6 +466,9 @@ def _correctness(
                     "prefill_store_environment": effective_prefill_store,
                     "native_frontend_environment": effective_frontend,
                     "forward_pool_ensure_environment": (effective_forward_pool_ensure),
+                    "decode_fp16_low_water_blocks_environment": (
+                        effective_decode_fp16_low_water_blocks
+                    ),
                     "decode_fp16_window_blocks_environment": (
                         effective_decode_fp16_window_blocks
                     ),
@@ -480,6 +486,9 @@ def _correctness(
                         "KVARN_NATIVE_XPU_PREFILL_STORE": effective_prefill_store,
                         "KVARN_NATIVE_XPU_FRONTEND": effective_frontend,
                         "KVARN_FORWARD_POOL_ENSURE": (effective_forward_pool_ensure),
+                        "KVARN_DECODE_FP16_LOW_WATER_BLOCKS": (
+                            effective_decode_fp16_low_water_blocks
+                        ),
                         "KVARN_DECODE_FP16_WINDOW_BLOCKS": (
                             effective_decode_fp16_window_blocks
                         ),
@@ -508,6 +517,10 @@ def _correctness(
                 {
                     "candidate_env": candidate_id,
                     "process_package": "/nix/store/package",
+                    "decode_fp16_window_blocks": effective_decode_fp16_window_blocks,
+                    "decode_fp16_low_water_blocks": (
+                        effective_decode_fp16_low_water_blocks
+                    ),
                 }
             ),
             encoding="utf-8",
@@ -544,7 +557,8 @@ def _correctness(
             + (
                 "INFO [KVARN_DECODE_FLUSH_BATCH] "
                 f"high_water={effective_decode_fp16_window_blocks}; "
-                "low_water=16; flushed_pages=4; layer=test\n"
+                f"low_water={effective_decode_fp16_low_water_blocks}; "
+                "flushed_pages=4; layer=test\n"
                 if decode_flush_batch_active
                 else ""
             ),
@@ -595,6 +609,9 @@ def _correctness(
                     "decode_fp16_window_blocks_expected": (
                         effective_decode_fp16_window_blocks
                     ),
+                    "decode_fp16_low_water_blocks_expected": (
+                        effective_decode_fp16_low_water_blocks
+                    ),
                     "decode_flush_batch_active_verified": decode_flush_batch_active,
                     "decode_flush_batch_execution_required": False,
                     "decode_flush_batch_execution_status": (
@@ -604,7 +621,9 @@ def _correctness(
                         [
                             {
                                 "high_water": int(effective_decode_fp16_window_blocks),
-                                "low_water": 16,
+                                "low_water": int(
+                                    effective_decode_fp16_low_water_blocks
+                                ),
                                 "flushed_pages": 4,
                             }
                         ]
@@ -656,6 +675,9 @@ def _correctness(
                     "prefill_store": effective_prefill_store,
                     "native_frontend": effective_frontend,
                     "forward_pool_ensure": effective_forward_pool_ensure,
+                    "decode_fp16_low_water_blocks": (
+                        effective_decode_fp16_low_water_blocks
+                    ),
                     "decode_fp16_window_blocks": (effective_decode_fp16_window_blocks),
                     "decode_flush_batch_active_verified": decode_flush_batch_active,
                     "decode_flush_batch_execution_required": False,
@@ -666,7 +688,9 @@ def _correctness(
                         [
                             {
                                 "high_water": int(effective_decode_fp16_window_blocks),
-                                "low_water": 16,
+                                "low_water": int(
+                                    effective_decode_fp16_low_water_blocks
+                                ),
                                 "flushed_pages": 4,
                             }
                         ]
@@ -898,6 +922,7 @@ def _correctness(
         "prefill_store": prefill_store,
         "native_frontend": native_frontend,
         "forward_pool_ensure": forward_pool_ensure,
+        "decode_fp16_low_water_blocks": int(decode_fp16_low_water_blocks),
         "decode_fp16_window_blocks": int(decode_fp16_window_blocks),
         "request_stability_qualification": (
             "qualified-default"
@@ -905,6 +930,7 @@ def _correctness(
             else "replay-qualified"
         ),
         "service_controls": {
+            "kvarn_decode_fp16_low_water_blocks": decode_fp16_low_water_blocks,
             "kvarn_decode_fp16_window_blocks": decode_fp16_window_blocks,
             "kvarn_flush_index_materialization": flush_index_materialization,
             "kvarn_flush_writer": flush_writer,
@@ -930,6 +956,7 @@ def _correctness(
             prefill_store,
             forward_pool_ensure,
             decode_fp16_window_blocks,
+            decode_fp16_low_water_blocks,
         ),
         "native_dispatch_verified": True,
         "native_direct_bf16_verified": True,
@@ -950,6 +977,7 @@ def _correctness(
                 prefill_store,
                 forward_pool_ensure,
                 decode_fp16_window_blocks,
+                decode_fp16_low_water_blocks,
             )
             for name in gate_module.CORRECTNESS_PHASE_SPECS
         ],
@@ -1002,6 +1030,7 @@ def _result(
     native_frontend: str = "reference",
     forward_pool_ensure: str = "always",
     decode_fp16_window_blocks: str = "0",
+    decode_fp16_low_water_blocks: str = "0",
     decode_flush_batch_executed: bool = False,
     request_stable_projection_rows: str = "1",
     request_stable_rmsnorm: str = "1",
@@ -1107,6 +1136,7 @@ def _result(
                         prefill_store,
                         forward_pool_ensure,
                         decode_fp16_window_blocks,
+                        decode_fp16_low_water_blocks,
                     )
                 ),
             }
@@ -1157,6 +1187,9 @@ def _result(
     effective_decode_fp16_window_blocks = (
         "0" if arm == "reference" else decode_fp16_window_blocks
     )
+    effective_decode_fp16_low_water_blocks = (
+        "0" if arm == "reference" else decode_fp16_low_water_blocks
+    )
     frontend_active = arm == "candidate" and effective_frontend in {
         "qkv_scatter",
         "qkv_scatter_inline",
@@ -1201,6 +1234,9 @@ def _result(
                 "decode_fp16_window_blocks_expected": (
                     effective_decode_fp16_window_blocks
                 ),
+                "decode_fp16_low_water_blocks_expected": (
+                    effective_decode_fp16_low_water_blocks
+                ),
                 "decode_flush_batch_active_verified": decode_flush_batch_active,
                 "decode_flush_batch_execution_required": False,
                 "decode_flush_batch_execution_status": (
@@ -1210,7 +1246,7 @@ def _result(
                     [
                         {
                             "high_water": int(effective_decode_fp16_window_blocks),
-                            "low_water": 16,
+                            "low_water": int(effective_decode_fp16_low_water_blocks),
                             "flushed_pages": 4,
                         }
                     ]
@@ -1266,6 +1302,7 @@ def _result(
         "kvarn_prefill_store": ("reference" if arm == "reference" else prefill_store),
         "kvarn_native_frontend": effective_frontend,
         "kvarn_forward_pool_ensure": effective_forward_pool_ensure,
+        "kvarn_decode_fp16_low_water_blocks": (effective_decode_fp16_low_water_blocks),
         "kvarn_decode_fp16_window_blocks": effective_decode_fp16_window_blocks,
         "kvarn_decode_flush_batch_active_verified": decode_flush_batch_active,
         "kvarn_decode_flush_batch_execution_required": False,
@@ -1360,6 +1397,7 @@ def _result(
                     prefill_store,
                     forward_pool_ensure,
                     decode_fp16_window_blocks,
+                    decode_fp16_low_water_blocks,
                 )
             ).items()
         },
@@ -1387,6 +1425,7 @@ def _log(
     native_frontend: str = "reference",
     forward_pool_ensure: str = "always",
     decode_fp16_window_blocks: str = "0",
+    decode_fp16_low_water_blocks: str = "0",
     decode_flush_batch_executed: bool = False,
 ) -> Path:
     lines = [
@@ -1423,7 +1462,8 @@ def _log(
             lines.append(
                 "INFO [KVARN_DECODE_FLUSH_BATCH] "
                 f"high_water={decode_fp16_window_blocks}; "
-                "low_water=16; flushed_pages=4; layer=test"
+                f"low_water={decode_fp16_low_water_blocks}; "
+                "flushed_pages=4; layer=test"
             )
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return path
@@ -1462,6 +1502,7 @@ def _arms(
     prefill_store: str = "reference",
     forward_pool_ensure: str = "always",
     decode_fp16_window_blocks: str = "0",
+    decode_fp16_low_water_blocks: str = "0",
     decode_flush_batch_executed: bool = False,
     request_stable_projection_rows: str = "1",
     request_stable_rmsnorm: str = "1",
@@ -1481,6 +1522,7 @@ def _arms(
         prefill_store=prefill_store,
         forward_pool_ensure=forward_pool_ensure,
         decode_fp16_window_blocks=decode_fp16_window_blocks,
+        decode_fp16_low_water_blocks=decode_fp16_low_water_blocks,
         decode_flush_batch_executed=decode_flush_batch_executed,
         request_stable_projection_rows=request_stable_projection_rows,
         request_stable_rmsnorm=request_stable_rmsnorm,
@@ -1509,6 +1551,7 @@ def _arms(
             native_frontend=native_frontend,
             forward_pool_ensure=forward_pool_ensure,
             decode_fp16_window_blocks=decode_fp16_window_blocks,
+            decode_fp16_low_water_blocks=decode_fp16_low_water_blocks,
             decode_flush_batch_executed=decode_flush_batch_executed,
         )
         for index in range(len(candidate_orders))
@@ -1531,6 +1574,7 @@ def _arms(
             prefill_store=prefill_store,
             forward_pool_ensure=forward_pool_ensure,
             decode_fp16_window_blocks=decode_fp16_window_blocks,
+            decode_fp16_low_water_blocks=decode_fp16_low_water_blocks,
             decode_flush_batch_executed=decode_flush_batch_executed,
             request_stable_projection_rows=request_stable_projection_rows,
             request_stable_rmsnorm=request_stable_rmsnorm,
@@ -1560,6 +1604,7 @@ def _arms(
             prefill_store=prefill_store,
             forward_pool_ensure=forward_pool_ensure,
             decode_fp16_window_blocks=decode_fp16_window_blocks,
+            decode_fp16_low_water_blocks=decode_fp16_low_water_blocks,
             decode_flush_batch_executed=decode_flush_batch_executed,
             request_stable_projection_rows=request_stable_projection_rows,
             request_stable_rmsnorm=request_stable_rmsnorm,
@@ -1638,7 +1683,7 @@ def test_match_gate_accepts_qkv_candidate_with_unfused_reference(
     assert result["candidate"]["arm"]["kvarn_fusion_strategy"] == (
         "native_materializer_persistent_scratch_shared_indices_"
         "reference_writer_reference_prefill_store_qkv_scatter_frontend_"
-        "always_forward_pool_ensure_decode_fp16_window_0"
+        "always_forward_pool_ensure_decode_fp16_window_0_low_water_0"
     )
     assert (
         "-shared-indices-reference-writer-reference-prefill-store-"
@@ -1650,10 +1695,17 @@ def test_match_gate_accepts_qkv_candidate_with_unfused_reference(
 def test_formal_512_gate_records_decode_window_without_false_execution_claim(
     tmp_path: Path,
 ) -> None:
-    result = _compare(_arms(tmp_path, decode_fp16_window_blocks="20"))
+    result = _compare(
+        _arms(
+            tmp_path,
+            decode_fp16_window_blocks="20",
+            decode_fp16_low_water_blocks="12",
+        )
+    )
 
     assert result["status"] == "passed"
     assert result["candidate"]["arm"]["kvarn_decode_fp16_window_blocks"] == "20"
+    assert result["candidate"]["arm"]["kvarn_decode_fp16_low_water_blocks"] == "12"
     assert (
         result["candidate"]["arm"]["kvarn_decode_flush_batch_active_verified"] is False
     )
@@ -1670,6 +1722,7 @@ def test_formal_512_gate_accepts_optional_decode_flush_execution_proof(
         _arms(
             tmp_path,
             decode_fp16_window_blocks="20",
+            decode_fp16_low_water_blocks="12",
             decode_flush_batch_executed=True,
         )
     )

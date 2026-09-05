@@ -237,6 +237,15 @@ def decode_fp16_window_blocks_for_spec(
     return perf.decode_fp16_window_blocks_environment(args)
 
 
+def decode_fp16_low_water_blocks_for_spec(
+    spec: ServiceSpec, args: argparse.Namespace
+) -> str:
+    """Keep the natural-layout correctness oracle on a zero low-water mark."""
+    if not spec.native:
+        return "0"
+    return perf.decode_fp16_low_water_blocks_environment(args)
+
+
 def flush_writer_for_spec(spec: ServiceSpec, args: argparse.Namespace) -> str:
     """Keep the natural-layout Kvarn oracle on the reference writer."""
     selected = perf.flush_writer_environment(args)
@@ -285,6 +294,7 @@ def candidate_variant_provenance(args: argparse.Namespace) -> dict[str, str]:
     prefill_store = perf.prefill_store_environment(args)
     forward_pool_ensure = perf.forward_pool_ensure_environment(args)
     decode_window = perf.decode_fp16_window_blocks_environment(args)
+    decode_low_water = perf.decode_fp16_low_water_blocks_environment(args)
     return {
         "kernel_strategy": f"native_xe2_qlen1_{args.native_kernel_variant}",
         "split_policy": split_policy,
@@ -294,7 +304,7 @@ def candidate_variant_provenance(args: argparse.Namespace) -> dict[str, str]:
             f"{prefill_store}_prefill_store_"
             f"{native_frontend}_frontend_"
             f"{forward_pool_ensure}_forward_pool_ensure_"
-            f"decode_fp16_window_{decode_window}"
+            f"decode_fp16_window_{decode_window}_low_water_{decode_low_water}"
         ),
         "scheduling_variant": scheduling,
         "variant_id": (
@@ -303,7 +313,8 @@ def candidate_variant_provenance(args: argparse.Namespace) -> dict[str, str]:
             f"{prefill_store}-prefill-store-"
             f"{native_frontend}-frontend-"
             f"{forward_pool_ensure}-forward-pool-ensure-"
-            f"decode-fp16-window-{decode_window}-{scheduling}"
+            f"dw{decode_window}-lw{decode_low_water}-"
+            f"{scheduling}"
         ),
     }
 
@@ -345,6 +356,9 @@ def runtime_factory_axes_for_spec(
     split_policy = native_split_policy_for_spec(spec, args)
     axes: dict[str, str | None] = {
         "KVARN_FACTORY_CACHE_LAYOUT": native_layout_for_spec(spec, args),
+        "KVARN_FACTORY_DECODE_FP16_LOW_WATER_BLOCKS": (
+            decode_fp16_low_water_blocks_for_spec(spec, args)
+        ),
         "KVARN_FACTORY_DECODE_FP16_WINDOW_BLOCKS": (
             decode_fp16_window_blocks_for_spec(spec, args)
         ),
@@ -408,6 +422,9 @@ def service_spec_evidence(
         ],
         "native_frontend": native_frontend_for_spec(spec, args),
         "forward_pool_ensure": forward_pool_ensure_for_spec(spec, args),
+        "decode_fp16_low_water_blocks": decode_fp16_low_water_blocks_for_spec(
+            spec, args
+        ),
         "decode_fp16_window_blocks": decode_fp16_window_blocks_for_spec(spec, args),
         "flush_writer": flush_writer_for_spec(spec, args),
         "prefill_store": prefill_store_for_spec(spec, args),
@@ -496,6 +513,7 @@ def passed_artifact(
     prefill_store: str,
     native_frontend: str,
     forward_pool_ensure: str,
+    decode_fp16_low_water_blocks: str,
     decode_fp16_window_blocks: str,
     request_stable_projection_rows: str,
     request_stable_rmsnorm: str,
@@ -524,6 +542,7 @@ def passed_artifact(
             prefill_store=prefill_store,
             native_frontend=native_frontend,
             forward_pool_ensure=forward_pool_ensure,
+            decode_fp16_low_water_blocks=decode_fp16_low_water_blocks,
             decode_fp16_window_blocks=decode_fp16_window_blocks,
             request_stable_projection_rows=request_stable_projection_rows,
             request_stable_rmsnorm=request_stable_rmsnorm,
@@ -587,6 +606,9 @@ def service_environment(spec: ServiceSpec, args: argparse.Namespace) -> dict[str
             }
         )
     else:
+        environment["KVARN_FACTORY_DECODE_FP16_LOW_WATER_BLOCKS"] = (
+            decode_fp16_low_water_blocks_for_spec(spec, args)
+        )
         environment["KVARN_FACTORY_DECODE_FP16_WINDOW_BLOCKS"] = (
             decode_fp16_window_blocks_for_spec(spec, args)
         )
@@ -1176,6 +1198,9 @@ def verify_service_profile(
         "KVARN_NATIVE_XPU_PREFILL_STORE": prefill_store_for_spec(spec, args),
         "KVARN_NATIVE_XPU_FRONTEND": native_frontend_for_spec(spec, args),
         "KVARN_FORWARD_POOL_ENSURE": forward_pool_ensure_for_spec(spec, args),
+        "KVARN_DECODE_FP16_LOW_WATER_BLOCKS": (
+            decode_fp16_low_water_blocks_for_spec(spec, args)
+        ),
         "KVARN_DECODE_FP16_WINDOW_BLOCKS": decode_fp16_window_blocks_for_spec(
             spec, args
         ),
@@ -1330,6 +1355,12 @@ def run_service_phase(
             variant_provenance=service_variant_provenance(spec, args),
         )
         identity = perf.verify_candidate_identity(service.argv, args.candidate_env)
+        identity["decode_fp16_window_blocks"] = decode_fp16_window_blocks_for_spec(
+            spec, args
+        )
+        identity["decode_fp16_low_water_blocks"] = (
+            decode_fp16_low_water_blocks_for_spec(spec, args)
+        )
         captured_layout_environment = service.environment.get(
             "KVARN_NATIVE_XPU_DPAS_LAYOUT"
         )
@@ -1356,6 +1387,9 @@ def run_service_phase(
         captured_forward_pool_ensure = service.environment.get(
             "KVARN_FORWARD_POOL_ENSURE"
         )
+        captured_decode_fp16_low_water_blocks = service.environment.get(
+            "KVARN_DECODE_FP16_LOW_WATER_BLOCKS"
+        )
         captured_decode_fp16_window_blocks = service.environment.get(
             "KVARN_DECODE_FP16_WINDOW_BLOCKS"
         )
@@ -1380,6 +1414,9 @@ def run_service_phase(
             expected_split_policy=native_split_policy_for_spec(spec, args),
             expected_frontend=native_frontend_for_spec(spec, args),
             expected_forward_pool_ensure=forward_pool_ensure_for_spec(spec, args),
+            expected_decode_fp16_low_water_blocks=(
+                decode_fp16_low_water_blocks_for_spec(spec, args)
+            ),
             expected_decode_fp16_window_blocks=decode_fp16_window_blocks_for_spec(
                 spec, args
             ),
@@ -1421,6 +1458,7 @@ def run_service_phase(
             prefill_store=captured_prefill_store,
             native_frontend=captured_native_frontend,
             forward_pool_ensure=captured_forward_pool_ensure,
+            decode_fp16_low_water_blocks=captured_decode_fp16_low_water_blocks,
             decode_fp16_window_blocks=captured_decode_fp16_window_blocks,
             decode_flush_batch_active_verified=log_scan[
                 "decode_flush_batch_active_verified"
@@ -2124,6 +2162,9 @@ def build_manifest(
             prefill_store=perf.prefill_store_environment(args),
             native_frontend=perf.native_frontend_environment(args),
             forward_pool_ensure=perf.forward_pool_ensure_environment(args),
+            decode_fp16_low_water_blocks=(
+                perf.decode_fp16_low_water_blocks_environment(args)
+            ),
             decode_fp16_window_blocks=(
                 perf.decode_fp16_window_blocks_environment(args)
             ),
@@ -2168,6 +2209,7 @@ def build_manifest(
         "prefill_store": perf.prefill_store_environment(args),
         "native_frontend": perf.native_frontend_environment(args),
         "forward_pool_ensure": perf.forward_pool_ensure_environment(args),
+        "decode_fp16_low_water_blocks": args.decode_fp16_low_water_blocks,
         "decode_fp16_window_blocks": args.decode_fp16_window_blocks,
         "request_stability_qualification": (
             "qualified-default"
@@ -2176,6 +2218,9 @@ def build_manifest(
             else "replay-qualified"
         ),
         "service_controls": {
+            "kvarn_decode_fp16_low_water_blocks": (
+                perf.decode_fp16_low_water_blocks_environment(args)
+            ),
             "kvarn_decode_fp16_window_blocks": (
                 perf.decode_fp16_window_blocks_environment(args)
             ),
@@ -2291,6 +2336,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         "prefill_store": perf.prefill_store_environment(args),
         "native_frontend": perf.native_frontend_environment(args),
         "forward_pool_ensure": perf.forward_pool_ensure_environment(args),
+        "decode_fp16_low_water_blocks": args.decode_fp16_low_water_blocks,
         "decode_fp16_window_blocks": args.decode_fp16_window_blocks,
         "request_stability_qualification": (
             "qualified-default"
@@ -2299,6 +2345,9 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             else "diagnostic-pending-replay"
         ),
         "service_controls": {
+            "kvarn_decode_fp16_low_water_blocks": (
+                perf.decode_fp16_low_water_blocks_environment(args)
+            ),
             "kvarn_decode_fp16_window_blocks": (
                 perf.decode_fp16_window_blocks_environment(args)
             ),
@@ -2471,6 +2520,16 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--decode-fp16-low-water-blocks",
+        type=int,
+        default=perf.DEFAULT_DECODE_FP16_LOW_WATER_BLOCKS,
+        help=(
+            "decode FP16 low-water mark for native correctness phases; must be "
+            "0 when the window is 0 and no greater than a nonzero window; the "
+            "natural oracle is pinned to 0 (default: 0)"
+        ),
+    )
+    parser.add_argument(
         "--native-splits",
         action="append",
         metavar="SPLITS|BATCH=SPLITS",
@@ -2544,7 +2603,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         args.request_stable_projection_rows = bool(args.request_stable_projection_rows)
         args.request_stable_rmsnorm = bool(args.request_stable_rmsnorm)
         perf.forward_pool_ensure_environment(args)
-        perf.decode_fp16_window_blocks_environment(args)
+        perf.decode_fp16_low_water_blocks_environment(args)
         if args.native_output_dtype != "bf16":
             raise CorrectnessError(
                 "finalist service qualification requires --native-output-dtype bf16"

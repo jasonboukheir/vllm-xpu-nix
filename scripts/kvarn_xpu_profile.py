@@ -412,6 +412,7 @@ def variant_provenance(
     prefill_store = perf.prefill_store_for_run(run, args)
     forward_pool_ensure = perf.forward_pool_ensure_for_run(run, args)
     decode_window = perf.decode_fp16_window_blocks_for_run(run, args)
+    decode_low_water = perf.decode_fp16_low_water_blocks_for_run(run, args)
     if run.arm == "reference":
         kernel_strategy = "auto_vllm_backend"
         fusion_selection = "backend_default"
@@ -426,7 +427,7 @@ def variant_provenance(
             f"{flush_writer}_writer_{prefill_store}_prefill_store_"
             f"{native_frontend}_frontend_"
             f"{forward_pool_ensure}_forward_pool_ensure_"
-            f"decode_fp16_window_{decode_window}"
+            f"decode_fp16_window_{decode_window}_low_water_{decode_low_water}"
         )
         scheduling_selection = "split_k"
         generated_id = (
@@ -435,7 +436,8 @@ def variant_provenance(
             f"{prefill_store}-prefill-store-"
             f"{native_frontend}-frontend-"
             f"{forward_pool_ensure}-forward-pool-ensure-"
-            f"decode-fp16-window-{decode_window}-b{run.workload.batch}"
+            f"dw{decode_window}-lw{decode_low_water}-"
+            f"b{run.workload.batch}"
         )
     variant_id = args.variant_id or generated_id
     if VARIANT_ID_PATTERN.fullmatch(variant_id) is None:
@@ -452,6 +454,7 @@ def variant_provenance(
         "split_policy_selector": perf.native_split_policy_name_for_run(run, args),
         "native_frontend": native_frontend,
         "forward_pool_ensure": forward_pool_ensure,
+        "decode_fp16_low_water_blocks": decode_low_water,
         "decode_fp16_window_blocks": decode_window,
         "request_stable_projection_rows": (
             perf.request_stable_projection_rows_environment(args)
@@ -665,6 +668,9 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         ],
         "native_frontend": native_frontend,
         "forward_pool_ensure": forward_pool_ensure,
+        "decode_fp16_low_water_blocks": (
+            perf.decode_fp16_low_water_blocks_for_run(run, args)
+        ),
         "decode_fp16_window_blocks": perf.decode_fp16_window_blocks_for_run(run, args),
         "flush_writer": perf.flush_writer_for_run(run, args),
         "prefill_store": perf.prefill_store_for_run(run, args),
@@ -711,6 +717,12 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             run_dir / "diagnostic-service-profile.json", service_profile
         )
         identity = perf.verify_candidate_identity(service.argv, args.candidate_env)
+        identity["decode_fp16_window_blocks"] = perf.decode_fp16_window_blocks_for_run(
+            run, args
+        )
+        identity["decode_fp16_low_water_blocks"] = (
+            perf.decode_fp16_low_water_blocks_for_run(run, args)
+        )
         perf.write_json_atomic(run_dir / "candidate-identity.json", identity)
 
         raw_result = run_dir / "profiled-workload.raw.json"
@@ -783,6 +795,9 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             ),
             expected_frontend=native_frontend,
             expected_forward_pool_ensure=forward_pool_ensure,
+            expected_decode_fp16_low_water_blocks=(
+                perf.decode_fp16_low_water_blocks_for_run(run, args)
+            ),
             expected_decode_fp16_window_blocks=(
                 perf.decode_fp16_window_blocks_for_run(run, args)
             ),
@@ -839,6 +854,12 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
                 "forward_pool_ensure": forward_pool_ensure,
                 "forward_pool_ensure_environment": service_profile[
                     "forward_pool_ensure_environment"
+                ],
+                "decode_fp16_low_water_blocks": (
+                    perf.decode_fp16_low_water_blocks_for_run(run, args)
+                ),
+                "decode_fp16_low_water_blocks_environment": service_profile[
+                    "decode_fp16_low_water_blocks_environment"
                 ],
                 "decode_fp16_window_blocks": (
                     perf.decode_fp16_window_blocks_for_run(run, args)
@@ -923,6 +944,9 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             ],
             native_frontend=native_frontend,
             forward_pool_ensure=forward_pool_ensure,
+            decode_fp16_low_water_blocks=(
+                perf.decode_fp16_low_water_blocks_for_run(run, args)
+            ),
             decode_fp16_window_blocks=perf.decode_fp16_window_blocks_for_run(run, args),
             decode_flush_batch_active_verified=log_scan[
                 "decode_flush_batch_active_verified"
@@ -1020,6 +1044,16 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help=(
             "bounded decode FP16 history window for the candidate; "
             "the auto reference is pinned to 0"
+        ),
+    )
+    parser.add_argument(
+        "--decode-fp16-low-water-blocks",
+        type=int,
+        default=perf.DEFAULT_DECODE_FP16_LOW_WATER_BLOCKS,
+        help=(
+            "decode FP16 low-water mark for the candidate; must be 0 when the "
+            "window is 0 and no greater than a nonzero window; the auto "
+            "reference is pinned to 0"
         ),
     )
     parser.add_argument(
@@ -1133,7 +1167,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         args.request_stable_projection_rows = bool(args.request_stable_projection_rows)
         args.request_stable_rmsnorm = bool(args.request_stable_rmsnorm)
         perf.forward_pool_ensure_environment(args)
-        perf.decode_fp16_window_blocks_environment(args)
+        perf.decode_fp16_low_water_blocks_environment(args)
         if perf.launcher_mode(args) != "runtime-factory" and (
             not args.request_stable_projection_rows or not args.request_stable_rmsnorm
         ):

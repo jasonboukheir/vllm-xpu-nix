@@ -138,6 +138,7 @@ DEFAULT_NATIVE_SPLITS = {1: 24, 4: 16}
 DEFAULT_MAX_NUM_BATCHED_TOKENS = 2048
 DEFAULT_PREFILL_WINDOW_BLOCKS = 16
 DEFAULT_DECODE_FP16_WINDOW_BLOCKS = 0
+DEFAULT_DECODE_FP16_LOW_WATER_BLOCKS = 0
 VLLM_USE_V2_MODEL_RUNNER = "0"
 ONEDNN_DETERMINISTIC_LAUNCHER_SUFFIX = "-onednn-nondeterministic"
 LAUNCHER_MODES = ("immutable", "runtime-factory")
@@ -147,6 +148,7 @@ RUNTIME_FACTORY_OWNED_ARGUMENTS = frozenset(
 )
 RUNTIME_FACTORY_SELECTORS = (
     "KVARN_FACTORY_CACHE_LAYOUT",
+    "KVARN_FACTORY_DECODE_FP16_LOW_WATER_BLOCKS",
     "KVARN_FACTORY_DECODE_FP16_WINDOW_BLOCKS",
     "KVARN_FACTORY_FLUSH_INDEX_MATERIALIZATION",
     "KVARN_FACTORY_FLUSH_WRITER",
@@ -197,6 +199,7 @@ CAPTURED_ENVIRONMENT = (
     "KVARN_FLUSH_INDEX_MATERIALIZATION",
     "KVARN_FLUSH_WRITER",
     "KVARN_FORWARD_POOL_ENSURE",
+    "KVARN_DECODE_FP16_LOW_WATER_BLOCKS",
     "KVARN_DECODE_FP16_WINDOW_BLOCKS",
     "KVARN_NATIVE_XPU_PREFILL_STORE",
     "KVARN_NATIVE_XPU_FRONTEND",
@@ -244,6 +247,7 @@ PARITY_METRICS = (
 )
 ARM_ARGUMENTS = {"--kv-cache-dtype"}
 ARM_ENVIRONMENT = {
+    "KVARN_DECODE_FP16_LOW_WATER_BLOCKS",
     "KVARN_DECODE_FP16_WINDOW_BLOCKS",
     "KVARN_FLUSH_INDEX_MATERIALIZATION",
     "KVARN_FLUSH_WRITER",
@@ -623,6 +627,37 @@ def decode_fp16_window_blocks_for_run(run: PlannedRun, args: argparse.Namespace)
     return decode_fp16_window_blocks_environment(args)
 
 
+def decode_fp16_low_water_blocks_environment(args: argparse.Namespace) -> str:
+    """Return the selected decode FP16 low-water mark.
+
+    The low-water mark is meaningful only when decode batching is enabled by a
+    nonzero high-water window. Keeping the pair valid here makes every caller,
+    including plan-only and correctness paths, fail closed before launch.
+    """
+    value = getattr(
+        args,
+        "decode_fp16_low_water_blocks",
+        DEFAULT_DECODE_FP16_LOW_WATER_BLOCKS,
+    )
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise RunnerError("decode FP16 low-water blocks must be a nonnegative integer")
+    high_water = int(decode_fp16_window_blocks_environment(args))
+    if high_water == 0 and value != 0:
+        raise RunnerError("decode FP16 low-water blocks must be 0 when window is 0")
+    if high_water > 0 and value > high_water:
+        raise RunnerError("decode FP16 low-water blocks must not exceed the window")
+    return str(value)
+
+
+def decode_fp16_low_water_blocks_for_run(
+    run: PlannedRun, args: argparse.Namespace
+) -> str:
+    """Keep the auto control on the canonical zero/zero decode policy."""
+    if run.arm == "reference":
+        return "0"
+    return decode_fp16_low_water_blocks_environment(args)
+
+
 def flush_index_materialization_environment(args: argparse.Namespace) -> str:
     """Return the engine-lifetime flush-index strategy for this factory run."""
     return getattr(args, "flush_index_materialization", "per_layer")
@@ -723,6 +758,7 @@ def variant_provenance_for_run(
     prefill_store = prefill_store_environment(args)
     forward_pool_ensure = forward_pool_ensure_environment(args)
     decode_window = decode_fp16_window_blocks_environment(args)
+    decode_low_water = decode_fp16_low_water_blocks_environment(args)
     return {
         "kernel_strategy": f"native_xe2_qlen1_{kernel_variant}",
         "split_policy": split_policy,
@@ -732,7 +768,7 @@ def variant_provenance_for_run(
             f"{prefill_store}_prefill_store_"
             f"{native_frontend}_frontend_"
             f"{forward_pool_ensure}_forward_pool_ensure_"
-            f"decode_fp16_window_{decode_window}"
+            f"decode_fp16_window_{decode_window}_low_water_{decode_low_water}"
         ),
         "scheduling_variant": scheduling,
         "variant_id": (
@@ -741,7 +777,8 @@ def variant_provenance_for_run(
             f"{prefill_store}-prefill-store-"
             f"{native_frontend}-frontend-"
             f"{forward_pool_ensure}-forward-pool-ensure-"
-            f"decode-fp16-window-{decode_window}-{scheduling}"
+            f"dw{decode_window}-lw{decode_low_water}-"
+            f"{scheduling}"
         ),
     }
 
@@ -846,6 +883,20 @@ def load_correctness(
         raise RunnerError(
             "correctness artifact decode FP16 window must be a nonnegative integer"
         )
+    decode_fp16_low_water_blocks = document.get("decode_fp16_low_water_blocks")
+    if (
+        isinstance(decode_fp16_low_water_blocks, bool)
+        or not isinstance(decode_fp16_low_water_blocks, int)
+        or decode_fp16_low_water_blocks < 0
+    ):
+        raise RunnerError(
+            "correctness artifact decode FP16 low-water must be a nonnegative integer"
+        )
+    if (decode_fp16_window_blocks == 0 and decode_fp16_low_water_blocks != 0) or (
+        decode_fp16_window_blocks > 0
+        and decode_fp16_low_water_blocks > decode_fp16_window_blocks
+    ):
+        raise RunnerError("correctness artifact decode FP16 watermarks are invalid")
     service_controls = document.get("service_controls")
     correctness_onednn = (
         service_controls.get("kvarn_onednn_deterministic")
@@ -863,6 +914,7 @@ def load_correctness(
         else None
     )
     if service_controls != {
+        "kvarn_decode_fp16_low_water_blocks": str(decode_fp16_low_water_blocks),
         "kvarn_decode_fp16_window_blocks": str(decode_fp16_window_blocks),
         "kvarn_flush_index_materialization": flush_index_materialization,
         "kvarn_flush_writer": flush_writer,
@@ -996,6 +1048,7 @@ def load_correctness(
             "prefill_store": prefill_store,
             "native_frontend": native_frontend,
             "forward_pool_ensure": forward_pool_ensure,
+            "decode_fp16_low_water_blocks": str(decode_fp16_low_water_blocks),
             "decode_fp16_window_blocks": str(decode_fp16_window_blocks),
             "onednn_deterministic": correctness_onednn,
             "request_stable_projection_rows": correctness_projection_rows,
@@ -1064,6 +1117,9 @@ def runtime_factory_axes_for_run(
     selected_policy = native_split_policy_name_for_run(run, args)
     axes: dict[str, str | None] = {
         "KVARN_FACTORY_CACHE_LAYOUT": native_layout_for_run(run, args),
+        "KVARN_FACTORY_DECODE_FP16_LOW_WATER_BLOCKS": (
+            decode_fp16_low_water_blocks_for_run(run, args)
+        ),
         "KVARN_FACTORY_DECODE_FP16_WINDOW_BLOCKS": (
             decode_fp16_window_blocks_for_run(run, args)
         ),
@@ -1096,6 +1152,7 @@ def runtime_factory_axes_for_run(
         raise RunnerError("runtime factory selector schema drifted")
     if reference and axes != {
         "KVARN_FACTORY_CACHE_LAYOUT": "natural",
+        "KVARN_FACTORY_DECODE_FP16_LOW_WATER_BLOCKS": "0",
         "KVARN_FACTORY_DECODE_FP16_WINDOW_BLOCKS": "0",
         "KVARN_FACTORY_FLUSH_INDEX_MATERIALIZATION": "per_layer",
         "KVARN_FACTORY_FLUSH_WRITER": "reference",
@@ -1135,6 +1192,9 @@ def service_environment(run: PlannedRun, args: argparse.Namespace) -> dict[str, 
     if launcher_mode(args) == "runtime-factory":
         environment.update(runtime_factory_environment_for_run(run, args))
     else:
+        environment["KVARN_FACTORY_DECODE_FP16_LOW_WATER_BLOCKS"] = (
+            decode_fp16_low_water_blocks_for_run(run, args)
+        )
         environment["KVARN_FACTORY_DECODE_FP16_WINDOW_BLOCKS"] = (
             decode_fp16_window_blocks_for_run(run, args)
         )
@@ -1668,6 +1728,9 @@ def service_profile_evidence(
         "prefill_store_environment": environment.get("KVARN_NATIVE_XPU_PREFILL_STORE"),
         "native_frontend_environment": environment.get("KVARN_NATIVE_XPU_FRONTEND"),
         "forward_pool_ensure_environment": environment.get("KVARN_FORWARD_POOL_ENSURE"),
+        "decode_fp16_low_water_blocks_environment": environment.get(
+            "KVARN_DECODE_FP16_LOW_WATER_BLOCKS"
+        ),
         "decode_fp16_window_blocks_environment": environment.get(
             "KVARN_DECODE_FP16_WINDOW_BLOCKS"
         ),
@@ -1769,6 +1832,9 @@ def verify_service_profile(
         "KVARN_NATIVE_XPU_PREFILL_STORE": prefill_store_for_run(run, args),
         "KVARN_NATIVE_XPU_FRONTEND": native_frontend_for_run(run, args),
         "KVARN_FORWARD_POOL_ENSURE": forward_pool_ensure_for_run(run, args),
+        "KVARN_DECODE_FP16_LOW_WATER_BLOCKS": (
+            decode_fp16_low_water_blocks_for_run(run, args)
+        ),
         "KVARN_DECODE_FP16_WINDOW_BLOCKS": decode_fp16_window_blocks_for_run(run, args),
         "KVARN_NATIVE_XPU_KERNEL_VARIANT": native_kernel_variant_for_run(run, args),
         "KVARN_NATIVE_XPU_MATERIALIZE": native,
@@ -2149,6 +2215,7 @@ def validate_engine_log(
     expected_frontend: str,
     expected_forward_pool_ensure: str = "always",
     expected_decode_fp16_window_blocks: str = "0",
+    expected_decode_fp16_low_water_blocks: str = "0",
     require_decode_flush_batch_execution: bool = False,
 ) -> dict[str, Any]:
     if (
@@ -2220,7 +2287,17 @@ def validate_engine_log(
         )
     if not re.fullmatch(r"0|[1-9][0-9]*", expected_decode_fp16_window_blocks):
         raise RunnerError("invalid decode FP16 window engine-log expectation")
+    if not re.fullmatch(r"0|[1-9][0-9]*", expected_decode_fp16_low_water_blocks):
+        raise RunnerError("invalid decode FP16 low-water engine-log expectation")
     expected_decode_window = int(expected_decode_fp16_window_blocks)
+    expected_decode_low_water = int(expected_decode_fp16_low_water_blocks)
+    if expected_decode_window == 0 and expected_decode_low_water != 0:
+        raise RunnerError("decode FP16 low-water must be 0 when window is 0")
+    if (
+        expected_decode_window > 0
+        and expected_decode_low_water > expected_decode_window
+    ):
+        raise RunnerError("decode FP16 low-water must not exceed the window")
     decode_flush_events = [
         {
             "high_water": int(match.group(1)),
@@ -2233,7 +2310,7 @@ def validate_engine_log(
     if decode_flush_batch_enabled:
         if (require_decode_flush_batch_execution and not decode_flush_events) or any(
             event["high_water"] != expected_decode_window
-            or event["low_water"] != DEFAULT_PREFILL_WINDOW_BLOCKS
+            or event["low_water"] != expected_decode_low_water
             or event["flushed_pages"] <= 0
             for event in decode_flush_events
         ):
@@ -2298,6 +2375,9 @@ def validate_engine_log(
         else "not_applicable"
     )
     result["decode_fp16_window_blocks_expected"] = expected_decode_fp16_window_blocks
+    result["decode_fp16_low_water_blocks_expected"] = (
+        expected_decode_fp16_low_water_blocks
+    )
     result["decode_flush_batch_execution_required"] = (
         require_decode_flush_batch_execution and decode_flush_batch_enabled
     )
@@ -2478,6 +2558,8 @@ def seal_benchmark_result(
         != native_frontend_for_run(run, args)
         or profile.get("forward_pool_ensure_environment")
         != forward_pool_ensure_for_run(run, args)
+        or profile.get("decode_fp16_low_water_blocks_environment")
+        != decode_fp16_low_water_blocks_for_run(run, args)
         or profile.get("decode_fp16_window_blocks_environment")
         != decode_fp16_window_blocks_for_run(run, args)
         or profile.get("vllm_use_v2_model_runner_environment")
@@ -2529,6 +2611,9 @@ def seal_benchmark_result(
         ),
         expected_frontend=native_frontend_for_run(run, args),
         expected_forward_pool_ensure=forward_pool_ensure_for_run(run, args),
+        expected_decode_fp16_low_water_blocks=(
+            decode_fp16_low_water_blocks_for_run(run, args)
+        ),
         expected_decode_fp16_window_blocks=decode_fp16_window_blocks_for_run(run, args),
         require_decode_flush_batch_execution=run.workload.output_tokens >= 768,
     )
@@ -2600,6 +2685,9 @@ def seal_benchmark_result(
         "kvarn_prefill_store": prefill_store_for_run(run, args),
         "kvarn_native_frontend": native_frontend_for_run(run, args),
         "kvarn_forward_pool_ensure": forward_pool_ensure_for_run(run, args),
+        "kvarn_decode_fp16_low_water_blocks": (
+            decode_fp16_low_water_blocks_for_run(run, args)
+        ),
         "kvarn_decode_fp16_window_blocks": decode_fp16_window_blocks_for_run(run, args),
         "kvarn_decode_flush_batch_active_verified": scan_document[
             "decode_flush_batch_active_verified"
@@ -2731,6 +2819,12 @@ def run_one(
             run_dir / "service-environment.json", profile["redacted_environment"]
         )
         identity = verify_candidate_identity(service.argv, args.candidate_env)
+        identity["decode_fp16_window_blocks"] = decode_fp16_window_blocks_for_run(
+            run, args
+        )
+        identity["decode_fp16_low_water_blocks"] = decode_fp16_low_water_blocks_for_run(
+            run, args
+        )
         if correctness_identity is not None:
             verify_correctness_candidate_identity(identity, correctness_identity)
         write_json_atomic(run_dir / "candidate-identity.json", identity)
@@ -2829,6 +2923,9 @@ def run_one(
             ),
             expected_frontend=native_frontend_for_run(run, args),
             expected_forward_pool_ensure=forward_pool_ensure_for_run(run, args),
+            expected_decode_fp16_low_water_blocks=(
+                decode_fp16_low_water_blocks_for_run(run, args)
+            ),
             expected_decode_fp16_window_blocks=decode_fp16_window_blocks_for_run(
                 run, args
             ),
@@ -3243,6 +3340,8 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             != native_frontend_environment(args)
             or correctness_factory["forward_pool_ensure"]
             != forward_pool_ensure_environment(args)
+            or correctness_factory["decode_fp16_low_water_blocks"]
+            != decode_fp16_low_water_blocks_environment(args)
             or correctness_factory["decode_fp16_window_blocks"]
             != decode_fp16_window_blocks_environment(args)
             or correctness_factory["onednn_deterministic"]
@@ -3305,6 +3404,9 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         ],
         "request_stability_qualification": request_stability_qualification(args),
         "service_controls": {
+            "kvarn_decode_fp16_low_water_blocks": (
+                decode_fp16_low_water_blocks_environment(args)
+            ),
             "kvarn_decode_fp16_window_blocks": (
                 decode_fp16_window_blocks_environment(args)
             ),
@@ -3341,6 +3443,9 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
                 ),
                 "expected_native_frontend": native_frontend_for_run(run, args),
                 "expected_forward_pool_ensure": forward_pool_ensure_for_run(run, args),
+                "expected_decode_fp16_low_water_blocks": (
+                    decode_fp16_low_water_blocks_for_run(run, args)
+                ),
                 "expected_decode_fp16_window_blocks": (
                     decode_fp16_window_blocks_for_run(run, args)
                 ),
@@ -3722,6 +3827,16 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--decode-fp16-low-water-blocks",
+        type=int,
+        default=DEFAULT_DECODE_FP16_LOW_WATER_BLOCKS,
+        help=(
+            "decode FP16 low-water mark for the native candidate; must be 0 "
+            "when the window is 0 and no greater than a nonzero window; the "
+            "auto reference is pinned to 0 (default: 0)"
+        ),
+    )
+    parser.add_argument(
         "--model",
         default=DEFAULT_MODEL,
     )
@@ -3816,6 +3931,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         args.request_stable_projection_rows = bool(args.request_stable_projection_rows)
         args.request_stable_rmsnorm = bool(args.request_stable_rmsnorm)
         forward_pool_ensure_environment(args)
+        decode_fp16_low_water_blocks_environment(args)
         if launcher_mode(args) != "runtime-factory" and (
             not args.request_stable_projection_rows or not args.request_stable_rmsnorm
         ):

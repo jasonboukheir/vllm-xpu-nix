@@ -15,12 +15,14 @@ Change only the cache dtype:
 kvCacheDtype = "kvarn_k4v4_g128_compact";
 ```
 
-No `KVARN_*` environment variables are required. On XPU, the backend attempts
-the validated native Xe2 qlen=1 reader automatically and falls back when its
-narrow problem contract is not satisfied. The native fast path currently
-targets Hq24/Hkv4/D256, K4V4/G128, eager execution, batch sizes through 12, and
-no sliding-window attention. `KVARN_NATIVE_XPU=0` remains a diagnostic rollback
-override; it is not part of the normal service configuration.
+No `KVARN_*` environment variables are required. On XPU, this dtype binds the
+validated native Xe2 qlen=1 reader automatically. The native fast path targets
+Hq24/Hkv4/D256, K4V4/G128, eager execution, batch sizes through 12, and no
+sliding-window attention. Its `xe2_dpas` writer/reader layout is an immutable
+cache ABI, so an incompatible native problem fails closed instead of reading
+that cache through a natural-layout fallback. Use `kvCacheDtype = "auto"` for
+rollback; the `KVARN_*` variables are development diagnostics, not service
+configuration.
 
 The beta profile selects `q6_prefetch_record_cursor` (ID18) with the
 `b70_q6_id18_v1` adaptive split policy. The policy uses 32 splits for B1 and 24
@@ -60,8 +62,8 @@ the entire prompt.
   measurements, not the sealed eight-repeat ABBA parity gate.
 - MTP, prefix caching, XPU graphs, multimodal serving, and production graph
   capture are outside the beta contract.
-- Native decode is specialized. Unsupported model shapes use the slower
-  fallback path.
+- Native decode is specialized. The dtype-only B70 profile fails clearly when
+  its model-shape or native-operation contract is unavailable.
 - The bounded recent-fp16 policy spends additional fixed pool memory and may
   reduce the automatically supported concurrency on memory-constrained models.
 - K4V2 and non-compact presets have not received the same service validation.

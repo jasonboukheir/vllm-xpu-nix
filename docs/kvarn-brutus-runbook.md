@@ -932,7 +932,8 @@ rebased candidate and its exact Nix closure. The ordinary deployed interface
 must remain dtype-only: switching `kvCacheDtype` between `auto` and
 `kvarn_k4v4_g128_compact` must work without any `KVARN_*` variables. Confirm
 that Kvarn startup fails clearly, rather than silently weakening its contract,
-when MTP, XPU graph capture, or multimodal/vision serving is enabled. Preserve
+when MTP, XPU graph capture, prefix caching, or multimodal/vision serving is
+enabled. Preserve
 those unsupported-combination checks as release gates even when experimental
 factory selectors are absent from the deployed configuration. Do not merge an
 isolated release draft until dtype-only activation, auto rollback, the full

@@ -31,7 +31,12 @@ def _runtime_args() -> argparse.Namespace:
 def test_b70_wave_sweep_is_factory_only_and_records_evidence() -> None:
     contract = policy.factory_split_policy_contract("b70_wave_sweep")
 
-    assert policy.NATIVE_SPLIT_POLICIES == ("fixed", "b70_q6", "b70_q6_v2")
+    assert policy.NATIVE_SPLIT_POLICIES == (
+        "fixed",
+        "b70_q6",
+        "b70_q6_v2",
+        "b70_q6_id18_v1",
+    )
     assert "b70_wave_sweep" not in policy.NATIVE_SPLIT_POLICIES
     assert contract["selector"] == "b70_wave_sweep"
     assert contract["selection_mode"] == "enumerate_all_candidates_no_winner"
@@ -125,6 +130,55 @@ def test_b70_q6_v2_accepts_profiled_id12_and_id13_only() -> None:
         policy.validate_kernel_compatibility(
             "b70_q6_v2", "q6_scalar", q6_variants=perf.B70_Q6_KERNEL_VARIANTS
         )
+
+
+def test_b70_q6_id18_v1_contract_matches_vllm_runtime_policy() -> None:
+    contract = policy.split_policy_contract("b70_q6_id18_v1")
+
+    assert contract["selector"] == "b70_q6_id18_v1"
+    assert contract["selection_axes"] == ["decode_batch_size"]
+    assert contract["supported_harness_batches"] == [1, 4]
+    assert contract["supported_runtime_batches"] == list(range(1, 13))
+    assert contract["scratch_max_splits"] == 32
+    assert contract["kernel_compatibility"] == {
+        "kind": "exact_variant",
+        "name": "q6_prefetch_record_cursor",
+        "id": 18,
+    }
+    expected = {
+        "1": 32,
+        "2": 16,
+        "3": 8,
+        "4": 24,
+        "5": 4,
+        "6": 4,
+        "7": 4,
+        "8": 4,
+        "9": 2,
+        "10": 2,
+        "11": 2,
+        "12": 2,
+    }
+    assert policy.nominal_splits_by_batch("b70_q6_id18_v1") == expected
+    assert {
+        str(batch): policy.effective_splits(
+            "b70_q6_id18_v1", batch=batch, context_tokens=262144
+        )
+        for batch in range(1, 13)
+    } == expected
+
+    policy.validate_kernel_compatibility(
+        "b70_q6_id18_v1",
+        "q6_prefetch_record_cursor",
+        q6_variants=perf.B70_Q6_KERNEL_VARIANTS,
+    )
+    for other_variant in ("q6_page_record_cursor", "q6_last_arrival_fused_reduce"):
+        with pytest.raises(ValueError, match="ID18"):
+            policy.validate_kernel_compatibility(
+                "b70_q6_id18_v1",
+                other_variant,
+                q6_variants=perf.B70_Q6_KERNEL_VARIANTS,
+            )
 
 
 def test_runtime_factory_resolves_v2_per_context_without_split_environment() -> None:

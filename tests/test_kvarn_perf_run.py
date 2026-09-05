@@ -1433,6 +1433,76 @@ def test_runtime_factory_environment_carries_exact_per_process_axes(
     }
 
 
+def test_id18_policy_runner_selects_b4s24_without_split_override(
+    tmp_path: Path,
+) -> None:
+    args = _args(tmp_path)
+    args.config_repo.mkdir()
+    parsed = runner.parse_args(
+        [
+            "--candidate-env",
+            str(args.candidate_env),
+            "--allow-tmp",
+            "--launcher-mode",
+            "runtime-factory",
+            "--native-layout",
+            "xe2_dpas",
+            "--native-kernel-variant",
+            "q6_prefetch_record_cursor",
+            "--native-split-policy",
+            "b70_q6_id18_v1",
+            "--exploratory",
+            "--plan-only",
+            "--context",
+            "65023",
+            "--batch",
+            "4",
+            "--repeats",
+            "2",
+            "--runtime-cache",
+            str(tmp_path / "parsed-cache"),
+            "--config-repo",
+            str(args.config_repo),
+            "--config-ref",
+            f"path:{args.config_repo}",
+            "--output-dir",
+            str(tmp_path / "parsed-output"),
+        ]
+    )
+    assert parsed.native_split_policy == "b70_q6_id18_v1"
+    assert parsed.native_splits == {}
+
+    args.launcher_mode = "runtime-factory"
+    args.native_layout = "xe2_dpas"
+    args.native_kernel_variant = "q6_prefetch_record_cursor"
+    args.native_split_policy = "b70_q6_id18_v1"
+    args.native_splits = {}
+    run = PlannedRun(Workload(65023, 4, 32, 4, 17), "candidate", 1)
+
+    assert native_splits_for_run(run, args) == 24
+    assert runner.native_max_splits_for_run(run, args) == 32
+    assert runner.native_splits_environment_for_run(run, args) is None
+    axes = runner.runtime_factory_axes_for_run(run, args)
+    assert axes["KVARN_FACTORY_KERNEL_VARIANT"] == "q6_prefetch_record_cursor"
+    assert axes["KVARN_FACTORY_SPLIT_POLICY"] == "b70_q6_id18_v1"
+    assert axes["KVARN_FACTORY_SPLITS"] is None
+    provenance = variant_provenance_for_run(run, args)
+    assert provenance["split_policy"] == "b70_q6_id18_v1"
+    assert "q6_prefetch_record_cursor-b70_q6_id18_v1" in provenance["variant_id"]
+
+    correctness_path = _valid_correctness(
+        tmp_path / "correctness.json",
+        "candidate-store-path",
+        native_kernel_variant="q6_prefetch_record_cursor",
+        native_split_policy="b70_q6_id18_v1",
+        native_splits={},
+    )
+    loaded = runner.load_correctness(correctness_path, "candidate-store-path")
+    assert loaded[-1]["native_split_policy"] == "b70_q6_id18_v1"
+    assert loaded[-1]["native_splits"] == {}
+    assert loaded[-1]["native_scratch_max_splits"] == 32
+
+
 def test_round8_host_axes_combine_but_auto_stays_reference(tmp_path: Path) -> None:
     args = _args(tmp_path)
     args.launcher_mode = "runtime-factory"

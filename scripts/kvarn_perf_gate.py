@@ -394,7 +394,7 @@ def _correctness_phase_spec(
     )
     effective_rmsnorm = request_stable_rmsnorm if spec["native"] else "1"
     if spec["native"] and native_layout == "xe2_dpas":
-        if native_split_policy == "b70_q6_v2":
+        if native_split_policy in {"b70_q6_v2", "b70_q6_id18_v1"}:
             spec["launcher"] = "vllm-xpu-brutus-kvarn-factory-runtime"
         else:
             suffix = "-262k" if spec["max_model_len"] == 262144 else ""
@@ -405,18 +405,20 @@ def _correctness_phase_spec(
     spec["native_layout"] = effective_layout
     selected_kernel = native_kernel_variant if spec["native"] else "baseline"
     selected_policy = native_split_policy if spec["native"] else "fixed"
-    context_dependent = selected_policy == "b70_q6_v2"
-    effective_splits = (
-        None
-        if spec["native"] and context_dependent
-        else selected_splits[spec["batch"]]
-        if spec["native"]
-        else 1
-    )
     policy_contract = (
         split_policy.split_policy_contract(selected_policy, selected_splits or None)
         if spec["native"]
         else None
+    )
+    nominal_splits = (
+        split_policy.nominal_splits_by_batch(
+            selected_policy, selected_splits or None
+        )
+        if spec["native"]
+        else {str(spec["batch"]): 1}
+    )
+    effective_splits = (
+        None if nominal_splits is None else nominal_splits[str(spec["batch"])]
     )
     max_splits = (
         int(policy_contract["scratch_max_splits"])
@@ -715,10 +717,13 @@ def validate_factory_qualification(
         raise GateError(f"{path}: native Kvarn writer requires xe2_dpas")
     if prefill_store not in PREFILL_STORE_VARIANTS:
         raise GateError(f"{path}: selected factory prefill store is unsupported")
-    if native_split_policy == "b70_q6_v2":
+    if (
+        split_policy.owns_runtime_selection(native_split_policy)
+        and native_split_policy != "b70_q6"
+    ):
         if native_splits:
             raise GateError(
-                f"{path}: context-dependent policy must not use a batch-only split map"
+                f"{path}: named policy must not use a caller split map"
             )
     elif set(native_splits) != {1, 4}:
         raise GateError(f"{path}: selected factory split map must cover B1 and B4")
@@ -3258,13 +3263,22 @@ def _load_correctness(path: Path) -> tuple[dict[str, Any], str]:
     if document.get("request_stability_qualification") != expected_qualification:
         raise GateError(f"{path}: request-stability qualification is inconsistent")
     raw_native_splits = document.get("native_nominal_splits_by_batch")
-    if native_split_policy == "b70_q6_v2":
-        if raw_native_splits is not None:
+    if split_policy.owns_runtime_selection(native_split_policy):
+        expected_nominal_splits = split_policy.nominal_splits_by_batch(
+            native_split_policy
+        )
+        if raw_native_splits != expected_nominal_splits:
             raise GateError(
-                f"{path}: context-dependent split policy must not declare a "
-                "batch-only nominal map"
+                f"{path}: named split policy nominal map differs from its contract"
             )
-        native_splits: dict[int, int] = {}
+        native_splits: dict[int, int] = (
+            {
+                int(batch): splits
+                for batch, splits in raw_native_splits.items()
+            }
+            if native_split_policy == "b70_q6"
+            else {}
+        )
     else:
         if not isinstance(raw_native_splits, dict) or set(raw_native_splits) != {
             "1",

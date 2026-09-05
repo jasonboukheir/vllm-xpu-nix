@@ -1393,7 +1393,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             raise perf.RunnerError(f"unsupported native split count {selected_splits}")
         args.native_splits = (
             {}
-            if args.native_split_policy == "b70_q6_v2"
+            if perf.split_policy.owns_runtime_selection(args.native_split_policy)
+            and args.native_split_policy != "b70_q6"
             else {args.batch: selected_splits}
         )
         if (

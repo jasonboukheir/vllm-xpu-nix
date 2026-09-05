@@ -182,10 +182,11 @@ def native_kernel_variant_for_spec(spec: ServiceSpec, args: argparse.Namespace) 
 def native_splits_for_spec(spec: ServiceSpec, args: argparse.Namespace) -> int | None:
     if not spec.native:
         return perf.REFERENCE_NATIVE_SPLITS
-    if args.native_split_policy == "b70_q6_v2":
+    nominal = perf.native_nominal_splits_by_batch(args)
+    if nominal is None:
         return None
     try:
-        return int(args.native_splits[spec.batch])
+        return int(nominal[str(spec.batch)])
     except (KeyError, TypeError, ValueError) as exc:
         raise CorrectnessError(
             f"no native split count configured for B{spec.batch}"

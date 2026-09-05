@@ -437,6 +437,113 @@ def test_runtime_factory_reuses_generic_launcher_but_preserves_triton_reference(
     assert correctness.onednn_deterministic_for_spec(reference, args) == "1"
 
 
+def test_id18_policy_correctness_plan_records_b4s24_and_max32(
+    tmp_path: Path,
+) -> None:
+    args = argparse.Namespace(
+        launcher_mode="runtime-factory",
+        native_layout="xe2_dpas",
+        native_kernel_variant="q6_prefetch_record_cursor",
+        native_split_policy="b70_q6_id18_v1",
+        native_splits={},
+        native_output_dtype="bf16",
+        max_num_batched_tokens=2048,
+        onednn_deterministic=True,
+        flush_index_materialization="per_layer",
+        native_frontend="reference",
+        forward_pool_ensure="always",
+        decode_fp16_window_blocks=0,
+        decode_fp16_low_water_blocks=0,
+        decode_flush_scope="per_row",
+        model="model",
+        served_model="sunny-chat",
+        model_revision="1" * 40,
+        hf_home=tmp_path / "hf",
+        runtime_cache=tmp_path / "cache",
+    )
+    native_b1 = correctness.SERVICE_PLAN[0]
+    native_b4 = correctness.SERVICE_PLAN[2]
+
+    assert correctness.native_splits_for_spec(native_b1, args) == 32
+    assert correctness.native_splits_for_spec(native_b4, args) == 24
+    assert correctness.native_max_splits_for_spec(native_b4, args) == 32
+    evidence = correctness.service_spec_evidence(native_b4, args)
+    assert evidence["launcher"] == correctness.perf.RUNTIME_FACTORY_LAUNCHER
+    assert evidence["nominal_decode_splits"] == 24
+    assert evidence["max_decode_splits"] == 32
+    assert evidence["native_split_policy"] == "b70_q6_id18_v1"
+    assert evidence["native_split_policy_contract"]["kernel_compatibility"] == {
+        "kind": "exact_variant",
+        "name": "q6_prefetch_record_cursor",
+        "id": 18,
+    }
+    axes = correctness.runtime_factory_axes_for_spec(native_b4, args)
+    assert axes["KVARN_FACTORY_SPLIT_POLICY"] == "b70_q6_id18_v1"
+    assert axes["KVARN_FACTORY_SPLITS"] is None
+
+
+def test_id18_policy_correctness_cli_accepts_only_id18(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    candidate = tmp_path / "candidate"
+    (candidate / "bin").mkdir(parents=True)
+    for executable in ("vllm", "python"):
+        (candidate / "bin" / executable).write_text("", encoding="utf-8")
+    fixtures = tmp_path / "fixtures.json"
+    fixtures.write_text("[]\n", encoding="utf-8")
+    monkeypatch.setattr(
+        correctness, "DEFAULT_FIXTURE_SHA256", correctness.sha256_file(fixtures)
+    )
+    factory = tmp_path / "factory.json"
+    factory.write_text("{}\n", encoding="utf-8")
+    config = tmp_path / "config"
+    config.mkdir()
+    common = [
+        "--candidate-env",
+        str(candidate),
+        "--factory-result",
+        str(factory),
+        "--fixtures",
+        str(fixtures),
+        "--allow-tmp",
+        "--plan-only",
+        "--launcher-mode",
+        "runtime-factory",
+        "--native-layout",
+        "xe2_dpas",
+        "--native-split-policy",
+        "b70_q6_id18_v1",
+        "--runtime-cache",
+        str(tmp_path / "cache"),
+        "--config-repo",
+        str(config),
+        "--config-ref",
+        f"path:{config}",
+    ]
+    args = correctness.parse_args(
+        [
+            *common,
+            "--native-kernel-variant",
+            "q6_prefetch_record_cursor",
+            "--output-dir",
+            str(tmp_path / "accepted"),
+        ]
+    )
+    assert args.native_split_policy == "b70_q6_id18_v1"
+    assert args.native_splits == {}
+
+    with pytest.raises(SystemExit):
+        correctness.parse_args(
+            [
+                *common,
+                "--native-kernel-variant",
+                "q6_page_record_cursor",
+                "--output-dir",
+                str(tmp_path / "rejected"),
+            ]
+        )
+
+
 def test_runtime_factory_supports_natural_baseline_fixed_split_candidate(
     tmp_path: Path,
 ) -> None:

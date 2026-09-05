@@ -222,12 +222,19 @@ def native_frontend_for_spec(spec: ServiceSpec, args: argparse.Namespace) -> str
     return selected if spec.native else "reference"
 
 
-def forward_pool_ensure_for_spec(
-    spec: ServiceSpec, args: argparse.Namespace
-) -> str:
+def forward_pool_ensure_for_spec(spec: ServiceSpec, args: argparse.Namespace) -> str:
     """Keep the non-native oracle on the conservative reference guard."""
     selected = perf.forward_pool_ensure_environment(args)
     return selected if spec.native else "always"
+
+
+def decode_fp16_window_blocks_for_spec(
+    spec: ServiceSpec, args: argparse.Namespace
+) -> str:
+    """Keep the natural-layout correctness oracle on immediate page flushes."""
+    if not spec.native:
+        return "0"
+    return perf.decode_fp16_window_blocks_environment(args)
 
 
 def flush_writer_for_spec(spec: ServiceSpec, args: argparse.Namespace) -> str:
@@ -258,9 +265,7 @@ def request_stable_projection_rows_for_spec(
     return perf.request_stable_projection_rows_environment(args)
 
 
-def request_stable_rmsnorm_for_spec(
-    spec: ServiceSpec, args: argparse.Namespace
-) -> str:
+def request_stable_rmsnorm_for_spec(spec: ServiceSpec, args: argparse.Namespace) -> str:
     """Keep the immutable natural KVarN oracle on the qualified default."""
     if not spec.native and perf.launcher_mode(args) == "runtime-factory":
         return "1"
@@ -279,6 +284,7 @@ def candidate_variant_provenance(args: argparse.Namespace) -> dict[str, str]:
     flush_writer = perf.flush_writer_environment(args)
     prefill_store = perf.prefill_store_environment(args)
     forward_pool_ensure = perf.forward_pool_ensure_environment(args)
+    decode_window = perf.decode_fp16_window_blocks_environment(args)
     return {
         "kernel_strategy": f"native_xe2_qlen1_{args.native_kernel_variant}",
         "split_policy": split_policy,
@@ -287,7 +293,8 @@ def candidate_variant_provenance(args: argparse.Namespace) -> dict[str, str]:
             f"{flush_indices}_indices_{flush_writer}_writer_"
             f"{prefill_store}_prefill_store_"
             f"{native_frontend}_frontend_"
-            f"{forward_pool_ensure}_forward_pool_ensure"
+            f"{forward_pool_ensure}_forward_pool_ensure_"
+            f"decode_fp16_window_{decode_window}"
         ),
         "scheduling_variant": scheduling,
         "variant_id": (
@@ -295,7 +302,8 @@ def candidate_variant_provenance(args: argparse.Namespace) -> dict[str, str]:
             f"{split_policy}-{flush_indices}-indices-{flush_writer}-writer-"
             f"{prefill_store}-prefill-store-"
             f"{native_frontend}-frontend-"
-            f"{forward_pool_ensure}-forward-pool-ensure-{scheduling}"
+            f"{forward_pool_ensure}-forward-pool-ensure-"
+            f"decode-fp16-window-{decode_window}-{scheduling}"
         ),
     }
 
@@ -337,6 +345,9 @@ def runtime_factory_axes_for_spec(
     split_policy = native_split_policy_for_spec(spec, args)
     axes: dict[str, str | None] = {
         "KVARN_FACTORY_CACHE_LAYOUT": native_layout_for_spec(spec, args),
+        "KVARN_FACTORY_DECODE_FP16_WINDOW_BLOCKS": (
+            decode_fp16_window_blocks_for_spec(spec, args)
+        ),
         "KVARN_FACTORY_FLUSH_INDEX_MATERIALIZATION": (
             perf.flush_index_materialization_environment(args)
         ),
@@ -397,6 +408,7 @@ def service_spec_evidence(
         ],
         "native_frontend": native_frontend_for_spec(spec, args),
         "forward_pool_ensure": forward_pool_ensure_for_spec(spec, args),
+        "decode_fp16_window_blocks": decode_fp16_window_blocks_for_spec(spec, args),
         "flush_writer": flush_writer_for_spec(spec, args),
         "prefill_store": prefill_store_for_spec(spec, args),
         "request_stable_projection_rows": request_stable_projection_rows_for_spec(
@@ -484,6 +496,7 @@ def passed_artifact(
     prefill_store: str,
     native_frontend: str,
     forward_pool_ensure: str,
+    decode_fp16_window_blocks: str,
     request_stable_projection_rows: str,
     request_stable_rmsnorm: str,
 ) -> dict[str, str]:
@@ -511,6 +524,7 @@ def passed_artifact(
             prefill_store=prefill_store,
             native_frontend=native_frontend,
             forward_pool_ensure=forward_pool_ensure,
+            decode_fp16_window_blocks=decode_fp16_window_blocks,
             request_stable_projection_rows=request_stable_projection_rows,
             request_stable_rmsnorm=request_stable_rmsnorm,
         )
@@ -573,6 +587,9 @@ def service_environment(spec: ServiceSpec, args: argparse.Namespace) -> dict[str
             }
         )
     else:
+        environment["KVARN_FACTORY_DECODE_FP16_WINDOW_BLOCKS"] = (
+            decode_fp16_window_blocks_for_spec(spec, args)
+        )
         environment["KVARN_FACTORY_FLUSH_INDEX_MATERIALIZATION"] = (
             perf.flush_index_materialization_environment(args)
         )
@@ -1159,6 +1176,9 @@ def verify_service_profile(
         "KVARN_NATIVE_XPU_PREFILL_STORE": prefill_store_for_spec(spec, args),
         "KVARN_NATIVE_XPU_FRONTEND": native_frontend_for_spec(spec, args),
         "KVARN_FORWARD_POOL_ENSURE": forward_pool_ensure_for_spec(spec, args),
+        "KVARN_DECODE_FP16_WINDOW_BLOCKS": decode_fp16_window_blocks_for_spec(
+            spec, args
+        ),
         "KVARN_NATIVE_XPU_KERNEL_VARIANT": native_kernel_variant_for_spec(spec, args),
         "KVARN_NATIVE_XPU_MATERIALIZE": native,
         "KVARN_NATIVE_XPU_PERSISTENT_SCRATCH": native,
@@ -1336,6 +1356,9 @@ def run_service_phase(
         captured_forward_pool_ensure = service.environment.get(
             "KVARN_FORWARD_POOL_ENSURE"
         )
+        captured_decode_fp16_window_blocks = service.environment.get(
+            "KVARN_DECODE_FP16_WINDOW_BLOCKS"
+        )
         captured_request_stable_projection_rows = service.environment.get(
             "KVARN_REQUEST_STABLE_PROJECTION_ROWS"
         )
@@ -1357,6 +1380,9 @@ def run_service_phase(
             expected_split_policy=native_split_policy_for_spec(spec, args),
             expected_frontend=native_frontend_for_spec(spec, args),
             expected_forward_pool_ensure=forward_pool_ensure_for_spec(spec, args),
+            expected_decode_fp16_window_blocks=decode_fp16_window_blocks_for_spec(
+                spec, args
+            ),
         )
         native_dispatch_verified = spec.native and perf.NATIVE_DISPATCH in (
             phase_dir / "engine.log"
@@ -1395,6 +1421,17 @@ def run_service_phase(
             prefill_store=captured_prefill_store,
             native_frontend=captured_native_frontend,
             forward_pool_ensure=captured_forward_pool_ensure,
+            decode_fp16_window_blocks=captured_decode_fp16_window_blocks,
+            decode_flush_batch_active_verified=log_scan[
+                "decode_flush_batch_active_verified"
+            ],
+            decode_flush_batch_execution_required=log_scan[
+                "decode_flush_batch_execution_required"
+            ],
+            decode_flush_batch_execution_status=log_scan[
+                "decode_flush_batch_execution_status"
+            ],
+            decode_flush_batch_events=log_scan["decode_flush_batch_events"],
             request_stable_projection_rows=(
                 request_stable_projection_rows_for_spec(spec, args)
             ),
@@ -1414,9 +1451,7 @@ def run_service_phase(
             forward_pool_ensure_active_verified=log_scan[
                 "forward_pool_ensure_active_verified"
             ],
-            forward_pool_ensure_log_marker=log_scan[
-                "forward_pool_ensure_log_marker"
-            ],
+            forward_pool_ensure_log_marker=log_scan["forward_pool_ensure_log_marker"],
             native_layout_log_marker=perf.kvarn_factory_marker(
                 cache_layout=native_layout_for_spec(spec, args),
                 kernel_variant=native_kernel_variant_for_spec(spec, args),
@@ -2089,6 +2124,9 @@ def build_manifest(
             prefill_store=perf.prefill_store_environment(args),
             native_frontend=perf.native_frontend_environment(args),
             forward_pool_ensure=perf.forward_pool_ensure_environment(args),
+            decode_fp16_window_blocks=(
+                perf.decode_fp16_window_blocks_environment(args)
+            ),
             request_stable_projection_rows=(
                 perf.request_stable_projection_rows_environment(args)
             ),
@@ -2130,6 +2168,7 @@ def build_manifest(
         "prefill_store": perf.prefill_store_environment(args),
         "native_frontend": perf.native_frontend_environment(args),
         "forward_pool_ensure": perf.forward_pool_ensure_environment(args),
+        "decode_fp16_window_blocks": args.decode_fp16_window_blocks,
         "request_stability_qualification": (
             "qualified-default"
             if perf.request_stable_projection_rows_environment(args) == "1"
@@ -2137,6 +2176,9 @@ def build_manifest(
             else "replay-qualified"
         ),
         "service_controls": {
+            "kvarn_decode_fp16_window_blocks": (
+                perf.decode_fp16_window_blocks_environment(args)
+            ),
             "kvarn_flush_index_materialization": (
                 perf.flush_index_materialization_environment(args)
             ),
@@ -2249,6 +2291,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         "prefill_store": perf.prefill_store_environment(args),
         "native_frontend": perf.native_frontend_environment(args),
         "forward_pool_ensure": perf.forward_pool_ensure_environment(args),
+        "decode_fp16_window_blocks": args.decode_fp16_window_blocks,
         "request_stability_qualification": (
             "qualified-default"
             if perf.request_stable_projection_rows_environment(args) == "1"
@@ -2256,6 +2299,9 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             else "diagnostic-pending-replay"
         ),
         "service_controls": {
+            "kvarn_decode_fp16_window_blocks": (
+                perf.decode_fp16_window_blocks_environment(args)
+            ),
             "kvarn_flush_index_materialization": (
                 perf.flush_index_materialization_environment(args)
             ),
@@ -2416,6 +2462,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--decode-fp16-window-blocks",
+        type=int,
+        default=perf.DEFAULT_DECODE_FP16_WINDOW_BLOCKS,
+        help=(
+            "bounded decode FP16 history window for native correctness phases; "
+            "the natural oracle is pinned to 0 (default: 0)"
+        ),
+    )
+    parser.add_argument(
         "--native-splits",
         action="append",
         metavar="SPLITS|BATCH=SPLITS",
@@ -2486,23 +2541,20 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     args = parser.parse_args(argv)
     try:
         args.onednn_deterministic = bool(args.onednn_deterministic)
-        args.request_stable_projection_rows = bool(
-            args.request_stable_projection_rows
-        )
+        args.request_stable_projection_rows = bool(args.request_stable_projection_rows)
         args.request_stable_rmsnorm = bool(args.request_stable_rmsnorm)
         perf.forward_pool_ensure_environment(args)
+        perf.decode_fp16_window_blocks_environment(args)
         if args.native_output_dtype != "bf16":
             raise CorrectnessError(
                 "finalist service qualification requires --native-output-dtype bf16"
             )
         if (
-            args.native_kernel_variant
-            in perf.RUNTIME_FACTORY_ONLY_KERNEL_VARIANTS
+            args.native_kernel_variant in perf.RUNTIME_FACTORY_ONLY_KERNEL_VARIANTS
             and perf.launcher_mode(args) != "runtime-factory"
         ):
             raise CorrectnessError(
-                f"{args.native_kernel_variant} requires --launcher-mode "
-                "runtime-factory"
+                f"{args.native_kernel_variant} requires --launcher-mode runtime-factory"
             )
         if perf.launcher_mode(args) == "immutable" and (
             args.native_layout != "xe2_dpas"
@@ -2524,8 +2576,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                 "--launcher-mode runtime-factory"
             )
         if perf.launcher_mode(args) != "runtime-factory" and (
-            not args.request_stable_projection_rows
-            or not args.request_stable_rmsnorm
+            not args.request_stable_projection_rows or not args.request_stable_rmsnorm
         ):
             raise CorrectnessError(
                 "request-stability opt-outs require --launcher-mode runtime-factory"
@@ -2555,9 +2606,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             except ValueError as exc:
                 raise CorrectnessError(str(exc)) from exc
             args.native_splits = (
-                dict(perf.B70_Q6_SPLITS)
-                if args.native_split_policy == "b70_q6"
-                else {}
+                dict(perf.B70_Q6_SPLITS) if args.native_split_policy == "b70_q6" else {}
             )
         else:
             args.native_splits = perf._parse_native_splits(args.native_splits, (1, 4))

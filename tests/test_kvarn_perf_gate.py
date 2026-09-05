@@ -346,6 +346,8 @@ def _correctness(
     prefill_store: str = "reference",
     native_frontend: str = "reference",
     forward_pool_ensure: str = "always",
+    decode_fp16_window_blocks: str = "0",
+    decode_flush_batch_executed: bool = False,
     request_stable_projection_rows: str = "1",
     request_stable_rmsnorm: str = "1",
 ) -> Path:
@@ -419,6 +421,7 @@ def _correctness(
             flush_writer,
             prefill_store,
             forward_pool_ensure,
+            decode_fp16_window_blocks,
         )
         effective_layout = spec["native_layout"]
         effective_kernel = spec["native_kernel_variant"]
@@ -427,6 +430,7 @@ def _correctness(
         effective_flush_writer = spec["flush_writer"]
         effective_prefill_store = spec["prefill_store"]
         effective_forward_pool_ensure = spec["forward_pool_ensure"]
+        effective_decode_fp16_window_blocks = spec["decode_fp16_window_blocks"]
         max_splits = spec["max_decode_splits"]
         splits_environment = (
             None
@@ -458,8 +462,9 @@ def _correctness(
                     "flush_writer_environment": effective_flush_writer,
                     "prefill_store_environment": effective_prefill_store,
                     "native_frontend_environment": effective_frontend,
-                    "forward_pool_ensure_environment": (
-                        effective_forward_pool_ensure
+                    "forward_pool_ensure_environment": (effective_forward_pool_ensure),
+                    "decode_fp16_window_blocks_environment": (
+                        effective_decode_fp16_window_blocks
                     ),
                     "request_stable_projection_rows_environment": (
                         spec["request_stable_projection_rows"]
@@ -474,8 +479,9 @@ def _correctness(
                         "KVARN_FLUSH_WRITER": effective_flush_writer,
                         "KVARN_NATIVE_XPU_PREFILL_STORE": effective_prefill_store,
                         "KVARN_NATIVE_XPU_FRONTEND": effective_frontend,
-                        "KVARN_FORWARD_POOL_ENSURE": (
-                            effective_forward_pool_ensure
+                        "KVARN_FORWARD_POOL_ENSURE": (effective_forward_pool_ensure),
+                        "KVARN_DECODE_FP16_WINDOW_BLOCKS": (
+                            effective_decode_fp16_window_blocks
                         ),
                         "KVARN_NATIVE_XPU_DPAS_LAYOUT": gate_module.NATIVE_LAYOUT_ENV[
                             effective_layout
@@ -488,9 +494,7 @@ def _correctness(
                         "KVARN_REQUEST_STABLE_PROJECTION_ROWS": spec[
                             "request_stable_projection_rows"
                         ],
-                        "KVARN_REQUEST_STABLE_RMSNORM": spec[
-                            "request_stable_rmsnorm"
-                        ],
+                        "KVARN_REQUEST_STABLE_RMSNORM": spec["request_stable_rmsnorm"],
                         "VLLM_USE_V2_MODEL_RUNNER": "0",
                     },
                     "variant_provenance": variant,
@@ -509,6 +513,11 @@ def _correctness(
             encoding="utf-8",
         )
         engine_log = phase_dir / "engine.log"
+        decode_flush_batch_active = (
+            decode_flush_batch_executed
+            and spec["native"]
+            and int(effective_decode_fp16_window_blocks) > 0
+        )
         engine_log.write_text(
             f"INFO {marker}\n"
             + (
@@ -523,16 +532,20 @@ def _correctness(
                 else ""
             )
             + (
-                f"INFO {gate_module.NATIVE_FRONTEND_INLINE_ACTIVE_MARKER} "
-                "layer=test\n"
+                f"INFO {gate_module.NATIVE_FRONTEND_INLINE_ACTIVE_MARKER} layer=test\n"
                 if spec["native"] and effective_frontend == "qkv_scatter_inline"
                 else ""
             )
             + (
-                f"INFO {gate_module.FORWARD_POOL_ENSURE_ACTIVE_MARKER} "
-                "layer=test\n"
-                if spec["native"]
-                and effective_forward_pool_ensure == "fused_qkv_proof"
+                f"INFO {gate_module.FORWARD_POOL_ENSURE_ACTIVE_MARKER} layer=test\n"
+                if spec["native"] and effective_forward_pool_ensure == "fused_qkv_proof"
+                else ""
+            )
+            + (
+                "INFO [KVARN_DECODE_FLUSH_BATCH] "
+                f"high_water={effective_decode_fp16_window_blocks}; "
+                "low_water=16; flushed_pages=4; layer=test\n"
+                if decode_flush_batch_active
                 else ""
             ),
             encoding="utf-8",
@@ -552,14 +565,12 @@ def _correctness(
                     "native_frontend_expected": effective_frontend,
                     "native_frontend_active_verified": (
                         spec["native"]
-                        and effective_frontend
-                        in {"qkv_scatter", "qkv_scatter_inline"}
+                        and effective_frontend in {"qkv_scatter", "qkv_scatter_inline"}
                     ),
                     "native_frontend_log_marker": (
                         gate_module.NATIVE_FRONTEND_ACTIVE_MARKER
                         if spec["native"]
-                        and effective_frontend
-                        in {"qkv_scatter", "qkv_scatter_inline"}
+                        and effective_frontend in {"qkv_scatter", "qkv_scatter_inline"}
                         else "not_applicable"
                     ),
                     "native_frontend_inline_active_verified": (
@@ -567,8 +578,7 @@ def _correctness(
                     ),
                     "native_frontend_inline_log_marker": (
                         gate_module.NATIVE_FRONTEND_INLINE_ACTIVE_MARKER
-                        if spec["native"]
-                        and effective_frontend == "qkv_scatter_inline"
+                        if spec["native"] and effective_frontend == "qkv_scatter_inline"
                         else "not_applicable"
                     ),
                     "forward_pool_ensure_expected": effective_forward_pool_ensure,
@@ -581,6 +591,25 @@ def _correctness(
                         if spec["native"]
                         and effective_forward_pool_ensure == "fused_qkv_proof"
                         else "not_applicable"
+                    ),
+                    "decode_fp16_window_blocks_expected": (
+                        effective_decode_fp16_window_blocks
+                    ),
+                    "decode_flush_batch_active_verified": decode_flush_batch_active,
+                    "decode_flush_batch_execution_required": False,
+                    "decode_flush_batch_execution_status": (
+                        "verified" if decode_flush_batch_active else "not_exercised"
+                    ),
+                    "decode_flush_batch_events": (
+                        [
+                            {
+                                "high_water": int(effective_decode_fp16_window_blocks),
+                                "low_water": 16,
+                                "flushed_pages": 4,
+                            }
+                        ]
+                        if decode_flush_batch_active
+                        else []
                     ),
                 }
             ),
@@ -627,20 +656,35 @@ def _correctness(
                     "prefill_store": effective_prefill_store,
                     "native_frontend": effective_frontend,
                     "forward_pool_ensure": effective_forward_pool_ensure,
+                    "decode_fp16_window_blocks": (effective_decode_fp16_window_blocks),
+                    "decode_flush_batch_active_verified": decode_flush_batch_active,
+                    "decode_flush_batch_execution_required": False,
+                    "decode_flush_batch_execution_status": (
+                        "verified" if decode_flush_batch_active else "not_exercised"
+                    ),
+                    "decode_flush_batch_events": (
+                        [
+                            {
+                                "high_water": int(effective_decode_fp16_window_blocks),
+                                "low_water": 16,
+                                "flushed_pages": 4,
+                            }
+                        ]
+                        if decode_flush_batch_active
+                        else []
+                    ),
                     "request_stable_projection_rows": spec[
                         "request_stable_projection_rows"
                     ],
                     "request_stable_rmsnorm": spec["request_stable_rmsnorm"],
                     "native_frontend_active_verified": (
                         spec["native"]
-                        and effective_frontend
-                        in {"qkv_scatter", "qkv_scatter_inline"}
+                        and effective_frontend in {"qkv_scatter", "qkv_scatter_inline"}
                     ),
                     "native_frontend_log_marker": (
                         gate_module.NATIVE_FRONTEND_ACTIVE_MARKER
                         if spec["native"]
-                        and effective_frontend
-                        in {"qkv_scatter", "qkv_scatter_inline"}
+                        and effective_frontend in {"qkv_scatter", "qkv_scatter_inline"}
                         else "not_applicable"
                     ),
                     "native_frontend_inline_active_verified": (
@@ -648,8 +692,7 @@ def _correctness(
                     ),
                     "native_frontend_inline_log_marker": (
                         gate_module.NATIVE_FRONTEND_INLINE_ACTIVE_MARKER
-                        if spec["native"]
-                        and effective_frontend == "qkv_scatter_inline"
+                        if spec["native"] and effective_frontend == "qkv_scatter_inline"
                         else "not_applicable"
                     ),
                     "forward_pool_ensure_active_verified": (
@@ -855,22 +898,21 @@ def _correctness(
         "prefill_store": prefill_store,
         "native_frontend": native_frontend,
         "forward_pool_ensure": forward_pool_ensure,
+        "decode_fp16_window_blocks": int(decode_fp16_window_blocks),
         "request_stability_qualification": (
             "qualified-default"
-            if request_stable_projection_rows == "1"
-            and request_stable_rmsnorm == "1"
+            if request_stable_projection_rows == "1" and request_stable_rmsnorm == "1"
             else "replay-qualified"
         ),
         "service_controls": {
+            "kvarn_decode_fp16_window_blocks": decode_fp16_window_blocks,
             "kvarn_flush_index_materialization": flush_index_materialization,
             "kvarn_flush_writer": flush_writer,
             "kvarn_prefill_store": prefill_store,
             "kvarn_native_frontend": native_frontend,
             "kvarn_forward_pool_ensure": forward_pool_ensure,
             "kvarn_onednn_deterministic": "1",
-            "kvarn_request_stable_projection_rows": (
-                request_stable_projection_rows
-            ),
+            "kvarn_request_stable_projection_rows": (request_stable_projection_rows),
             "kvarn_request_stable_rmsnorm": request_stable_rmsnorm,
             "vllm_use_v2_model_runner": "0",
         },
@@ -887,6 +929,7 @@ def _correctness(
             flush_writer,
             prefill_store,
             forward_pool_ensure,
+            decode_fp16_window_blocks,
         ),
         "native_dispatch_verified": True,
         "native_direct_bf16_verified": True,
@@ -906,6 +949,7 @@ def _correctness(
                 flush_writer,
                 prefill_store,
                 forward_pool_ensure,
+                decode_fp16_window_blocks,
             )
             for name in gate_module.CORRECTNESS_PHASE_SPECS
         ],
@@ -957,6 +1001,8 @@ def _result(
     prefill_store: str = "reference",
     native_frontend: str = "reference",
     forward_pool_ensure: str = "always",
+    decode_fp16_window_blocks: str = "0",
+    decode_flush_batch_executed: bool = False,
     request_stable_projection_rows: str = "1",
     request_stable_rmsnorm: str = "1",
 ) -> Path:
@@ -1060,6 +1106,7 @@ def _result(
                         flush_writer,
                         prefill_store,
                         forward_pool_ensure,
+                        decode_fp16_window_blocks,
                     )
                 ),
             }
@@ -1107,6 +1154,9 @@ def _result(
     effective_forward_pool_ensure = (
         "always" if arm == "reference" else forward_pool_ensure
     )
+    effective_decode_fp16_window_blocks = (
+        "0" if arm == "reference" else decode_fp16_window_blocks
+    )
     frontend_active = arm == "candidate" and effective_frontend in {
         "qkv_scatter",
         "qkv_scatter_inline",
@@ -1116,6 +1166,11 @@ def _result(
     )
     forward_pool_ensure_active = (
         arm == "candidate" and effective_forward_pool_ensure == "fused_qkv_proof"
+    )
+    decode_flush_batch_active = (
+        decode_flush_batch_executed
+        and arm == "candidate"
+        and int(effective_decode_fp16_window_blocks) > 0
     )
     engine_log_scan = path.with_name(f"{path.stem}-engine-log-scan.json")
     engine_log_scan.write_text(
@@ -1137,13 +1192,30 @@ def _result(
                     else "not_applicable"
                 ),
                 "forward_pool_ensure_expected": effective_forward_pool_ensure,
-                "forward_pool_ensure_active_verified": (
-                    forward_pool_ensure_active
-                ),
+                "forward_pool_ensure_active_verified": (forward_pool_ensure_active),
                 "forward_pool_ensure_log_marker": (
                     gate_module.FORWARD_POOL_ENSURE_ACTIVE_MARKER
                     if forward_pool_ensure_active
                     else "not_applicable"
+                ),
+                "decode_fp16_window_blocks_expected": (
+                    effective_decode_fp16_window_blocks
+                ),
+                "decode_flush_batch_active_verified": decode_flush_batch_active,
+                "decode_flush_batch_execution_required": False,
+                "decode_flush_batch_execution_status": (
+                    "verified" if decode_flush_batch_active else "not_exercised"
+                ),
+                "decode_flush_batch_events": (
+                    [
+                        {
+                            "high_water": int(effective_decode_fp16_window_blocks),
+                            "low_water": 16,
+                            "flushed_pages": 4,
+                        }
+                    ]
+                    if decode_flush_batch_active
+                    else []
                 ),
                 "engine_log_sha256": engine_log_sha256,
             }
@@ -1191,11 +1263,15 @@ def _result(
         "kvarn_max_num_batched_tokens": "2048",
         "kvarn_flush_index_materialization": flush_index_materialization,
         "kvarn_flush_writer": "reference" if arm == "reference" else flush_writer,
-        "kvarn_prefill_store": (
-            "reference" if arm == "reference" else prefill_store
-        ),
+        "kvarn_prefill_store": ("reference" if arm == "reference" else prefill_store),
         "kvarn_native_frontend": effective_frontend,
         "kvarn_forward_pool_ensure": effective_forward_pool_ensure,
+        "kvarn_decode_fp16_window_blocks": effective_decode_fp16_window_blocks,
+        "kvarn_decode_flush_batch_active_verified": decode_flush_batch_active,
+        "kvarn_decode_flush_batch_execution_required": False,
+        "kvarn_decode_flush_batch_execution_status": (
+            "verified" if decode_flush_batch_active else "not_exercised"
+        ),
         "kvarn_native_frontend_active_verified": frontend_active,
         "kvarn_native_frontend_log_marker": (
             gate_module.NATIVE_FRONTEND_ACTIVE_MARKER
@@ -1219,8 +1295,7 @@ def _result(
         "kvarn_request_stable_rmsnorm": request_stable_rmsnorm,
         "kvarn_request_stability_qualification": (
             "qualified-default"
-            if request_stable_projection_rows == "1"
-            and request_stable_rmsnorm == "1"
+            if request_stable_projection_rows == "1" and request_stable_rmsnorm == "1"
             else "replay-qualified"
         ),
         "kvarn_vllm_use_v2_model_runner": "0",
@@ -1284,6 +1359,7 @@ def _result(
                     flush_writer,
                     prefill_store,
                     forward_pool_ensure,
+                    decode_fp16_window_blocks,
                 )
             ).items()
         },
@@ -1310,6 +1386,8 @@ def _log(
     native_max_splits: int = 32,
     native_frontend: str = "reference",
     forward_pool_ensure: str = "always",
+    decode_fp16_window_blocks: str = "0",
+    decode_flush_batch_executed: bool = False,
 ) -> Path:
     lines = [
         "INFO config: device_config=xpu",
@@ -1340,6 +1418,12 @@ def _log(
         if forward_pool_ensure == "fused_qkv_proof":
             lines.append(
                 f"INFO {gate_module.FORWARD_POOL_ENSURE_ACTIVE_MARKER} layer=test"
+            )
+        if decode_flush_batch_executed:
+            lines.append(
+                "INFO [KVARN_DECODE_FLUSH_BATCH] "
+                f"high_water={decode_fp16_window_blocks}; "
+                "low_water=16; flushed_pages=4; layer=test"
             )
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return path
@@ -1377,6 +1461,8 @@ def _arms(
     flush_writer: str = "reference",
     prefill_store: str = "reference",
     forward_pool_ensure: str = "always",
+    decode_fp16_window_blocks: str = "0",
+    decode_flush_batch_executed: bool = False,
     request_stable_projection_rows: str = "1",
     request_stable_rmsnorm: str = "1",
 ) -> tuple[list[Path], list[Path], list[Path], list[Path], Path]:
@@ -1394,6 +1480,8 @@ def _arms(
         flush_writer=flush_writer,
         prefill_store=prefill_store,
         forward_pool_ensure=forward_pool_ensure,
+        decode_fp16_window_blocks=decode_fp16_window_blocks,
+        decode_flush_batch_executed=decode_flush_batch_executed,
         request_stable_projection_rows=request_stable_projection_rows,
         request_stable_rmsnorm=request_stable_rmsnorm,
     )
@@ -1415,13 +1503,13 @@ def _arms(
                 gate_module.split_policy.split_policy_contract(
                     native_split_policy, selected_splits or None
                 )["scratch_max_splits"]
-                if gate_module.split_policy.owns_runtime_selection(
-                    native_split_policy
-                )
+                if gate_module.split_policy.owns_runtime_selection(native_split_policy)
                 else selected_splits[4]
             ),
             native_frontend=native_frontend,
             forward_pool_ensure=forward_pool_ensure,
+            decode_fp16_window_blocks=decode_fp16_window_blocks,
+            decode_flush_batch_executed=decode_flush_batch_executed,
         )
         for index in range(len(candidate_orders))
     ]
@@ -1442,6 +1530,8 @@ def _arms(
             flush_writer=flush_writer,
             prefill_store=prefill_store,
             forward_pool_ensure=forward_pool_ensure,
+            decode_fp16_window_blocks=decode_fp16_window_blocks,
+            decode_flush_batch_executed=decode_flush_batch_executed,
             request_stable_projection_rows=request_stable_projection_rows,
             request_stable_rmsnorm=request_stable_rmsnorm,
         )
@@ -1469,6 +1559,8 @@ def _arms(
             flush_writer=flush_writer,
             prefill_store=prefill_store,
             forward_pool_ensure=forward_pool_ensure,
+            decode_fp16_window_blocks=decode_fp16_window_blocks,
+            decode_flush_batch_executed=decode_flush_batch_executed,
             request_stable_projection_rows=request_stable_projection_rows,
             request_stable_rmsnorm=request_stable_rmsnorm,
         )
@@ -1546,12 +1638,53 @@ def test_match_gate_accepts_qkv_candidate_with_unfused_reference(
     assert result["candidate"]["arm"]["kvarn_fusion_strategy"] == (
         "native_materializer_persistent_scratch_shared_indices_"
         "reference_writer_reference_prefill_store_qkv_scatter_frontend_"
-        "always_forward_pool_ensure"
+        "always_forward_pool_ensure_decode_fp16_window_0"
     )
     assert (
         "-shared-indices-reference-writer-reference-prefill-store-"
         "qkv_scatter-frontend-always-forward-pool-ensure-"
         in result["candidate"]["arm"]["kvarn_variant_id"]
+    )
+
+
+def test_formal_512_gate_records_decode_window_without_false_execution_claim(
+    tmp_path: Path,
+) -> None:
+    result = _compare(_arms(tmp_path, decode_fp16_window_blocks="20"))
+
+    assert result["status"] == "passed"
+    assert result["candidate"]["arm"]["kvarn_decode_fp16_window_blocks"] == "20"
+    assert (
+        result["candidate"]["arm"]["kvarn_decode_flush_batch_active_verified"] is False
+    )
+    assert (
+        result["candidate"]["arm"]["kvarn_decode_flush_batch_execution_status"]
+        == "not_exercised"
+    )
+
+
+def test_formal_512_gate_accepts_optional_decode_flush_execution_proof(
+    tmp_path: Path,
+) -> None:
+    result = _compare(
+        _arms(
+            tmp_path,
+            decode_fp16_window_blocks="20",
+            decode_flush_batch_executed=True,
+        )
+    )
+
+    assert result["status"] == "passed"
+    assert (
+        result["candidate"]["arm"]["kvarn_decode_flush_batch_active_verified"] is True
+    )
+    assert (
+        result["candidate"]["arm"]["kvarn_decode_flush_batch_execution_required"]
+        is False
+    )
+    assert (
+        result["candidate"]["arm"]["kvarn_decode_flush_batch_execution_status"]
+        == "verified"
     )
 
 
@@ -1569,26 +1702,19 @@ def test_match_gate_accepts_inline_frontend_and_fused_pool_proof(
     assert result["status"] == "passed"
     assert result["reference"]["arm"]["kvarn_native_frontend"] == "reference"
     assert result["reference"]["arm"]["kvarn_forward_pool_ensure"] == "always"
+    assert result["candidate"]["arm"]["kvarn_native_frontend"] == "qkv_scatter_inline"
+    assert result["candidate"]["arm"]["kvarn_forward_pool_ensure"] == "fused_qkv_proof"
+    assert result["candidate"]["arm"]["kvarn_native_frontend_active_verified"] is True
     assert (
-        result["candidate"]["arm"]["kvarn_native_frontend"]
-        == "qkv_scatter_inline"
+        result["candidate"]["arm"]["kvarn_native_frontend_inline_active_verified"]
+        is True
     )
     assert (
-        result["candidate"]["arm"]["kvarn_forward_pool_ensure"]
-        == "fused_qkv_proof"
+        result["candidate"]["arm"]["kvarn_forward_pool_ensure_active_verified"] is True
     )
-    assert result["candidate"]["arm"][
-        "kvarn_native_frontend_active_verified"
-    ] is True
-    assert result["candidate"]["arm"][
-        "kvarn_native_frontend_inline_active_verified"
-    ] is True
-    assert result["candidate"]["arm"][
-        "kvarn_forward_pool_ensure_active_verified"
-    ] is True
-    assert result["reference"]["arm"][
-        "kvarn_forward_pool_ensure_active_verified"
-    ] is False
+    assert (
+        result["reference"]["arm"]["kvarn_forward_pool_ensure_active_verified"] is False
+    )
     assert len(result["candidate"]["engine_log_scan"]) == 8
     assert all(
         set(reference) == {"path", "sha256"}
@@ -1605,9 +1731,7 @@ def test_match_gate_rejects_self_consistent_execution_proof_tamper(
         forward_pool_ensure="fused_qkv_proof",
     )
     candidate_result_path = arms[1][0]
-    candidate_result = json.loads(
-        candidate_result_path.read_text(encoding="utf-8")
-    )
+    candidate_result = json.loads(candidate_result_path.read_text(encoding="utf-8"))
     scan_path = Path(candidate_result["kvarn_engine_log_scan_path"])
     scan = json.loads(scan_path.read_text(encoding="utf-8"))
     scan["forward_pool_ensure_active_verified"] = False
@@ -1724,10 +1848,7 @@ def test_match_gate_binds_native_writer_and_prefill_store_to_candidate(
     assert result["reference"]["arm"]["kvarn_flush_writer"] == "reference"
     assert result["reference"]["arm"]["kvarn_prefill_store"] == "reference"
     assert result["candidate"]["arm"]["kvarn_flush_writer"] == flush_writer
-    assert (
-        result["candidate"]["arm"]["kvarn_prefill_store"]
-        == "hadamard_scatter"
-    )
+    assert result["candidate"]["arm"]["kvarn_prefill_store"] == "hadamard_scatter"
     assert result["reference"]["arm"]["kvarn_variant_id"] == (
         "auto-control-eager_mnbt2048"
     )
@@ -2028,9 +2149,10 @@ def test_factory_qualification_accepts_and_checks_explicit_factory_axes(
             library.read_bytes()
         ).hexdigest(),
     }
-    assert gate_module.validate_factory_qualification(factory, **arguments)[
-        "status"
-    ] == "passed"
+    assert (
+        gate_module.validate_factory_qualification(factory, **arguments)["status"]
+        == "passed"
+    )
 
     document = json.loads(factory.read_text(encoding="utf-8"))
     document["results"][0]["kernel_strategy"] = "wrong"

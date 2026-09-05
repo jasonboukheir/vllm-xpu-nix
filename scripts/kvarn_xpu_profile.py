@@ -411,6 +411,7 @@ def variant_provenance(
     flush_writer = perf.flush_writer_for_run(run, args)
     prefill_store = perf.prefill_store_for_run(run, args)
     forward_pool_ensure = perf.forward_pool_ensure_for_run(run, args)
+    decode_window = perf.decode_fp16_window_blocks_for_run(run, args)
     if run.arm == "reference":
         kernel_strategy = "auto_vllm_backend"
         fusion_selection = "backend_default"
@@ -424,7 +425,8 @@ def variant_provenance(
             f"fused_attention_decode_{flush_indices}_flush_"
             f"{flush_writer}_writer_{prefill_store}_prefill_store_"
             f"{native_frontend}_frontend_"
-            f"{forward_pool_ensure}_forward_pool_ensure"
+            f"{forward_pool_ensure}_forward_pool_ensure_"
+            f"decode_fp16_window_{decode_window}"
         )
         scheduling_selection = "split_k"
         generated_id = (
@@ -432,7 +434,8 @@ def variant_provenance(
             f"split{splits}-{flush_indices}-flush-{flush_writer}-writer-"
             f"{prefill_store}-prefill-store-"
             f"{native_frontend}-frontend-"
-            f"{forward_pool_ensure}-forward-pool-ensure-b{run.workload.batch}"
+            f"{forward_pool_ensure}-forward-pool-ensure-"
+            f"decode-fp16-window-{decode_window}-b{run.workload.batch}"
         )
     variant_id = args.variant_id or generated_id
     if VARIANT_ID_PATTERN.fullmatch(variant_id) is None:
@@ -449,6 +452,7 @@ def variant_provenance(
         "split_policy_selector": perf.native_split_policy_name_for_run(run, args),
         "native_frontend": native_frontend,
         "forward_pool_ensure": forward_pool_ensure,
+        "decode_fp16_window_blocks": decode_window,
         "request_stable_projection_rows": (
             perf.request_stable_projection_rows_environment(args)
         ),
@@ -661,6 +665,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         ],
         "native_frontend": native_frontend,
         "forward_pool_ensure": forward_pool_ensure,
+        "decode_fp16_window_blocks": perf.decode_fp16_window_blocks_for_run(run, args),
         "flush_writer": perf.flush_writer_for_run(run, args),
         "prefill_store": perf.prefill_store_for_run(run, args),
         "native_factory_marker": (
@@ -778,6 +783,10 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             ),
             expected_frontend=native_frontend,
             expected_forward_pool_ensure=forward_pool_ensure,
+            expected_decode_fp16_window_blocks=(
+                perf.decode_fp16_window_blocks_for_run(run, args)
+            ),
+            require_decode_flush_batch_execution=args.output_tokens >= 768,
         )
         perf.write_json_atomic(run_dir / "engine-log-scan.json", log_scan)
         trace_path = find_kineto_trace(trace_dir)
@@ -803,9 +812,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
                 ],
                 "native_nominal_splits": perf.native_splits_for_run(run, args),
                 "native_effective_splits": perf.native_splits_for_run(run, args),
-                "native_split_policy_contract": perf.native_split_policy_contract(
-                    args
-                ),
+                "native_split_policy_contract": perf.native_split_policy_contract(args),
                 "native_split_policy": perf.native_split_policy_for_run(run, args),
                 "native_split_policy_selector": perf.native_split_policy_name_for_run(
                     run, args
@@ -833,6 +840,22 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
                 "forward_pool_ensure_environment": service_profile[
                     "forward_pool_ensure_environment"
                 ],
+                "decode_fp16_window_blocks": (
+                    perf.decode_fp16_window_blocks_for_run(run, args)
+                ),
+                "decode_fp16_window_blocks_environment": service_profile[
+                    "decode_fp16_window_blocks_environment"
+                ],
+                "decode_flush_batch_active_verified": log_scan[
+                    "decode_flush_batch_active_verified"
+                ],
+                "decode_flush_batch_execution_required": log_scan[
+                    "decode_flush_batch_execution_required"
+                ],
+                "decode_flush_batch_execution_status": log_scan[
+                    "decode_flush_batch_execution_status"
+                ],
+                "decode_flush_batch_events": log_scan["decode_flush_batch_events"],
                 "flush_writer": perf.flush_writer_for_run(run, args),
                 "prefill_store": perf.prefill_store_for_run(run, args),
                 "native_frontend_active_verified": log_scan[
@@ -900,6 +923,17 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             ],
             native_frontend=native_frontend,
             forward_pool_ensure=forward_pool_ensure,
+            decode_fp16_window_blocks=perf.decode_fp16_window_blocks_for_run(run, args),
+            decode_flush_batch_active_verified=log_scan[
+                "decode_flush_batch_active_verified"
+            ],
+            decode_flush_batch_execution_required=log_scan[
+                "decode_flush_batch_execution_required"
+            ],
+            decode_flush_batch_execution_status=log_scan[
+                "decode_flush_batch_execution_status"
+            ],
+            decode_flush_batch_events=log_scan["decode_flush_batch_events"],
             flush_writer=perf.flush_writer_for_run(run, args),
             prefill_store=perf.prefill_store_for_run(run, args),
             native_frontend_active_verified=log_scan["native_frontend_active_verified"],
@@ -913,9 +947,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             forward_pool_ensure_active_verified=log_scan[
                 "forward_pool_ensure_active_verified"
             ],
-            forward_pool_ensure_log_marker=log_scan[
-                "forward_pool_ensure_log_marker"
-            ],
+            forward_pool_ensure_log_marker=log_scan["forward_pool_ensure_log_marker"],
         )
         perf.write_json_atomic(run_dir / "run.json", manifest)
         perf.write_checksums(args.output_dir)
@@ -979,6 +1011,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help=(
             "engine-lifetime forward pool guard for the native profile; "
             "the auto reference always uses always"
+        ),
+    )
+    parser.add_argument(
+        "--decode-fp16-window-blocks",
+        type=int,
+        default=perf.DEFAULT_DECODE_FP16_WINDOW_BLOCKS,
+        help=(
+            "bounded decode FP16 history window for the candidate; "
+            "the auto reference is pinned to 0"
         ),
     )
     parser.add_argument(
@@ -1078,27 +1119,23 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         )
         args.native_split_policy = args.native_split_policy or "fixed"
         if (
-            args.native_kernel_variant
-            in perf.RUNTIME_FACTORY_ONLY_KERNEL_VARIANTS
+            args.native_kernel_variant in perf.RUNTIME_FACTORY_ONLY_KERNEL_VARIANTS
             and perf.launcher_mode(args) != "runtime-factory"
         ):
             raise perf.RunnerError(
-                f"{args.native_kernel_variant} requires --launcher-mode "
-                "runtime-factory"
+                f"{args.native_kernel_variant} requires --launcher-mode runtime-factory"
             )
         if args.flush_writer != "reference" and args.native_layout != "xe2_dpas":
             raise perf.RunnerError(
                 "native --flush-writer requires --native-layout xe2_dpas"
             )
         args.onednn_deterministic = bool(args.onednn_deterministic)
-        args.request_stable_projection_rows = bool(
-            args.request_stable_projection_rows
-        )
+        args.request_stable_projection_rows = bool(args.request_stable_projection_rows)
         args.request_stable_rmsnorm = bool(args.request_stable_rmsnorm)
         perf.forward_pool_ensure_environment(args)
+        perf.decode_fp16_window_blocks_environment(args)
         if perf.launcher_mode(args) != "runtime-factory" and (
-            not args.request_stable_projection_rows
-            or not args.request_stable_rmsnorm
+            not args.request_stable_projection_rows or not args.request_stable_rmsnorm
         ):
             raise perf.RunnerError(
                 "request-stability opt-outs require --launcher-mode runtime-factory"

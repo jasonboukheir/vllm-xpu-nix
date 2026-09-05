@@ -335,6 +335,7 @@ def test_profile_command_and_dpas_launcher_provenance(
         "split_policy_selector": "fixed",
         "native_frontend": "qkv_scatter",
         "forward_pool_ensure": "always",
+        "qlen1_inline_plan": "reference",
         "decode_fp16_low_water_blocks": "0",
         "decode_fp16_window_blocks": "0",
         "request_stable_projection_rows": "1",
@@ -346,7 +347,8 @@ def test_profile_command_and_dpas_launcher_provenance(
         "fusion_selection": (
             "fused_attention_decode_per_layer_flush_reference_writer_"
             "reference_prefill_store_qkv_scatter_frontend_"
-            "always_forward_pool_ensure_decode_fp16_window_0_low_water_0"
+            "always_forward_pool_ensure_reference_qlen1_inline_plan_"
+            "decode_fp16_window_0_low_water_0"
         ),
         "scheduling_selection": "split_k",
         "scheduler_max_num_batched_tokens": 2048,
@@ -361,6 +363,7 @@ def test_profile_command_and_dpas_launcher_provenance(
     assert (
         "-shared-flush-reference-writer-reference-prefill-store-"
         "qkv_scatter-frontend-always-forward-pool-ensure-"
+        "qip-r-"
         in shared_variant["variant_id"]
     )
     assert shared_variant["flush_index_materialization"] == "shared"
@@ -378,6 +381,7 @@ def test_profile_command_and_dpas_launcher_provenance(
         "split_policy_selector": "b70_q6",
         "native_frontend": "qkv_scatter",
         "forward_pool_ensure": "always",
+        "qlen1_inline_plan": "reference",
         "decode_fp16_low_water_blocks": "0",
         "decode_fp16_window_blocks": "0",
         "request_stable_projection_rows": "1",
@@ -389,7 +393,8 @@ def test_profile_command_and_dpas_launcher_provenance(
         "fusion_selection": (
             "fused_attention_decode_per_layer_flush_reference_writer_"
             "reference_prefill_store_qkv_scatter_frontend_"
-            "always_forward_pool_ensure_decode_fp16_window_0_low_water_0"
+            "always_forward_pool_ensure_reference_qlen1_inline_plan_"
+            "decode_fp16_window_0_low_water_0"
         ),
         "scheduling_selection": "split_k",
         "scheduler_max_num_batched_tokens": 2048,
@@ -474,6 +479,7 @@ def test_runtime_factory_profile_accepts_runtime_axes_without_named_launcher(
         "KVARN_FACTORY_NATIVE_XPU_FRONTEND": "qkv_scatter_inline",
         "KVARN_FACTORY_ONEDNN_DETERMINISTIC": "0",
         "KVARN_FACTORY_PREFILL_STORE": "reference",
+        "KVARN_FACTORY_QLEN1_INLINE_PLAN": "reference",
         "KVARN_FACTORY_REQUEST_STABLE_PROJECTION_ROWS": "0",
         "KVARN_FACTORY_REQUEST_STABLE_RMSNORM": "1",
         "KVARN_FACTORY_SPLITS": "17",

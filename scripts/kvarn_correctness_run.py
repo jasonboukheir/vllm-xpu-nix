@@ -228,6 +228,12 @@ def forward_pool_ensure_for_spec(spec: ServiceSpec, args: argparse.Namespace) ->
     return selected if spec.native else "always"
 
 
+def qlen1_inline_plan_for_spec(spec: ServiceSpec, args: argparse.Namespace) -> str:
+    """Keep the non-native oracle on the fully checked reference route."""
+    selected = perf.qlen1_inline_plan_environment(args)
+    return selected if spec.native else perf.DEFAULT_QLEN1_INLINE_PLAN
+
+
 def decode_fp16_window_blocks_for_spec(
     spec: ServiceSpec, args: argparse.Namespace
 ) -> str:
@@ -293,6 +299,7 @@ def candidate_variant_provenance(args: argparse.Namespace) -> dict[str, str]:
     flush_writer = perf.flush_writer_environment(args)
     prefill_store = perf.prefill_store_environment(args)
     forward_pool_ensure = perf.forward_pool_ensure_environment(args)
+    qlen1_inline_plan = perf.qlen1_inline_plan_environment(args)
     decode_window = perf.decode_fp16_window_blocks_environment(args)
     decode_low_water = perf.decode_fp16_low_water_blocks_environment(args)
     return {
@@ -304,6 +311,7 @@ def candidate_variant_provenance(args: argparse.Namespace) -> dict[str, str]:
             f"{prefill_store}_prefill_store_"
             f"{native_frontend}_frontend_"
             f"{forward_pool_ensure}_forward_pool_ensure_"
+            f"{qlen1_inline_plan}_qlen1_inline_plan_"
             f"decode_fp16_window_{decode_window}_low_water_{decode_low_water}"
         ),
         "scheduling_variant": scheduling,
@@ -313,6 +321,7 @@ def candidate_variant_provenance(args: argparse.Namespace) -> dict[str, str]:
             f"{prefill_store}-prefill-store-"
             f"{native_frontend}-frontend-"
             f"{forward_pool_ensure}-forward-pool-ensure-"
+            f"{perf.QLEN1_INLINE_PLAN_IDS[qlen1_inline_plan]}-"
             f"dw{decode_window}-lw{decode_low_water}-"
             f"{scheduling}"
         ),
@@ -374,6 +383,7 @@ def runtime_factory_axes_for_spec(
         "KVARN_FACTORY_NATIVE_XPU_FRONTEND": native_frontend_for_spec(spec, args),
         "KVARN_FACTORY_ONEDNN_DETERMINISTIC": onednn_deterministic_for_spec(spec, args),
         "KVARN_FACTORY_PREFILL_STORE": prefill_store_for_spec(spec, args),
+        "KVARN_FACTORY_QLEN1_INLINE_PLAN": qlen1_inline_plan_for_spec(spec, args),
         "KVARN_FACTORY_REQUEST_STABLE_PROJECTION_ROWS": (
             request_stable_projection_rows_for_spec(spec, args)
         ),
@@ -422,6 +432,7 @@ def service_spec_evidence(
         ],
         "native_frontend": native_frontend_for_spec(spec, args),
         "forward_pool_ensure": forward_pool_ensure_for_spec(spec, args),
+        "qlen1_inline_plan": qlen1_inline_plan_for_spec(spec, args),
         "decode_fp16_low_water_blocks": decode_fp16_low_water_blocks_for_spec(
             spec, args
         ),
@@ -513,6 +524,7 @@ def passed_artifact(
     prefill_store: str,
     native_frontend: str,
     forward_pool_ensure: str,
+    qlen1_inline_plan: str,
     decode_fp16_low_water_blocks: str,
     decode_fp16_window_blocks: str,
     request_stable_projection_rows: str,
@@ -542,6 +554,7 @@ def passed_artifact(
             prefill_store=prefill_store,
             native_frontend=native_frontend,
             forward_pool_ensure=forward_pool_ensure,
+            qlen1_inline_plan=qlen1_inline_plan,
             decode_fp16_low_water_blocks=decode_fp16_low_water_blocks,
             decode_fp16_window_blocks=decode_fp16_window_blocks,
             request_stable_projection_rows=request_stable_projection_rows,
@@ -621,6 +634,9 @@ def service_environment(spec: ServiceSpec, args: argparse.Namespace) -> dict[str
         )
         environment["KVARN_FACTORY_PREFILL_STORE"] = prefill_store_for_spec(spec, args)
         environment["KVARN_FACTORY_NATIVE_XPU_FRONTEND"] = native_frontend_for_spec(
+            spec, args
+        )
+        environment["KVARN_FACTORY_QLEN1_INLINE_PLAN"] = qlen1_inline_plan_for_spec(
             spec, args
         )
     environment["KVARN_PREFILL_FP16_WINDOW_BLOCKS"] = str(DEFAULT_PREFILL_WINDOW_BLOCKS)
@@ -1198,6 +1214,7 @@ def verify_service_profile(
         "KVARN_NATIVE_XPU_PREFILL_STORE": prefill_store_for_spec(spec, args),
         "KVARN_NATIVE_XPU_FRONTEND": native_frontend_for_spec(spec, args),
         "KVARN_FORWARD_POOL_ENSURE": forward_pool_ensure_for_spec(spec, args),
+        "KVARN_QLEN1_INLINE_PLAN": qlen1_inline_plan_for_spec(spec, args),
         "KVARN_DECODE_FP16_LOW_WATER_BLOCKS": (
             decode_fp16_low_water_blocks_for_spec(spec, args)
         ),
@@ -1361,6 +1378,7 @@ def run_service_phase(
         identity["decode_fp16_low_water_blocks"] = (
             decode_fp16_low_water_blocks_for_spec(spec, args)
         )
+        identity["qlen1_inline_plan"] = qlen1_inline_plan_for_spec(spec, args)
         captured_layout_environment = service.environment.get(
             "KVARN_NATIVE_XPU_DPAS_LAYOUT"
         )
@@ -1386,6 +1404,9 @@ def run_service_phase(
         captured_native_frontend = service.environment.get("KVARN_NATIVE_XPU_FRONTEND")
         captured_forward_pool_ensure = service.environment.get(
             "KVARN_FORWARD_POOL_ENSURE"
+        )
+        captured_qlen1_inline_plan = service.environment.get(
+            "KVARN_QLEN1_INLINE_PLAN"
         )
         captured_decode_fp16_low_water_blocks = service.environment.get(
             "KVARN_DECODE_FP16_LOW_WATER_BLOCKS"
@@ -1414,6 +1435,7 @@ def run_service_phase(
             expected_split_policy=native_split_policy_for_spec(spec, args),
             expected_frontend=native_frontend_for_spec(spec, args),
             expected_forward_pool_ensure=forward_pool_ensure_for_spec(spec, args),
+            expected_qlen1_inline_plan=qlen1_inline_plan_for_spec(spec, args),
             expected_decode_fp16_low_water_blocks=(
                 decode_fp16_low_water_blocks_for_spec(spec, args)
             ),
@@ -1458,6 +1480,7 @@ def run_service_phase(
             prefill_store=captured_prefill_store,
             native_frontend=captured_native_frontend,
             forward_pool_ensure=captured_forward_pool_ensure,
+            qlen1_inline_plan=captured_qlen1_inline_plan,
             decode_fp16_low_water_blocks=captured_decode_fp16_low_water_blocks,
             decode_fp16_window_blocks=captured_decode_fp16_window_blocks,
             decode_flush_batch_active_verified=log_scan[
@@ -1490,6 +1513,18 @@ def run_service_phase(
                 "forward_pool_ensure_active_verified"
             ],
             forward_pool_ensure_log_marker=log_scan["forward_pool_ensure_log_marker"],
+            qlen1_inline_plan_selection_verified=log_scan[
+                "qlen1_inline_plan_selection_verified"
+            ],
+            qlen1_inline_plan_selection_log_marker=log_scan[
+                "qlen1_inline_plan_selection_log_marker"
+            ],
+            qlen1_inline_plan_active_verified=log_scan[
+                "qlen1_inline_plan_active_verified"
+            ],
+            qlen1_inline_plan_active_log_marker=log_scan[
+                "qlen1_inline_plan_active_log_marker"
+            ],
             native_layout_log_marker=perf.kvarn_factory_marker(
                 cache_layout=native_layout_for_spec(spec, args),
                 kernel_variant=native_kernel_variant_for_spec(spec, args),
@@ -2162,6 +2197,7 @@ def build_manifest(
             prefill_store=perf.prefill_store_environment(args),
             native_frontend=perf.native_frontend_environment(args),
             forward_pool_ensure=perf.forward_pool_ensure_environment(args),
+            qlen1_inline_plan=perf.qlen1_inline_plan_environment(args),
             decode_fp16_low_water_blocks=(
                 perf.decode_fp16_low_water_blocks_environment(args)
             ),
@@ -2209,6 +2245,7 @@ def build_manifest(
         "prefill_store": perf.prefill_store_environment(args),
         "native_frontend": perf.native_frontend_environment(args),
         "forward_pool_ensure": perf.forward_pool_ensure_environment(args),
+        "qlen1_inline_plan": perf.qlen1_inline_plan_environment(args),
         "decode_fp16_low_water_blocks": args.decode_fp16_low_water_blocks,
         "decode_fp16_window_blocks": args.decode_fp16_window_blocks,
         "request_stability_qualification": (
@@ -2238,6 +2275,7 @@ def build_manifest(
             ),
             "kvarn_native_frontend": perf.native_frontend_environment(args),
             "kvarn_forward_pool_ensure": perf.forward_pool_ensure_environment(args),
+            "kvarn_qlen1_inline_plan": perf.qlen1_inline_plan_environment(args),
             "vllm_use_v2_model_runner": perf.VLLM_USE_V2_MODEL_RUNNER,
         },
         "native_scratch_max_splits": perf.native_split_policy_contract(args)[
@@ -2336,6 +2374,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         "prefill_store": perf.prefill_store_environment(args),
         "native_frontend": perf.native_frontend_environment(args),
         "forward_pool_ensure": perf.forward_pool_ensure_environment(args),
+        "qlen1_inline_plan": perf.qlen1_inline_plan_environment(args),
         "decode_fp16_low_water_blocks": args.decode_fp16_low_water_blocks,
         "decode_fp16_window_blocks": args.decode_fp16_window_blocks,
         "request_stability_qualification": (
@@ -2365,6 +2404,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             ),
             "kvarn_native_frontend": perf.native_frontend_environment(args),
             "kvarn_forward_pool_ensure": perf.forward_pool_ensure_environment(args),
+            "kvarn_qlen1_inline_plan": perf.qlen1_inline_plan_environment(args),
             "vllm_use_v2_model_runner": perf.VLLM_USE_V2_MODEL_RUNNER,
         },
         "native_scratch_max_splits": perf.native_split_policy_contract(args)[
@@ -2511,6 +2551,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--qlen1-inline-plan",
+        choices=perf.QLEN1_INLINE_PLAN_VARIANTS,
+        default=perf.DEFAULT_QLEN1_INLINE_PLAN,
+        help=(
+            "engine-lifetime qlen=1 orchestration plan for native correctness "
+            "services; trusted_native requires qkv_scatter_inline"
+        ),
+    )
+    parser.add_argument(
         "--decode-fp16-window-blocks",
         type=int,
         default=perf.DEFAULT_DECODE_FP16_WINDOW_BLOCKS,
@@ -2603,6 +2652,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         args.request_stable_projection_rows = bool(args.request_stable_projection_rows)
         args.request_stable_rmsnorm = bool(args.request_stable_rmsnorm)
         perf.forward_pool_ensure_environment(args)
+        perf.qlen1_inline_plan_environment(args)
         perf.decode_fp16_low_water_blocks_environment(args)
         if args.native_output_dtype != "bf16":
             raise CorrectnessError(

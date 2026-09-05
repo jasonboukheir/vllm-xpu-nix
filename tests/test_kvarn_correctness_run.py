@@ -262,6 +262,7 @@ def _service_environment(
         "KVARN_FORWARD_POOL_ENSURE": correctness.forward_pool_ensure_for_spec(
             spec, args
         ),
+        "KVARN_QLEN1_INLINE_PLAN": correctness.qlen1_inline_plan_for_spec(spec, args),
         "KVARN_DECODE_FP16_LOW_WATER_BLOCKS": (
             correctness.decode_fp16_low_water_blocks_for_spec(spec, args)
         ),
@@ -351,6 +352,7 @@ def test_dpas_mode_uses_separate_launchers_and_keeps_reference_natural(
         "native-xe2-xe2_dpas-q6_scalar-fixed_b1s32_b4s8-"
         "per_layer-indices-reference-writer-reference-prefill-store-"
         "reference-frontend-always-forward-pool-ensure-"
+        "qip-r-"
         "dw0-lw0-eager_mnbt2048"
     )
     assert correctness.service_variant_provenance(reference, args)["variant_id"] == (

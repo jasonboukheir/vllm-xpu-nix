@@ -90,6 +90,11 @@ FORWARD_POOL_ENSURE_VARIANTS = ("always", "fused_qkv_proof")
 FORWARD_POOL_ENSURE_ACTIVE_MARKER = (
     "[KVARN_FORWARD_POOL_ENSURE] active=fused_qkv_proof; action=elide_ensure_pool;"
 )
+QLEN1_INLINE_PLAN_VARIANTS = ("reference", "trusted_native")
+QLEN1_INLINE_PLAN_IDS = {"reference": "qip-r", "trusted_native": "qip-t"}
+QLEN1_INLINE_PLAN_ACTIVE_MARKER = (
+    "[KVARN_TRUSTED_QLEN1_INLINE] active=trusted_native;"
+)
 DECODE_FLUSH_BATCH_MARKER_PATTERN = re.compile(
     r"\[KVARN_DECODE_FLUSH_BATCH\] high_water=([0-9]+); "
     r"low_water=([0-9]+); flushed_pages=([0-9]+)(?:;|\b)"
@@ -139,6 +144,7 @@ DEFAULT_MAX_NUM_BATCHED_TOKENS = 2048
 DEFAULT_PREFILL_WINDOW_BLOCKS = 16
 DEFAULT_DECODE_FP16_WINDOW_BLOCKS = 0
 DEFAULT_DECODE_FP16_LOW_WATER_BLOCKS = 0
+DEFAULT_QLEN1_INLINE_PLAN = "reference"
 VLLM_USE_V2_MODEL_RUNNER = "0"
 ONEDNN_DETERMINISTIC_LAUNCHER_SUFFIX = "-onednn-nondeterministic"
 LAUNCHER_MODES = ("immutable", "runtime-factory")
@@ -160,6 +166,7 @@ RUNTIME_FACTORY_SELECTORS = (
     "KVARN_FACTORY_NATIVE_XPU_FRONTEND",
     "KVARN_FACTORY_ONEDNN_DETERMINISTIC",
     "KVARN_FACTORY_PREFILL_STORE",
+    "KVARN_FACTORY_QLEN1_INLINE_PLAN",
     "KVARN_FACTORY_REQUEST_STABLE_PROJECTION_ROWS",
     "KVARN_FACTORY_REQUEST_STABLE_RMSNORM",
     "KVARN_FACTORY_SPLITS",
@@ -203,6 +210,7 @@ CAPTURED_ENVIRONMENT = (
     "KVARN_DECODE_FP16_WINDOW_BLOCKS",
     "KVARN_NATIVE_XPU_PREFILL_STORE",
     "KVARN_NATIVE_XPU_FRONTEND",
+    "KVARN_QLEN1_INLINE_PLAN",
     "KVARN_NATIVE_XPU_KERNEL_VARIANT",
     "KVARN_NATIVE_XPU_MATERIALIZE",
     "KVARN_ONEDNN_DETERMINISTIC",
@@ -258,6 +266,7 @@ ARM_ENVIRONMENT = {
     "KVARN_NATIVE_XPU_DECODE",
     "KVARN_NATIVE_XPU_DPAS_LAYOUT",
     "KVARN_NATIVE_XPU_FRONTEND",
+    "KVARN_QLEN1_INLINE_PLAN",
     "KVARN_NATIVE_XPU_KERNEL_VARIANT",
     "KVARN_NATIVE_XPU_MATERIALIZE",
     "KVARN_NATIVE_XPU_PERSISTENT_SCRATCH",
@@ -716,6 +725,27 @@ def native_frontend_for_run(run: PlannedRun, args: argparse.Namespace) -> str:
     return selected if run.arm == "candidate" else "reference"
 
 
+def qlen1_inline_plan_environment(args: argparse.Namespace) -> str:
+    """Return the engine-lifetime qlen=1 inline execution plan."""
+    selection = getattr(args, "qlen1_inline_plan", DEFAULT_QLEN1_INLINE_PLAN)
+    if selection not in QLEN1_INLINE_PLAN_VARIANTS:
+        raise RunnerError(f"unsupported qlen1 inline plan {selection!r}")
+    if selection == "trusted_native" and native_frontend_environment(args) != (
+        "qkv_scatter_inline"
+    ):
+        raise RunnerError(
+            "trusted_native qlen1 inline plan requires "
+            "--native-frontend qkv_scatter_inline"
+        )
+    return selection
+
+
+def qlen1_inline_plan_for_run(run: PlannedRun, args: argparse.Namespace) -> str:
+    """Keep the auto control on the conservative reference plan."""
+    selected = qlen1_inline_plan_environment(args)
+    return selected if run.arm == "candidate" else "reference"
+
+
 def forward_pool_ensure_environment(args: argparse.Namespace) -> str:
     """Return the selected engine-lifetime forward pool guard."""
     selection = getattr(args, "forward_pool_ensure", "always")
@@ -757,6 +787,7 @@ def variant_provenance_for_run(
     flush_writer = flush_writer_environment(args)
     prefill_store = prefill_store_environment(args)
     forward_pool_ensure = forward_pool_ensure_environment(args)
+    qlen1_inline_plan = qlen1_inline_plan_environment(args)
     decode_window = decode_fp16_window_blocks_environment(args)
     decode_low_water = decode_fp16_low_water_blocks_environment(args)
     return {
@@ -768,6 +799,7 @@ def variant_provenance_for_run(
             f"{prefill_store}_prefill_store_"
             f"{native_frontend}_frontend_"
             f"{forward_pool_ensure}_forward_pool_ensure_"
+            f"{qlen1_inline_plan}_qlen1_inline_plan_"
             f"decode_fp16_window_{decode_window}_low_water_{decode_low_water}"
         ),
         "scheduling_variant": scheduling,
@@ -777,6 +809,7 @@ def variant_provenance_for_run(
             f"{prefill_store}-prefill-store-"
             f"{native_frontend}-frontend-"
             f"{forward_pool_ensure}-forward-pool-ensure-"
+            f"{QLEN1_INLINE_PLAN_IDS[qlen1_inline_plan]}-"
             f"dw{decode_window}-lw{decode_low_water}-"
             f"{scheduling}"
         ),
@@ -864,6 +897,15 @@ def load_correctness(
     native_frontend = document.get("native_frontend")
     if native_frontend not in NATIVE_FRONTEND_VARIANTS:
         raise RunnerError("correctness artifact native frontend is unsupported")
+    qlen1_inline_plan = document.get("qlen1_inline_plan")
+    if qlen1_inline_plan not in QLEN1_INLINE_PLAN_VARIANTS:
+        raise RunnerError("correctness artifact qlen1 inline plan is unsupported")
+    if qlen1_inline_plan == "trusted_native" and native_frontend != (
+        "qkv_scatter_inline"
+    ):
+        raise RunnerError(
+            "correctness artifact trusted qlen1 plan requires inline frontend"
+        )
     forward_pool_ensure = document.get("forward_pool_ensure")
     if forward_pool_ensure not in FORWARD_POOL_ENSURE_VARIANTS:
         raise RunnerError("correctness artifact forward pool ensure is unsupported")
@@ -920,6 +962,7 @@ def load_correctness(
         "kvarn_flush_writer": flush_writer,
         "kvarn_prefill_store": prefill_store,
         "kvarn_native_frontend": native_frontend,
+        "kvarn_qlen1_inline_plan": qlen1_inline_plan,
         "kvarn_forward_pool_ensure": forward_pool_ensure,
         "kvarn_onednn_deterministic": correctness_onednn,
         "kvarn_request_stable_projection_rows": correctness_projection_rows,
@@ -1047,6 +1090,7 @@ def load_correctness(
             "flush_writer": flush_writer,
             "prefill_store": prefill_store,
             "native_frontend": native_frontend,
+            "qlen1_inline_plan": qlen1_inline_plan,
             "forward_pool_ensure": forward_pool_ensure,
             "decode_fp16_low_water_blocks": str(decode_fp16_low_water_blocks),
             "decode_fp16_window_blocks": str(decode_fp16_window_blocks),
@@ -1135,6 +1179,7 @@ def runtime_factory_axes_for_run(
         "KVARN_FACTORY_NATIVE_XPU_FRONTEND": native_frontend_for_run(run, args),
         "KVARN_FACTORY_ONEDNN_DETERMINISTIC": (onednn_deterministic_environment(args)),
         "KVARN_FACTORY_PREFILL_STORE": prefill_store_for_run(run, args),
+        "KVARN_FACTORY_QLEN1_INLINE_PLAN": qlen1_inline_plan_for_run(run, args),
         "KVARN_FACTORY_REQUEST_STABLE_PROJECTION_ROWS": (
             request_stable_projection_rows_environment(args)
         ),
@@ -1164,6 +1209,7 @@ def runtime_factory_axes_for_run(
         "KVARN_FACTORY_NATIVE_XPU_FRONTEND": "reference",
         "KVARN_FACTORY_ONEDNN_DETERMINISTIC": (onednn_deterministic_environment(args)),
         "KVARN_FACTORY_PREFILL_STORE": "reference",
+        "KVARN_FACTORY_QLEN1_INLINE_PLAN": "reference",
         "KVARN_FACTORY_REQUEST_STABLE_PROJECTION_ROWS": (
             request_stable_projection_rows_environment(args)
         ),
@@ -1206,6 +1252,9 @@ def service_environment(run: PlannedRun, args: argparse.Namespace) -> dict[str, 
             run, args
         )
         environment["KVARN_FACTORY_PREFILL_STORE"] = prefill_store_for_run(run, args)
+        environment["KVARN_FACTORY_QLEN1_INLINE_PLAN"] = qlen1_inline_plan_for_run(
+            run, args
+        )
         environment["KVARN_FACTORY_NATIVE_XPU_FRONTEND"] = native_frontend_for_run(
             run, args
         )
@@ -1727,6 +1776,7 @@ def service_profile_evidence(
         "flush_writer_environment": environment.get("KVARN_FLUSH_WRITER"),
         "prefill_store_environment": environment.get("KVARN_NATIVE_XPU_PREFILL_STORE"),
         "native_frontend_environment": environment.get("KVARN_NATIVE_XPU_FRONTEND"),
+        "qlen1_inline_plan_environment": environment.get("KVARN_QLEN1_INLINE_PLAN"),
         "forward_pool_ensure_environment": environment.get("KVARN_FORWARD_POOL_ENSURE"),
         "decode_fp16_low_water_blocks_environment": environment.get(
             "KVARN_DECODE_FP16_LOW_WATER_BLOCKS"
@@ -1831,6 +1881,7 @@ def verify_service_profile(
         "KVARN_FLUSH_WRITER": flush_writer_for_run(run, args),
         "KVARN_NATIVE_XPU_PREFILL_STORE": prefill_store_for_run(run, args),
         "KVARN_NATIVE_XPU_FRONTEND": native_frontend_for_run(run, args),
+        "KVARN_QLEN1_INLINE_PLAN": qlen1_inline_plan_for_run(run, args),
         "KVARN_FORWARD_POOL_ENSURE": forward_pool_ensure_for_run(run, args),
         "KVARN_DECODE_FP16_LOW_WATER_BLOCKS": (
             decode_fp16_low_water_blocks_for_run(run, args)
@@ -2213,6 +2264,7 @@ def validate_engine_log(
     expected_max_splits: int | None = None,
     expected_split_policy: str | None = None,
     expected_frontend: str,
+    expected_qlen1_inline_plan: str | None = None,
     expected_forward_pool_ensure: str = "always",
     expected_decode_fp16_window_blocks: str = "0",
     expected_decode_fp16_low_water_blocks: str = "0",
@@ -2263,6 +2315,38 @@ def validate_engine_log(
         scope = "native" if native else "non-native"
         raise RunnerError(
             f"{scope} engine log must {expectation} the inline fused QKV frontend"
+        )
+    validate_qlen1_selection = expected_qlen1_inline_plan is not None
+    expected_qlen1_inline_plan = (
+        expected_qlen1_inline_plan or DEFAULT_QLEN1_INLINE_PLAN
+    )
+    if expected_qlen1_inline_plan not in QLEN1_INLINE_PLAN_VARIANTS:
+        raise RunnerError(
+            f"unsupported qlen1 inline plan {expected_qlen1_inline_plan!r}"
+        )
+    if (
+        expected_qlen1_inline_plan == "trusted_native"
+        and expected_frontend != "qkv_scatter_inline"
+    ):
+        raise RunnerError("trusted qlen1 inline plan requires the inline frontend")
+    qlen1_selection_marker = (
+        "[KVARN_FACTORY] selected_qlen1_inline_plan="
+        f"{expected_qlen1_inline_plan};"
+    )
+    qlen1_selection_verified = native and qlen1_selection_marker in text
+    if native and validate_qlen1_selection and not qlen1_selection_verified:
+        raise RunnerError(
+            "native engine log lacks the selected qlen1 inline plan marker"
+        )
+    qlen1_inline_active = QLEN1_INLINE_PLAN_ACTIVE_MARKER in text
+    expected_qlen1_inline_active = (
+        native and expected_qlen1_inline_plan == "trusted_native"
+    )
+    if qlen1_inline_active != expected_qlen1_inline_active:
+        expectation = "execute" if expected_qlen1_inline_active else "not execute"
+        scope = "native" if native else "non-native"
+        raise RunnerError(
+            f"{scope} engine log must {expectation} the trusted qlen1 inline plan"
         )
     if expected_forward_pool_ensure not in FORWARD_POOL_ENSURE_VARIANTS:
         raise RunnerError(
@@ -2365,6 +2449,17 @@ def validate_engine_log(
     result["native_frontend_inline_log_marker"] = (
         NATIVE_FRONTEND_INLINE_ACTIVE_MARKER
         if expected_frontend_inline_active
+        else "not_applicable"
+    )
+    result["qlen1_inline_plan_expected"] = expected_qlen1_inline_plan
+    result["qlen1_inline_plan_selection_verified"] = qlen1_selection_verified
+    result["qlen1_inline_plan_selection_log_marker"] = (
+        qlen1_selection_marker if native else "not_applicable"
+    )
+    result["qlen1_inline_plan_active_verified"] = qlen1_inline_active
+    result["qlen1_inline_plan_active_log_marker"] = (
+        QLEN1_INLINE_PLAN_ACTIVE_MARKER
+        if expected_qlen1_inline_active
         else "not_applicable"
     )
     result["forward_pool_ensure_expected"] = expected_forward_pool_ensure
@@ -2556,6 +2651,8 @@ def seal_benchmark_result(
         or profile.get("prefill_store_environment") != prefill_store_for_run(run, args)
         or profile.get("native_frontend_environment")
         != native_frontend_for_run(run, args)
+        or profile.get("qlen1_inline_plan_environment")
+        != qlen1_inline_plan_for_run(run, args)
         or profile.get("forward_pool_ensure_environment")
         != forward_pool_ensure_for_run(run, args)
         or profile.get("decode_fp16_low_water_blocks_environment")
@@ -2610,6 +2707,7 @@ def seal_benchmark_result(
             expected_split_policy if run.arm == "candidate" else None
         ),
         expected_frontend=native_frontend_for_run(run, args),
+        expected_qlen1_inline_plan=qlen1_inline_plan_for_run(run, args),
         expected_forward_pool_ensure=forward_pool_ensure_for_run(run, args),
         expected_decode_fp16_low_water_blocks=(
             decode_fp16_low_water_blocks_for_run(run, args)
@@ -2684,6 +2782,7 @@ def seal_benchmark_result(
         "kvarn_flush_writer": flush_writer_for_run(run, args),
         "kvarn_prefill_store": prefill_store_for_run(run, args),
         "kvarn_native_frontend": native_frontend_for_run(run, args),
+        "kvarn_qlen1_inline_plan": qlen1_inline_plan_for_run(run, args),
         "kvarn_forward_pool_ensure": forward_pool_ensure_for_run(run, args),
         "kvarn_decode_fp16_low_water_blocks": (
             decode_fp16_low_water_blocks_for_run(run, args)
@@ -2708,6 +2807,18 @@ def seal_benchmark_result(
         ],
         "kvarn_native_frontend_inline_log_marker": scan_document[
             "native_frontend_inline_log_marker"
+        ],
+        "kvarn_qlen1_inline_plan_selection_verified": scan_document[
+            "qlen1_inline_plan_selection_verified"
+        ],
+        "kvarn_qlen1_inline_plan_selection_log_marker": scan_document[
+            "qlen1_inline_plan_selection_log_marker"
+        ],
+        "kvarn_qlen1_inline_plan_active_verified": scan_document[
+            "qlen1_inline_plan_active_verified"
+        ],
+        "kvarn_qlen1_inline_plan_active_log_marker": scan_document[
+            "qlen1_inline_plan_active_log_marker"
         ],
         "kvarn_forward_pool_ensure_active_verified": scan_document[
             "forward_pool_ensure_active_verified"
@@ -2825,6 +2936,7 @@ def run_one(
         identity["decode_fp16_low_water_blocks"] = decode_fp16_low_water_blocks_for_run(
             run, args
         )
+        identity["qlen1_inline_plan"] = qlen1_inline_plan_for_run(run, args)
         if correctness_identity is not None:
             verify_correctness_candidate_identity(identity, correctness_identity)
         write_json_atomic(run_dir / "candidate-identity.json", identity)
@@ -2921,8 +3033,9 @@ def run_one(
                 if run.arm == "candidate"
                 else None
             ),
-            expected_frontend=native_frontend_for_run(run, args),
-            expected_forward_pool_ensure=forward_pool_ensure_for_run(run, args),
+        expected_frontend=native_frontend_for_run(run, args),
+        expected_qlen1_inline_plan=qlen1_inline_plan_for_run(run, args),
+        expected_forward_pool_ensure=forward_pool_ensure_for_run(run, args),
             expected_decode_fp16_low_water_blocks=(
                 decode_fp16_low_water_blocks_for_run(run, args)
             ),
@@ -3338,6 +3451,8 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             or correctness_factory["prefill_store"] != prefill_store_environment(args)
             or correctness_factory["native_frontend"]
             != native_frontend_environment(args)
+            or correctness_factory["qlen1_inline_plan"]
+            != qlen1_inline_plan_environment(args)
             or correctness_factory["forward_pool_ensure"]
             != forward_pool_ensure_environment(args)
             or correctness_factory["decode_fp16_low_water_blocks"]
@@ -3399,6 +3514,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         "native_kernel_variant": args.native_kernel_variant,
         "native_kernel_variant_id": NATIVE_KERNEL_VARIANTS[args.native_kernel_variant],
         "native_split_policy": args.native_split_policy,
+        "qlen1_inline_plan": qlen1_inline_plan_environment(args),
         "native_scratch_max_splits": native_split_policy_contract(args)[
             "scratch_max_splits"
         ],
@@ -3421,6 +3537,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             "kvarn_flush_writer": flush_writer_environment(args),
             "kvarn_prefill_store": prefill_store_environment(args),
             "kvarn_native_frontend": native_frontend_environment(args),
+            "kvarn_qlen1_inline_plan": qlen1_inline_plan_environment(args),
             "kvarn_forward_pool_ensure": forward_pool_ensure_environment(args),
             "vllm_use_v2_model_runner": VLLM_USE_V2_MODEL_RUNNER,
         },
@@ -3442,6 +3559,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
                     run, args
                 ),
                 "expected_native_frontend": native_frontend_for_run(run, args),
+                "expected_qlen1_inline_plan": qlen1_inline_plan_for_run(run, args),
                 "expected_forward_pool_ensure": forward_pool_ensure_for_run(run, args),
                 "expected_decode_fp16_low_water_blocks": (
                     decode_fp16_low_water_blocks_for_run(run, args)
@@ -3818,6 +3936,16 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--qlen1-inline-plan",
+        choices=QLEN1_INLINE_PLAN_VARIANTS,
+        default=DEFAULT_QLEN1_INLINE_PLAN,
+        help=(
+            "engine-lifetime qlen=1 inline execution plan for the native "
+            "candidate; trusted_native requires qkv_scatter_inline and the "
+            "auto reference always uses reference (default: reference)"
+        ),
+    )
+    parser.add_argument(
         "--decode-fp16-window-blocks",
         type=int,
         default=DEFAULT_DECODE_FP16_WINDOW_BLOCKS,
@@ -3931,6 +4059,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         args.request_stable_projection_rows = bool(args.request_stable_projection_rows)
         args.request_stable_rmsnorm = bool(args.request_stable_rmsnorm)
         forward_pool_ensure_environment(args)
+        qlen1_inline_plan_environment(args)
         decode_fp16_low_water_blocks_environment(args)
         if launcher_mode(args) != "runtime-factory" and (
             not args.request_stable_projection_rows or not args.request_stable_rmsnorm

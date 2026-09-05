@@ -71,6 +71,11 @@ FORWARD_POOL_ENSURE_VARIANTS = ("always", "fused_qkv_proof")
 FORWARD_POOL_ENSURE_ACTIVE_MARKER = (
     "[KVARN_FORWARD_POOL_ENSURE] active=fused_qkv_proof; action=elide_ensure_pool;"
 )
+QLEN1_INLINE_PLAN_VARIANTS = ("reference", "trusted_native")
+QLEN1_INLINE_PLAN_IDS = {"reference": "qip-r", "trusted_native": "qip-t"}
+QLEN1_INLINE_PLAN_ACTIVE_MARKER = (
+    "[KVARN_TRUSTED_QLEN1_INLINE] active=trusted_native;"
+)
 DECODE_FLUSH_BATCH_MARKER_PATTERN = re.compile(
     r"\[KVARN_DECODE_FLUSH_BATCH\] high_water=([0-9]+); "
     r"low_water=([0-9]+); flushed_pages=([0-9]+)(?:;|\b)"
@@ -145,6 +150,12 @@ PRIMITIVE_SERVICE_ONLY_FIELDS = (
     "kvarn_forward_pool_ensure",
     "forward_pool_ensure_active_verified",
     "forward_pool_ensure_log_marker",
+    "qlen1_inline_plan",
+    "kvarn_qlen1_inline_plan",
+    "qlen1_inline_plan_selection_verified",
+    "qlen1_inline_plan_selection_log_marker",
+    "qlen1_inline_plan_active_verified",
+    "qlen1_inline_plan_active_log_marker",
     "decode_fp16_window_blocks",
     "kvarn_decode_fp16_window_blocks",
     "decode_fp16_low_water_blocks",
@@ -229,6 +240,7 @@ def _candidate_variant_provenance(
     flush_writer: str = "reference",
     prefill_store: str = "reference",
     forward_pool_ensure: str = "always",
+    qlen1_inline_plan: str = "reference",
     decode_fp16_window_blocks: str = "0",
     decode_fp16_low_water_blocks: str = "0",
 ) -> dict[str, str]:
@@ -247,6 +259,7 @@ def _candidate_variant_provenance(
             f"{flush_index_materialization}_indices_{flush_writer}_writer_"
             f"{prefill_store}_prefill_store_{native_frontend}_frontend_"
             f"{forward_pool_ensure}_forward_pool_ensure_"
+            f"{qlen1_inline_plan}_qlen1_inline_plan_"
             f"decode_fp16_window_{decode_fp16_window_blocks}_"
             f"low_water_{decode_fp16_low_water_blocks}"
         ),
@@ -257,6 +270,7 @@ def _candidate_variant_provenance(
             f"{flush_writer}-writer-{prefill_store}-prefill-store-"
             f"{native_frontend}-frontend-"
             f"{forward_pool_ensure}-forward-pool-ensure-"
+            f"{QLEN1_INLINE_PLAN_IDS[qlen1_inline_plan]}-"
             f"dw{decode_fp16_window_blocks}-"
             f"lw{decode_fp16_low_water_blocks}-{scheduling}"
         ),
@@ -296,6 +310,7 @@ def _correctness_phase_spec(
     flush_writer: str = "reference",
     prefill_store: str = "reference",
     forward_pool_ensure: str = "always",
+    qlen1_inline_plan: str = "reference",
     decode_fp16_window_blocks: str = "0",
     decode_fp16_low_water_blocks: str = "0",
 ) -> dict[str, Any]:
@@ -306,6 +321,7 @@ def _correctness_phase_spec(
     effective_flush_writer = flush_writer if spec["native"] else "reference"
     effective_prefill_store = prefill_store if spec["native"] else "reference"
     effective_forward_pool_ensure = forward_pool_ensure if spec["native"] else "always"
+    effective_qlen1_inline_plan = qlen1_inline_plan if spec["native"] else "reference"
     effective_decode_fp16_window_blocks = (
         decode_fp16_window_blocks if spec["native"] else "0"
     )
@@ -353,6 +369,7 @@ def _correctness_phase_spec(
         flush_writer=effective_flush_writer,
         prefill_store=effective_prefill_store,
         forward_pool_ensure=effective_forward_pool_ensure,
+        qlen1_inline_plan=effective_qlen1_inline_plan,
         decode_fp16_window_blocks=effective_decode_fp16_window_blocks,
         decode_fp16_low_water_blocks=effective_decode_fp16_low_water_blocks,
         native_split_policy=selected_policy,
@@ -373,6 +390,7 @@ def _correctness_phase_spec(
             flush_writer,
             prefill_store,
             forward_pool_ensure,
+            qlen1_inline_plan,
             decode_fp16_window_blocks,
             decode_fp16_low_water_blocks,
         )
@@ -483,6 +501,11 @@ ARM_PROVENANCE_FIELDS = (
     "kvarn_native_frontend_inline_log_marker",
     "kvarn_forward_pool_ensure_active_verified",
     "kvarn_forward_pool_ensure_log_marker",
+    "kvarn_qlen1_inline_plan",
+    "kvarn_qlen1_inline_plan_selection_verified",
+    "kvarn_qlen1_inline_plan_selection_log_marker",
+    "kvarn_qlen1_inline_plan_active_verified",
+    "kvarn_qlen1_inline_plan_active_log_marker",
     "kvarn_native_layout_log_marker",
     "kvarn_native_layout_evidence",
     "kvarn_kernel_strategy",
@@ -1120,6 +1143,7 @@ def _validate_correctness_phase(
     prefill_store: str,
     native_frontend: str,
     forward_pool_ensure: str,
+    qlen1_inline_plan: str,
     decode_fp16_window_blocks: str,
     decode_fp16_low_water_blocks: str,
     request_stable_projection_rows: str,
@@ -1141,6 +1165,7 @@ def _validate_correctness_phase(
         flush_writer,
         prefill_store,
         forward_pool_ensure,
+        qlen1_inline_plan,
         decode_fp16_window_blocks,
         decode_fp16_low_water_blocks,
     )
@@ -1175,6 +1200,7 @@ def _validate_correctness_phase(
     effective_flush_writer = expected_spec["flush_writer"]
     effective_prefill_store = expected_spec["prefill_store"]
     effective_forward_pool_ensure = expected_spec["forward_pool_ensure"]
+    effective_qlen1_inline_plan = expected_spec["qlen1_inline_plan"]
     effective_decode_fp16_window_blocks = expected_spec["decode_fp16_window_blocks"]
     effective_decode_fp16_low_water_blocks = expected_spec[
         "decode_fp16_low_water_blocks"
@@ -1188,6 +1214,12 @@ def _validate_correctness_phase(
     )
     expected_forward_pool_ensure_active = (
         expected_spec["native"] and effective_forward_pool_ensure == "fused_qkv_proof"
+    )
+    expected_qlen1_inline_plan_active = (
+        expected_spec["native"] and effective_qlen1_inline_plan == "trusted_native"
+    )
+    expected_qlen1_inline_plan_selection_marker = (
+        f"[KVARN_FACTORY] selected_qlen1_inline_plan={effective_qlen1_inline_plan};"
     )
     phase_decode_flush_events = _validate_decode_flush_batch_events(
         phase.get("decode_flush_batch_events"),
@@ -1228,6 +1260,7 @@ def _validate_correctness_phase(
         or phase.get("prefill_store") != effective_prefill_store
         or phase.get("native_frontend") != effective_frontend
         or phase.get("forward_pool_ensure") != effective_forward_pool_ensure
+        or phase.get("qlen1_inline_plan") != effective_qlen1_inline_plan
         or phase.get("decode_fp16_window_blocks") != effective_decode_fp16_window_blocks
         or phase.get("decode_fp16_low_water_blocks")
         != effective_decode_fp16_low_water_blocks
@@ -1263,6 +1296,22 @@ def _validate_correctness_phase(
             if expected_forward_pool_ensure_active
             else "not_applicable"
         )
+        or phase.get("qlen1_inline_plan_selection_verified")
+        is not expected_spec["native"]
+        or phase.get("qlen1_inline_plan_selection_log_marker")
+        != (
+            expected_qlen1_inline_plan_selection_marker
+            if expected_spec["native"]
+            else "not_applicable"
+        )
+        or phase.get("qlen1_inline_plan_active_verified")
+        is not expected_qlen1_inline_plan_active
+        or phase.get("qlen1_inline_plan_active_log_marker")
+        != (
+            QLEN1_INLINE_PLAN_ACTIVE_MARKER
+            if expected_qlen1_inline_plan_active
+            else "not_applicable"
+        )
         or not isinstance(phase.get("workload"), dict)
     ):
         raise GateError(f"{owner}: invalid {phase_name} phase evidence")
@@ -1287,6 +1336,8 @@ def _validate_correctness_phase(
         or profile.get("native_frontend_environment") != effective_frontend
         or profile.get("forward_pool_ensure_environment")
         != effective_forward_pool_ensure
+        or profile.get("qlen1_inline_plan_environment")
+        != effective_qlen1_inline_plan
         or profile.get("decode_fp16_window_blocks_environment")
         != effective_decode_fp16_window_blocks
         or profile.get("decode_fp16_low_water_blocks_environment")
@@ -1318,6 +1369,8 @@ def _validate_correctness_phase(
         or captured_environment.get("KVARN_NATIVE_XPU_FRONTEND") != effective_frontend
         or captured_environment.get("KVARN_FORWARD_POOL_ENSURE")
         != effective_forward_pool_ensure
+        or captured_environment.get("KVARN_QLEN1_INLINE_PLAN")
+        != effective_qlen1_inline_plan
         or captured_environment.get("KVARN_DECODE_FP16_WINDOW_BLOCKS")
         != effective_decode_fp16_window_blocks
         or captured_environment.get("KVARN_DECODE_FP16_LOW_WATER_BLOCKS")
@@ -1341,6 +1394,7 @@ def _validate_correctness_phase(
         != effective_decode_fp16_window_blocks
         or identity.get("decode_fp16_low_water_blocks")
         != effective_decode_fp16_low_water_blocks
+        or identity.get("qlen1_inline_plan") != effective_qlen1_inline_plan
     ):
         raise GateError(f"{owner}: {phase_name} identity differs from the candidate")
     log_path, _digest = _artifact_reference(
@@ -1368,6 +1422,12 @@ def _validate_correctness_phase(
     forward_pool_ensure_active = FORWARD_POOL_ENSURE_ACTIVE_MARKER in log_text
     if forward_pool_ensure_active != expected_forward_pool_ensure_active:
         raise GateError(f"{owner}: {phase_name} forward-pool runtime proof differs")
+    qlen1_inline_plan_selected = expected_qlen1_inline_plan_selection_marker in log_text
+    if qlen1_inline_plan_selected is not expected_spec["native"]:
+        raise GateError(f"{owner}: {phase_name} qlen1 plan selection proof differs")
+    qlen1_inline_plan_active = QLEN1_INLINE_PLAN_ACTIVE_MARKER in log_text
+    if qlen1_inline_plan_active != expected_qlen1_inline_plan_active:
+        raise GateError(f"{owner}: {phase_name} qlen1 plan runtime proof differs")
     log_decode_flush_events = _validate_decode_flush_batch_events(
         _decode_flush_batch_events(log_text),
         expected_window=effective_decode_fp16_window_blocks,
@@ -1422,6 +1482,23 @@ def _validate_correctness_phase(
             if expected_forward_pool_ensure_active
             else "not_applicable"
         )
+        or log_scan.get("qlen1_inline_plan_expected") != effective_qlen1_inline_plan
+        or log_scan.get("qlen1_inline_plan_selection_verified")
+        is not expected_spec["native"]
+        or log_scan.get("qlen1_inline_plan_selection_log_marker")
+        != (
+            expected_qlen1_inline_plan_selection_marker
+            if expected_spec["native"]
+            else "not_applicable"
+        )
+        or log_scan.get("qlen1_inline_plan_active_verified")
+        is not expected_qlen1_inline_plan_active
+        or log_scan.get("qlen1_inline_plan_active_log_marker")
+        != (
+            QLEN1_INLINE_PLAN_ACTIVE_MARKER
+            if expected_qlen1_inline_plan_active
+            else "not_applicable"
+        )
         or log_scan.get("decode_fp16_window_blocks_expected")
         != effective_decode_fp16_window_blocks
         or log_scan.get("decode_fp16_low_water_blocks_expected")
@@ -1454,6 +1531,7 @@ def validate_correctness_gate_evidence(
     prefill_store: str = "reference",
     native_frontend: str = "reference",
     forward_pool_ensure: str = "always",
+    qlen1_inline_plan: str = "reference",
     decode_fp16_window_blocks: str = "0",
     decode_fp16_low_water_blocks: str = "0",
     request_stable_projection_rows: str = "1",
@@ -1474,6 +1552,10 @@ def validate_correctness_gate_evidence(
         "qkv_scatter_inline",
     }:
         raise GateError(f"{path}: fused pool proof requires a fused QKV frontend")
+    if qlen1_inline_plan not in QLEN1_INLINE_PLAN_VARIANTS:
+        raise GateError(f"{path}: qlen1 inline plan is unsupported")
+    if qlen1_inline_plan == "trusted_native" and native_frontend != "qkv_scatter_inline":
+        raise GateError(f"{path}: trusted qlen1 plan requires qkv_scatter_inline")
     if not isinstance(decode_fp16_window_blocks, str) or not re.fullmatch(
         r"0|[1-9][0-9]*", decode_fp16_window_blocks
     ):
@@ -1602,6 +1684,7 @@ def validate_correctness_gate_evidence(
             prefill_store,
             native_frontend,
             forward_pool_ensure,
+            qlen1_inline_plan,
             decode_fp16_window_blocks,
             decode_fp16_low_water_blocks,
             request_stable_projection_rows,
@@ -2225,6 +2308,8 @@ def _load_run(path: Path) -> Run:
         "kvarn_native_frontend_active_verified",
         "kvarn_native_frontend_inline_active_verified",
         "kvarn_forward_pool_ensure_active_verified",
+        "kvarn_qlen1_inline_plan_selection_verified",
+        "kvarn_qlen1_inline_plan_active_verified",
         "kvarn_decode_flush_batch_active_verified",
         "kvarn_decode_flush_batch_execution_required",
     }
@@ -2241,6 +2326,7 @@ def _load_run(path: Path) -> Run:
         raise GateError(f"{path}: kvarn_native_xpu must be 0 or 1")
     frontend = provenance["kvarn_native_frontend"]
     forward_pool_ensure = provenance["kvarn_forward_pool_ensure"]
+    qlen1_inline_plan = provenance["kvarn_qlen1_inline_plan"]
     if frontend not in NATIVE_FRONTEND_VARIANTS:
         raise GateError(f"{path}: native frontend is unsupported")
     if forward_pool_ensure not in FORWARD_POOL_ENSURE_VARIANTS:
@@ -2250,6 +2336,10 @@ def _load_run(path: Path) -> Run:
         "qkv_scatter_inline",
     }:
         raise GateError(f"{path}: fused pool proof requires a fused QKV frontend")
+    if qlen1_inline_plan not in QLEN1_INLINE_PLAN_VARIANTS:
+        raise GateError(f"{path}: qlen1 inline plan is unsupported")
+    if qlen1_inline_plan == "trusted_native" and frontend != "qkv_scatter_inline":
+        raise GateError(f"{path}: trusted qlen1 plan requires qkv_scatter_inline")
     decode_fp16_window_blocks = provenance["kvarn_decode_fp16_window_blocks"]
     if not re.fullmatch(r"0|[1-9][0-9]*", decode_fp16_window_blocks):
         raise GateError(f"{path}: decode FP16 window is unsupported")
@@ -2263,6 +2353,10 @@ def _load_run(path: Path) -> Run:
     frontend_active = native and frontend in {"qkv_scatter", "qkv_scatter_inline"}
     frontend_inline_active = native and frontend == "qkv_scatter_inline"
     forward_pool_ensure_active = native and forward_pool_ensure == "fused_qkv_proof"
+    qlen1_inline_plan_active = native and qlen1_inline_plan == "trusted_native"
+    qlen1_inline_plan_selection_marker = (
+        f"[KVARN_FACTORY] selected_qlen1_inline_plan={qlen1_inline_plan};"
+    )
     decode_flush_batch_active = provenance["kvarn_decode_flush_batch_active_verified"]
     decode_flush_batch_status = (
         "verified" if decode_flush_batch_active else "not_exercised"
@@ -2282,6 +2376,16 @@ def _load_run(path: Path) -> Run:
         "kvarn_forward_pool_ensure_log_marker": (
             FORWARD_POOL_ENSURE_ACTIVE_MARKER
             if forward_pool_ensure_active
+            else "not_applicable"
+        ),
+        "kvarn_qlen1_inline_plan_selection_verified": native,
+        "kvarn_qlen1_inline_plan_selection_log_marker": (
+            qlen1_inline_plan_selection_marker if native else "not_applicable"
+        ),
+        "kvarn_qlen1_inline_plan_active_verified": qlen1_inline_plan_active,
+        "kvarn_qlen1_inline_plan_active_log_marker": (
+            QLEN1_INLINE_PLAN_ACTIVE_MARKER
+            if qlen1_inline_plan_active
             else "not_applicable"
         ),
         "kvarn_decode_flush_batch_active_verified": decode_flush_batch_active,
@@ -2398,6 +2502,19 @@ def _load_run(path: Path) -> Run:
         ],
         "forward_pool_ensure_log_marker": provenance[
             "kvarn_forward_pool_ensure_log_marker"
+        ],
+        "qlen1_inline_plan_expected": provenance["kvarn_qlen1_inline_plan"],
+        "qlen1_inline_plan_selection_verified": provenance[
+            "kvarn_qlen1_inline_plan_selection_verified"
+        ],
+        "qlen1_inline_plan_selection_log_marker": provenance[
+            "kvarn_qlen1_inline_plan_selection_log_marker"
+        ],
+        "qlen1_inline_plan_active_verified": provenance[
+            "kvarn_qlen1_inline_plan_active_verified"
+        ],
+        "qlen1_inline_plan_active_log_marker": provenance[
+            "kvarn_qlen1_inline_plan_active_log_marker"
         ],
         "decode_fp16_window_blocks_expected": decode_fp16_window_blocks,
         "decode_fp16_low_water_blocks_expected": decode_fp16_low_water_blocks,
@@ -2545,6 +2662,11 @@ def _load_correctness(path: Path) -> tuple[dict[str, Any], str]:
         "qkv_scatter_inline",
     }:
         raise GateError(f"{path}: fused pool proof requires a fused QKV frontend")
+    qlen1_inline_plan = document.get("qlen1_inline_plan")
+    if qlen1_inline_plan not in QLEN1_INLINE_PLAN_VARIANTS:
+        raise GateError(f"{path}: qlen1 inline plan is unsupported")
+    if qlen1_inline_plan == "trusted_native" and native_frontend != "qkv_scatter_inline":
+        raise GateError(f"{path}: trusted qlen1 plan requires qkv_scatter_inline")
     decode_fp16_window_blocks = document.get("decode_fp16_window_blocks")
     if (
         isinstance(decode_fp16_window_blocks, bool)
@@ -2586,6 +2708,11 @@ def _load_correctness(path: Path) -> tuple[dict[str, Any], str]:
         if isinstance(service_controls, dict)
         else None
     )
+    correctness_qlen1_inline_plan = (
+        service_controls.get("kvarn_qlen1_inline_plan")
+        if isinstance(service_controls, dict)
+        else None
+    )
     if correctness_onednn not in {"0", "1"}:
         raise GateError(f"{path}: correctness oneDNN selector is unsupported")
     if correctness_projection_rows not in {"0", "1"}:
@@ -2594,6 +2721,8 @@ def _load_correctness(path: Path) -> tuple[dict[str, Any], str]:
         raise GateError(f"{path}: correctness RMSNorm selector is unsupported")
     if correctness_forward_pool_ensure != forward_pool_ensure:
         raise GateError(f"{path}: correctness forward-pool selector is inconsistent")
+    if correctness_qlen1_inline_plan != qlen1_inline_plan:
+        raise GateError(f"{path}: correctness qlen1 plan selector is inconsistent")
     expected_service_controls = {
         "kvarn_decode_fp16_low_water_blocks": decode_fp16_low_water_blocks_text,
         "kvarn_decode_fp16_window_blocks": decode_fp16_window_blocks_text,
@@ -2602,6 +2731,7 @@ def _load_correctness(path: Path) -> tuple[dict[str, Any], str]:
         "kvarn_prefill_store": prefill_store,
         "kvarn_native_frontend": native_frontend,
         "kvarn_forward_pool_ensure": forward_pool_ensure,
+        "kvarn_qlen1_inline_plan": qlen1_inline_plan,
         "kvarn_onednn_deterministic": correctness_onednn,
         "kvarn_request_stable_projection_rows": correctness_projection_rows,
         "kvarn_request_stable_rmsnorm": correctness_rmsnorm,
@@ -2671,6 +2801,7 @@ def _load_correctness(path: Path) -> tuple[dict[str, Any], str]:
             flush_writer,
             prefill_store,
             forward_pool_ensure,
+            qlen1_inline_plan,
             decode_fp16_window_blocks_text,
             decode_fp16_low_water_blocks_text,
         )
@@ -2688,6 +2819,7 @@ def _load_correctness(path: Path) -> tuple[dict[str, Any], str]:
         flush_writer,
         prefill_store,
         forward_pool_ensure,
+        qlen1_inline_plan,
         decode_fp16_window_blocks_text,
         decode_fp16_low_water_blocks_text,
     )
@@ -2769,6 +2901,7 @@ def _load_correctness(path: Path) -> tuple[dict[str, Any], str]:
             prefill_store=prefill_store,
             native_frontend=native_frontend,
             forward_pool_ensure=forward_pool_ensure,
+            qlen1_inline_plan=qlen1_inline_plan,
             decode_fp16_window_blocks=decode_fp16_window_blocks_text,
             decode_fp16_low_water_blocks=decode_fp16_low_water_blocks_text,
             request_stable_projection_rows=correctness_projection_rows,
@@ -2842,6 +2975,7 @@ def _validate_logs(
     expected_split_policy: str | None = None,
     expected_frontend: str,
     expected_forward_pool_ensure: str,
+    expected_qlen1_inline_plan: str,
     expected_decode_fp16_window_blocks: str,
     expected_decode_fp16_low_water_blocks: str,
 ) -> list[dict[str, Any]]:
@@ -2884,6 +3018,19 @@ def _validate_logs(
         raise GateError(f"{arm} fused pool proof requires a fused QKV frontend")
     expected_forward_pool_ensure_active = (
         expect_native and expected_forward_pool_ensure == "fused_qkv_proof"
+    )
+    if expected_qlen1_inline_plan not in QLEN1_INLINE_PLAN_VARIANTS:
+        raise GateError(f"{arm} has an invalid qlen1-plan log expectation")
+    if (
+        expected_qlen1_inline_plan == "trusted_native"
+        and expected_frontend != "qkv_scatter_inline"
+    ):
+        raise GateError(f"{arm} trusted qlen1 plan requires qkv_scatter_inline")
+    expected_qlen1_inline_plan_active = (
+        expect_native and expected_qlen1_inline_plan == "trusted_native"
+    )
+    expected_qlen1_inline_plan_selection_marker = (
+        f"[KVARN_FACTORY] selected_qlen1_inline_plan={expected_qlen1_inline_plan};"
     )
     if not re.fullmatch(r"0|[1-9][0-9]*", expected_decode_fp16_window_blocks):
         raise GateError(f"{arm} has an invalid decode-window log expectation")
@@ -2943,6 +3090,14 @@ def _validate_logs(
         forward_pool_ensure_active = FORWARD_POOL_ENSURE_ACTIVE_MARKER in text
         if forward_pool_ensure_active != expected_forward_pool_ensure_active:
             raise GateError(f"{path}: {arm} forward-pool runtime proof differs")
+        qlen1_inline_plan_selected = (
+            expected_qlen1_inline_plan_selection_marker in text
+        )
+        if qlen1_inline_plan_selected is not expect_native:
+            raise GateError(f"{path}: {arm} qlen1 plan selection proof differs")
+        qlen1_inline_plan_active = QLEN1_INLINE_PLAN_ACTIVE_MARKER in text
+        if qlen1_inline_plan_active != expected_qlen1_inline_plan_active:
+            raise GateError(f"{path}: {arm} qlen1 plan runtime proof differs")
         decode_flush_batch_events = _validate_decode_flush_batch_events(
             _decode_flush_batch_events(text),
             expected_window=expected_decode_fp16_window_blocks,
@@ -2980,6 +3135,19 @@ def _validate_logs(
                 "forward_pool_ensure_log_marker": (
                     FORWARD_POOL_ENSURE_ACTIVE_MARKER
                     if expected_forward_pool_ensure_active
+                    else "not_applicable"
+                ),
+                "qlen1_inline_plan_expected": expected_qlen1_inline_plan,
+                "qlen1_inline_plan_selection_verified": qlen1_inline_plan_selected,
+                "qlen1_inline_plan_selection_log_marker": (
+                    expected_qlen1_inline_plan_selection_marker
+                    if expect_native
+                    else "not_applicable"
+                ),
+                "qlen1_inline_plan_active_verified": qlen1_inline_plan_active,
+                "qlen1_inline_plan_active_log_marker": (
+                    QLEN1_INLINE_PLAN_ACTIVE_MARKER
+                    if expected_qlen1_inline_plan_active
                     else "not_applicable"
                 ),
                 "decode_fp16_window_blocks_expected": (
@@ -3178,6 +3346,9 @@ def compare(
         "kvarn_prefill_store": first_cand.provenance["kvarn_prefill_store"],
         "kvarn_native_frontend": first_cand.provenance["kvarn_native_frontend"],
         "kvarn_forward_pool_ensure": first_cand.provenance["kvarn_forward_pool_ensure"],
+        "kvarn_qlen1_inline_plan": first_cand.provenance[
+            "kvarn_qlen1_inline_plan"
+        ],
         "kvarn_onednn_deterministic": first_cand.provenance[
             "kvarn_onednn_deterministic"
         ],
@@ -3241,6 +3412,8 @@ def compare(
         raise GateError("reference must use the unfused reference frontend")
     if first_ref.provenance["kvarn_forward_pool_ensure"] != "always":
         raise GateError("reference must use the conservative forward pool guard")
+    if first_ref.provenance["kvarn_qlen1_inline_plan"] != "reference":
+        raise GateError("reference must use the checked qlen1 plan")
     if first_ref.provenance["kvarn_decode_fp16_window_blocks"] != "0":
         raise GateError("reference must use immediate page flushes")
     if first_ref.provenance["kvarn_decode_fp16_low_water_blocks"] != "0":
@@ -3256,6 +3429,11 @@ def compare(
         != correctness["forward_pool_ensure"]
     ):
         raise GateError("candidate forward pool guard must match correctness")
+    if (
+        first_cand.provenance["kvarn_qlen1_inline_plan"]
+        != correctness["qlen1_inline_plan"]
+    ):
+        raise GateError("candidate qlen1 inline plan must match correctness")
     if first_cand.provenance["kvarn_decode_fp16_window_blocks"] != str(
         correctness["decode_fp16_window_blocks"]
     ):
@@ -3379,6 +3557,7 @@ def compare(
         expected_layout=ref_layout,
         expected_frontend="reference",
         expected_forward_pool_ensure="always",
+        expected_qlen1_inline_plan="reference",
         expected_decode_fp16_window_blocks="0",
         expected_decode_fp16_low_water_blocks="0",
     )
@@ -3389,6 +3568,7 @@ def compare(
         expected_layout=cand_layout,
         expected_frontend=correctness["native_frontend"],
         expected_forward_pool_ensure=correctness["forward_pool_ensure"],
+        expected_qlen1_inline_plan=correctness["qlen1_inline_plan"],
         expected_decode_fp16_window_blocks=str(
             correctness["decode_fp16_window_blocks"]
         ),

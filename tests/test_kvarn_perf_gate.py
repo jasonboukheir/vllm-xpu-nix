@@ -2085,6 +2085,24 @@ def test_match_gate_accepts_round8_combined_runtime_proofs(tmp_path: Path) -> No
     assert candidate["kvarn_qlen1_inline_plan"] == "bound_native_v2"
 
 
+def test_match_gate_rejects_id22_active_with_downgrade(tmp_path: Path) -> None:
+    arms = _arms(
+        tmp_path,
+        native_kernel_variant=gate_module.LAST_ARRIVAL_KERNEL_VARIANT,
+    )
+    candidate_log = arms[3][0]
+    candidate_log.write_text(
+        candidate_log.read_text(encoding="utf-8")
+        + f"INFO {gate_module.LAST_ARRIVAL_DOWNGRADE_MARKER} "
+        "reasons=counter-state\n",
+        encoding="utf-8",
+    )
+    _rebind_result_engine_log(arms[1][0], candidate_log)
+
+    with pytest.raises(GateError, match="ID22.*downgrade"):
+        _compare(arms)
+
+
 def test_match_gate_rejects_self_consistent_execution_proof_tamper(
     tmp_path: Path,
 ) -> None:
@@ -2274,6 +2292,37 @@ def test_correctness_gate_rejects_qkv_marker_in_natural_reference(
     correctness_path.write_text(json.dumps(correctness), encoding="utf-8")
 
     with pytest.raises(GateError, match="reference-262k-b1 frontend runtime proof"):
+        _load_correctness(correctness_path)
+
+
+def test_correctness_gate_rejects_id22_active_with_downgrade(
+    tmp_path: Path,
+) -> None:
+    correctness_path = _correctness(
+        tmp_path / "correctness.json",
+        native_kernel_variant=gate_module.LAST_ARRIVAL_KERNEL_VARIANT,
+    )
+    correctness = json.loads(correctness_path.read_text(encoding="utf-8"))
+    outer_gate = correctness["gates"]["b4_isolation"]
+    gate_path = Path(outer_gate["path"])
+    gate = json.loads(gate_path.read_text(encoding="utf-8"))
+    phase_path = Path(gate["b4_service_phase"]["path"])
+    phase = json.loads(phase_path.read_text(encoding="utf-8"))
+    log_path = Path(phase["engine_log"]["path"])
+    log_path.write_text(
+        log_path.read_text(encoding="utf-8")
+        + f"INFO {gate_module.LAST_ARRIVAL_DOWNGRADE_MARKER} "
+        "reasons=counter-state\n",
+        encoding="utf-8",
+    )
+    phase["engine_log"] = _artifact(log_path)
+    phase_path.write_text(json.dumps(phase), encoding="utf-8")
+    gate["b4_service_phase"] = _artifact(phase_path)
+    gate_path.write_text(json.dumps(gate), encoding="utf-8")
+    outer_gate["sha256"] = hashlib.sha256(gate_path.read_bytes()).hexdigest()
+    correctness_path.write_text(json.dumps(correctness), encoding="utf-8")
+
+    with pytest.raises(GateError, match="native-65k-b4.*ID22.*downgrade"):
         _load_correctness(correctness_path)
 
 

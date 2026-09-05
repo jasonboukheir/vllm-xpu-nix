@@ -466,6 +466,11 @@ def test_b70_wave_selector_expands_exact_id18_candidate_set() -> None:
     assert {case.requested_split_policy for case in cases} == {selector}
     assert {case.as_dict()["split_policy"] for case in cases} == {selector}
 
+    assert "b70_q6_id18_v1" in factory.split_policy.NATIVE_SPLIT_POLICIES
+    assert "b70_q6_id18_v1" not in factory.split_policy.FACTORY_SPLIT_POLICIES
+    with pytest.raises(factory.FactoryError, match="unknown factory split policy"):
+        factory.resolve_factory_split_tokens("b70_q6_id18_v1", None)
+
 
 def test_b70_wave_selector_rejects_non_id18_or_partial_matrix() -> None:
     splits = [8, 16, 17, 24, 32]

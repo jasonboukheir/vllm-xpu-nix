@@ -2600,6 +2600,39 @@ def test_formal_gate_accepts_exact_b70_q6_v2_contract(tmp_path: Path) -> None:
     assert result["candidate"]["arm"]["kvarn_native_split_policy"] == "b70_q6_v2"
 
 
+def test_formal_gate_accepts_exact_id18_policy_contract(tmp_path: Path) -> None:
+    arms = _arms(
+        tmp_path,
+        native_layout="xe2_dpas",
+        native_kernel_variant="q6_prefetch_record_cursor",
+        native_split_policy="b70_q6_id18_v1",
+        native_splits={},
+    )
+
+    result = _compare(arms)
+
+    assert result["status"] == "passed"
+    assert result["candidate"]["arm"]["kvarn_native_max_splits"] == "32"
+    assert result["candidate"]["arm"]["kvarn_native_nominal_splits"] == "24"
+    assert (
+        result["candidate"]["arm"]["kvarn_native_split_policy"]
+        == "b70_q6_id18_v1"
+    )
+
+
+def test_formal_gate_rejects_id18_policy_with_another_q6_kernel(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(GateError, match="ID18"):
+        _arms(
+            tmp_path,
+            native_layout="xe2_dpas",
+            native_kernel_variant="q6_page_record_cursor",
+            native_split_policy="b70_q6_id18_v1",
+            native_splits={},
+        )
+
+
 @pytest.mark.parametrize(
     "native_kernel_variant",
     ["q6_next_page_prefetch", "q6_next_page_prefetch_split_reducer"],

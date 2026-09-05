@@ -146,6 +146,8 @@ B70_Q6_SPLITS = split_policy.B70_Q6_SPLITS
 B70_Q6_MAX_SPLITS = split_policy.B70_Q6_MAX_SPLITS
 B70_Q6_V2_MAX_SPLITS = split_policy.B70_Q6_V2_MAX_SPLITS
 B70_Q6_V2_KERNEL_VARIANT = split_policy.B70_Q6_V2_KERNEL_VARIANT
+B70_Q6_ID18_V1_MAX_SPLITS = split_policy.B70_Q6_ID18_V1_MAX_SPLITS
+B70_Q6_ID18_V1_KERNEL_VARIANT = split_policy.B70_Q6_ID18_V1_KERNEL_VARIANT
 B70_Q6_KERNEL_VARIANTS = frozenset(
     {
         "q6_scalar",
@@ -1127,13 +1129,22 @@ def load_correctness(
     if correctness_rmsnorm not in {"0", "1"}:
         raise RunnerError("correctness artifact RMSNorm selector is unsupported")
     raw_native_splits = document.get("native_nominal_splits_by_batch")
-    if native_split_policy == "b70_q6_v2":
-        if raw_native_splits is not None:
+    if split_policy.owns_runtime_selection(native_split_policy):
+        expected_nominal_splits = split_policy.nominal_splits_by_batch(
+            native_split_policy
+        )
+        if raw_native_splits != expected_nominal_splits:
             raise RunnerError(
-                "context-dependent correctness policy must not declare a "
-                "batch-only nominal split map"
+                "named correctness split policy nominal map differs from its contract"
             )
-        native_splits: dict[int, int] = {}
+        native_splits: dict[int, int] = (
+            {
+                int(batch): splits
+                for batch, splits in raw_native_splits.items()
+            }
+            if native_split_policy == "b70_q6"
+            else {}
+        )
     else:
         if not isinstance(raw_native_splits, dict) or set(raw_native_splits) != {
             "1",
@@ -4047,7 +4058,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
                 correctness_factory["native_splits"].get(batch)
                 != args.native_splits.get(batch)
                 for batch in args.batch
-                if args.native_split_policy != "b70_q6_v2"
+                if not split_policy.owns_runtime_selection(args.native_split_policy)
             )
         ):
             raise RunnerError(

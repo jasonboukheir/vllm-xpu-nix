@@ -12,8 +12,13 @@ from collections.abc import Mapping
 from copy import deepcopy
 from typing import Any
 
-NATIVE_SPLIT_POLICIES = ("fixed", "b70_q6", "b70_q6_v2")
-NAMED_SPLIT_POLICIES = frozenset({"b70_q6", "b70_q6_v2"})
+NATIVE_SPLIT_POLICIES = (
+    "fixed",
+    "b70_q6",
+    "b70_q6_v2",
+    "b70_q6_id18_v1",
+)
+NAMED_SPLIT_POLICIES = frozenset(NATIVE_SPLIT_POLICIES[1:])
 SUPPORTED_HARNESS_BATCHES = (1, 4)
 FACTORY_SPLIT_POLICY_EXPLICIT = "explicit"
 FACTORY_SPLIT_POLICY_B70_WAVE_SWEEP = "b70_wave_sweep"
@@ -34,6 +39,23 @@ B70_Q6_V2_KERNEL_VARIANTS = {
 }
 B70_Q6_V2_CONTEXT_THRESHOLD = 48 * 1024
 B70_Q6_V2_MAX_SPLITS = 32
+B70_Q6_ID18_V1_KERNEL_VARIANT = "q6_prefetch_record_cursor"
+B70_Q6_ID18_V1_KERNEL_VARIANT_ID = 18
+B70_Q6_ID18_V1_MAX_SPLITS = 32
+B70_Q6_ID18_V1_SPLITS = {
+    1: 32,
+    2: 16,
+    3: 8,
+    4: 24,
+    5: 4,
+    6: 4,
+    7: 4,
+    8: 4,
+    9: 2,
+    10: 2,
+    11: 2,
+    12: 2,
+}
 
 
 def _rule(*, batch: int, maximum: int | None, splits: int, minimum: int = 1) -> dict:
@@ -80,6 +102,24 @@ _B70_Q6_V2_CONTRACT = {
             maximum=None,
             splits=32,
         ),
+    ],
+}
+
+_B70_Q6_ID18_V1_CONTRACT = {
+    "schema_version": 1,
+    "selector": "b70_q6_id18_v1",
+    "selection_axes": ["decode_batch_size"],
+    "supported_harness_batches": list(SUPPORTED_HARNESS_BATCHES),
+    "supported_runtime_batches": list(B70_Q6_ID18_V1_SPLITS),
+    "scratch_max_splits": B70_Q6_ID18_V1_MAX_SPLITS,
+    "kernel_compatibility": {
+        "kind": "exact_variant",
+        "name": B70_Q6_ID18_V1_KERNEL_VARIANT,
+        "id": B70_Q6_ID18_V1_KERNEL_VARIANT_ID,
+    },
+    "rules": [
+        _rule(batch=batch, maximum=None, splits=splits)
+        for batch, splits in B70_Q6_ID18_V1_SPLITS.items()
     ],
 }
 
@@ -178,6 +218,8 @@ def split_policy_contract(
         return deepcopy(_B70_Q6_CONTRACT)
     if selector == "b70_q6_v2":
         return deepcopy(_B70_Q6_V2_CONTRACT)
+    if selector == "b70_q6_id18_v1":
+        return deepcopy(_B70_Q6_ID18_V1_CONTRACT)
     if selector != "fixed":
         raise ValueError(f"unsupported native split policy {selector!r}")
     if (
@@ -247,4 +289,12 @@ def validate_kernel_compatibility(
         raise ValueError(
             "b70_q6_v2 split policy requires q6_next_page_prefetch (ID12) "
             "or q6_next_page_prefetch_split_reducer (ID13)"
+        )
+    if (
+        selector == "b70_q6_id18_v1"
+        and kernel_variant != B70_Q6_ID18_V1_KERNEL_VARIANT
+    ):
+        raise ValueError(
+            "b70_q6_id18_v1 split policy requires "
+            "q6_prefetch_record_cursor (ID18)"
         )

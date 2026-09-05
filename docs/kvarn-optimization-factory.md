@@ -61,7 +61,7 @@ extension:
 |---|---|---|
 | `KVARN_NATIVE_XPU_CACHE_LAYOUT` | `natural`, `xe2_dpas` | engine/cache ABI; restart and allocate a fresh cache to change |
 | `KVARN_NATIVE_XPU_KERNEL_VARIANT` | `baseline`, `qk_i8u4`, `q6_scalar`, `q8_vector`, `q6_vector`, `q6_cached_weights`, `q6_exact_rows`, `q6_cached_weights_exact_rows`, `q6_page_pair`, `q6_main_grf128`, `q6_split_reducer_specialized`, `q6_next_page_prefetch`, `q6_next_page_prefetch_split_reducer`, `q6_simd_unpack`, `q6_block_output_store`, `q6_current_half_v_prefetch`, `q6_page_record_cursor`, `q6_prefetch_record_cursor`, `q6_page_metadata_cursor`, `q6_paired_nibble_half2`, `q6_last_arrival_fused_reduce` | startup selector; every listed specialization is in the same library |
-| `KVARN_NATIVE_XPU_SPLIT_POLICY` | `fixed`, `b70_q6`, `b70_q6_v2` | startup policy; named policies select the effective count per decode call |
+| `KVARN_NATIVE_XPU_SPLIT_POLICY` | `fixed`, `b70_q6`, `b70_q6_v2`, `b70_q6_id18_v1` | startup policy; named policies select the effective count per decode call |
 | `KVARN_NATIVE_XPU_SPLITS` | `1`, `2`, `4`, `8`, `16`, `17`, `24`, `32` | scratch-allocation maximum; effective count may be selected per call |
 | `KVARN_FLUSH_WRITER` | `reference`, `native_xe2`, `sinkhorn_pack_xe2` | startup writer; both native writers require the `xe2_dpas` D256/G128/K4V4/Hkv4 cache ABI |
 | `KVARN_NATIVE_XPU_PREFILL_STORE` | `reference`, `hadamard_scatter` | startup multi-token store; unsupported calls fall back to the reference path |
@@ -121,6 +121,13 @@ selects B1=32 at every context, and selects B4=8 through 48 Ki tokens
 (49,152 inclusive) or B4=32 above that boundary. It is available only through
 the runtime-factory launcher; the historical immutable launchers remain bound
 to `b70_q6`.
+
+`b70_q6_id18_v1` is the profiled, batch-aware policy for
+`q6_prefetch_record_cursor` (ID18) only. It allocates scratch for 32 splits and
+selects B1=32, B2=16, B3=8, B4=24, B5--8=4, and B9--12=2. The B1/B4 harness
+matrix records the complete 1--12 engine contract, and the selector is
+available through the runtime-factory launcher without a simultaneous fixed
+split override.
 
 Harness artifacts record a versioned `native_split_policy_contract` containing
 the selection axes, inclusive context bounds, exact rules, scratch ceiling,

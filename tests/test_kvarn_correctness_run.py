@@ -262,10 +262,9 @@ def _service_environment(
         "KVARN_FORWARD_POOL_ENSURE": correctness.forward_pool_ensure_for_spec(
             spec, args
         ),
+        "KVARN_METADATA_LIFECYCLE": correctness.metadata_lifecycle_for_spec(spec, args),
         "KVARN_QLEN1_INLINE_PLAN": correctness.qlen1_inline_plan_for_spec(spec, args),
-        "KVARN_DECODE_FLUSH_SCOPE": correctness.decode_flush_scope_for_spec(
-            spec, args
-        ),
+        "KVARN_DECODE_FLUSH_SCOPE": correctness.decode_flush_scope_for_spec(spec, args),
         "KVARN_DECODE_FP16_LOW_WATER_BLOCKS": (
             correctness.decode_fp16_low_water_blocks_for_spec(spec, args)
         ),
@@ -355,7 +354,7 @@ def test_dpas_mode_uses_separate_launchers_and_keeps_reference_natural(
         "native-xe2-xe2_dpas-q6_scalar-fixed_b1s32_b4s8-"
         "per_layer-indices-reference-writer-reference-prefill-store-"
         "reference-frontend-always-forward-pool-ensure-"
-        "qip-r-"
+        "ml-r-qip-r-"
         "dw0-lw0-dfs-r-eager_mnbt2048"
     )
     assert correctness.service_variant_provenance(reference, args)["variant_id"] == (
@@ -970,6 +969,7 @@ def test_cli_binds_config_ref_and_keeps_mandatory_inactive_units(
     assert args.request_stable_projection_rows is True
     assert args.request_stable_rmsnorm is True
     assert args.forward_pool_ensure == "always"
+    assert args.metadata_lifecycle == "reference"
 
     diagnostic = correctness.parse_args(
         [
@@ -986,6 +986,8 @@ def test_cli_binds_config_ref_and_keeps_mandatory_inactive_units(
             "qkv_scatter_inline",
             "--forward-pool-ensure",
             "fused_qkv_proof",
+            "--metadata-lifecycle",
+            "incremental_qlen1",
             "--output-dir",
             str(tmp_path / "diagnostic-request-policy"),
         ]
@@ -994,6 +996,7 @@ def test_cli_binds_config_ref_and_keeps_mandatory_inactive_units(
     assert diagnostic.request_stable_rmsnorm is True
     assert diagnostic.native_frontend == "qkv_scatter_inline"
     assert diagnostic.forward_pool_ensure == "fused_qkv_proof"
+    assert diagnostic.metadata_lifecycle == "incremental_qlen1"
     native_spec = correctness.SERVICE_PLAN[0]
     assert (
         correctness.runtime_factory_axes_for_spec(native_spec, diagnostic)[

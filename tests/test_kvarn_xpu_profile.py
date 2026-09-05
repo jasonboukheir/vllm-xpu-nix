@@ -336,6 +336,7 @@ def test_profile_command_and_dpas_launcher_provenance(
         "split_policy_selector": "fixed",
         "native_frontend": "qkv_scatter",
         "forward_pool_ensure": "always",
+        "metadata_lifecycle": "reference",
         "qlen1_inline_plan": "reference",
         "decode_flush_scope": "per_row",
         "decode_fp16_low_water_blocks": "0",
@@ -349,8 +350,9 @@ def test_profile_command_and_dpas_launcher_provenance(
         "fusion_selection": (
             "fused_attention_decode_per_layer_flush_reference_writer_"
             "reference_prefill_store_qkv_scatter_frontend_"
-            "always_forward_pool_ensure_reference_qlen1_inline_plan_"
-            "decode_fp16_window_0_low_water_0_flush_scope_per_row"
+            "always_forward_pool_ensure_reference_metadata_lifecycle_"
+            "reference_qlen1_inline_plan_decode_fp16_window_0_low_water_0_"
+            "flush_scope_per_row"
         ),
         "scheduling_selection": "split_k",
         "scheduler_max_num_batched_tokens": 2048,
@@ -365,8 +367,7 @@ def test_profile_command_and_dpas_launcher_provenance(
     assert (
         "-shared-flush-reference-writer-reference-prefill-store-"
         "qkv_scatter-frontend-always-forward-pool-ensure-"
-        "qip-r-"
-        in shared_variant["variant_id"]
+        "ml-r-qip-r-" in shared_variant["variant_id"]
     )
     assert shared_variant["flush_index_materialization"] == "shared"
     args.flush_index_materialization = "per_layer"
@@ -383,6 +384,7 @@ def test_profile_command_and_dpas_launcher_provenance(
         "split_policy_selector": "b70_q6",
         "native_frontend": "qkv_scatter",
         "forward_pool_ensure": "always",
+        "metadata_lifecycle": "reference",
         "qlen1_inline_plan": "reference",
         "decode_flush_scope": "per_row",
         "decode_fp16_low_water_blocks": "0",
@@ -396,8 +398,9 @@ def test_profile_command_and_dpas_launcher_provenance(
         "fusion_selection": (
             "fused_attention_decode_per_layer_flush_reference_writer_"
             "reference_prefill_store_qkv_scatter_frontend_"
-            "always_forward_pool_ensure_reference_qlen1_inline_plan_"
-            "decode_fp16_window_0_low_water_0_flush_scope_per_row"
+            "always_forward_pool_ensure_reference_metadata_lifecycle_"
+            "reference_qlen1_inline_plan_decode_fp16_window_0_low_water_0_"
+            "flush_scope_per_row"
         ),
         "scheduling_selection": "split_k",
         "scheduler_max_num_batched_tokens": 2048,
@@ -481,6 +484,7 @@ def test_runtime_factory_profile_accepts_runtime_axes_without_named_launcher(
         "KVARN_FACTORY_FORWARD_POOL_ENSURE": "fused_qkv_proof",
         "KVARN_FACTORY_KERNEL_VARIANT": "baseline",
         "KVARN_FACTORY_KV_CACHE_DTYPE": perf.COMPACT_DTYPE,
+        "KVARN_FACTORY_METADATA_LIFECYCLE": "reference",
         "KVARN_FACTORY_MAX_MODEL_LEN": "65536",
         "KVARN_FACTORY_MAX_NUM_SEQS": "1",
         "KVARN_FACTORY_NATIVE_XPU_FRONTEND": "qkv_scatter_inline",

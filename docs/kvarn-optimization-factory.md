@@ -66,7 +66,8 @@ extension:
 | `KVARN_FLUSH_WRITER` | `reference`, `native_xe2`, `sinkhorn_pack_xe2` | startup writer; both native writers require the `xe2_dpas` D256/G128/K4V4/Hkv4 cache ABI |
 | `KVARN_NATIVE_XPU_PREFILL_STORE` | `reference`, `hadamard_scatter` | startup multi-token store; unsupported calls fall back to the reference path |
 | `KVARN_NATIVE_XPU_FRONTEND` | `reference`, `qkv_scatter`, `qkv_scatter_inline` | startup Q/K/V frontend; inline selection must report both the fused-QKV active marker and its inline-specific marker |
-| `KVARN_FORWARD_POOL_ENSURE` | `always`, `fused_qkv_proof` | startup service-only forward-pool guard; `always` is the conservative default |
+| `KVARN_FORWARD_POOL_ENSURE` | `always`, `epoch_latch`, `fused_qkv_proof` | startup service-only forward-pool guard; `always` is the conservative default |
+| `KVARN_METADATA_LIFECYCLE` | `reference`, `incremental_qlen1` | startup metadata lifecycle; `reference` retains the complete per-forward scan |
 
 The writer/store selectors are orthogonal to the reader ID. `reference` remains
 the public-beta default for both. `native_xe2` replaces the completed-page
@@ -89,6 +90,22 @@ neither accept nor report this service-only axis.
 Service benchmark provenance includes the active frontend and pool-proof
 attestations and a hashed engine-log scan; selectors alone are not accepted as
 execution proof.
+
+Round 7 evaluates two independent lifecycle changes from one build. Use
+`--forward-pool-ensure epoch_latch` for Variant A, `--metadata-lifecycle
+incremental_qlen1` for Variant B, or both options for A+B. The auto and
+non-native oracle arms are pinned to `always` plus `reference` regardless of
+the candidate selection. Candidate evidence is accepted only with the exact
+active markers:
+
+```text
+[KVARN_FORWARD_POOL_ENSURE] active=epoch_latch; action=elide_full_validation;
+[KVARN_METADATA_LIFECYCLE] active=incremental_qlen1; action=elide_full_lifecycle_scan
+```
+
+An absent expected marker or a marker belonging to another mode fails closed.
+Both selectors and their verified markers are part of correctness, profile,
+benchmark, and final-gate provenance.
 
 `b70_q6` allocates for 32 and selects B1=32, B2=16, B3--4=8,
 B5--8=4, and B9--12=2. It is valid only with a Q6 DPAS reader. The named
@@ -198,13 +215,15 @@ scripts/kvarn_perf_run.py \
   --prefill-store hadamard_scatter \
   --native-frontend qkv_scatter_inline \
   --forward-pool-ensure fused_qkv_proof \
+  --metadata-lifecycle reference \
   ...
 ```
 
 The same `--launcher-mode runtime-factory` switch is supported by
 `kvarn_correctness_run.py` and `kvarn_xpu_profile.py`. It makes cache dtype,
 layout, kernel, split policy/count, frontend, flush-index strategy, full-page
-writer, multi-token prefill store, forward-pool guard, oneDNN mode,
+writer, multi-token prefill store, forward-pool guard, metadata lifecycle,
+oneDNN mode,
 request-stable projections/RMSNorm, 65K/262K model length, and B1/B4 width
 process-start choices. The launcher is
 resolved to one immutable Nix-store program once per harness run, while every

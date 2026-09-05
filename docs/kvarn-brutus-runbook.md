@@ -926,3 +926,15 @@ journalctl -u vllm-xpu-chat.service -n 200 --no-pager
 Do not promote Kvarn from a kernel-only or logit-only pass. The uncached,
 non-native B1 restart and B4 service gates are the first service acceptance;
 native results remain a separate A/B until they meet the same gates.
+
+Before cutting a release, repeat the terminal qualification against the
+rebased candidate and its exact Nix closure. The ordinary deployed interface
+must remain dtype-only: switching `kvCacheDtype` between `auto` and
+`kvarn_k4v4_g128_compact` must work without any `KVARN_*` variables. Confirm
+that Kvarn startup fails clearly, rather than silently weakening its contract,
+when MTP, XPU graph capture, or multimodal/vision serving is enabled. Preserve
+those unsupported-combination checks as release gates even when experimental
+factory selectors are absent from the deployed configuration. Do not merge an
+isolated release draft until dtype-only activation, auto rollback, the full
+correctness suite through 262K, and matched B70 service performance all pass
+from the final rebased source and configuration revisions.

@@ -60,14 +60,15 @@ extension:
 | Selector | Values in the combined build | Lifetime |
 |---|---|---|
 | `KVARN_NATIVE_XPU_CACHE_LAYOUT` | `natural`, `xe2_dpas` | engine/cache ABI; restart and allocate a fresh cache to change |
-| `KVARN_NATIVE_XPU_KERNEL_VARIANT` | `baseline`, `qk_i8u4`, `q6_scalar`, `q8_vector`, `q6_vector`, `q6_cached_weights`, `q6_exact_rows`, `q6_cached_weights_exact_rows`, `q6_page_pair`, `q6_main_grf128`, `q6_split_reducer_specialized`, `q6_next_page_prefetch`, `q6_next_page_prefetch_split_reducer`, `q6_simd_unpack`, `q6_block_output_store`, `q6_current_half_v_prefetch`, `q6_page_record_cursor`, `q6_prefetch_record_cursor`, `q6_page_metadata_cursor`, `q6_paired_nibble_half2` | startup selector; every listed specialization is in the same library |
+| `KVARN_NATIVE_XPU_KERNEL_VARIANT` | `baseline`, `qk_i8u4`, `q6_scalar`, `q8_vector`, `q6_vector`, `q6_cached_weights`, `q6_exact_rows`, `q6_cached_weights_exact_rows`, `q6_page_pair`, `q6_main_grf128`, `q6_split_reducer_specialized`, `q6_next_page_prefetch`, `q6_next_page_prefetch_split_reducer`, `q6_simd_unpack`, `q6_block_output_store`, `q6_current_half_v_prefetch`, `q6_page_record_cursor`, `q6_prefetch_record_cursor`, `q6_page_metadata_cursor`, `q6_paired_nibble_half2`, `q6_last_arrival_fused_reduce` | startup selector; every listed specialization is in the same library |
 | `KVARN_NATIVE_XPU_SPLIT_POLICY` | `fixed`, `b70_q6`, `b70_q6_v2` | startup policy; named policies select the effective count per decode call |
 | `KVARN_NATIVE_XPU_SPLITS` | `1`, `2`, `4`, `8`, `16`, `17`, `24`, `32` | scratch-allocation maximum; effective count may be selected per call |
 | `KVARN_FLUSH_WRITER` | `reference`, `native_xe2`, `sinkhorn_pack_xe2` | startup writer; both native writers require the `xe2_dpas` D256/G128/K4V4/Hkv4 cache ABI |
 | `KVARN_NATIVE_XPU_PREFILL_STORE` | `reference`, `hadamard_scatter` | startup multi-token store; unsupported calls fall back to the reference path |
-| `KVARN_NATIVE_XPU_FRONTEND` | `reference`, `qkv_scatter`, `qkv_scatter_inline` | startup Q/K/V frontend; inline selection must report both the fused-QKV active marker and its inline-specific marker |
+| `KVARN_NATIVE_XPU_FRONTEND` | `reference`, `qkv_scatter`, `qkv_scatter_inline`, `qkv_scatter_inline_current_stream` | startup Q/K/V frontend; inline selection must report both the fused-QKV active marker and its inline-specific marker; the current-stream variant must additionally name its exact native op on an active qlen=1 line |
 | `KVARN_FORWARD_POOL_ENSURE` | `always`, `epoch_latch`, `fused_qkv_proof` | startup service-only forward-pool guard; `always` is the conservative default |
 | `KVARN_METADATA_LIFECYCLE` | `reference`, `incremental_qlen1` | startup metadata lifecycle; `reference` retains the complete per-forward scan |
+| `KVARN_QLEN1_INLINE_PLAN` | `reference`, `trusted_native`, `bound_native_v2` | startup host-dispatch plan; optimized plans require an inline Q/K/V frontend and an exact plan-specific active marker |
 
 The writer/store selectors are orthogonal to the reader ID. `reference` remains
 the public-beta default for both. `native_xe2` replaces the completed-page
@@ -84,7 +85,8 @@ correctness, and XPU-profile runners expose it as
 `--forward-pool-ensure fused_qkv_proof`, capture the child-process value, and
 include it in candidate provenance. Their auto/non-native reference phases
 always use `reference` plus `always`. The proof selector is accepted only with
-`qkv_scatter` or `qkv_scatter_inline`, and a result counts only when the engine
+a fused QKV frontend, including the current-stream variant, and a result counts
+only when the engine
 reports the exact active pool-elision marker. Direct primitive factory results
 neither accept nor report this service-only axis.
 Service benchmark provenance includes the active frontend and pool-proof
@@ -162,7 +164,7 @@ Zero, compute-runtime, IGC, oneAPI, compiler, and JIT-linker environment, so
 the harness's Python XPU proof cannot silently use `/run/opengl-driver` while
 the service uses the candidate closure. The underlying
 `vllm-xpu-kvarn-factory` compiles every implemented decode specialization
-through ID21 plus the fused-QKV operator into one BMG-AOT attention library.
+through ID22 plus the fused-QKV operators into one BMG-AOT attention library.
 Runtime selection therefore does not start another Nix build. The package also
 freezes the generated upstream FA2 buildout to Brutus's text-only Qwen3.8
 profile: two head-dimension-256 chunk-prefill policies and one qgroup-8,
@@ -613,6 +615,55 @@ redundant allocator stream recording, a compound scatter/decode dispatcher,
 and an ID18 last-arrival fused reduction. Build compatible variants together,
 retain ID18 unchanged as the native control, and screen B1/B4 at 4K before any
 long-context or formal service matrix.
+
+The Round 8 one-build selectors are independently composable:
+
+- `--native-frontend qkv_scatter_inline_current_stream` selects S1 and must
+  execute an active line containing
+  `native_op=kvarn_hadamard_qkv_scatter_current_stream; qlen=1;`.
+- `--qlen1-inline-plan bound_native_v2` selects Variant H and must execute
+  `[KVARN_BOUND_QLEN1_INLINE] active=bound_native_v2;`.
+- `--native-kernel-variant q6_last_arrival_fused_reduce` selects ID22 and must
+  execute `[KVARN_FACTORY] ID22 last-arrival fused reduction active;`. A
+  runtime downgrade to its ID18 parent is a failed ID22 screen, even when the
+  immutable startup selector correctly reports ID22.
+
+S1 screening assumes the factory's single eager, in-order XPU stream. It is
+not promotable until service evidence also binds that stream-identity receipt;
+the current-stream op must never be inferred merely from the startup selector.
+
+Use this compact, non-promotable Round 8 screen after building the shared
+candidate once. It exercises the combined S1 + H + ID22 hypothesis at B1 and
+B4 under the unchanged Round 7 4K workload; run the retained ID18/current-QKV/
+`trusted_native` control from the same candidate closure before drawing a
+comparison.
+
+```console
+scripts/kvarn_perf_run.py \
+  --launcher-mode runtime-factory \
+  --candidate-env /nix/store/CURRENT-ROUND8-FACTORY-ENV \
+  --config-repo /tmp/nix-config-kvarn-round8 \
+  --config-ref path:/tmp/nix-config-kvarn-round8 \
+  --output-dir benchmark-results/kvarn/round8-combined-screen \
+  --exploratory --context 4096 --batch 1 --batch 4 \
+  --output-tokens 1280 --waves-per-run 2 --repeats 2 \
+  --native-layout xe2_dpas \
+  --native-kernel-variant q6_last_arrival_fused_reduce \
+  --native-split-policy fixed --native-splits 24 \
+  --flush-writer sinkhorn_pack_xe2 --prefill-store hadamard_scatter \
+  --native-frontend qkv_scatter_inline_current_stream \
+  --forward-pool-ensure fused_qkv_proof \
+  --metadata-lifecycle reference --qlen1-inline-plan bound_native_v2 \
+  --decode-fp16-window-blocks 4 --decode-fp16-low-water-blocks 0 \
+  --decode-flush-scope batch_cohort
+```
+
+The runner must seal all three exact runtime-active markers listed above. The
+direct primitive runner additionally supplies ID22's persistent `[B,4]` int32
+completion state, executes its long-ragged and 1,000-queued-call GPU kill
+tests, and fails if any completion word remains nonzero after synchronization.
+The service screen is intentionally single eager/in-order stream evidence; it
+does not satisfy S1's release stream-identity requirement by itself.
 
 Final promotion still requires native Kvarn statistical parity or better with
 auto on the B70: paired ratio at least 98%, hard throughput and per-request

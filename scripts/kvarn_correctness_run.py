@@ -2614,7 +2614,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=perf.DEFAULT_QLEN1_INLINE_PLAN,
         help=(
             "engine-lifetime qlen=1 orchestration plan for native correctness "
-            "services; trusted_native requires qkv_scatter_inline"
+            "services; optimized plans require an inline QKV frontend"
         ),
     )
     parser.add_argument(

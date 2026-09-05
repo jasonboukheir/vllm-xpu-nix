@@ -493,6 +493,16 @@ measurement is accepted.
 the existing fused-QKV active marker and
 `[KVARN_FRONTEND_INLINE] active=qkv_scatter_inline; wrapper=unified_qkv_attention_with_output;`,
 which is emitted only when the combined wrapper executes.
+`--native-frontend qkv_scatter_inline_current_stream` requires those same two
+proofs plus an active qlen=1 frontend line containing
+`native_op=kvarn_hadamard_qkv_scatter_current_stream; qlen=1;`. This experiment
+is screened only on the single eager, in-order XPU stream until a separate
+stream-identity receipt qualifies it for promotion.
+`--qlen1-inline-plan bound_native_v2` requires the exact
+`[KVARN_BOUND_QLEN1_INLINE] active=bound_native_v2;` execution marker. ID22
+requires `[KVARN_FACTORY] ID22 last-arrival fused reduction active;`; selecting
+ID22 at startup but downgrading to ID18 at runtime fails the selected-variant
+gate.
 The service-only `--forward-pool-ensure always|epoch_latch|fused_qkv_proof`
 selector is
 captured in service profiles and sealed provenance. `fused_qkv_proof` requires

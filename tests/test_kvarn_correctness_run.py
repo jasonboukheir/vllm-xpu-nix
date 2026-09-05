@@ -634,9 +634,10 @@ def test_dpas_launcher_names_bind_variant_for_65k_and_262k(
     [
         ("q6_page_metadata_cursor", 20),
         ("q6_paired_nibble_half2", 21),
+        ("q6_last_arrival_fused_reduce", 22),
     ],
 )
-def test_round6_correctness_variants_use_the_runtime_factory_registry(
+def test_factory_only_correctness_variants_use_the_runtime_factory_registry(
     variant: str, variant_id: int
 ) -> None:
     args = argparse.Namespace(

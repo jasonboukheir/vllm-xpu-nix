@@ -571,7 +571,7 @@ def test_candidate_profile_cli_rejects_fixed_round2_launcher_contract(
                     str(tmp_path / f"runtime-{variant}-{split_selector}"),
                 ]
             )
-            assert perf.NATIVE_KERNEL_VARIANTS[variant] in {20, 21}
+            assert perf.NATIVE_KERNEL_VARIANTS[variant] in {20, 21, 22}
             assert variant in perf.B70_Q6_KERNEL_VARIANTS
             assert variant not in perf.IMMUTABLE_QUALIFIED_KERNEL_VARIANTS
             assert runtime.native_kernel_variant == variant

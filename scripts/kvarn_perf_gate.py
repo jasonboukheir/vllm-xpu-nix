@@ -56,16 +56,27 @@ NATIVE_KERNEL_VARIANTS = {
     "q6_prefetch_record_cursor": 18,
     "q6_page_metadata_cursor": 20,
     "q6_paired_nibble_half2": 21,
+    "q6_last_arrival_fused_reduce": 22,
 }
 NATIVE_SPLIT_POLICIES = split_policy.NATIVE_SPLIT_POLICIES
 FLUSH_INDEX_MATERIALIZATION_VARIANTS = ("per_layer", "shared")
 FLUSH_WRITER_VARIANTS = ("reference", "native_xe2", "sinkhorn_pack_xe2")
 PREFILL_STORE_VARIANTS = ("reference", "hadamard_scatter")
-NATIVE_FRONTEND_VARIANTS = ("reference", "qkv_scatter", "qkv_scatter_inline")
+NATIVE_FRONTEND_VARIANTS = (
+    "reference",
+    "qkv_scatter",
+    "qkv_scatter_inline",
+    "qkv_scatter_inline_current_stream",
+)
+FUSED_QKV_FRONTEND_VARIANTS = frozenset(NATIVE_FRONTEND_VARIANTS[1:])
+INLINE_QKV_FRONTEND_VARIANTS = frozenset(NATIVE_FRONTEND_VARIANTS[2:])
 NATIVE_FRONTEND_ACTIVE_MARKER = "[KVARN_FRONTEND] active=qkv_scatter;"
 NATIVE_FRONTEND_INLINE_ACTIVE_MARKER = (
     "[KVARN_FRONTEND_INLINE] active=qkv_scatter_inline; "
     "wrapper=unified_qkv_attention_with_output;"
+)
+NATIVE_FRONTEND_CURRENT_STREAM_OP_MARKER = (
+    "native_op=kvarn_hadamard_qkv_scatter_current_stream; qlen=1;"
 )
 FORWARD_POOL_ENSURE_VARIANTS = ("always", "epoch_latch", "fused_qkv_proof")
 FORWARD_POOL_ENSURE_ACTIVE_MARKERS = {
@@ -86,9 +97,21 @@ METADATA_LIFECYCLE_ACTIVE_MARKER = (
     "[KVARN_METADATA_LIFECYCLE] active=incremental_qlen1; "
     "action=elide_full_lifecycle_scan"
 )
-QLEN1_INLINE_PLAN_VARIANTS = ("reference", "trusted_native")
-QLEN1_INLINE_PLAN_IDS = {"reference": "qip-r", "trusted_native": "qip-t"}
+QLEN1_INLINE_PLAN_VARIANTS = ("reference", "trusted_native", "bound_native_v2")
+QLEN1_INLINE_PLAN_IDS = {
+    "reference": "qip-r",
+    "trusted_native": "qip-t",
+    "bound_native_v2": "qip-b2",
+}
 QLEN1_INLINE_PLAN_ACTIVE_MARKER = "[KVARN_TRUSTED_QLEN1_INLINE] active=trusted_native;"
+QLEN1_INLINE_PLAN_ACTIVE_MARKERS = {
+    "trusted_native": QLEN1_INLINE_PLAN_ACTIVE_MARKER,
+    "bound_native_v2": "[KVARN_BOUND_QLEN1_INLINE] active=bound_native_v2;",
+}
+LAST_ARRIVAL_KERNEL_VARIANT = "q6_last_arrival_fused_reduce"
+LAST_ARRIVAL_ACTIVE_MARKER = (
+    "[KVARN_FACTORY] ID22 last-arrival fused reduction active;"
+)
 DECODE_FLUSH_SCOPES = ("per_row", "batch_cohort")
 DECODE_FLUSH_SCOPE_IDS = {"per_row": "dfs-r", "batch_cohort": "dfs-b"}
 DECODE_FLUSH_BATCH_MARKER_PATTERN = re.compile(
@@ -121,6 +144,7 @@ B70_Q6_KERNEL_VARIANTS = frozenset(
         "q6_prefetch_record_cursor",
         "q6_page_metadata_cursor",
         "q6_paired_nibble_half2",
+        "q6_last_arrival_fused_reduce",
     }
 )
 COMBINED_LIBRARY_VARIANT_MATRIX = [
@@ -147,6 +171,7 @@ COMBINED_LIBRARY_VARIANT_MATRIX = [
         "q6_prefetch_record_cursor",
         "q6_page_metadata_cursor",
         "q6_paired_nibble_half2",
+        "q6_last_arrival_fused_reduce",
     )
 ]
 VARIANT_FIELDS = (
@@ -1273,12 +1298,20 @@ def _validate_correctness_phase(
     effective_decode_fp16_low_water_blocks = expected_spec[
         "decode_fp16_low_water_blocks"
     ]
-    expected_frontend_active = expected_spec["native"] and effective_frontend in {
-        "qkv_scatter",
-        "qkv_scatter_inline",
-    }
+    expected_frontend_active = (
+        expected_spec["native"] and effective_frontend in FUSED_QKV_FRONTEND_VARIANTS
+    )
     expected_frontend_inline_active = (
-        expected_spec["native"] and effective_frontend == "qkv_scatter_inline"
+        expected_spec["native"]
+        and effective_frontend in INLINE_QKV_FRONTEND_VARIANTS
+    )
+    expected_current_stream_active = (
+        expected_spec["native"]
+        and effective_frontend == "qkv_scatter_inline_current_stream"
+    )
+    expected_last_arrival_active = (
+        expected_spec["native"]
+        and expected_kernel == LAST_ARRIVAL_KERNEL_VARIANT
     )
     expected_forward_pool_marker = FORWARD_POOL_ENSURE_ACTIVE_MARKERS.get(
         effective_forward_pool_ensure
@@ -1289,8 +1322,11 @@ def _validate_correctness_phase(
     expected_metadata_lifecycle_active = (
         expected_spec["native"] and effective_metadata_lifecycle == "incremental_qlen1"
     )
-    expected_qlen1_inline_plan_active = (
-        expected_spec["native"] and effective_qlen1_inline_plan == "trusted_native"
+    expected_qlen1_active_marker = QLEN1_INLINE_PLAN_ACTIVE_MARKERS.get(
+        effective_qlen1_inline_plan
+    )
+    expected_qlen1_inline_plan_active = bool(
+        expected_spec["native"] and expected_qlen1_active_marker
     )
     expected_qlen1_inline_plan_selection_marker = (
         f"[KVARN_FACTORY] selected_qlen1_inline_plan={effective_qlen1_inline_plan};"
@@ -1393,7 +1429,7 @@ def _validate_correctness_phase(
         is not expected_qlen1_inline_plan_active
         or phase.get("qlen1_inline_plan_active_log_marker")
         != (
-            QLEN1_INLINE_PLAN_ACTIVE_MARKER
+            expected_qlen1_active_marker
             if expected_qlen1_inline_plan_active
             else "not_applicable"
         )
@@ -1510,6 +1546,11 @@ def _validate_correctness_phase(
     frontend_inline_active = NATIVE_FRONTEND_INLINE_ACTIVE_MARKER in log_text
     if frontend_inline_active != expected_frontend_inline_active:
         raise GateError(f"{owner}: {phase_name} inline frontend runtime proof differs")
+    current_stream_active = NATIVE_FRONTEND_CURRENT_STREAM_OP_MARKER in log_text
+    if current_stream_active != expected_current_stream_active:
+        raise GateError(
+            f"{owner}: {phase_name} current-stream frontend proof differs"
+        )
     forward_pool_ensure_active = bool(
         expected_forward_pool_marker and expected_forward_pool_marker in log_text
     )
@@ -1530,9 +1571,21 @@ def _validate_correctness_phase(
     qlen1_inline_plan_selected = expected_qlen1_inline_plan_selection_marker in log_text
     if qlen1_inline_plan_selected is not expected_spec["native"]:
         raise GateError(f"{owner}: {phase_name} qlen1 plan selection proof differs")
-    qlen1_inline_plan_active = QLEN1_INLINE_PLAN_ACTIVE_MARKER in log_text
+    qlen1_inline_plan_active = bool(
+        expected_qlen1_active_marker
+        and expected_qlen1_active_marker in log_text
+    )
     if qlen1_inline_plan_active != expected_qlen1_inline_plan_active:
         raise GateError(f"{owner}: {phase_name} qlen1 plan runtime proof differs")
+    if any(
+        marker in log_text
+        for mode, marker in QLEN1_INLINE_PLAN_ACTIVE_MARKERS.items()
+        if mode != effective_qlen1_inline_plan
+    ):
+        raise GateError(f"{owner}: {phase_name} qlen1 plan uses a foreign marker")
+    last_arrival_active = LAST_ARRIVAL_ACTIVE_MARKER in log_text
+    if last_arrival_active != expected_last_arrival_active:
+        raise GateError(f"{owner}: {phase_name} ID22 runtime proof differs")
     log_decode_flush_events = _validate_decode_flush_batch_events(
         _decode_flush_batch_events(log_text),
         expected_scope=effective_decode_flush_scope,
@@ -1611,7 +1664,7 @@ def _validate_correctness_phase(
         is not expected_qlen1_inline_plan_active
         or log_scan.get("qlen1_inline_plan_active_log_marker")
         != (
-            QLEN1_INLINE_PLAN_ACTIVE_MARKER
+            expected_qlen1_active_marker
             if expected_qlen1_inline_plan_active
             else "not_applicable"
         )
@@ -1666,20 +1719,20 @@ def validate_correctness_gate_evidence(
         raise GateError(f"{path}: prefill store is unsupported")
     if forward_pool_ensure not in FORWARD_POOL_ENSURE_VARIANTS:
         raise GateError(f"{path}: forward pool ensure is unsupported")
-    if forward_pool_ensure == "fused_qkv_proof" and native_frontend not in {
-        "qkv_scatter",
-        "qkv_scatter_inline",
-    }:
+    if (
+        forward_pool_ensure == "fused_qkv_proof"
+        and native_frontend not in FUSED_QKV_FRONTEND_VARIANTS
+    ):
         raise GateError(f"{path}: fused pool proof requires a fused QKV frontend")
     if metadata_lifecycle not in METADATA_LIFECYCLE_VARIANTS:
         raise GateError(f"{path}: metadata lifecycle is unsupported")
     if qlen1_inline_plan not in QLEN1_INLINE_PLAN_VARIANTS:
         raise GateError(f"{path}: qlen1 inline plan is unsupported")
     if (
-        qlen1_inline_plan == "trusted_native"
-        and native_frontend != "qkv_scatter_inline"
+        qlen1_inline_plan != "reference"
+        and native_frontend not in INLINE_QKV_FRONTEND_VARIANTS
     ):
-        raise GateError(f"{path}: trusted qlen1 plan requires qkv_scatter_inline")
+        raise GateError(f"{path}: selected qlen1 plan requires an inline frontend")
     if decode_flush_scope not in DECODE_FLUSH_SCOPES:
         raise GateError(f"{path}: decode flush scope is unsupported")
     if not isinstance(decode_fp16_window_blocks, str) or not re.fullmatch(
@@ -2461,17 +2514,20 @@ def _load_run(path: Path) -> Run:
         raise GateError(f"{path}: native frontend is unsupported")
     if forward_pool_ensure not in FORWARD_POOL_ENSURE_VARIANTS:
         raise GateError(f"{path}: forward pool ensure is unsupported")
-    if forward_pool_ensure == "fused_qkv_proof" and frontend not in {
-        "qkv_scatter",
-        "qkv_scatter_inline",
-    }:
+    if (
+        forward_pool_ensure == "fused_qkv_proof"
+        and frontend not in FUSED_QKV_FRONTEND_VARIANTS
+    ):
         raise GateError(f"{path}: fused pool proof requires a fused QKV frontend")
     if metadata_lifecycle not in METADATA_LIFECYCLE_VARIANTS:
         raise GateError(f"{path}: metadata lifecycle is unsupported")
     if qlen1_inline_plan not in QLEN1_INLINE_PLAN_VARIANTS:
         raise GateError(f"{path}: qlen1 inline plan is unsupported")
-    if qlen1_inline_plan == "trusted_native" and frontend != "qkv_scatter_inline":
-        raise GateError(f"{path}: trusted qlen1 plan requires qkv_scatter_inline")
+    if (
+        qlen1_inline_plan != "reference"
+        and frontend not in INLINE_QKV_FRONTEND_VARIANTS
+    ):
+        raise GateError(f"{path}: selected qlen1 plan requires an inline frontend")
     decode_flush_scope = provenance["kvarn_decode_flush_scope"]
     if decode_flush_scope not in DECODE_FLUSH_SCOPES:
         raise GateError(f"{path}: decode flush scope is unsupported")
@@ -2485,12 +2541,13 @@ def _load_run(path: Path) -> Run:
         raise GateError(f"{path}: decode FP16 low-water requires a window")
     if int(decode_fp16_low_water_blocks) > int(decode_fp16_window_blocks):
         raise GateError(f"{path}: decode FP16 low-water exceeds the window")
-    frontend_active = native and frontend in {"qkv_scatter", "qkv_scatter_inline"}
-    frontend_inline_active = native and frontend == "qkv_scatter_inline"
+    frontend_active = native and frontend in FUSED_QKV_FRONTEND_VARIANTS
+    frontend_inline_active = native and frontend in INLINE_QKV_FRONTEND_VARIANTS
     forward_pool_marker = FORWARD_POOL_ENSURE_ACTIVE_MARKERS.get(forward_pool_ensure)
     forward_pool_ensure_active = bool(native and forward_pool_marker)
     metadata_lifecycle_active = native and metadata_lifecycle == "incremental_qlen1"
-    qlen1_inline_plan_active = native and qlen1_inline_plan == "trusted_native"
+    qlen1_active_marker = QLEN1_INLINE_PLAN_ACTIVE_MARKERS.get(qlen1_inline_plan)
+    qlen1_inline_plan_active = bool(native and qlen1_active_marker)
     qlen1_inline_plan_selection_marker = (
         f"[KVARN_FACTORY] selected_qlen1_inline_plan={qlen1_inline_plan};"
     )
@@ -2525,7 +2582,7 @@ def _load_run(path: Path) -> Run:
         ),
         "kvarn_qlen1_inline_plan_active_verified": qlen1_inline_plan_active,
         "kvarn_qlen1_inline_plan_active_log_marker": (
-            QLEN1_INLINE_PLAN_ACTIVE_MARKER
+            qlen1_active_marker
             if qlen1_inline_plan_active
             else "not_applicable"
         ),
@@ -2807,10 +2864,10 @@ def _load_correctness(path: Path) -> tuple[dict[str, Any], str]:
     forward_pool_ensure = document.get("forward_pool_ensure")
     if forward_pool_ensure not in FORWARD_POOL_ENSURE_VARIANTS:
         raise GateError(f"{path}: forward pool ensure is unsupported")
-    if forward_pool_ensure == "fused_qkv_proof" and native_frontend not in {
-        "qkv_scatter",
-        "qkv_scatter_inline",
-    }:
+    if (
+        forward_pool_ensure == "fused_qkv_proof"
+        and native_frontend not in FUSED_QKV_FRONTEND_VARIANTS
+    ):
         raise GateError(f"{path}: fused pool proof requires a fused QKV frontend")
     metadata_lifecycle = document.get("metadata_lifecycle")
     if metadata_lifecycle not in METADATA_LIFECYCLE_VARIANTS:
@@ -2819,10 +2876,10 @@ def _load_correctness(path: Path) -> tuple[dict[str, Any], str]:
     if qlen1_inline_plan not in QLEN1_INLINE_PLAN_VARIANTS:
         raise GateError(f"{path}: qlen1 inline plan is unsupported")
     if (
-        qlen1_inline_plan == "trusted_native"
-        and native_frontend != "qkv_scatter_inline"
+        qlen1_inline_plan != "reference"
+        and native_frontend not in INLINE_QKV_FRONTEND_VARIANTS
     ):
-        raise GateError(f"{path}: trusted qlen1 plan requires qkv_scatter_inline")
+        raise GateError(f"{path}: selected qlen1 plan requires an inline frontend")
     decode_fp16_window_blocks = document.get("decode_fp16_window_blocks")
     if (
         isinstance(decode_fp16_window_blocks, bool)
@@ -3178,19 +3235,24 @@ def _validate_logs(
     )
     if expected_frontend not in NATIVE_FRONTEND_VARIANTS:
         raise GateError(f"{arm} has an invalid native-frontend log expectation")
-    expected_frontend_active = expect_native and expected_frontend in {
-        "qkv_scatter",
-        "qkv_scatter_inline",
-    }
+    expected_frontend_active = (
+        expect_native and expected_frontend in FUSED_QKV_FRONTEND_VARIANTS
+    )
     expected_frontend_inline_active = (
-        expect_native and expected_frontend == "qkv_scatter_inline"
+        expect_native and expected_frontend in INLINE_QKV_FRONTEND_VARIANTS
+    )
+    expected_current_stream_active = (
+        expect_native and expected_frontend == "qkv_scatter_inline_current_stream"
+    )
+    expected_last_arrival_active = (
+        expect_native and expected_kernel_variant == LAST_ARRIVAL_KERNEL_VARIANT
     )
     if expected_forward_pool_ensure not in FORWARD_POOL_ENSURE_VARIANTS:
         raise GateError(f"{arm} has an invalid forward-pool log expectation")
-    if expected_forward_pool_ensure == "fused_qkv_proof" and expected_frontend not in {
-        "qkv_scatter",
-        "qkv_scatter_inline",
-    }:
+    if (
+        expected_forward_pool_ensure == "fused_qkv_proof"
+        and expected_frontend not in FUSED_QKV_FRONTEND_VARIANTS
+    ):
         raise GateError(f"{arm} fused pool proof requires a fused QKV frontend")
     expected_forward_pool_marker = FORWARD_POOL_ENSURE_ACTIVE_MARKERS.get(
         expected_forward_pool_ensure
@@ -3208,12 +3270,15 @@ def _validate_logs(
     if expected_decode_flush_scope not in DECODE_FLUSH_SCOPES:
         raise GateError(f"{arm} has an invalid decode-flush-scope expectation")
     if (
-        expected_qlen1_inline_plan == "trusted_native"
-        and expected_frontend != "qkv_scatter_inline"
+        expected_qlen1_inline_plan != "reference"
+        and expected_frontend not in INLINE_QKV_FRONTEND_VARIANTS
     ):
-        raise GateError(f"{arm} trusted qlen1 plan requires qkv_scatter_inline")
-    expected_qlen1_inline_plan_active = (
-        expect_native and expected_qlen1_inline_plan == "trusted_native"
+        raise GateError(f"{arm} selected qlen1 plan requires an inline frontend")
+    expected_qlen1_active_marker = QLEN1_INLINE_PLAN_ACTIVE_MARKERS.get(
+        expected_qlen1_inline_plan
+    )
+    expected_qlen1_inline_plan_active = bool(
+        expect_native and expected_qlen1_active_marker
     )
     expected_qlen1_inline_plan_selection_marker = (
         f"[KVARN_FACTORY] selected_qlen1_inline_plan={expected_qlen1_inline_plan};"
@@ -3273,6 +3338,9 @@ def _validate_logs(
         frontend_inline_active = NATIVE_FRONTEND_INLINE_ACTIVE_MARKER in text
         if frontend_inline_active != expected_frontend_inline_active:
             raise GateError(f"{path}: {arm} inline frontend runtime proof differs")
+        current_stream_active = NATIVE_FRONTEND_CURRENT_STREAM_OP_MARKER in text
+        if current_stream_active != expected_current_stream_active:
+            raise GateError(f"{path}: {arm} current-stream frontend proof differs")
         forward_pool_ensure_active = bool(
             expected_forward_pool_marker and expected_forward_pool_marker in text
         )
@@ -3292,9 +3360,21 @@ def _validate_logs(
         qlen1_inline_plan_selected = expected_qlen1_inline_plan_selection_marker in text
         if qlen1_inline_plan_selected is not expect_native:
             raise GateError(f"{path}: {arm} qlen1 plan selection proof differs")
-        qlen1_inline_plan_active = QLEN1_INLINE_PLAN_ACTIVE_MARKER in text
+        qlen1_inline_plan_active = bool(
+            expected_qlen1_active_marker
+            and expected_qlen1_active_marker in text
+        )
         if qlen1_inline_plan_active != expected_qlen1_inline_plan_active:
             raise GateError(f"{path}: {arm} qlen1 plan runtime proof differs")
+        if any(
+            marker in text
+            for mode, marker in QLEN1_INLINE_PLAN_ACTIVE_MARKERS.items()
+            if mode != expected_qlen1_inline_plan
+        ):
+            raise GateError(f"{path}: {arm} qlen1 plan uses a foreign marker")
+        last_arrival_active = LAST_ARRIVAL_ACTIVE_MARKER in text
+        if last_arrival_active != expected_last_arrival_active:
+            raise GateError(f"{path}: {arm} ID22 runtime proof differs")
         decode_flush_batch_events = _validate_decode_flush_batch_events(
             _decode_flush_batch_events(text),
             expected_scope=expected_decode_flush_scope,
@@ -3351,7 +3431,7 @@ def _validate_logs(
                 ),
                 "qlen1_inline_plan_active_verified": qlen1_inline_plan_active,
                 "qlen1_inline_plan_active_log_marker": (
-                    QLEN1_INLINE_PLAN_ACTIVE_MARKER
+                    expected_qlen1_active_marker
                     if expected_qlen1_inline_plan_active
                     else "not_applicable"
                 ),

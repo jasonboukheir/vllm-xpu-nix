@@ -301,6 +301,16 @@ VARIANTS = {
             "specialized_split_reduction",
             "tile64_next_page_current_half_v_prefetch_record_cursor_paired_nibble_half2",
         ),
+        VariantSpec(
+            22,
+            "q6_last_arrival_fused_reduce",
+            "q6 ID18 producer plus last-arrival fused split reduction",
+            "xe2_dpas",
+            "native_xe2_qlen1_q6_last_arrival_fused_reduce",
+            "runtime_explicit_count",
+            "last_arrival_fused_reduction",
+            "tile64_next_page_current_half_v_prefetch_record_cursor",
+        ),
     )
 }
 VARIANTS_BY_ID = {spec.variant_id: spec for spec in VARIANTS.values()}
@@ -322,6 +332,7 @@ DEFAULT_VARIANT_NAMES = (
     "q6_prefetch_record_cursor",
     "q6_page_metadata_cursor",
     "q6_paired_nibble_half2",
+    "q6_last_arrival_fused_reduce",
 )
 # ``all`` is literal: every runnable layout-compatible dispatch compiled into
 # the shared attention DSO participates.  DEFAULT_VARIANT_NAMES remains the
@@ -391,6 +402,10 @@ FOCUSED_XPU_262K_TESTS = {
     18: f"{_XPU_LONG_CONTEXT_TEST}[q6-prefetch-record-cursor]",
     20: f"{_XPU_LONG_CONTEXT_TEST}[q6-page-metadata-cursor]",
     21: f"{_XPU_LONG_CONTEXT_TEST}[q6-paired-nibble-half2]",
+    22: (
+        f"{_XPU_DECODE_TEST}::"
+        "test_id22_b4_long_ragged_repeated_calls_match_id18_bf16"
+    ),
 }
 # The Q8-family variants (0, 1, and 3) use a direct split-24 262K case as
 # both gates. Q6 variants also get the query-row/LSE multisplit attribution.
@@ -420,6 +435,10 @@ FOCUSED_XPU_MULTISPLIT_TESTS = {
             21,
         )
     },
+    22: (
+        f"{_XPU_DECODE_TEST}::"
+        "test_id22_reuses_persistent_counters_for_1000_queued_ragged_calls"
+    ),
 }
 FOCUSED_XPU_ID15_TEST = (
     f"{_XPU_DECODE_TEST}::"
@@ -1306,6 +1325,9 @@ def estimate_service_layer_allocation(
         batch * H_Q * num_kv_splits * HEAD_DIM * 2
         + 2 * batch * H_Q * num_kv_splits * 4
         + batch * H_Q * HEAD_DIM * 2
+        # Persistent ID22 completion counters. Both the candidate and natural
+        # buffer sets allocate these so the runner's ownership is explicit.
+        + batch * H_KV * 4
     )
     output_bytes = batch * H_Q * HEAD_DIM * 2
     shared_scratch = (
@@ -2045,7 +2067,12 @@ def load_operators(
     fused, fused_schema = _optional_operator(
         torch_module, "_vllm_fa2_C", "kvarn_hadamard_qkv_scatter"
     )
-    for argument in ("num_kv_splits", "kernel_variant", "dpas_layout"):
+    for argument in (
+        "num_kv_splits",
+        "kernel_variant",
+        "dpas_layout",
+        "completion_state",
+    ):
         if argument not in native_schema:
             raise FactoryError(
                 "native decode library lacks the explicit factory ABI argument "
@@ -3027,8 +3054,9 @@ def invoke_native_decode(
     num_kv_splits: int,
     kernel_variant: int,
     dpas_layout: bool,
+    completion_state: Any | None = None,
 ) -> None:
-    operation(
+    arguments = (
         query,
         cache,
         block_table,
@@ -3048,6 +3076,50 @@ def invoke_native_decode(
         kernel_variant,
         dpas_layout,
     )
+    if completion_state is not None:
+        arguments = (*arguments, completion_state)
+    operation(*arguments)
+
+
+def completion_state_reset_evidence(
+    completion_state: Any,
+    *,
+    batch: int,
+    expected_active: bool,
+) -> dict[str, Any]:
+    """Fail closed when ID22 leaves a persistent completion word armed.
+
+    Callers synchronize the XPU before entering this helper.  Keeping the
+    device-to-host receipt outside the timed region prevents the reset audit
+    from contaminating the candidate measurements.
+    """
+    expected_shape = (batch, H_KV)
+    actual_shape = tuple(completion_state.shape)
+    if actual_shape != expected_shape:
+        raise FactoryError(
+            "ID22 completion_state shape mismatch: "
+            f"expected {expected_shape}, observed {actual_shape}"
+        )
+    snapshot = completion_state.detach().cpu()
+    nonzero_elements = int(snapshot.count_nonzero().item())
+    if nonzero_elements:
+        raise FactoryError(
+            "ID22 completion_state was not reset after the synchronized decode: "
+            f"{nonzero_elements} persistent words remain nonzero"
+        )
+    return {
+        "allocated_shape": list(actual_shape),
+        "dtype": str(completion_state.dtype),
+        "expected_native_path": (
+            "q6_last_arrival_fused_reduce"
+            if expected_active
+            else "id18_plus_standalone_reducer_downgrade"
+        ),
+        "zero_initialized": True,
+        "zero_after_synchronized_calls": True,
+        "nonzero_elements_after_calls": nonzero_elements,
+        "reset_verified": True,
+    }
 
 
 def _difference_metrics(torch_module: Any, candidate: Any, reference: Any) -> dict:
@@ -3176,6 +3248,9 @@ def _run_service_layer_diagnostic(
                 ),
                 device="xpu:0",
             ),
+            completion=torch_module.zeros(
+                (batch, 4), dtype=torch_module.int32, device="xpu:0"
+            ),
         )
 
     candidate_buffers = make_buffers()
@@ -3276,6 +3351,9 @@ def _run_service_layer_diagnostic(
             num_kv_splits=splits,
             kernel_variant=variant,
             dpas_layout=dpas_layout,
+            completion_state=(
+                buffers.completion if variant == 22 else None
+            ),
         )
 
     def candidate_decode(layer: int) -> None:
@@ -3538,6 +3616,14 @@ def _run_service_layer_diagnostic(
             else None
         ),
     }
+    completion_state_evidence = None
+    if case.variant.variant_id == 22:
+        torch_module.xpu.synchronize()
+        completion_state_evidence = completion_state_reset_evidence(
+            candidate_buffers.completion,
+            batch=batch,
+            expected_active=(unrotate_output and write_bf16_output),
+        )
     return {
         "status": "correctness_passed_and_timed",
         "scope": "service_shaped_multi_layer_xpu_primitive_device_stage",
@@ -3559,6 +3645,7 @@ def _run_service_layer_diagnostic(
         "allocation_evidence": {
             **storage.allocation_evidence,
             "input_pointer_uniqueness": input_pointer_evidence,
+            "id22_completion_state": completion_state_evidence,
         },
         "payload_replication_provenance": {
             "fixture_mode": fixture_mode,
@@ -3805,6 +3892,9 @@ def run_case(
                 ),
                 device="xpu:0",
             ),
+            completion=torch_module.zeros(
+                (batch, 4), dtype=torch_module.int32, device="xpu:0"
+            ),
         )
 
     unrotate_output = case.effective_splits > 1
@@ -3841,6 +3931,9 @@ def run_case(
             num_kv_splits=splits,
             kernel_variant=variant,
             dpas_layout=dpas,
+            completion_state=(
+                buffers.completion if variant == 22 else None
+            ),
         )
 
     def normalized_output(buffers: SimpleNamespace) -> Any:
@@ -3895,6 +3988,13 @@ def run_case(
         structured_auto_output,
     )
     torch_module.xpu.synchronize()
+    structured_completion_state_evidence = None
+    if case.variant.variant_id == 22:
+        structured_completion_state_evidence = completion_state_reset_evidence(
+            structured_candidate_buffers.completion,
+            batch=batch,
+            expected_active=(unrotate_output and write_bf16_output),
+        )
     structured_natural_output = normalized_output(structured_natural_buffers)
     structured_candidate_output = normalized_output(structured_candidate_buffers)
     expected = _structured_expected(torch_module, batch, context)
@@ -4133,6 +4233,14 @@ def run_case(
         warmup_rounds=warmup_rounds,
         sample_rounds=sample_rounds,
     )
+    completion_state_evidence = None
+    if case.variant.variant_id == 22:
+        torch_module.xpu.synchronize()
+        completion_state_evidence = completion_state_reset_evidence(
+            candidate_buffers.completion,
+            batch=batch,
+            expected_active=(unrotate_output and write_bf16_output),
+        )
     frontend_arms = {
         "kvarn_separate_q_plus_kv": separate_qkv_frontend,
         "auto_cache_store": auto_store,
@@ -4251,6 +4359,7 @@ def run_case(
             "natural_cache_data_ptr": natural_cache.data_ptr(),
             "candidate_cache_data_ptr": candidate_cache.data_ptr(),
             "auto_cache_data_ptr": auto_base.data_ptr(),
+            "id22_completion_state": completion_state_evidence,
         },
         "correctness": {
             "thresholds": {
@@ -4258,6 +4367,9 @@ def run_case(
                 "rtol": correctness_rtol,
             },
             "structured_candidate_vs_natural": structured_candidate_metrics,
+            "structured_id22_completion_state": (
+                structured_completion_state_evidence
+            ),
             "structured_auto_vs_natural": auto_metrics,
             "dense_candidate_vs_natural": dense_metrics,
             "matched_auto_vs_quantized_natural": matched_auto_metrics,

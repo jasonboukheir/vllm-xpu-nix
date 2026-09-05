@@ -72,6 +72,7 @@ PROFILE = {
     "prefill_store_environment": "reference",
     "native_frontend_environment": "reference",
     "forward_pool_ensure_environment": "always",
+    "decode_fp16_window_blocks_environment": "0",
     "vllm_use_v2_model_runner_environment": "0",
     "variant_provenance": {
         "kernel_strategy": "vllm_auto",
@@ -115,6 +116,7 @@ def _args(tmp_path: Path) -> argparse.Namespace:
         flush_index_materialization="per_layer",
         native_frontend="reference",
         forward_pool_ensure="always",
+        decode_fp16_window_blocks=0,
         model=MODEL,
         model_revision=REVISION,
         native_splits={1: 24, 4: 16},
@@ -373,6 +375,7 @@ def test_exploratory_plan_session_has_no_formal_claims(
     assert session["promotable"] is False
     assert session["formal_gates_skipped"] is True
     assert session["service_controls"] == {
+        "kvarn_decode_fp16_window_blocks": "0",
         "kvarn_flush_index_materialization": "per_layer",
         "kvarn_flush_writer": "reference",
         "kvarn_prefill_store": "reference",
@@ -444,13 +447,14 @@ def test_commands_pin_launcher_and_deterministic_workload(tmp_path: Path) -> Non
         "fusion_strategy": (
             "native_materializer_persistent_scratch_per_layer_indices_"
             "reference_writer_reference_prefill_store_reference_frontend"
-            "_always_forward_pool_ensure"
+            "_always_forward_pool_ensure_decode_fp16_window_0"
         ),
         "scheduling_variant": "eager_mnbt2048",
         "variant_id": (
             "native-xe2-xe2_dpas-q6_scalar-fixed_b1s24_b4s16-"
             "per_layer-indices-reference-writer-reference-prefill-store-"
-            "reference-frontend-always-forward-pool-ensure-eager_mnbt2048"
+            "reference-frontend-always-forward-pool-ensure-"
+            "decode-fp16-window-0-eager_mnbt2048"
         ),
     }
     assert reference_variant["variant_id"] == "auto-control-eager_mnbt2048"
@@ -460,12 +464,12 @@ def test_commands_pin_launcher_and_deterministic_workload(tmp_path: Path) -> Non
     assert shared_variant["variant_id"] != candidate_variant["variant_id"]
     assert shared_variant["fusion_strategy"] == (
         "native_materializer_persistent_scratch_shared_indices_reference_writer_"
-        "reference_prefill_store_reference_frontend_always_forward_pool_ensure"
+        "reference_prefill_store_reference_frontend_always_forward_pool_ensure_"
+        "decode_fp16_window_0"
     )
     assert (
         "-shared-indices-reference-writer-reference-prefill-store-"
-        "reference-frontend-always-forward-pool-ensure-"
-        in shared_variant["variant_id"]
+        "reference-frontend-always-forward-pool-ensure-" in shared_variant["variant_id"]
     )
     assert variant_provenance_for_run(reference, args) == reference_variant
 
@@ -527,9 +531,10 @@ def test_round6_variants_use_only_the_runtime_factory_launcher(
     assert variant in runner.B70_Q6_KERNEL_VARIANTS
     assert variant not in runner.IMMUTABLE_QUALIFIED_KERNEL_VARIANTS
     assert runner.launcher_name(run, args) == runner.RUNTIME_FACTORY_LAUNCHER
-    assert runner.runtime_factory_axes_for_run(run, args)[
-        "KVARN_FACTORY_KERNEL_VARIANT"
-    ] == variant
+    assert (
+        runner.runtime_factory_axes_for_run(run, args)["KVARN_FACTORY_KERNEL_VARIANT"]
+        == variant
+    )
 
 
 @pytest.mark.parametrize(
@@ -955,11 +960,12 @@ def test_profile_verification_uses_actual_argv_and_environment(tmp_path: Path) -
         "KVARN_NATIVE_XPU_CACHE_LAYOUT": "natural",
         "KVARN_NATIVE_XPU_DECODE": "1",
         "KVARN_NATIVE_XPU_DPAS_LAYOUT": "0",
-            "KVARN_FLUSH_INDEX_MATERIALIZATION": "per_layer",
-            "KVARN_FLUSH_WRITER": "reference",
-            "KVARN_NATIVE_XPU_PREFILL_STORE": "reference",
+        "KVARN_FLUSH_INDEX_MATERIALIZATION": "per_layer",
+        "KVARN_FLUSH_WRITER": "reference",
+        "KVARN_NATIVE_XPU_PREFILL_STORE": "reference",
         "KVARN_NATIVE_XPU_FRONTEND": "reference",
         "KVARN_FORWARD_POOL_ENSURE": "always",
+        "KVARN_DECODE_FP16_WINDOW_BLOCKS": "0",
         "KVARN_NATIVE_XPU_KERNEL_VARIANT": "baseline",
         "KVARN_NATIVE_XPU_MATERIALIZE": "1",
         "KVARN_NATIVE_XPU_PERSISTENT_SCRATCH": "1",
@@ -1117,6 +1123,7 @@ def test_service_environment_pins_window_and_scrubs_full_defer(
 
     args.native_frontend = "qkv_scatter_inline"
     args.forward_pool_ensure = "fused_qkv_proof"
+    args.decode_fp16_window_blocks = 20
     assert (
         runner.service_environment(run, args)["KVARN_FACTORY_NATIVE_XPU_FRONTEND"]
         == "qkv_scatter_inline"
@@ -1135,6 +1142,16 @@ def test_service_environment_pins_window_and_scrubs_full_defer(
         == "always"
     )
     assert "KVARN_FORWARD_POOL_ENSURE" not in runner.service_environment(run, args)
+    assert (
+        runner.service_environment(run, args)["KVARN_FACTORY_DECODE_FP16_WINDOW_BLOCKS"]
+        == "20"
+    )
+    assert (
+        runner.service_environment(reference, args)[
+            "KVARN_FACTORY_DECODE_FP16_WINDOW_BLOCKS"
+        ]
+        == "0"
+    )
 
 
 def test_runtime_factory_environment_carries_exact_per_process_axes(
@@ -1154,12 +1171,14 @@ def test_runtime_factory_environment_carries_exact_per_process_axes(
     args.prefill_store = "hadamard_scatter"
     args.native_frontend = "qkv_scatter_inline"
     args.forward_pool_ensure = "fused_qkv_proof"
+    args.decode_fp16_window_blocks = 20
     candidate = PlannedRun(Workload(65023, 4, 32, 4, 17), "candidate", 1)
     reference = PlannedRun(candidate.workload, "reference", 2)
 
     candidate_axes = runner.runtime_factory_axes_for_run(candidate, args)
     assert candidate_axes == {
         "KVARN_FACTORY_CACHE_LAYOUT": "xe2_dpas",
+        "KVARN_FACTORY_DECODE_FP16_WINDOW_BLOCKS": "20",
         "KVARN_FACTORY_FLUSH_INDEX_MATERIALIZATION": "shared",
         "KVARN_FACTORY_FLUSH_WRITER": "sinkhorn_pack_xe2",
         "KVARN_FACTORY_FORWARD_POOL_ENSURE": "fused_qkv_proof",
@@ -1181,16 +1200,11 @@ def test_runtime_factory_environment_carries_exact_per_process_axes(
         candidate_environment["KVARN_FACTORY_FORWARD_POOL_ENSURE"] == "fused_qkv_proof"
     )
     assert "KVARN_FORWARD_POOL_ENSURE" not in candidate_environment
-    assert (
-        candidate_environment["KVARN_FACTORY_FLUSH_WRITER"]
-        == "sinkhorn_pack_xe2"
-    )
-    assert (
-        candidate_environment["KVARN_FACTORY_PREFILL_STORE"]
-        == "hadamard_scatter"
-    )
+    assert candidate_environment["KVARN_FACTORY_FLUSH_WRITER"] == "sinkhorn_pack_xe2"
+    assert candidate_environment["KVARN_FACTORY_PREFILL_STORE"] == "hadamard_scatter"
     assert runner.runtime_factory_axes_for_run(reference, args) == {
         "KVARN_FACTORY_CACHE_LAYOUT": "natural",
+        "KVARN_FACTORY_DECODE_FP16_WINDOW_BLOCKS": "0",
         "KVARN_FACTORY_FLUSH_INDEX_MATERIALIZATION": "per_layer",
         "KVARN_FACTORY_FLUSH_WRITER": "reference",
         "KVARN_FACTORY_FORWARD_POOL_ENSURE": "always",
@@ -1459,6 +1473,111 @@ def test_native_log_attests_fused_pool_check_elision(tmp_path: Path) -> None:
         )
 
 
+def test_decode_fp16_window_requires_workload_appropriate_execution_proof(
+    tmp_path: Path,
+) -> None:
+    engine_log = tmp_path / "engine.log"
+    base = (
+        "INFO config: device_config=xpu\n"
+        "INFO Actual usage is 17.54 GiB for consumed memory. "
+        "Current kv cache memory in use is 10.92 GiB.\n"
+        f"INFO {runner.NATIVE_DISPATCH} (direct bf16 output=True)\n"
+    )
+    engine_log.write_text(base, encoding="utf-8")
+
+    correctness_scan = runner.validate_engine_log(
+        engine_log,
+        native=True,
+        expected_frontend="reference",
+        expected_decode_fp16_window_blocks="20",
+    )
+    assert correctness_scan["decode_flush_batch_execution_required"] is False
+    assert correctness_scan["decode_flush_batch_execution_status"] == "not_exercised"
+    assert correctness_scan["decode_flush_batch_events"] == []
+
+    with pytest.raises(RunnerError, match="decode flush batch executed"):
+        runner.validate_engine_log(
+            engine_log,
+            native=True,
+            expected_frontend="reference",
+            expected_decode_fp16_window_blocks="20",
+            require_decode_flush_batch_execution=True,
+        )
+
+    engine_log.write_text(
+        base + "INFO [KVARN_DECODE_FLUSH_BATCH] "
+        "high_water=20; low_water=16; flushed_pages=4; layer=0\n",
+        encoding="utf-8",
+    )
+    screening_scan = runner.validate_engine_log(
+        engine_log,
+        native=True,
+        expected_frontend="reference",
+        expected_decode_fp16_window_blocks="20",
+        require_decode_flush_batch_execution=True,
+    )
+    assert screening_scan["decode_flush_batch_execution_required"] is True
+    assert screening_scan["decode_flush_batch_execution_status"] == "verified"
+    assert screening_scan["decode_flush_batch_active_verified"] is True
+    assert screening_scan["decode_flush_batch_events"] == [
+        {"high_water": 20, "low_water": 16, "flushed_pages": 4}
+    ]
+
+
+@pytest.mark.parametrize(
+    "marker",
+    [
+        "high_water=19; low_water=16; flushed_pages=4;",
+        "high_water=20; low_water=15; flushed_pages=4;",
+        "high_water=20; low_water=16; flushed_pages=0;",
+    ],
+)
+def test_decode_fp16_window_rejects_mismatched_execution_marker(
+    tmp_path: Path, marker: str
+) -> None:
+    engine_log = tmp_path / "engine.log"
+    engine_log.write_text(
+        "INFO config: device_config=xpu\n"
+        "INFO Actual usage is 17.54 GiB for consumed memory. "
+        "Current kv cache memory in use is 10.92 GiB.\n"
+        f"INFO {runner.NATIVE_DISPATCH} (direct bf16 output=True)\n"
+        f"INFO [KVARN_DECODE_FLUSH_BATCH] {marker}\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RunnerError, match="decode flush batch executed"):
+        runner.validate_engine_log(
+            engine_log,
+            native=True,
+            expected_frontend="reference",
+            expected_decode_fp16_window_blocks="20",
+            require_decode_flush_batch_execution=True,
+        )
+
+
+def test_decode_fp16_window_zero_rejects_batch_marker_contamination(
+    tmp_path: Path,
+) -> None:
+    engine_log = tmp_path / "engine.log"
+    engine_log.write_text(
+        "INFO config: device_config=xpu\n"
+        "INFO Actual usage is 17.54 GiB for consumed memory. "
+        "Current kv cache memory in use is 10.92 GiB.\n"
+        f"INFO {runner.NATIVE_DISPATCH} (direct bf16 output=True)\n"
+        "INFO [KVARN_DECODE_FLUSH_BATCH] "
+        "high_water=20; low_water=16; flushed_pages=4;\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RunnerError, match="must not report decode flush batching"):
+        runner.validate_engine_log(
+            engine_log,
+            native=True,
+            expected_frontend="reference",
+            expected_decode_fp16_window_blocks="0",
+        )
+
+
 def test_fused_pool_proof_requires_fused_frontend(tmp_path: Path) -> None:
     args = _args(tmp_path)
     args.native_frontend = "reference"
@@ -1653,12 +1772,11 @@ def test_sealed_results_are_directly_perf_gate_compatible(tmp_path: Path) -> Non
         )
         assert sealed["kvarn_max_num_batched_tokens"] == "2048"
         assert sealed["kvarn_evidence_mode"] == "formal"
-        assert sealed["kvarn_engine_log_scan_path"] == str(
-            engine_log_scan.resolve()
+        assert sealed["kvarn_engine_log_scan_path"] == str(engine_log_scan.resolve())
+        assert (
+            sealed["kvarn_engine_log_scan_sha256"]
+            == hashlib.sha256(engine_log_scan.read_bytes()).hexdigest()
         )
-        assert sealed["kvarn_engine_log_scan_sha256"] == hashlib.sha256(
-            engine_log_scan.read_bytes()
-        ).hexdigest()
         assert sealed["kvarn_native_frontend_active_verified"] is False
         assert sealed["kvarn_native_frontend_log_marker"] == "not_applicable"
         assert sealed["kvarn_forward_pool_ensure_active_verified"] is False
@@ -1993,12 +2111,10 @@ def test_matched_profile_normalizes_only_declared_arm_differences(
         in reference["allowed_arm_environment_differences"]
     )
     assert (
-        "KVARN_NATIVE_XPU_FRONTEND"
-        in reference["allowed_arm_environment_differences"]
+        "KVARN_NATIVE_XPU_FRONTEND" in reference["allowed_arm_environment_differences"]
     )
     assert (
-        "KVARN_FORWARD_POOL_ENSURE"
-        in reference["allowed_arm_environment_differences"]
+        "KVARN_FORWARD_POOL_ENSURE" in reference["allowed_arm_environment_differences"]
     )
 
     environment["KVARN_NATIVE_XPU_FRONTEND"] = "qkv_scatter"

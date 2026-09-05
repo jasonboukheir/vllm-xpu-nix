@@ -88,8 +88,11 @@ NATIVE_FRONTEND_INLINE_ACTIVE_MARKER = (
 )
 FORWARD_POOL_ENSURE_VARIANTS = ("always", "fused_qkv_proof")
 FORWARD_POOL_ENSURE_ACTIVE_MARKER = (
-    "[KVARN_FORWARD_POOL_ENSURE] active=fused_qkv_proof; "
-    "action=elide_ensure_pool;"
+    "[KVARN_FORWARD_POOL_ENSURE] active=fused_qkv_proof; action=elide_ensure_pool;"
+)
+DECODE_FLUSH_BATCH_MARKER_PATTERN = re.compile(
+    r"\[KVARN_DECODE_FLUSH_BATCH\] high_water=([0-9]+); "
+    r"low_water=([0-9]+); flushed_pages=([0-9]+)(?:;|\b)"
 )
 B70_Q6_SPLITS = split_policy.B70_Q6_SPLITS
 B70_Q6_MAX_SPLITS = split_policy.B70_Q6_MAX_SPLITS
@@ -134,6 +137,7 @@ DEFAULT_BATCHES = (1, 4)
 DEFAULT_NATIVE_SPLITS = {1: 24, 4: 16}
 DEFAULT_MAX_NUM_BATCHED_TOKENS = 2048
 DEFAULT_PREFILL_WINDOW_BLOCKS = 16
+DEFAULT_DECODE_FP16_WINDOW_BLOCKS = 0
 VLLM_USE_V2_MODEL_RUNNER = "0"
 ONEDNN_DETERMINISTIC_LAUNCHER_SUFFIX = "-onednn-nondeterministic"
 LAUNCHER_MODES = ("immutable", "runtime-factory")
@@ -143,6 +147,7 @@ RUNTIME_FACTORY_OWNED_ARGUMENTS = frozenset(
 )
 RUNTIME_FACTORY_SELECTORS = (
     "KVARN_FACTORY_CACHE_LAYOUT",
+    "KVARN_FACTORY_DECODE_FP16_WINDOW_BLOCKS",
     "KVARN_FACTORY_FLUSH_INDEX_MATERIALIZATION",
     "KVARN_FACTORY_FLUSH_WRITER",
     "KVARN_FACTORY_FORWARD_POOL_ENSURE",
@@ -192,6 +197,7 @@ CAPTURED_ENVIRONMENT = (
     "KVARN_FLUSH_INDEX_MATERIALIZATION",
     "KVARN_FLUSH_WRITER",
     "KVARN_FORWARD_POOL_ENSURE",
+    "KVARN_DECODE_FP16_WINDOW_BLOCKS",
     "KVARN_NATIVE_XPU_PREFILL_STORE",
     "KVARN_NATIVE_XPU_FRONTEND",
     "KVARN_NATIVE_XPU_KERNEL_VARIANT",
@@ -238,6 +244,7 @@ PARITY_METRICS = (
 )
 ARM_ARGUMENTS = {"--kv-cache-dtype"}
 ARM_ENVIRONMENT = {
+    "KVARN_DECODE_FP16_WINDOW_BLOCKS",
     "KVARN_FLUSH_INDEX_MATERIALIZATION",
     "KVARN_FLUSH_WRITER",
     "KVARN_FORWARD_POOL_ENSURE",
@@ -534,9 +541,7 @@ def native_max_splits_for_run(run: PlannedRun, args: argparse.Namespace) -> int:
     """Return the scratch ceiling reported by the immutable startup marker."""
     if run.arm == "reference":
         return REFERENCE_NATIVE_SPLITS
-    if split_policy.owns_runtime_selection(
-        native_split_policy_name_for_run(run, args)
-    ):
+    if split_policy.owns_runtime_selection(native_split_policy_name_for_run(run, args)):
         return int(native_split_policy_contract(args)["scratch_max_splits"])
     return native_splits_for_run(run, args)
 
@@ -545,9 +550,7 @@ def native_splits_environment_for_run(
     run: PlannedRun, args: argparse.Namespace
 ) -> str | None:
     """Return the legacy fixed-split selector, absent for named policies."""
-    if split_policy.owns_runtime_selection(
-        native_split_policy_name_for_run(run, args)
-    ):
+    if split_policy.owns_runtime_selection(native_split_policy_name_for_run(run, args)):
         return None
     return str(native_max_splits_for_run(run, args))
 
@@ -601,6 +604,23 @@ def request_stability_qualification(args: argparse.Namespace) -> str:
     if getattr(args, "exploratory", False):
         return "diagnostic-unqualified"
     return "replay-qualified"
+
+
+def decode_fp16_window_blocks_environment(args: argparse.Namespace) -> str:
+    """Return the selected bounded decode FP16 history window."""
+    value = getattr(
+        args, "decode_fp16_window_blocks", DEFAULT_DECODE_FP16_WINDOW_BLOCKS
+    )
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise RunnerError("decode FP16 window blocks must be a nonnegative integer")
+    return str(value)
+
+
+def decode_fp16_window_blocks_for_run(run: PlannedRun, args: argparse.Namespace) -> str:
+    """Keep the auto control on the no-deferred-flush reference behavior."""
+    if run.arm == "reference":
+        return "0"
+    return decode_fp16_window_blocks_environment(args)
 
 
 def flush_index_materialization_environment(args: argparse.Namespace) -> str:
@@ -702,6 +722,7 @@ def variant_provenance_for_run(
     flush_writer = flush_writer_environment(args)
     prefill_store = prefill_store_environment(args)
     forward_pool_ensure = forward_pool_ensure_environment(args)
+    decode_window = decode_fp16_window_blocks_environment(args)
     return {
         "kernel_strategy": f"native_xe2_qlen1_{kernel_variant}",
         "split_policy": split_policy,
@@ -710,7 +731,8 @@ def variant_provenance_for_run(
             f"{flush_indices}_indices_{flush_writer}_writer_"
             f"{prefill_store}_prefill_store_"
             f"{native_frontend}_frontend_"
-            f"{forward_pool_ensure}_forward_pool_ensure"
+            f"{forward_pool_ensure}_forward_pool_ensure_"
+            f"decode_fp16_window_{decode_window}"
         ),
         "scheduling_variant": scheduling,
         "variant_id": (
@@ -718,7 +740,8 @@ def variant_provenance_for_run(
             f"{split_policy}-{flush_indices}-indices-{flush_writer}-writer-"
             f"{prefill_store}-prefill-store-"
             f"{native_frontend}-frontend-"
-            f"{forward_pool_ensure}-forward-pool-ensure-{scheduling}"
+            f"{forward_pool_ensure}-forward-pool-ensure-"
+            f"decode-fp16-window-{decode_window}-{scheduling}"
         ),
     }
 
@@ -814,6 +837,15 @@ def load_correctness(
         raise RunnerError(
             "correctness artifact fused pool proof requires a fused QKV frontend"
         )
+    decode_fp16_window_blocks = document.get("decode_fp16_window_blocks")
+    if (
+        isinstance(decode_fp16_window_blocks, bool)
+        or not isinstance(decode_fp16_window_blocks, int)
+        or decode_fp16_window_blocks < 0
+    ):
+        raise RunnerError(
+            "correctness artifact decode FP16 window must be a nonnegative integer"
+        )
     service_controls = document.get("service_controls")
     correctness_onednn = (
         service_controls.get("kvarn_onednn_deterministic")
@@ -831,6 +863,7 @@ def load_correctness(
         else None
     )
     if service_controls != {
+        "kvarn_decode_fp16_window_blocks": str(decode_fp16_window_blocks),
         "kvarn_flush_index_materialization": flush_index_materialization,
         "kvarn_flush_writer": flush_writer,
         "kvarn_prefill_store": prefill_store,
@@ -845,9 +878,7 @@ def load_correctness(
     if correctness_onednn not in {"0", "1"}:
         raise RunnerError("correctness artifact oneDNN selector is unsupported")
     if correctness_projection_rows not in {"0", "1"}:
-        raise RunnerError(
-            "correctness artifact projection-row selector is unsupported"
-        )
+        raise RunnerError("correctness artifact projection-row selector is unsupported")
     if correctness_rmsnorm not in {"0", "1"}:
         raise RunnerError("correctness artifact RMSNorm selector is unsupported")
     raw_native_splits = document.get("native_nominal_splits_by_batch")
@@ -965,6 +996,7 @@ def load_correctness(
             "prefill_store": prefill_store,
             "native_frontend": native_frontend,
             "forward_pool_ensure": forward_pool_ensure,
+            "decode_fp16_window_blocks": str(decode_fp16_window_blocks),
             "onednn_deterministic": correctness_onednn,
             "request_stable_projection_rows": correctness_projection_rows,
             "request_stable_rmsnorm": correctness_rmsnorm,
@@ -1032,6 +1064,9 @@ def runtime_factory_axes_for_run(
     selected_policy = native_split_policy_name_for_run(run, args)
     axes: dict[str, str | None] = {
         "KVARN_FACTORY_CACHE_LAYOUT": native_layout_for_run(run, args),
+        "KVARN_FACTORY_DECODE_FP16_WINDOW_BLOCKS": (
+            decode_fp16_window_blocks_for_run(run, args)
+        ),
         "KVARN_FACTORY_FLUSH_INDEX_MATERIALIZATION": (
             flush_index_materialization_for_run(run, args)
         ),
@@ -1061,6 +1096,7 @@ def runtime_factory_axes_for_run(
         raise RunnerError("runtime factory selector schema drifted")
     if reference and axes != {
         "KVARN_FACTORY_CACHE_LAYOUT": "natural",
+        "KVARN_FACTORY_DECODE_FP16_WINDOW_BLOCKS": "0",
         "KVARN_FACTORY_FLUSH_INDEX_MATERIALIZATION": "per_layer",
         "KVARN_FACTORY_FLUSH_WRITER": "reference",
         "KVARN_FACTORY_FORWARD_POOL_ENSURE": "always",
@@ -1099,6 +1135,9 @@ def service_environment(run: PlannedRun, args: argparse.Namespace) -> dict[str, 
     if launcher_mode(args) == "runtime-factory":
         environment.update(runtime_factory_environment_for_run(run, args))
     else:
+        environment["KVARN_FACTORY_DECODE_FP16_WINDOW_BLOCKS"] = (
+            decode_fp16_window_blocks_for_run(run, args)
+        )
         environment["KVARN_FACTORY_FLUSH_INDEX_MATERIALIZATION"] = (
             flush_index_materialization_environment(args)
         )
@@ -1628,8 +1667,9 @@ def service_profile_evidence(
         "flush_writer_environment": environment.get("KVARN_FLUSH_WRITER"),
         "prefill_store_environment": environment.get("KVARN_NATIVE_XPU_PREFILL_STORE"),
         "native_frontend_environment": environment.get("KVARN_NATIVE_XPU_FRONTEND"),
-        "forward_pool_ensure_environment": environment.get(
-            "KVARN_FORWARD_POOL_ENSURE"
+        "forward_pool_ensure_environment": environment.get("KVARN_FORWARD_POOL_ENSURE"),
+        "decode_fp16_window_blocks_environment": environment.get(
+            "KVARN_DECODE_FP16_WINDOW_BLOCKS"
         ),
         "vllm_use_v2_model_runner_environment": environment.get(
             "VLLM_USE_V2_MODEL_RUNNER"
@@ -1729,6 +1769,7 @@ def verify_service_profile(
         "KVARN_NATIVE_XPU_PREFILL_STORE": prefill_store_for_run(run, args),
         "KVARN_NATIVE_XPU_FRONTEND": native_frontend_for_run(run, args),
         "KVARN_FORWARD_POOL_ENSURE": forward_pool_ensure_for_run(run, args),
+        "KVARN_DECODE_FP16_WINDOW_BLOCKS": decode_fp16_window_blocks_for_run(run, args),
         "KVARN_NATIVE_XPU_KERNEL_VARIANT": native_kernel_variant_for_run(run, args),
         "KVARN_NATIVE_XPU_MATERIALIZE": native,
         "KVARN_NATIVE_XPU_PERSISTENT_SCRATCH": native,
@@ -2107,6 +2148,8 @@ def validate_engine_log(
     expected_split_policy: str | None = None,
     expected_frontend: str,
     expected_forward_pool_ensure: str = "always",
+    expected_decode_fp16_window_blocks: str = "0",
+    require_decode_flush_batch_execution: bool = False,
 ) -> dict[str, Any]:
     if (
         expected_layout not in NATIVE_LAYOUTS
@@ -2168,10 +2211,38 @@ def validate_engine_log(
         native and expected_forward_pool_ensure == "fused_qkv_proof"
     )
     if forward_pool_ensure_active != expected_forward_pool_ensure_active:
-        expectation = "execute" if expected_forward_pool_ensure_active else "not execute"
+        expectation = (
+            "execute" if expected_forward_pool_ensure_active else "not execute"
+        )
         scope = "native" if native else "non-native"
         raise RunnerError(
             f"{scope} engine log must {expectation} fused QKV pool-check elision"
+        )
+    if not re.fullmatch(r"0|[1-9][0-9]*", expected_decode_fp16_window_blocks):
+        raise RunnerError("invalid decode FP16 window engine-log expectation")
+    expected_decode_window = int(expected_decode_fp16_window_blocks)
+    decode_flush_events = [
+        {
+            "high_water": int(match.group(1)),
+            "low_water": int(match.group(2)),
+            "flushed_pages": int(match.group(3)),
+        }
+        for match in DECODE_FLUSH_BATCH_MARKER_PATTERN.finditer(text)
+    ]
+    decode_flush_batch_enabled = native and expected_decode_window > 0
+    if decode_flush_batch_enabled:
+        if (require_decode_flush_batch_execution and not decode_flush_events) or any(
+            event["high_water"] != expected_decode_window
+            or event["low_water"] != DEFAULT_PREFILL_WINDOW_BLOCKS
+            or event["flushed_pages"] <= 0
+            for event in decode_flush_events
+        ):
+            raise RunnerError(
+                "native engine log must prove the selected decode flush batch executed"
+            )
+    elif decode_flush_events:
+        raise RunnerError(
+            "zero-window/reference engine log must not report decode flush batching"
         )
     selection_fields = (
         expected_kernel_variant,
@@ -2211,9 +2282,7 @@ def validate_engine_log(
     result["native_frontend_expected"] = expected_frontend
     result["native_frontend_active_verified"] = frontend_active
     result["native_frontend_log_marker"] = (
-        NATIVE_FRONTEND_ACTIVE_MARKER
-        if expected_frontend_active
-        else "not_applicable"
+        NATIVE_FRONTEND_ACTIVE_MARKER if expected_frontend_active else "not_applicable"
     )
     result["native_frontend_inline_active_verified"] = frontend_inline_active
     result["native_frontend_inline_log_marker"] = (
@@ -2228,6 +2297,15 @@ def validate_engine_log(
         if expected_forward_pool_ensure_active
         else "not_applicable"
     )
+    result["decode_fp16_window_blocks_expected"] = expected_decode_fp16_window_blocks
+    result["decode_flush_batch_execution_required"] = (
+        require_decode_flush_batch_execution and decode_flush_batch_enabled
+    )
+    result["decode_flush_batch_execution_status"] = (
+        "verified" if decode_flush_events else "not_exercised"
+    )
+    result["decode_flush_batch_active_verified"] = bool(decode_flush_events)
+    result["decode_flush_batch_events"] = decode_flush_events
     result["engine_log_sha256"] = sha256_file(path)
     result["native_layout_evidence"] = (
         "captured-process-environment-plus-factory-marker-plus-native-dispatch"
@@ -2394,14 +2472,14 @@ def seal_benchmark_result(
         )
         or profile.get("flush_index_materialization_environment")
         != flush_index_materialization_for_run(run, args)
-        or profile.get("flush_writer_environment")
-        != flush_writer_for_run(run, args)
-        or profile.get("prefill_store_environment")
-        != prefill_store_for_run(run, args)
+        or profile.get("flush_writer_environment") != flush_writer_for_run(run, args)
+        or profile.get("prefill_store_environment") != prefill_store_for_run(run, args)
         or profile.get("native_frontend_environment")
         != native_frontend_for_run(run, args)
         or profile.get("forward_pool_ensure_environment")
         != forward_pool_ensure_for_run(run, args)
+        or profile.get("decode_fp16_window_blocks_environment")
+        != decode_fp16_window_blocks_for_run(run, args)
         or profile.get("vllm_use_v2_model_runner_environment")
         != VLLM_USE_V2_MODEL_RUNNER
         or profile.get("variant_provenance") != expected_variant
@@ -2451,6 +2529,8 @@ def seal_benchmark_result(
         ),
         expected_frontend=native_frontend_for_run(run, args),
         expected_forward_pool_ensure=forward_pool_ensure_for_run(run, args),
+        expected_decode_fp16_window_blocks=decode_fp16_window_blocks_for_run(run, args),
+        require_decode_flush_batch_execution=run.workload.output_tokens >= 768,
     )
     if scan_document != expected_scan:
         raise RunnerError("engine-log scan differs from the verified engine log")
@@ -2512,9 +2592,7 @@ def seal_benchmark_result(
             request_stable_projection_rows_environment(args)
         ),
         "kvarn_request_stable_rmsnorm": request_stable_rmsnorm_environment(args),
-        "kvarn_request_stability_qualification": request_stability_qualification(
-            args
-        ),
+        "kvarn_request_stability_qualification": request_stability_qualification(args),
         "kvarn_flush_index_materialization": (
             flush_index_materialization_for_run(run, args)
         ),
@@ -2522,12 +2600,21 @@ def seal_benchmark_result(
         "kvarn_prefill_store": prefill_store_for_run(run, args),
         "kvarn_native_frontend": native_frontend_for_run(run, args),
         "kvarn_forward_pool_ensure": forward_pool_ensure_for_run(run, args),
+        "kvarn_decode_fp16_window_blocks": decode_fp16_window_blocks_for_run(run, args),
+        "kvarn_decode_flush_batch_active_verified": scan_document[
+            "decode_flush_batch_active_verified"
+        ],
+        "kvarn_decode_flush_batch_execution_required": scan_document[
+            "decode_flush_batch_execution_required"
+        ],
+        "kvarn_decode_flush_batch_execution_status": scan_document[
+            "decode_flush_batch_execution_status"
+        ],
+        "kvarn_decode_flush_batch_events": scan_document["decode_flush_batch_events"],
         "kvarn_native_frontend_active_verified": scan_document[
             "native_frontend_active_verified"
         ],
-        "kvarn_native_frontend_log_marker": scan_document[
-            "native_frontend_log_marker"
-        ],
+        "kvarn_native_frontend_log_marker": scan_document["native_frontend_log_marker"],
         "kvarn_native_frontend_inline_active_verified": scan_document[
             "native_frontend_inline_active_verified"
         ],
@@ -2742,6 +2829,10 @@ def run_one(
             ),
             expected_frontend=native_frontend_for_run(run, args),
             expected_forward_pool_ensure=forward_pool_ensure_for_run(run, args),
+            expected_decode_fp16_window_blocks=decode_fp16_window_blocks_for_run(
+                run, args
+            ),
+            require_decode_flush_batch_execution=run.workload.output_tokens >= 768,
         )
         write_json_atomic(run_dir / "engine-log-scan.json", log_scan)
         sealed = seal_benchmark_result(
@@ -3147,12 +3238,13 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             or correctness_factory["flush_index_materialization"]
             != flush_index_materialization_environment(args)
             or correctness_factory["flush_writer"] != flush_writer_environment(args)
-            or correctness_factory["prefill_store"]
-            != prefill_store_environment(args)
+            or correctness_factory["prefill_store"] != prefill_store_environment(args)
             or correctness_factory["native_frontend"]
             != native_frontend_environment(args)
             or correctness_factory["forward_pool_ensure"]
             != forward_pool_ensure_environment(args)
+            or correctness_factory["decode_fp16_window_blocks"]
+            != decode_fp16_window_blocks_environment(args)
             or correctness_factory["onednn_deterministic"]
             != onednn_deterministic_environment(args)
             or correctness_factory["request_stable_projection_rows"]
@@ -3213,13 +3305,14 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         ],
         "request_stability_qualification": request_stability_qualification(args),
         "service_controls": {
+            "kvarn_decode_fp16_window_blocks": (
+                decode_fp16_window_blocks_environment(args)
+            ),
             "kvarn_onednn_deterministic": onednn_deterministic_environment(args),
             "kvarn_request_stable_projection_rows": (
                 request_stable_projection_rows_environment(args)
             ),
-            "kvarn_request_stable_rmsnorm": (
-                request_stable_rmsnorm_environment(args)
-            ),
+            "kvarn_request_stable_rmsnorm": (request_stable_rmsnorm_environment(args)),
             "kvarn_flush_index_materialization": (
                 flush_index_materialization_environment(args)
             ),
@@ -3248,6 +3341,9 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
                 ),
                 "expected_native_frontend": native_frontend_for_run(run, args),
                 "expected_forward_pool_ensure": forward_pool_ensure_for_run(run, args),
+                "expected_decode_fp16_window_blocks": (
+                    decode_fp16_window_blocks_for_run(run, args)
+                ),
                 "expected_flush_writer": flush_writer_for_run(run, args),
                 "expected_prefill_store": prefill_store_for_run(run, args),
                 "launcher_binding": launcher_binding_for_run(run, args),
@@ -3617,6 +3713,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--decode-fp16-window-blocks",
+        type=int,
+        default=DEFAULT_DECODE_FP16_WINDOW_BLOCKS,
+        help=(
+            "bounded decode FP16 history window for the native candidate; "
+            "the auto reference is pinned to 0 (default: 0)"
+        ),
+    )
+    parser.add_argument(
         "--model",
         default=DEFAULT_MODEL,
     )
@@ -3684,8 +3789,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             and launcher_mode(args) != "runtime-factory"
         ):
             raise RunnerError(
-                f"{args.native_kernel_variant} requires --launcher-mode "
-                "runtime-factory"
+                f"{args.native_kernel_variant} requires --launcher-mode runtime-factory"
             )
         if launcher_mode(args) == "immutable" and (
             args.native_layout != "xe2_dpas"
@@ -3705,20 +3809,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                 "non-baseline native kernel variants require --native-layout xe2_dpas"
             )
         if args.flush_writer != "reference" and args.native_layout != "xe2_dpas":
-            raise RunnerError(
-                "native --flush-writer requires --native-layout xe2_dpas"
-            )
+            raise RunnerError("native --flush-writer requires --native-layout xe2_dpas")
         args.context = _parse_int_list(args.context, DEFAULT_CONTEXTS)
         args.batch = _parse_int_list(args.batch, DEFAULT_BATCHES)
         args.onednn_deterministic = bool(args.onednn_deterministic)
-        args.request_stable_projection_rows = bool(
-            args.request_stable_projection_rows
-        )
+        args.request_stable_projection_rows = bool(args.request_stable_projection_rows)
         args.request_stable_rmsnorm = bool(args.request_stable_rmsnorm)
         forward_pool_ensure_environment(args)
         if launcher_mode(args) != "runtime-factory" and (
-            not args.request_stable_projection_rows
-            or not args.request_stable_rmsnorm
+            not args.request_stable_projection_rows or not args.request_stable_rmsnorm
         ):
             raise RunnerError(
                 "request-stability opt-outs require --launcher-mode runtime-factory"

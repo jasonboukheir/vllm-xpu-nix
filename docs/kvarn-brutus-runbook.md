@@ -23,7 +23,9 @@ Freeze the candidate before starting this lane:
 - compact K4V4/G128 cache layout;
 - native `q6_prefetch_record_cursor` (ID18) decode;
 - `b70_q6_id18_v1` adaptive splits (B1=32, B4=24);
-- eager, text-only, no MTP, no prefix caching, and no XPU graph capture.
+- `max_num_batched_tokens=2048`;
+- eager, language-model-only, no MTP, no prefix caching, and no XPU graph
+  capture.
 
 Retain, checksum, and cite the completed matched B70 measurements instead of
 rerunning a formal matrix:
@@ -47,7 +49,10 @@ The beta release gate is exactly:
 5. On Brutus, start KVarN with only
    `kvCacheDtype = "kvarn_k4v4_g128_compact";` and verify startup plus
    generation without inherited `KVARN_*` variables.
-6. Change only `kvCacheDtype` back to `auto`, restart, and verify generation.
+6. Change only the Brutus `kvCacheDtype` binding back to `auto`, restart, and
+   verify generation. The host recipe derives `maxModelLen = 65536` for
+   `auto` and `262144` for KVarN so that this remains one operator switch while
+   both cache modes fit the B70.
 7. Verify MTP, XPU graph capture, and multimodal/vision configurations each
    fail at startup with an explicit unsupported-beta diagnostic. Prefix
    caching remains unsupported and must not be silently enabled.
@@ -64,10 +69,14 @@ or the discarded `sinkhorn_pack_xe2` experiment. The honest beta statement is:
 native decode parity is demonstrated; aggregate B1/65K is about 96% because
 KVarN prefill is slower; correctness remains mandatory through 262K.
 
-Those launchers force K4V4 compact, 65,536 context, B1 or B4, eager, text-only,
-no MTP, no prefix caching, no XPU graph, and `KVARN_NATIVE_XPU=0`. The first
-service is the non-native B1 app. Native B1 is a later A/B only. Temperature
-zero is enforced by each gate request rather than by a global server default.
+## Historical full-matrix procedure
+
+The launchers described below force K4V4 compact, 65,536 context, B1 or B4,
+eager, text-only, no MTP, no prefix caching, no XPU graph, and
+`KVARN_NATIVE_XPU=0`. They belong to the historical full-matrix procedure, not
+the dtype-only beta configuration above. The first service is the non-native
+B1 app. Native B1 is a later A/B only. Temperature zero is enforced by each
+gate request rather than by a global server default.
 
 The mixed non-speculative GDN route adds one trailing operator argument in
 vLLM and vllm-xpu-kernels. Build and deploy those two revisions atomically;

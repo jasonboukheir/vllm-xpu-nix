@@ -252,6 +252,13 @@ def decode_fp16_low_water_blocks_for_spec(
     return perf.decode_fp16_low_water_blocks_environment(args)
 
 
+def decode_flush_scope_for_spec(spec: ServiceSpec, args: argparse.Namespace) -> str:
+    """Keep the natural-layout correctness oracle on per-row flushing."""
+    if not spec.native:
+        return perf.DEFAULT_DECODE_FLUSH_SCOPE
+    return perf.decode_flush_scope_environment(args)
+
+
 def flush_writer_for_spec(spec: ServiceSpec, args: argparse.Namespace) -> str:
     """Keep the natural-layout Kvarn oracle on the reference writer."""
     selected = perf.flush_writer_environment(args)
@@ -302,6 +309,7 @@ def candidate_variant_provenance(args: argparse.Namespace) -> dict[str, str]:
     qlen1_inline_plan = perf.qlen1_inline_plan_environment(args)
     decode_window = perf.decode_fp16_window_blocks_environment(args)
     decode_low_water = perf.decode_fp16_low_water_blocks_environment(args)
+    decode_flush_scope = perf.decode_flush_scope_environment(args)
     return {
         "kernel_strategy": f"native_xe2_qlen1_{args.native_kernel_variant}",
         "split_policy": split_policy,
@@ -312,7 +320,8 @@ def candidate_variant_provenance(args: argparse.Namespace) -> dict[str, str]:
             f"{native_frontend}_frontend_"
             f"{forward_pool_ensure}_forward_pool_ensure_"
             f"{qlen1_inline_plan}_qlen1_inline_plan_"
-            f"decode_fp16_window_{decode_window}_low_water_{decode_low_water}"
+            f"decode_fp16_window_{decode_window}_low_water_{decode_low_water}_"
+            f"flush_scope_{decode_flush_scope}"
         ),
         "scheduling_variant": scheduling,
         "variant_id": (
@@ -323,6 +332,7 @@ def candidate_variant_provenance(args: argparse.Namespace) -> dict[str, str]:
             f"{forward_pool_ensure}-forward-pool-ensure-"
             f"{perf.QLEN1_INLINE_PLAN_IDS[qlen1_inline_plan]}-"
             f"dw{decode_window}-lw{decode_low_water}-"
+            f"{perf.DECODE_FLUSH_SCOPE_IDS[decode_flush_scope]}-"
             f"{scheduling}"
         ),
     }
@@ -365,6 +375,7 @@ def runtime_factory_axes_for_spec(
     split_policy = native_split_policy_for_spec(spec, args)
     axes: dict[str, str | None] = {
         "KVARN_FACTORY_CACHE_LAYOUT": native_layout_for_spec(spec, args),
+        "KVARN_FACTORY_DECODE_FLUSH_SCOPE": decode_flush_scope_for_spec(spec, args),
         "KVARN_FACTORY_DECODE_FP16_LOW_WATER_BLOCKS": (
             decode_fp16_low_water_blocks_for_spec(spec, args)
         ),
@@ -433,6 +444,7 @@ def service_spec_evidence(
         "native_frontend": native_frontend_for_spec(spec, args),
         "forward_pool_ensure": forward_pool_ensure_for_spec(spec, args),
         "qlen1_inline_plan": qlen1_inline_plan_for_spec(spec, args),
+        "decode_flush_scope": decode_flush_scope_for_spec(spec, args),
         "decode_fp16_low_water_blocks": decode_fp16_low_water_blocks_for_spec(
             spec, args
         ),
@@ -525,6 +537,7 @@ def passed_artifact(
     native_frontend: str,
     forward_pool_ensure: str,
     qlen1_inline_plan: str,
+    decode_flush_scope: str,
     decode_fp16_low_water_blocks: str,
     decode_fp16_window_blocks: str,
     request_stable_projection_rows: str,
@@ -555,6 +568,7 @@ def passed_artifact(
             native_frontend=native_frontend,
             forward_pool_ensure=forward_pool_ensure,
             qlen1_inline_plan=qlen1_inline_plan,
+            decode_flush_scope=decode_flush_scope,
             decode_fp16_low_water_blocks=decode_fp16_low_water_blocks,
             decode_fp16_window_blocks=decode_fp16_window_blocks,
             request_stable_projection_rows=request_stable_projection_rows,
@@ -619,6 +633,9 @@ def service_environment(spec: ServiceSpec, args: argparse.Namespace) -> dict[str
             }
         )
     else:
+        environment["KVARN_FACTORY_DECODE_FLUSH_SCOPE"] = (
+            decode_flush_scope_for_spec(spec, args)
+        )
         environment["KVARN_FACTORY_DECODE_FP16_LOW_WATER_BLOCKS"] = (
             decode_fp16_low_water_blocks_for_spec(spec, args)
         )
@@ -1215,6 +1232,7 @@ def verify_service_profile(
         "KVARN_NATIVE_XPU_FRONTEND": native_frontend_for_spec(spec, args),
         "KVARN_FORWARD_POOL_ENSURE": forward_pool_ensure_for_spec(spec, args),
         "KVARN_QLEN1_INLINE_PLAN": qlen1_inline_plan_for_spec(spec, args),
+        "KVARN_DECODE_FLUSH_SCOPE": decode_flush_scope_for_spec(spec, args),
         "KVARN_DECODE_FP16_LOW_WATER_BLOCKS": (
             decode_fp16_low_water_blocks_for_spec(spec, args)
         ),
@@ -1378,6 +1396,7 @@ def run_service_phase(
         identity["decode_fp16_low_water_blocks"] = (
             decode_fp16_low_water_blocks_for_spec(spec, args)
         )
+        identity["decode_flush_scope"] = decode_flush_scope_for_spec(spec, args)
         identity["qlen1_inline_plan"] = qlen1_inline_plan_for_spec(spec, args)
         captured_layout_environment = service.environment.get(
             "KVARN_NATIVE_XPU_DPAS_LAYOUT"
@@ -1408,6 +1427,9 @@ def run_service_phase(
         captured_qlen1_inline_plan = service.environment.get(
             "KVARN_QLEN1_INLINE_PLAN"
         )
+        captured_decode_flush_scope = service.environment.get(
+            "KVARN_DECODE_FLUSH_SCOPE"
+        )
         captured_decode_fp16_low_water_blocks = service.environment.get(
             "KVARN_DECODE_FP16_LOW_WATER_BLOCKS"
         )
@@ -1436,6 +1458,7 @@ def run_service_phase(
             expected_frontend=native_frontend_for_spec(spec, args),
             expected_forward_pool_ensure=forward_pool_ensure_for_spec(spec, args),
             expected_qlen1_inline_plan=qlen1_inline_plan_for_spec(spec, args),
+            expected_decode_flush_scope=decode_flush_scope_for_spec(spec, args),
             expected_decode_fp16_low_water_blocks=(
                 decode_fp16_low_water_blocks_for_spec(spec, args)
             ),
@@ -1481,6 +1504,7 @@ def run_service_phase(
             native_frontend=captured_native_frontend,
             forward_pool_ensure=captured_forward_pool_ensure,
             qlen1_inline_plan=captured_qlen1_inline_plan,
+            decode_flush_scope=captured_decode_flush_scope,
             decode_fp16_low_water_blocks=captured_decode_fp16_low_water_blocks,
             decode_fp16_window_blocks=captured_decode_fp16_window_blocks,
             decode_flush_batch_active_verified=log_scan[
@@ -2198,6 +2222,7 @@ def build_manifest(
             native_frontend=perf.native_frontend_environment(args),
             forward_pool_ensure=perf.forward_pool_ensure_environment(args),
             qlen1_inline_plan=perf.qlen1_inline_plan_environment(args),
+            decode_flush_scope=perf.decode_flush_scope_environment(args),
             decode_fp16_low_water_blocks=(
                 perf.decode_fp16_low_water_blocks_environment(args)
             ),
@@ -2246,6 +2271,7 @@ def build_manifest(
         "native_frontend": perf.native_frontend_environment(args),
         "forward_pool_ensure": perf.forward_pool_ensure_environment(args),
         "qlen1_inline_plan": perf.qlen1_inline_plan_environment(args),
+        "decode_flush_scope": perf.decode_flush_scope_environment(args),
         "decode_fp16_low_water_blocks": args.decode_fp16_low_water_blocks,
         "decode_fp16_window_blocks": args.decode_fp16_window_blocks,
         "request_stability_qualification": (
@@ -2255,6 +2281,7 @@ def build_manifest(
             else "replay-qualified"
         ),
         "service_controls": {
+            "kvarn_decode_flush_scope": perf.decode_flush_scope_environment(args),
             "kvarn_decode_fp16_low_water_blocks": (
                 perf.decode_fp16_low_water_blocks_environment(args)
             ),
@@ -2375,6 +2402,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         "native_frontend": perf.native_frontend_environment(args),
         "forward_pool_ensure": perf.forward_pool_ensure_environment(args),
         "qlen1_inline_plan": perf.qlen1_inline_plan_environment(args),
+        "decode_flush_scope": perf.decode_flush_scope_environment(args),
         "decode_fp16_low_water_blocks": args.decode_fp16_low_water_blocks,
         "decode_fp16_window_blocks": args.decode_fp16_window_blocks,
         "request_stability_qualification": (
@@ -2384,6 +2412,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             else "diagnostic-pending-replay"
         ),
         "service_controls": {
+            "kvarn_decode_flush_scope": perf.decode_flush_scope_environment(args),
             "kvarn_decode_fp16_low_water_blocks": (
                 perf.decode_fp16_low_water_blocks_environment(args)
             ),
@@ -2579,6 +2608,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--decode-flush-scope",
+        choices=perf.DECODE_FLUSH_SCOPES,
+        default=perf.DEFAULT_DECODE_FLUSH_SCOPE,
+        help=(
+            "qlen=1 decode flush coordination scope for native correctness "
+            "phases; the natural oracle is pinned to per_row"
+        ),
+    )
+    parser.add_argument(
         "--native-splits",
         action="append",
         metavar="SPLITS|BATCH=SPLITS",
@@ -2654,6 +2692,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         perf.forward_pool_ensure_environment(args)
         perf.qlen1_inline_plan_environment(args)
         perf.decode_fp16_low_water_blocks_environment(args)
+        perf.decode_flush_scope_environment(args)
         if args.native_output_dtype != "bf16":
             raise CorrectnessError(
                 "finalist service qualification requires --native-output-dtype bf16"

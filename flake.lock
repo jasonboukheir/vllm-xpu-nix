@@ -99,17 +99,17 @@
     "vllm-xpu-kernels-unstable-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1788560451,
-        "narHash": "sha256-qmCHRBd1RkXdGeZWAm+wYdbD5iuzq4CM27RXxMBhUlo=",
-        "ref": "refs/heads/experimental/kvarn-factory-round5-integration",
-        "rev": "167457d09533995677385bc2e09a146c932831b7",
-        "revCount": 434,
+        "lastModified": 1788606284,
+        "narHash": "sha256-NpMMuxSf9CaBP0itW0tFOns59p21wTp5shRzgG6eq9U=",
+        "ref": "refs/heads/releases/xpu-v1.5",
+        "rev": "712748aa63d5ddb5ffb7d2df4fcadc3a513fbad5",
+        "revCount": 365,
         "submodules": true,
         "type": "git",
         "url": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm-xpu-kernels.git"
       },
       "original": {
-        "ref": "refs/heads/experimental/kvarn-factory-round5-integration",
+        "ref": "refs/heads/releases/xpu-v1.5",
         "submodules": true,
         "type": "git",
         "url": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm-xpu-kernels.git"
@@ -135,16 +135,16 @@
     "vllm-xpu-unstable-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1788559631,
-        "narHash": "sha256-tzgmN2MACWwefONiAR6yZCABjmo1NloLLqIXuCeQp+0=",
-        "ref": "refs/heads/experimental/kvarn-factory-round5-integration",
-        "rev": "9ac88ba0c6be6da29246b6941762306fda23f926",
-        "revCount": 20897,
+        "lastModified": 1788616465,
+        "narHash": "sha256-JaMp0SHGGROPWusXV9i7YnGicaUW7+sZTFg1PNcb7HE=",
+        "ref": "refs/heads/releases/xpu-v1.5",
+        "rev": "b636c3452e2688ca01f804c041a3deddb0fc9a58",
+        "revCount": 20903,
         "type": "git",
         "url": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm.git"
       },
       "original": {
-        "ref": "refs/heads/experimental/kvarn-factory-round5-integration",
+        "ref": "refs/heads/releases/xpu-v1.5",
         "type": "git",
         "url": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm.git"
       }

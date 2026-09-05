@@ -411,6 +411,7 @@ def variant_provenance(
     flush_writer = perf.flush_writer_for_run(run, args)
     prefill_store = perf.prefill_store_for_run(run, args)
     forward_pool_ensure = perf.forward_pool_ensure_for_run(run, args)
+    qlen1_inline_plan = perf.qlen1_inline_plan_for_run(run, args)
     decode_window = perf.decode_fp16_window_blocks_for_run(run, args)
     decode_low_water = perf.decode_fp16_low_water_blocks_for_run(run, args)
     if run.arm == "reference":
@@ -427,6 +428,7 @@ def variant_provenance(
             f"{flush_writer}_writer_{prefill_store}_prefill_store_"
             f"{native_frontend}_frontend_"
             f"{forward_pool_ensure}_forward_pool_ensure_"
+            f"{qlen1_inline_plan}_qlen1_inline_plan_"
             f"decode_fp16_window_{decode_window}_low_water_{decode_low_water}"
         )
         scheduling_selection = "split_k"
@@ -436,6 +438,7 @@ def variant_provenance(
             f"{prefill_store}-prefill-store-"
             f"{native_frontend}-frontend-"
             f"{forward_pool_ensure}-forward-pool-ensure-"
+            f"{perf.QLEN1_INLINE_PLAN_IDS[qlen1_inline_plan]}-"
             f"dw{decode_window}-lw{decode_low_water}-"
             f"b{run.workload.batch}"
         )
@@ -454,6 +457,7 @@ def variant_provenance(
         "split_policy_selector": perf.native_split_policy_name_for_run(run, args),
         "native_frontend": native_frontend,
         "forward_pool_ensure": forward_pool_ensure,
+        "qlen1_inline_plan": qlen1_inline_plan,
         "decode_fp16_low_water_blocks": decode_low_water,
         "decode_fp16_window_blocks": decode_window,
         "request_stable_projection_rows": (
@@ -610,6 +614,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
     run = perf.PlannedRun(workload=workload, arm=args.arm, order=1)
     native_frontend = perf.native_frontend_for_run(run, args)
     forward_pool_ensure = perf.forward_pool_ensure_for_run(run, args)
+    qlen1_inline_plan = perf.qlen1_inline_plan_for_run(run, args)
     expected_launcher = perf.launcher_name(run, args)
     if args.launcher is not None and args.launcher != expected_launcher:
         raise perf.RunnerError(
@@ -668,6 +673,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         ],
         "native_frontend": native_frontend,
         "forward_pool_ensure": forward_pool_ensure,
+        "qlen1_inline_plan": qlen1_inline_plan,
         "decode_fp16_low_water_blocks": (
             perf.decode_fp16_low_water_blocks_for_run(run, args)
         ),
@@ -723,6 +729,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         identity["decode_fp16_low_water_blocks"] = (
             perf.decode_fp16_low_water_blocks_for_run(run, args)
         )
+        identity["qlen1_inline_plan"] = qlen1_inline_plan
         perf.write_json_atomic(run_dir / "candidate-identity.json", identity)
 
         raw_result = run_dir / "profiled-workload.raw.json"
@@ -795,6 +802,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             ),
             expected_frontend=native_frontend,
             expected_forward_pool_ensure=forward_pool_ensure,
+            expected_qlen1_inline_plan=qlen1_inline_plan,
             expected_decode_fp16_low_water_blocks=(
                 perf.decode_fp16_low_water_blocks_for_run(run, args)
             ),
@@ -852,6 +860,10 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
                 ],
                 "native_frontend": native_frontend,
                 "forward_pool_ensure": forward_pool_ensure,
+                "qlen1_inline_plan": qlen1_inline_plan,
+                "qlen1_inline_plan_environment": service_profile[
+                    "qlen1_inline_plan_environment"
+                ],
                 "forward_pool_ensure_environment": service_profile[
                     "forward_pool_ensure_environment"
                 ],
@@ -894,6 +906,18 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
                 ],
                 "forward_pool_ensure_log_marker": log_scan[
                     "forward_pool_ensure_log_marker"
+                ],
+                "qlen1_inline_plan_selection_verified": log_scan[
+                    "qlen1_inline_plan_selection_verified"
+                ],
+                "qlen1_inline_plan_selection_log_marker": log_scan[
+                    "qlen1_inline_plan_selection_log_marker"
+                ],
+                "qlen1_inline_plan_active_verified": log_scan[
+                    "qlen1_inline_plan_active_verified"
+                ],
+                "qlen1_inline_plan_active_log_marker": log_scan[
+                    "qlen1_inline_plan_active_log_marker"
                 ],
                 "variant_id": variant["variant_id"],
                 "variant_parameters": variant,
@@ -944,6 +968,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             ],
             native_frontend=native_frontend,
             forward_pool_ensure=forward_pool_ensure,
+            qlen1_inline_plan=qlen1_inline_plan,
             decode_fp16_low_water_blocks=(
                 perf.decode_fp16_low_water_blocks_for_run(run, args)
             ),
@@ -972,6 +997,18 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
                 "forward_pool_ensure_active_verified"
             ],
             forward_pool_ensure_log_marker=log_scan["forward_pool_ensure_log_marker"],
+            qlen1_inline_plan_selection_verified=log_scan[
+                "qlen1_inline_plan_selection_verified"
+            ],
+            qlen1_inline_plan_selection_log_marker=log_scan[
+                "qlen1_inline_plan_selection_log_marker"
+            ],
+            qlen1_inline_plan_active_verified=log_scan[
+                "qlen1_inline_plan_active_verified"
+            ],
+            qlen1_inline_plan_active_log_marker=log_scan[
+                "qlen1_inline_plan_active_log_marker"
+            ],
         )
         perf.write_json_atomic(run_dir / "run.json", manifest)
         perf.write_checksums(args.output_dir)
@@ -1035,6 +1072,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help=(
             "engine-lifetime forward pool guard for the native profile; "
             "the auto reference always uses always"
+        ),
+    )
+    parser.add_argument(
+        "--qlen1-inline-plan",
+        choices=perf.QLEN1_INLINE_PLAN_VARIANTS,
+        default=perf.DEFAULT_QLEN1_INLINE_PLAN,
+        help=(
+            "engine-lifetime qlen=1 orchestration plan; trusted_native "
+            "requires qkv_scatter_inline"
         ),
     )
     parser.add_argument(
@@ -1167,6 +1213,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         args.request_stable_projection_rows = bool(args.request_stable_projection_rows)
         args.request_stable_rmsnorm = bool(args.request_stable_rmsnorm)
         perf.forward_pool_ensure_environment(args)
+        perf.qlen1_inline_plan_environment(args)
         perf.decode_fp16_low_water_blocks_environment(args)
         if perf.launcher_mode(args) != "runtime-factory" and (
             not args.request_stable_projection_rows or not args.request_stable_rmsnorm

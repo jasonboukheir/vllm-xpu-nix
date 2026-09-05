@@ -72,6 +72,7 @@ PROFILE = {
     "prefill_store_environment": "reference",
     "native_frontend_environment": "reference",
     "forward_pool_ensure_environment": "always",
+    "qlen1_inline_plan_environment": "reference",
     "decode_fp16_low_water_blocks_environment": "0",
     "decode_fp16_window_blocks_environment": "0",
     "vllm_use_v2_model_runner_environment": "0",
@@ -117,6 +118,7 @@ def _args(tmp_path: Path) -> argparse.Namespace:
         flush_index_materialization="per_layer",
         native_frontend="reference",
         forward_pool_ensure="always",
+        qlen1_inline_plan="reference",
         decode_fp16_low_water_blocks=0,
         decode_fp16_window_blocks=0,
         model=MODEL,
@@ -384,6 +386,7 @@ def test_exploratory_plan_session_has_no_formal_claims(
         "kvarn_prefill_store": "reference",
         "kvarn_native_frontend": "reference",
         "kvarn_forward_pool_ensure": "always",
+        "kvarn_qlen1_inline_plan": "reference",
         "kvarn_onednn_deterministic": "1",
         "kvarn_request_stable_projection_rows": "1",
         "kvarn_request_stable_rmsnorm": "1",
@@ -450,13 +453,15 @@ def test_commands_pin_launcher_and_deterministic_workload(tmp_path: Path) -> Non
         "fusion_strategy": (
             "native_materializer_persistent_scratch_per_layer_indices_"
             "reference_writer_reference_prefill_store_reference_frontend"
-            "_always_forward_pool_ensure_decode_fp16_window_0_low_water_0"
+            "_always_forward_pool_ensure_reference_qlen1_inline_plan_"
+            "decode_fp16_window_0_low_water_0"
         ),
         "scheduling_variant": "eager_mnbt2048",
         "variant_id": (
             "native-xe2-xe2_dpas-q6_scalar-fixed_b1s24_b4s16-"
             "per_layer-indices-reference-writer-reference-prefill-store-"
             "reference-frontend-always-forward-pool-ensure-"
+            "qip-r-"
             "dw0-lw0-eager_mnbt2048"
         ),
     }
@@ -468,7 +473,7 @@ def test_commands_pin_launcher_and_deterministic_workload(tmp_path: Path) -> Non
     assert shared_variant["fusion_strategy"] == (
         "native_materializer_persistent_scratch_shared_indices_reference_writer_"
         "reference_prefill_store_reference_frontend_always_forward_pool_ensure_"
-        "decode_fp16_window_0_low_water_0"
+        "reference_qlen1_inline_plan_decode_fp16_window_0_low_water_0"
     )
     assert (
         "-shared-indices-reference-writer-reference-prefill-store-"
@@ -639,6 +644,8 @@ def test_scheduler_budget_cli_defaults_overrides_and_rejects_zero(
             "qkv_scatter_inline",
             "--forward-pool-ensure",
             "fused_qkv_proof",
+            "--qlen1-inline-plan",
+            "trusted_native",
         ]
     )
 
@@ -648,12 +655,14 @@ def test_scheduler_budget_cli_defaults_overrides_and_rejects_zero(
     assert default.request_stable_rmsnorm is True
     assert default.native_frontend == "reference"
     assert default.forward_pool_ensure == "always"
+    assert default.qlen1_inline_plan == "reference"
     assert explicit.max_num_batched_tokens == 4096
     assert nondeterministic.onednn_deterministic is False
     assert diagnostic.request_stable_projection_rows is False
     assert diagnostic.request_stable_rmsnorm is True
     assert diagnostic.native_frontend == "qkv_scatter_inline"
     assert diagnostic.forward_pool_ensure == "fused_qkv_proof"
+    assert diagnostic.qlen1_inline_plan == "trusted_native"
     for variant in sorted(runner.RUNTIME_FACTORY_ONLY_KERNEL_VARIANTS):
         for split_selector, split_arguments in (
             ("b70_q6", ["--native-split-policy", "b70_q6"]),
@@ -968,6 +977,7 @@ def test_profile_verification_uses_actual_argv_and_environment(tmp_path: Path) -
         "KVARN_NATIVE_XPU_PREFILL_STORE": "reference",
         "KVARN_NATIVE_XPU_FRONTEND": "reference",
         "KVARN_FORWARD_POOL_ENSURE": "always",
+        "KVARN_QLEN1_INLINE_PLAN": "reference",
         "KVARN_DECODE_FP16_LOW_WATER_BLOCKS": "0",
         "KVARN_DECODE_FP16_WINDOW_BLOCKS": "0",
         "KVARN_NATIVE_XPU_KERNEL_VARIANT": "baseline",
@@ -1127,6 +1137,7 @@ def test_service_environment_pins_window_and_scrubs_full_defer(
 
     args.native_frontend = "qkv_scatter_inline"
     args.forward_pool_ensure = "fused_qkv_proof"
+    args.qlen1_inline_plan = "trusted_native"
     args.decode_fp16_window_blocks = 20
     args.decode_fp16_low_water_blocks = 12
     assert (
@@ -1188,6 +1199,7 @@ def test_runtime_factory_environment_carries_exact_per_process_axes(
     args.prefill_store = "hadamard_scatter"
     args.native_frontend = "qkv_scatter_inline"
     args.forward_pool_ensure = "fused_qkv_proof"
+    args.qlen1_inline_plan = "trusted_native"
     args.decode_fp16_window_blocks = 20
     args.decode_fp16_low_water_blocks = 12
     candidate = PlannedRun(Workload(65023, 4, 32, 4, 17), "candidate", 1)
@@ -1208,6 +1220,7 @@ def test_runtime_factory_environment_carries_exact_per_process_axes(
         "KVARN_FACTORY_NATIVE_XPU_FRONTEND": "qkv_scatter_inline",
         "KVARN_FACTORY_ONEDNN_DETERMINISTIC": "0",
         "KVARN_FACTORY_PREFILL_STORE": "hadamard_scatter",
+        "KVARN_FACTORY_QLEN1_INLINE_PLAN": "trusted_native",
         "KVARN_FACTORY_REQUEST_STABLE_PROJECTION_ROWS": "0",
         "KVARN_FACTORY_REQUEST_STABLE_RMSNORM": "1",
         "KVARN_FACTORY_SPLITS": None,
@@ -1219,6 +1232,10 @@ def test_runtime_factory_environment_carries_exact_per_process_axes(
         candidate_environment["KVARN_FACTORY_FORWARD_POOL_ENSURE"] == "fused_qkv_proof"
     )
     assert "KVARN_FORWARD_POOL_ENSURE" not in candidate_environment
+    assert (
+        candidate_environment["KVARN_FACTORY_QLEN1_INLINE_PLAN"]
+        == "trusted_native"
+    )
     assert candidate_environment["KVARN_FACTORY_FLUSH_WRITER"] == "sinkhorn_pack_xe2"
     assert candidate_environment["KVARN_FACTORY_PREFILL_STORE"] == "hadamard_scatter"
     assert runner.runtime_factory_axes_for_run(reference, args) == {
@@ -1235,6 +1252,7 @@ def test_runtime_factory_environment_carries_exact_per_process_axes(
         "KVARN_FACTORY_NATIVE_XPU_FRONTEND": "reference",
         "KVARN_FACTORY_ONEDNN_DETERMINISTIC": "0",
         "KVARN_FACTORY_PREFILL_STORE": "reference",
+        "KVARN_FACTORY_QLEN1_INLINE_PLAN": "reference",
         "KVARN_FACTORY_REQUEST_STABLE_PROJECTION_ROWS": "0",
         "KVARN_FACTORY_REQUEST_STABLE_RMSNORM": "1",
         "KVARN_FACTORY_SPLITS": "1",
@@ -1515,6 +1533,42 @@ def test_native_log_attests_fused_pool_check_elision(tmp_path: Path) -> None:
         )
 
 
+def test_native_log_attests_trusted_qlen1_inline_plan(tmp_path: Path) -> None:
+    engine_log = tmp_path / "engine.log"
+    selection = "[KVARN_FACTORY] selected_qlen1_inline_plan=trusted_native;"
+    base = (
+        "INFO config: device_config=xpu\n"
+        "INFO Actual usage is 17.54 GiB for consumed memory. "
+        "Current kv cache memory in use is 10.92 GiB.\n"
+        f"INFO {runner.NATIVE_DISPATCH} (direct bf16 output=True)\n"
+        f"INFO {runner.NATIVE_FRONTEND_ACTIVE_MARKER} layer=0\n"
+        f"INFO {runner.NATIVE_FRONTEND_INLINE_ACTIVE_MARKER} layer=0\n"
+        f"INFO {selection} immutable for engine lifetime\n"
+    )
+    engine_log.write_text(
+        base + f"INFO {runner.QLEN1_INLINE_PLAN_ACTIVE_MARKER} layer=0\n",
+        encoding="utf-8",
+    )
+
+    scan = runner.validate_engine_log(
+        engine_log,
+        native=True,
+        expected_frontend="qkv_scatter_inline",
+        expected_qlen1_inline_plan="trusted_native",
+    )
+    assert scan["qlen1_inline_plan_selection_verified"] is True
+    assert scan["qlen1_inline_plan_active_verified"] is True
+
+    engine_log.write_text(base, encoding="utf-8")
+    with pytest.raises(RunnerError, match="trusted qlen1 inline plan"):
+        runner.validate_engine_log(
+            engine_log,
+            native=True,
+            expected_frontend="qkv_scatter_inline",
+            expected_qlen1_inline_plan="trusted_native",
+        )
+
+
 def test_decode_fp16_window_requires_workload_appropriate_execution_proof(
     tmp_path: Path,
 ) -> None:
@@ -1727,6 +1781,8 @@ def test_sealed_results_are_directly_perf_gate_compatible(tmp_path: Path) -> Non
                 "INFO [KVARN_FACTORY] selected_cache_layout=xe2_dpas; "
                 "selected_kernel_variant=q6_scalar(2); max_decode_splits=32; "
                 "selected_split_policy=b70_q6; immutable for engine lifetime\n"
+                "INFO [KVARN_FACTORY] selected_qlen1_inline_plan=reference; "
+                "immutable for engine lifetime\n"
                 "INFO Using the native Xe2 KVarN qlen=1 decoder "
                 "(direct bf16 output=True)\n"
                 if native
@@ -1743,6 +1799,7 @@ def test_sealed_results_are_directly_perf_gate_compatible(tmp_path: Path) -> Non
             expected_max_splits=32 if native else None,
             expected_split_policy="b70_q6" if native else None,
             expected_frontend="reference",
+            expected_qlen1_inline_plan="reference",
             expected_forward_pool_ensure="always",
         )
         engine_log_scan.write_text(json.dumps(scan), encoding="utf-8")

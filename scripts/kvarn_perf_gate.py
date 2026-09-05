@@ -112,6 +112,9 @@ LAST_ARRIVAL_KERNEL_VARIANT = "q6_last_arrival_fused_reduce"
 LAST_ARRIVAL_ACTIVE_MARKER = (
     "[KVARN_FACTORY] ID22 last-arrival fused reduction active;"
 )
+LAST_ARRIVAL_DOWNGRADE_MARKER = (
+    "[KVARN_FACTORY] ID22 last-arrival fused reduction downgraded to ID18;"
+)
 DECODE_FLUSH_SCOPES = ("per_row", "batch_cohort")
 DECODE_FLUSH_SCOPE_IDS = {"per_row": "dfs-r", "batch_cohort": "dfs-b"}
 DECODE_FLUSH_BATCH_MARKER_PATTERN = re.compile(
@@ -1583,6 +1586,10 @@ def _validate_correctness_phase(
         if mode != effective_qlen1_inline_plan
     ):
         raise GateError(f"{owner}: {phase_name} qlen1 plan uses a foreign marker")
+    if LAST_ARRIVAL_DOWNGRADE_MARKER in log_text:
+        raise GateError(
+            f"{owner}: {phase_name} reports an ID22 fused-reducer downgrade"
+        )
     last_arrival_active = LAST_ARRIVAL_ACTIVE_MARKER in log_text
     if last_arrival_active != expected_last_arrival_active:
         raise GateError(f"{owner}: {phase_name} ID22 runtime proof differs")
@@ -3372,6 +3379,10 @@ def _validate_logs(
             if mode != expected_qlen1_inline_plan
         ):
             raise GateError(f"{path}: {arm} qlen1 plan uses a foreign marker")
+        if LAST_ARRIVAL_DOWNGRADE_MARKER in text:
+            raise GateError(
+                f"{path}: {arm} log reports an ID22 fused-reducer downgrade"
+            )
         last_arrival_active = LAST_ARRIVAL_ACTIVE_MARKER in text
         if last_arrival_active != expected_last_arrival_active:
             raise GateError(f"{path}: {arm} ID22 runtime proof differs")

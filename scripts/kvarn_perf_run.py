@@ -131,6 +131,9 @@ LAST_ARRIVAL_KERNEL_VARIANT = "q6_last_arrival_fused_reduce"
 LAST_ARRIVAL_ACTIVE_MARKER = (
     "[KVARN_FACTORY] ID22 last-arrival fused reduction active;"
 )
+LAST_ARRIVAL_DOWNGRADE_MARKER = (
+    "[KVARN_FACTORY] ID22 last-arrival fused reduction downgraded to ID18;"
+)
 DECODE_FLUSH_SCOPES = ("per_row", "batch_cohort")
 DECODE_FLUSH_SCOPE_IDS = {"per_row": "dfs-r", "batch_cohort": "dfs-b"}
 DECODE_FLUSH_BATCH_MARKER_PATTERN = re.compile(
@@ -2600,6 +2603,8 @@ def validate_engine_log(
                 "engine log lacks the exact immutable Kvarn factory selection: "
                 + marker
             )
+    if LAST_ARRIVAL_DOWNGRADE_MARKER in text:
+        raise RunnerError("engine log reports an ID22 fused-reducer downgrade")
     last_arrival_active = LAST_ARRIVAL_ACTIVE_MARKER in text
     expected_last_arrival_active = (
         native and expected_kernel_variant == LAST_ARRIVAL_KERNEL_VARIANT

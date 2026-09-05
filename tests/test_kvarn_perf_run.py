@@ -1802,6 +1802,23 @@ def test_native_log_requires_id22_runtime_activation(tmp_path: Path) -> None:
     )
     assert scan["native_last_arrival_active_verified"] is True
 
+    engine_log.write_text(
+        base
+        + f"INFO {runner.LAST_ARRIVAL_ACTIVE_MARKER}\n"
+        + f"INFO {runner.LAST_ARRIVAL_DOWNGRADE_MARKER} reasons=counter-state\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(RunnerError, match="ID22.*downgrade"):
+        runner.validate_engine_log(
+            engine_log,
+            native=True,
+            expected_layout="xe2_dpas",
+            expected_kernel_variant=runner.LAST_ARRIVAL_KERNEL_VARIANT,
+            expected_max_splits=24,
+            expected_split_policy="fixed",
+            expected_frontend="reference",
+        )
+
     engine_log.write_text(base, encoding="utf-8")
     with pytest.raises(RunnerError, match="selected ID22 fused reducer"):
         runner.validate_engine_log(

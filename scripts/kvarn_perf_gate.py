@@ -509,12 +509,13 @@ COMMON_PROVENANCE_FIELDS = (
     "kvarn_workload_id",
     "kvarn_seed",
     "kvarn_max_model_len",
+    "kvarn_offered_concurrency",
+    "kvarn_configured_max_num_seqs",
     "kvarn_max_num_seqs",
     "kvarn_enforce_eager",
     "kvarn_prefix_caching",
     "kvarn_mtp",
     "kvarn_xpu_graph",
-    "kvarn_scheduler_peak_running",
     "kvarn_correctness_sha256",
     "kvarn_process_package",
     "kvarn_process_closure_sha256",
@@ -2129,6 +2130,8 @@ class Run:
     engine_log_sha256: str
     engine_log_scan_path: str
     engine_log_scan_sha256: str
+    scheduler: dict[str, Any]
+    startup_capacity: dict[str, Any]
 
     def metrics(self) -> dict[str, float]:
         request_rates = list(self.request_decode_throughputs)
@@ -2216,12 +2219,155 @@ def _validate_hardware_preflight(raw_path: str, digest: str, *, owner: Path) -> 
         raise GateError(f"{owner}: XPU hardware preflight is not an exact B70 proof")
 
 
+def _load_local_hashed_json(
+    raw_path: str, digest: str, *, owner: Path, name: str
+) -> tuple[Path, dict[str, Any]]:
+    path = Path(raw_path).expanduser().resolve()
+    if path.parent != owner.expanduser().resolve().parent:
+        raise GateError(f"{owner}: {name} is not in the measured run directory")
+    try:
+        raw = path.read_bytes()
+        document = json.loads(raw)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise GateError(f"{owner}: cannot read {name}: {exc}") from exc
+    if hashlib.sha256(raw).hexdigest() != digest:
+        raise GateError(f"{owner}: {name} SHA-256 differs")
+    if not isinstance(document, dict):
+        raise GateError(f"{owner}: {name} must be a JSON object")
+    return path, document
+
+
+def _validate_scheduler_metrics(
+    raw_path: str,
+    digest: str,
+    *,
+    owner: Path,
+    offered_concurrency: int,
+    configured_max_num_seqs: int,
+) -> dict[str, Any]:
+    _path, document = _load_local_hashed_json(
+        raw_path, digest, owner=owner, name="scheduler metrics"
+    )
+    samples = document.get("samples")
+    errors = document.get("errors")
+    if (
+        document.get("schema_version") != 2
+        or document.get("sampling_scope") != "full-client-process-lifetime"
+        or document.get("offered_concurrency") != offered_concurrency
+        or document.get("configured_max_num_seqs") != configured_max_num_seqs
+        or document.get("required_running") != offered_concurrency
+        or document.get("capture_complete") is not True
+        or errors != []
+        or not isinstance(samples, list)
+        or not samples
+        or document.get("sample_count") != len(samples)
+    ):
+        raise GateError(f"{owner}: scheduler metrics are incomplete or mismatched")
+    parsed: list[dict[str, float]] = []
+    previous_elapsed = -math.inf
+    for index, sample in enumerate(samples):
+        if not isinstance(sample, dict) or not isinstance(sample.get("at"), str):
+            raise GateError(f"{owner}: scheduler sample {index} is invalid")
+        values: dict[str, float] = {}
+        for name in (
+            "elapsed_seconds",
+            "running",
+            "waiting",
+            "kv_cache_usage_perc",
+            "preemptions_total",
+        ):
+            value = sample.get(name)
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise GateError(
+                    f"{owner}: scheduler sample {index} field {name} is invalid"
+                )
+            values[name] = float(value)
+            if not math.isfinite(values[name]) or values[name] < 0:
+                raise GateError(
+                    f"{owner}: scheduler sample {index} field {name} is invalid"
+                )
+        if values["elapsed_seconds"] < previous_elapsed:
+            raise GateError(f"{owner}: scheduler sample times are not monotonic")
+        if values["running"] > configured_max_num_seqs:
+            raise GateError(f"{owner}: scheduler running exceeds max-num-seqs")
+        if values["kv_cache_usage_perc"] > 1.0:
+            raise GateError(f"{owner}: scheduler KV usage exceeds one")
+        previous_elapsed = values["elapsed_seconds"]
+        parsed.append(values)
+    expected = {
+        "peak_running": max(item["running"] for item in parsed),
+        "peak_waiting": max(item["waiting"] for item in parsed),
+        "peak_kv_cache_usage_perc": max(
+            item["kv_cache_usage_perc"] for item in parsed
+        ),
+        "preemptions_total_start": parsed[0]["preemptions_total"],
+        "preemptions_total_end": parsed[-1]["preemptions_total"],
+        "preemptions_total_delta": (
+            parsed[-1]["preemptions_total"] - parsed[0]["preemptions_total"]
+        ),
+    }
+    summary_matches = True
+    for name, expected_value in expected.items():
+        value = document.get(name)
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isclose(float(value), expected_value)
+        ):
+            summary_matches = False
+            break
+    if expected["preemptions_total_delta"] < 0 or not summary_matches:
+        raise GateError(f"{owner}: scheduler metric summary is inconsistent")
+    if document.get("required_overlap_observed") is not (
+        expected["peak_running"] >= offered_concurrency
+    ):
+        raise GateError(f"{owner}: scheduler overlap summary is inconsistent")
+    return document
+
+
+def _validate_startup_capacity(
+    raw_path: str,
+    digest: str,
+    *,
+    owner: Path,
+    offered_concurrency: int,
+    configured_max_num_seqs: int,
+    request_tokens: int,
+) -> dict[str, Any]:
+    _path, document = _load_local_hashed_json(
+        raw_path, digest, owner=owner, name="startup capacity"
+    )
+    maximum = document.get("maximum_concurrency")
+    kv_tokens = document.get("kv_cache_tokens")
+    if (
+        document.get("schema_version") != 1
+        or document.get("source") != "vllm-engine-startup-log"
+        or document.get("offered_concurrency") != offered_concurrency
+        or document.get("configured_max_num_seqs") != configured_max_num_seqs
+        or document.get("request_tokens") != request_tokens
+        or isinstance(kv_tokens, bool)
+        or not isinstance(kv_tokens, int)
+        or kv_tokens < 1
+        or isinstance(maximum, bool)
+        or not isinstance(maximum, (int, float))
+        or not math.isfinite(float(maximum))
+        or float(maximum) <= 0
+        or not isinstance(document.get("log_marker"), str)
+        or document.get("capacity_covers_offered")
+        is not (float(maximum) >= offered_concurrency)
+    ):
+        raise GateError(f"{owner}: startup capacity evidence is invalid")
+    return document
+
+
 def _validate_warmup(
     raw_path: str,
     digest: str,
     *,
     owner: Path,
     batch: int,
+    configured_max_num_seqs: int,
+    max_model_len: int,
     context: int,
     output_tokens: int,
     seed: str,
@@ -2248,7 +2394,7 @@ def _validate_warmup(
             f"{owner}: warmup evidence is not in the measured run directory"
         )
     expected_identity = {
-        "schema_version": 1,
+        "schema_version": 2,
         "arm": arm,
         "run_uuid": run_uuid,
         "process_package": process_package,
@@ -2271,7 +2417,63 @@ def _validate_warmup(
         or not isinstance(document.get("max_concurrent_requests"), int)
         or document["max_concurrent_requests"] < batch
     ):
-        raise GateError(f"{owner}: warmup evidence is not full-width and passed")
+        raise GateError(
+            f"{owner}: warmup did not pass at the offered client concurrency"
+        )
+
+    concurrency_evidence = document.get("concurrency_evidence")
+    if (
+        not isinstance(concurrency_evidence, dict)
+        or concurrency_evidence.get("offered_client_concurrency") != batch
+        or concurrency_evidence.get("observed_client_concurrency")
+        != document["max_concurrent_requests"]
+        or concurrency_evidence.get("configured_max_num_seqs")
+        != configured_max_num_seqs
+        or concurrency_evidence.get("client_concurrency_is_residency_proof")
+        is not False
+        or not isinstance(concurrency_evidence.get("residency_semantics"), str)
+    ):
+        raise GateError(f"{owner}: warmup concurrency semantics are invalid")
+
+    scheduler_path = document.get("scheduler_metrics_path")
+    scheduler_sha256 = document.get("scheduler_metrics_sha256")
+    startup_path = document.get("startup_capacity_path")
+    startup_sha256 = document.get("startup_capacity_sha256")
+    if not all(
+        isinstance(value, str)
+        for value in (
+            scheduler_path,
+            scheduler_sha256,
+            startup_path,
+            startup_sha256,
+        )
+    ):
+        raise GateError(f"{owner}: warmup capacity artifacts are missing")
+    assert isinstance(scheduler_path, str)
+    assert isinstance(scheduler_sha256, str)
+    assert isinstance(startup_path, str)
+    assert isinstance(startup_sha256, str)
+    scheduler = _validate_scheduler_metrics(
+        scheduler_path,
+        scheduler_sha256,
+        owner=owner,
+        offered_concurrency=batch,
+        configured_max_num_seqs=configured_max_num_seqs,
+    )
+    startup_capacity = _validate_startup_capacity(
+        startup_path,
+        startup_sha256,
+        owner=owner,
+        offered_concurrency=batch,
+        configured_max_num_seqs=configured_max_num_seqs,
+        request_tokens=max_model_len,
+    )
+    if (
+        concurrency_evidence.get("scheduler_peak_running")
+        != scheduler["peak_running"]
+        or document.get("startup_capacity") != startup_capacity
+    ):
+        raise GateError(f"{owner}: warmup capacity summary differs from artifacts")
 
     try:
         numeric_seed = int(seed)
@@ -2615,6 +2817,79 @@ def _load_run(path: Path) -> Run:
         provenance["kvarn_hardware_preflight_sha256"],
         owner=path,
     )
+    try:
+        offered_concurrency = int(provenance["kvarn_offered_concurrency"])
+        configured_max_num_seqs = int(
+            provenance["kvarn_configured_max_num_seqs"]
+        )
+        legacy_max_num_seqs = int(provenance["kvarn_max_num_seqs"])
+    except ValueError as exc:
+        raise GateError(f"{path}: concurrency provenance must be integral") from exc
+    if (
+        offered_concurrency != max_concurrency
+        or configured_max_num_seqs < offered_concurrency
+        or legacy_max_num_seqs != configured_max_num_seqs
+    ):
+        raise GateError(f"{path}: offered and configured concurrency are inconsistent")
+
+    scheduler_path = _required_text(document, "kvarn_scheduler_metrics_path", path)
+    scheduler_sha256 = _required_sha256(
+        document, "kvarn_scheduler_metrics_sha256", path
+    )
+    scheduler = _validate_scheduler_metrics(
+        scheduler_path,
+        scheduler_sha256,
+        owner=path,
+        offered_concurrency=offered_concurrency,
+        configured_max_num_seqs=configured_max_num_seqs,
+    )
+    startup_path = _required_text(document, "kvarn_startup_capacity_path", path)
+    startup_sha256 = _required_sha256(
+        document, "kvarn_startup_capacity_sha256", path
+    )
+    startup_capacity = _validate_startup_capacity(
+        startup_path,
+        startup_sha256,
+        owner=path,
+        offered_concurrency=offered_concurrency,
+        configured_max_num_seqs=configured_max_num_seqs,
+        request_tokens=int(provenance["kvarn_max_model_len"]),
+    )
+    capacity_fields = {
+        "kvarn_scheduler_peak_running": scheduler["peak_running"],
+        "kvarn_scheduler_peak_waiting": scheduler["peak_waiting"],
+        "kvarn_scheduler_peak_kv_cache_usage_perc": scheduler[
+            "peak_kv_cache_usage_perc"
+        ],
+        "kvarn_scheduler_preemptions_total_delta": scheduler[
+            "preemptions_total_delta"
+        ],
+        "kvarn_startup_kv_cache_tokens": startup_capacity["kv_cache_tokens"],
+        "kvarn_startup_capacity_request_tokens": startup_capacity[
+            "request_tokens"
+        ],
+        "kvarn_startup_maximum_concurrency": startup_capacity[
+            "maximum_concurrency"
+        ],
+    }
+    for name, expected in capacity_fields.items():
+        try:
+            actual = float(_required_text(document, name, path))
+        except ValueError as exc:
+            raise GateError(f"{path}: {name} must be numeric") from exc
+        if not math.isclose(actual, float(expected)):
+            raise GateError(f"{path}: {name} differs from its raw artifact")
+        provenance[name] = _required_text(document, name, path)
+    if document.get("kvarn_startup_capacity_covers_offered") is not startup_capacity[
+        "capacity_covers_offered"
+    ]:
+        raise GateError(f"{path}: startup capacity classification is inconsistent")
+    provenance.update(
+        kvarn_scheduler_metrics_path=str(Path(scheduler_path).resolve()),
+        kvarn_scheduler_metrics_sha256=scheduler_sha256,
+        kvarn_startup_capacity_path=str(Path(startup_path).resolve()),
+        kvarn_startup_capacity_sha256=startup_sha256,
+    )
     warmup_path = str(
         Path(_required_text(document, "kvarn_warmup_path", path)).expanduser().resolve()
     )
@@ -2625,6 +2900,8 @@ def _load_run(path: Path) -> Run:
         warmup_sha256,
         owner=path,
         batch=max_concurrency,
+        configured_max_num_seqs=configured_max_num_seqs,
+        max_model_len=int(provenance["kvarn_max_model_len"]),
         context=input_lens[0],
         output_tokens=output_lens[0],
         seed=provenance["kvarn_seed"],
@@ -2780,6 +3057,8 @@ def _load_run(path: Path) -> Run:
         engine_log_sha256=engine_log_sha256,
         engine_log_scan_path=str(engine_log_scan_path),
         engine_log_scan_sha256=engine_log_scan_sha256,
+        scheduler=scheduler,
+        startup_capacity=startup_capacity,
     )
 
 
@@ -3588,16 +3867,27 @@ def compare(
     if concurrency not in {1, 4}:
         raise GateError("performance max_concurrency must be 1 or 4")
     try:
-        max_num_seqs = int(first_ref.provenance["kvarn_max_num_seqs"])
+        offered_concurrency = int(
+            first_ref.provenance["kvarn_offered_concurrency"]
+        )
+        configured_max_num_seqs = int(
+            first_ref.provenance["kvarn_configured_max_num_seqs"]
+        )
+        legacy_max_num_seqs = int(first_ref.provenance["kvarn_max_num_seqs"])
         scheduler_peak = int(first_ref.provenance["kvarn_scheduler_peak_running"])
     except ValueError as exc:
         raise GateError(
-            "kvarn_max_num_seqs and kvarn_scheduler_peak_running must be integers"
+            "offered/configured concurrency and scheduler peak must be integers"
         ) from exc
-    if max_num_seqs != concurrency:
-        raise GateError("kvarn_max_num_seqs must equal benchmark max_concurrency")
-    if scheduler_peak < concurrency:
-        raise GateError("scheduler evidence did not reach the requested concurrency")
+    if offered_concurrency != concurrency:
+        raise GateError("offered concurrency must equal benchmark max_concurrency")
+    if (
+        configured_max_num_seqs < offered_concurrency
+        or legacy_max_num_seqs != configured_max_num_seqs
+    ):
+        raise GateError("configured max-num-seqs does not cover offered concurrency")
+    if not 0 < scheduler_peak <= configured_max_num_seqs:
+        raise GateError("scheduler peak is outside the configured engine width")
 
     correctness, correctness_sha256 = _load_correctness(correctness_path)
     candidate_id = first_cand.provenance["kvarn_candidate_id"]
@@ -3983,7 +4273,49 @@ def compare(
             "input_lens": list(first_ref.input_lens),
             "output_lens": list(first_ref.output_lens),
             "max_concurrency": first_ref.provenance["max_concurrency"],
+            "offered_client_concurrency": concurrency,
+            "configured_max_num_seqs": configured_max_num_seqs,
             "num_prompts": first_ref.provenance["num_prompts"],
+        },
+        "service_concurrency": {
+            "gate_semantics": "requested-concurrency-service-outcome",
+            "offered_client_concurrency": concurrency,
+            "configured_max_num_seqs": configured_max_num_seqs,
+            "client_concurrency_is_residency_proof": False,
+            "reference": {
+                "startup_maximum_concurrency": [
+                    run.startup_capacity["maximum_concurrency"] for run in reference
+                ],
+                "scheduler_peak_running": [
+                    run.scheduler["peak_running"] for run in reference
+                ],
+                "scheduler_peak_waiting": [
+                    run.scheduler["peak_waiting"] for run in reference
+                ],
+                "scheduler_peak_kv_cache_usage_perc": [
+                    run.scheduler["peak_kv_cache_usage_perc"] for run in reference
+                ],
+                "preemptions_total_delta": [
+                    run.scheduler["preemptions_total_delta"] for run in reference
+                ],
+            },
+            "candidate": {
+                "startup_maximum_concurrency": [
+                    run.startup_capacity["maximum_concurrency"] for run in candidate
+                ],
+                "scheduler_peak_running": [
+                    run.scheduler["peak_running"] for run in candidate
+                ],
+                "scheduler_peak_waiting": [
+                    run.scheduler["peak_waiting"] for run in candidate
+                ],
+                "scheduler_peak_kv_cache_usage_perc": [
+                    run.scheduler["peak_kv_cache_usage_perc"] for run in candidate
+                ],
+                "preemptions_total_delta": [
+                    run.scheduler["preemptions_total_delta"] for run in candidate
+                ],
+            },
         },
         "provenance": {
             field: first_ref.provenance[field] for field in COMMON_PROVENANCE_FIELDS

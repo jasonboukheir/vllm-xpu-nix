@@ -303,6 +303,17 @@ FALLBACK_PATTERN = re.compile(
     r"\b(?:fallback|falling back)\b[^\n]{0,120}\bkvarn\b)"
 )
 RUNNING_METRIC = "vllm:num_requests_running"
+SCHEDULER_METRICS = (
+    RUNNING_METRIC,
+    "vllm:num_requests_waiting",
+    "vllm:kv_cache_usage_perc",
+    "vllm:num_preemptions_total",
+)
+STARTUP_CAPACITY_PATTERN = re.compile(
+    r"GPU KV cache size: (?P<kv_tokens>[0-9,]+) tokens, "
+    r"Maximum concurrency for (?P<request_tokens>[0-9,]+) tokens per request: "
+    r"(?P<max_concurrency>[0-9]+(?:\.[0-9]+)?)x"
+)
 PARITY_METRICS = (
     "output_throughput",
     "median_request_decode_throughput",
@@ -436,6 +447,11 @@ class Workload:
     def service_profile(self) -> str:
         return f"qwen38-65k-b{self.batch}-eager"
 
+    @property
+    def offered_concurrency(self) -> int:
+        """Client-side in-flight request limit for this workload."""
+        return self.batch
+
 
 @dataclasses.dataclass(frozen=True)
 class PlannedRun:
@@ -454,6 +470,40 @@ class ServiceProcess:
     argv: list[str]
     environment: dict[str, str | None]
     supervisor: ProcessSupervisor
+
+
+@dataclasses.dataclass
+class SchedulerSampling:
+    stop: threading.Event
+    thread: threading.Thread
+    samples: list[dict[str, Any]]
+    errors: list[str]
+    started_monotonic: float
+
+
+def configured_max_num_seqs_for_run(
+    run: PlannedRun, args: argparse.Namespace
+) -> int:
+    """Return engine admission width independently of client concurrency.
+
+    The historical behavior remains the default: each B1/B4 workload launches
+    its matching B1/B4 service.  An explicit ``--max-num-seqs`` makes the
+    engine width constant while ``Workload.batch`` remains the offered client
+    concurrency.
+    """
+    configured = getattr(args, "max_num_seqs", None)
+    if configured is None:
+        configured = run.workload.offered_concurrency
+    if (
+        isinstance(configured, bool)
+        or not isinstance(configured, int)
+        or configured < run.workload.offered_concurrency
+    ):
+        raise RunnerError(
+            "configured max-num-seqs must be an integer at least as large as "
+            f"offered concurrency {run.workload.offered_concurrency}"
+        )
+    return configured
 
 
 XPU_PREFLIGHT_CODE = """
@@ -1279,7 +1329,9 @@ def runtime_factory_axes_for_run(
         "KVARN_FACTORY_KV_CACHE_DTYPE": ARM_SETTINGS[run.arm]["kv_cache_dtype"],
         "KVARN_FACTORY_METADATA_LIFECYCLE": metadata_lifecycle_for_run(run, args),
         "KVARN_FACTORY_MAX_MODEL_LEN": str(args.max_model_len),
-        "KVARN_FACTORY_MAX_NUM_SEQS": str(run.workload.batch),
+        "KVARN_FACTORY_MAX_NUM_SEQS": str(
+            configured_max_num_seqs_for_run(run, args)
+        ),
         "KVARN_FACTORY_NATIVE_XPU_FRONTEND": native_frontend_for_run(run, args),
         "KVARN_FACTORY_ONEDNN_DETERMINISTIC": (onednn_deterministic_environment(args)),
         "KVARN_FACTORY_PREFILL_STORE": prefill_store_for_run(run, args),
@@ -1311,7 +1363,9 @@ def runtime_factory_axes_for_run(
         "KVARN_FACTORY_KV_CACHE_DTYPE": "auto",
         "KVARN_FACTORY_METADATA_LIFECYCLE": "reference",
         "KVARN_FACTORY_MAX_MODEL_LEN": str(args.max_model_len),
-        "KVARN_FACTORY_MAX_NUM_SEQS": str(run.workload.batch),
+        "KVARN_FACTORY_MAX_NUM_SEQS": str(
+            configured_max_num_seqs_for_run(run, args)
+        ),
         "KVARN_FACTORY_NATIVE_XPU_FRONTEND": "reference",
         "KVARN_FACTORY_ONEDNN_DETERMINISTIC": (onednn_deterministic_environment(args)),
         "KVARN_FACTORY_PREFILL_STORE": "reference",
@@ -1431,16 +1485,17 @@ def probe_xpu_hardware(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def launcher_name(run: PlannedRun, args: argparse.Namespace) -> str:
+    max_num_seqs = configured_max_num_seqs_for_run(run, args)
     if launcher_mode(args) == "runtime-factory":
         return RUNTIME_FACTORY_LAUNCHER
     if run.arm == "candidate" and args.native_layout == "xe2_dpas":
         suffix = "-262k" if args.max_model_len == 262144 else ""
         launcher = (
             "vllm-xpu-brutus-kvarn-native-dpas-"
-            f"{args.native_kernel_variant}{suffix}-b{run.workload.batch}"
+            f"{args.native_kernel_variant}{suffix}-b{max_num_seqs}"
         )
     else:
-        launcher = ARM_SETTINGS[run.arm]["launcher"].format(batch=run.workload.batch)
+        launcher = ARM_SETTINGS[run.arm]["launcher"].format(batch=max_num_seqs)
     if not args.onednn_deterministic:
         launcher += ONEDNN_DETERMINISTIC_LAUNCHER_SUFFIX
     return launcher
@@ -1682,6 +1737,66 @@ def parse_running_metric(text: str) -> float:
     return sum(found)
 
 
+def parse_scheduler_metrics(text: str) -> dict[str, float]:
+    """Parse the scheduler gauges/counter needed to interpret concurrency."""
+    values: dict[str, list[float]] = {name: [] for name in SCHEDULER_METRICS}
+    names = "|".join(re.escape(name) for name in SCHEDULER_METRICS)
+    pattern = re.compile(
+        rf"^(?P<name>{names})(?:\{{[^}}]*\}})?\s+"
+        r"(?P<value>[-+0-9.eE]+)$"
+    )
+    for line in text.splitlines():
+        match = pattern.match(line.strip())
+        if match:
+            values[match.group("name")].append(float(match.group("value")))
+    missing = [name for name, found in values.items() if not found]
+    if missing:
+        raise RunnerError(
+            "metrics response is missing required scheduler metrics: "
+            + ", ".join(missing)
+        )
+    return {
+        name: (max(found) if name.endswith("kv_cache_usage_perc") else sum(found))
+        for name, found in values.items()
+    }
+
+
+def parse_startup_capacity(
+    text: str, *, expected_request_tokens: int
+) -> dict[str, Any]:
+    """Extract vLLM's startup KV capacity claim from the engine log."""
+    matches = [
+        {
+            "kv_cache_tokens": int(match.group("kv_tokens").replace(",", "")),
+            "request_tokens": int(
+                match.group("request_tokens").replace(",", "")
+            ),
+            "maximum_concurrency": float(match.group("max_concurrency")),
+            "log_marker": match.group(0),
+        }
+        for match in STARTUP_CAPACITY_PATTERN.finditer(text)
+    ]
+    if not matches:
+        raise RunnerError("engine log is missing the startup KV capacity marker")
+    selected = matches[-1]
+    comparable = {
+        (item["kv_cache_tokens"], item["request_tokens"], item["maximum_concurrency"])
+        for item in matches
+    }
+    if len(comparable) != 1:
+        raise RunnerError("engine log contains conflicting startup KV capacity markers")
+    if selected["request_tokens"] != expected_request_tokens:
+        raise RunnerError(
+            "startup capacity request length differs from max-model-len: "
+            f"{selected['request_tokens']} != {expected_request_tokens}"
+        )
+    return {
+        "schema_version": 1,
+        "source": "vllm-engine-startup-log",
+        **selected,
+    }
+
+
 def http_text(url: str, *, timeout: float) -> str:
     request = urllib.request.Request(url, method="GET")
     with urllib.request.urlopen(request, timeout=timeout) as response:
@@ -1862,6 +1977,7 @@ def service_profile_evidence(
     return {
         "redacted_argv": _redact_argv(argv),
         "redacted_environment": redacted_environment,
+        "max_num_seqs": _arg_after(argv, "--max-num-seqs"),
         "max_num_batched_tokens": _arg_after(argv, "--max-num-batched-tokens"),
         "native_layout": native_layout,
         "native_layout_environment": legacy_layout,
@@ -1936,7 +2052,10 @@ def verify_service_profile(
             _arg_after(argv, "--max-model-len"),
             str(args.max_model_len),
         ),
-        "--max-num-seqs": (_arg_after(argv, "--max-num-seqs"), str(run.workload.batch)),
+        "--max-num-seqs": (
+            _arg_after(argv, "--max-num-seqs"),
+            str(configured_max_num_seqs_for_run(run, args)),
+        ),
         "--max-num-batched-tokens": (
             _arg_after(argv, "--max-num-batched-tokens"),
             str(args.max_num_batched_tokens),
@@ -2266,22 +2385,59 @@ def start_service(
 def sample_scheduler(
     *,
     args: argparse.Namespace,
-    required_running: int,
+    required_running: int | None = None,
     stop: threading.Event,
     samples: list[dict[str, Any]],
     errors: list[str],
+    started_monotonic: float | None = None,
+    ready: threading.Event | None = None,
 ) -> None:
-    while not stop.is_set():
+    """Sample through the complete client-process lifetime, including its end."""
+    del required_running  # Compatibility with diagnostic runner callers.
+    if started_monotonic is None:
+        started_monotonic = time.monotonic()
+    while True:
         try:
             text = http_text(base_endpoint(args, "/metrics"), timeout=2.0)
-            running = parse_running_metric(text)
-            samples.append({"at": utc_timestamp(), "running": running})
-            if running >= required_running:
-                stop.set()
-                return
+            metrics = parse_scheduler_metrics(text)
+            samples.append(
+                {
+                    "at": utc_timestamp(),
+                    "elapsed_seconds": time.monotonic() - started_monotonic,
+                    "running": metrics["vllm:num_requests_running"],
+                    "waiting": metrics["vllm:num_requests_waiting"],
+                    "kv_cache_usage_perc": metrics["vllm:kv_cache_usage_perc"],
+                    "preemptions_total": metrics["vllm:num_preemptions_total"],
+                }
+            )
         except (OSError, ValueError, RunnerError) as exc:
             errors.append(f"{type(exc).__name__}: {exc}")
-        stop.wait(args.metrics_poll_interval)
+        finally:
+            if ready is not None:
+                ready.set()
+        if stop.wait(args.metrics_poll_interval):
+            # The process has exited.  Take one final snapshot so counter deltas
+            # and return-to-idle behavior are not inferred from an early sample.
+            try:
+                text = http_text(base_endpoint(args, "/metrics"), timeout=2.0)
+                metrics = parse_scheduler_metrics(text)
+                samples.append(
+                    {
+                        "at": utc_timestamp(),
+                        "elapsed_seconds": time.monotonic() - started_monotonic,
+                        "running": metrics["vllm:num_requests_running"],
+                        "waiting": metrics["vllm:num_requests_waiting"],
+                        "kv_cache_usage_perc": metrics[
+                            "vllm:kv_cache_usage_perc"
+                        ],
+                        "preemptions_total": metrics[
+                            "vllm:num_preemptions_total"
+                        ],
+                    }
+                )
+            except (OSError, ValueError, RunnerError) as exc:
+                errors.append(f"{type(exc).__name__}: {exc}")
+            return
 
 
 def wait_for_scheduler_idle(args: argparse.Namespace, timeout: float = 60.0) -> None:
@@ -2301,17 +2457,88 @@ def wait_for_scheduler_idle(args: argparse.Namespace, timeout: float = 60.0) -> 
 
 
 def scheduler_summary(
-    samples: Sequence[Mapping[str, Any]], errors: Sequence[str], required: int
+    samples: Sequence[Mapping[str, Any]],
+    errors: Sequence[str],
+    required: int,
+    *,
+    configured_max_num_seqs: int | None = None,
 ) -> dict[str, Any]:
+    configured = required if configured_max_num_seqs is None else configured_max_num_seqs
     peak = max((float(sample["running"]) for sample in samples), default=0.0)
+    peak_waiting = max((float(sample["waiting"]) for sample in samples), default=0.0)
+    peak_kv = max(
+        (float(sample["kv_cache_usage_perc"]) for sample in samples), default=0.0
+    )
+    preemptions = [float(sample["preemptions_total"]) for sample in samples]
+    preemption_start = preemptions[0] if preemptions else 0.0
+    preemption_end = preemptions[-1] if preemptions else 0.0
     return {
+        "schema_version": 2,
+        "sampling_scope": "full-client-process-lifetime",
         "metric": RUNNING_METRIC,
+        "metrics": list(SCHEDULER_METRICS),
+        "offered_concurrency": required,
+        "configured_max_num_seqs": configured,
         "required_running": required,
         "peak_running": peak,
+        "peak_waiting": peak_waiting,
+        "peak_kv_cache_usage_perc": peak_kv,
+        "preemptions_total_start": preemption_start,
+        "preemptions_total_end": preemption_end,
+        "preemptions_total_delta": preemption_end - preemption_start,
         "required_overlap_observed": peak >= required,
+        "sample_count": len(samples),
+        "sampling_started_at": samples[0]["at"] if samples else None,
+        "sampling_finished_at": samples[-1]["at"] if samples else None,
+        "capture_complete": bool(samples) and not errors,
         "samples": list(samples),
         "errors": list(errors),
     }
+
+
+def start_scheduler_sampling(args: argparse.Namespace) -> SchedulerSampling:
+    """Start metrics capture and wait until its pre-client baseline completes."""
+    stop = threading.Event()
+    ready = threading.Event()
+    samples: list[dict[str, Any]] = []
+    errors: list[str] = []
+    started_monotonic = time.monotonic()
+    thread = threading.Thread(
+        target=sample_scheduler,
+        kwargs={
+            "args": args,
+            "stop": stop,
+            "samples": samples,
+            "errors": errors,
+            "started_monotonic": started_monotonic,
+            "ready": ready,
+        },
+        daemon=True,
+    )
+    thread.start()
+    if not ready.wait(timeout=5.0):
+        stop.set()
+        thread.join(timeout=5.0)
+        raise RunnerError("scheduler sampler did not capture its pre-client baseline")
+    return SchedulerSampling(stop, thread, samples, errors, started_monotonic)
+
+
+def finish_scheduler_sampling(
+    sampling: SchedulerSampling,
+    *,
+    offered_concurrency: int,
+    configured_max_num_seqs: int,
+) -> dict[str, Any]:
+    sampling.stop.set()
+    sampling.thread.join(timeout=5.0)
+    if sampling.thread.is_alive():
+        raise RunnerError("scheduler sampler did not stop")
+    return scheduler_summary(
+        sampling.samples,
+        sampling.errors,
+        offered_concurrency,
+        configured_max_num_seqs=configured_max_num_seqs,
+    )
 
 
 def kvarn_factory_marker(
@@ -2753,6 +2980,11 @@ def persist_warmup_result(
     run_uuid: str,
     identity: Mapping[str, Any],
     profile: Mapping[str, Any],
+    configured_max_num_seqs: int,
+    scheduler: Mapping[str, Any],
+    scheduler_path: Path,
+    startup_capacity: Mapping[str, Any],
+    startup_capacity_path: Path,
 ) -> dict[str, Any]:
     document = load_and_validate_benchmark_result(raw_result, workload)
     observed_concurrency = document.get("max_concurrent_requests")
@@ -2762,11 +2994,24 @@ def persist_warmup_result(
         or observed_concurrency < workload.batch
     ):
         raise RunnerError(
-            "warmup did not reach full width: "
+            "warmup client did not reach its offered concurrency: "
             f"observed={observed_concurrency!r}, required={workload.batch}"
         )
+    if (
+        scheduler.get("capture_complete") is not True
+        or scheduler.get("offered_concurrency") != workload.offered_concurrency
+        or scheduler.get("configured_max_num_seqs") != configured_max_num_seqs
+    ):
+        raise RunnerError("warmup scheduler metrics are incomplete or mismatched")
+    if (
+        startup_capacity.get("offered_concurrency")
+        != workload.offered_concurrency
+        or startup_capacity.get("configured_max_num_seqs")
+        != configured_max_num_seqs
+    ):
+        raise RunnerError("warmup startup-capacity evidence is mismatched")
     result = {
-        "schema_version": 1,
+        "schema_version": 2,
         "status": "passed",
         "validated_at": utc_timestamp(),
         "arm": arm,
@@ -2778,6 +3023,23 @@ def persist_warmup_result(
         "completed": document["completed"],
         "failed": document["failed"],
         "max_concurrent_requests": observed_concurrency,
+        "concurrency_evidence": {
+            "offered_client_concurrency": workload.offered_concurrency,
+            "observed_client_concurrency": observed_concurrency,
+            "configured_max_num_seqs": configured_max_num_seqs,
+            "scheduler_peak_running": scheduler["peak_running"],
+            "client_concurrency_is_residency_proof": False,
+            "residency_semantics": (
+                "startup capacity and sampled scheduler occupancy are recorded "
+                "separately; client in-flight concurrency is not simultaneous "
+                "KV residency"
+            ),
+        },
+        "scheduler_metrics_path": str(scheduler_path.resolve()),
+        "scheduler_metrics_sha256": sha256_file(scheduler_path),
+        "startup_capacity_path": str(startup_capacity_path.resolve()),
+        "startup_capacity_sha256": sha256_file(startup_capacity_path),
+        "startup_capacity": dict(startup_capacity),
         "process_package": identity["process_package"],
         "process_closure_sha256": identity["process_closure_sha256"],
         "candidate_closure_sha256": identity["candidate_closure_sha256"],
@@ -2806,17 +3068,39 @@ def seal_benchmark_result(
     identity: Mapping[str, Any],
     profile: Mapping[str, Any],
     warmup_result: Path | None,
+    scheduler_path: Path,
+    startup_capacity: Mapping[str, Any],
+    startup_capacity_path: Path,
 ) -> dict[str, Any]:
     workload = run.workload
     document = load_and_validate_benchmark_result(raw_result, workload)
     peak = float(scheduler.get("peak_running", 0))
-    if peak < workload.batch:
-        raise RunnerError(f"scheduler peak {peak:g} did not reach B{workload.batch}")
+    configured_max_num_seqs = configured_max_num_seqs_for_run(run, args)
+    if (
+        scheduler.get("capture_complete") is not True
+        or scheduler.get("offered_concurrency") != workload.offered_concurrency
+        or scheduler.get("configured_max_num_seqs") != configured_max_num_seqs
+        or peak <= 0
+        or peak > configured_max_num_seqs
+    ):
+        raise RunnerError("full-duration scheduler evidence is invalid")
+    if (
+        startup_capacity.get("offered_concurrency")
+        != workload.offered_concurrency
+        or startup_capacity.get("configured_max_num_seqs")
+        != configured_max_num_seqs
+    ):
+        raise RunnerError("startup-capacity evidence is invalid")
     max_num_batched_tokens = profile.get("max_num_batched_tokens")
     if max_num_batched_tokens != str(args.max_num_batched_tokens):
         raise RunnerError(
             "verified service profile lost max_num_batched_tokens: "
             f"expected {args.max_num_batched_tokens}, got {max_num_batched_tokens!r}"
+        )
+    if profile.get("max_num_seqs") != str(configured_max_num_seqs):
+        raise RunnerError(
+            "verified service profile lost configured max_num_seqs: "
+            f"expected {configured_max_num_seqs}, got {profile.get('max_num_seqs')!r}"
         )
     expected_layout = native_layout_for_run(run, args)
     expected_kernel_variant = native_kernel_variant_for_run(run, args)
@@ -2887,7 +3171,10 @@ def seal_benchmark_result(
     if not xpu["device_config_xpu"] or not xpu["positive_residency"]:
         raise RunnerError("engine log lacks positive XPU runtime evidence")
     if not args.exploratory and warmup_result is None:
-        raise RunnerError("formal performance evidence requires a full-width warmup")
+        raise RunnerError(
+            "formal performance evidence requires a full offered-client-width "
+            "warmup; this is not a resident-request claim"
+        )
     scan_path = engine_log_scan.resolve()
     if (
         scan_path.parent != engine_log.resolve().parent
@@ -2940,13 +3227,38 @@ def seal_benchmark_result(
         "kvarn_workload_id": workload.workload_id,
         "kvarn_seed": str(workload.seed),
         "kvarn_max_model_len": str(args.max_model_len),
-        "kvarn_max_num_seqs": str(workload.batch),
+        "kvarn_offered_concurrency": str(workload.offered_concurrency),
+        "kvarn_configured_max_num_seqs": str(configured_max_num_seqs),
+        # Compatibility alias retained for older readers.  It now explicitly
+        # means the configured engine limit, never client or resident width.
+        "kvarn_max_num_seqs": str(configured_max_num_seqs),
         "kvarn_max_num_batched_tokens": max_num_batched_tokens,
         "kvarn_enforce_eager": "1",
         "kvarn_prefix_caching": "0",
         "kvarn_mtp": "0",
         "kvarn_xpu_graph": "0",
         "kvarn_scheduler_peak_running": str(int(peak)),
+        "kvarn_scheduler_peak_waiting": str(scheduler["peak_waiting"]),
+        "kvarn_scheduler_peak_kv_cache_usage_perc": str(
+            scheduler["peak_kv_cache_usage_perc"]
+        ),
+        "kvarn_scheduler_preemptions_total_delta": str(
+            scheduler["preemptions_total_delta"]
+        ),
+        "kvarn_scheduler_metrics_path": str(scheduler_path.resolve()),
+        "kvarn_scheduler_metrics_sha256": sha256_file(scheduler_path),
+        "kvarn_startup_capacity_path": str(startup_capacity_path.resolve()),
+        "kvarn_startup_capacity_sha256": sha256_file(startup_capacity_path),
+        "kvarn_startup_kv_cache_tokens": str(startup_capacity["kv_cache_tokens"]),
+        "kvarn_startup_capacity_request_tokens": str(
+            startup_capacity["request_tokens"]
+        ),
+        "kvarn_startup_maximum_concurrency": str(
+            startup_capacity["maximum_concurrency"]
+        ),
+        "kvarn_startup_capacity_covers_offered": startup_capacity[
+            "capacity_covers_offered"
+        ],
         "kvarn_arm": run.arm,
         "kvarn_launcher_mode": launcher_binding["mode"],
         "kvarn_logical_launcher": launcher_binding["logical_launcher"],
@@ -3134,6 +3446,7 @@ def run_one(
     sealed_result = run_dir / "benchmark.json"
     benchmark_stdout = run_dir / "benchmark.stdout.log"
     warmup_result: Path | None = None
+    warmup_scheduler_path: Path | None = None
     service: ServiceProcess | None = None
     manifest: dict[str, Any] = {
         "schema_version": 1,
@@ -3170,21 +3483,47 @@ def run_one(
             verify_correctness_candidate_identity(identity, correctness_identity)
         write_json_atomic(run_dir / "candidate-identity.json", identity)
         write_json_atomic(run_dir / "matched-service-profile.json", profile)
+        startup_capacity = parse_startup_capacity(
+            service.log_path.read_text(encoding="utf-8", errors="replace"),
+            expected_request_tokens=args.max_model_len,
+        )
+        startup_capacity.update(
+            offered_concurrency=run.workload.offered_concurrency,
+            configured_max_num_seqs=configured_max_num_seqs_for_run(run, args),
+            capacity_covers_offered=(
+                startup_capacity["maximum_concurrency"]
+                >= run.workload.offered_concurrency
+            ),
+        )
+        startup_capacity_path = run_dir / "startup-capacity.json"
+        write_json_atomic(startup_capacity_path, startup_capacity)
         benchmark_argv = benchmark_command(run, args, raw_result)
         write_json_atomic(run_dir / "benchmark-argv.json", benchmark_argv)
         warmup_argv = warmup_command(run, args, warmup_raw_result)
         write_json_atomic(run_dir / "warmup-argv.json", warmup_argv)
         if warmup_argv is not None:
+            warmup_sampling = start_scheduler_sampling(args)
             with (run_dir / "warmup.stdout.log").open("w", encoding="utf-8") as output:
-                warmup_returncode = run_managed_process(
-                    warmup_argv,
-                    cwd=args.packaging_repo,
-                    environment=runner_environment(args),
-                    output=output,
-                    timeout=args.benchmark_timeout,
-                    supervisor=args.supervisor,
-                    label="warmup benchmark",
-                )
+                try:
+                    warmup_returncode = run_managed_process(
+                        warmup_argv,
+                        cwd=args.packaging_repo,
+                        environment=runner_environment(args),
+                        output=output,
+                        timeout=args.benchmark_timeout,
+                        supervisor=args.supervisor,
+                        label="warmup benchmark",
+                    )
+                finally:
+                    warmup_scheduler = finish_scheduler_sampling(
+                        warmup_sampling,
+                        offered_concurrency=run.workload.offered_concurrency,
+                        configured_max_num_seqs=configured_max_num_seqs_for_run(
+                            run, args
+                        ),
+                    )
+            warmup_scheduler_path = run_dir / "warmup-scheduler-metrics.json"
+            write_json_atomic(warmup_scheduler_path, warmup_scheduler)
             if warmup_returncode != 0:
                 raise RunnerError(f"warmup benchmark exited {warmup_returncode}")
             warmup_prompts = (
@@ -3203,24 +3542,15 @@ def run_one(
                 run_uuid=run_uuid,
                 identity=identity,
                 profile=profile,
+                configured_max_num_seqs=configured_max_num_seqs_for_run(run, args),
+                scheduler=warmup_scheduler,
+                scheduler_path=warmup_scheduler_path,
+                startup_capacity=startup_capacity,
+                startup_capacity_path=startup_capacity_path,
             )
             wait_for_scheduler_idle(args)
 
-        samples: list[dict[str, Any]] = []
-        metric_errors: list[str] = []
-        stop_sampling = threading.Event()
-        sampler = threading.Thread(
-            target=sample_scheduler,
-            kwargs={
-                "args": args,
-                "required_running": run.workload.batch,
-                "stop": stop_sampling,
-                "samples": samples,
-                "errors": metric_errors,
-            },
-            daemon=True,
-        )
-        sampler.start()
+        sampling = start_scheduler_sampling(args)
         with benchmark_stdout.open("w", encoding="utf-8") as output:
             try:
                 benchmark_returncode = run_managed_process(
@@ -3233,12 +3563,13 @@ def run_one(
                     label="measured benchmark",
                 )
             finally:
-                stop_sampling.set()
-                sampler.join(timeout=5.0)
-        if sampler.is_alive():
-            raise RunnerError("scheduler sampler did not stop")
-        scheduler = scheduler_summary(samples, metric_errors, run.workload.batch)
-        write_json_atomic(run_dir / "scheduler-metrics.json", scheduler)
+                scheduler = finish_scheduler_sampling(
+                    sampling,
+                    offered_concurrency=run.workload.offered_concurrency,
+                    configured_max_num_seqs=configured_max_num_seqs_for_run(run, args),
+                )
+        scheduler_path = run_dir / "scheduler-metrics.json"
+        write_json_atomic(scheduler_path, scheduler)
         if benchmark_returncode != 0:
             raise RunnerError(f"vllm bench serve exited {benchmark_returncode}")
 
@@ -3291,6 +3622,9 @@ def run_one(
             identity=identity,
             profile=profile,
             warmup_result=warmup_result,
+            scheduler_path=scheduler_path,
+            startup_capacity=startup_capacity,
+            startup_capacity_path=startup_capacity_path,
         )
         manifest.update(
             status="passed",
@@ -3300,11 +3634,20 @@ def run_one(
             engine_log=str(run_dir / "engine.log"),
             engine_log_sha256=sealed["kvarn_engine_log_sha256"],
             scheduler_peak_running=scheduler["peak_running"],
+            scheduler_peak_waiting=scheduler["peak_waiting"],
+            scheduler_preemptions_total_delta=scheduler[
+                "preemptions_total_delta"
+            ],
+            offered_concurrency=run.workload.offered_concurrency,
+            configured_max_num_seqs=configured_max_num_seqs_for_run(run, args),
+            startup_maximum_concurrency=startup_capacity["maximum_concurrency"],
         )
         write_json_atomic(run_dir / "run.json", manifest)
         return {
             "workload_id": run.workload.workload_id,
             "batch": run.workload.batch,
+            "offered_concurrency": run.workload.offered_concurrency,
+            "configured_max_num_seqs": configured_max_num_seqs_for_run(run, args),
             "context": run.workload.context,
             "arm": run.arm,
             "order": run.order,
@@ -3783,12 +4126,20 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         },
         **selected_variant,
         "max_num_batched_tokens": args.max_num_batched_tokens,
+        "configured_max_num_seqs": args.max_num_seqs,
+        "configured_max_num_seqs_semantics": (
+            "null preserves the historical per-workload B1/B4 engine width"
+        ),
         "resolved_launchers": args.resolved_launchers,
         "launcher_mode": launcher_mode(args),
         "repositories": repositories,
         "plan": [
             {
                 **dataclasses.asdict(run),
+                "offered_concurrency": run.workload.offered_concurrency,
+                "configured_max_num_seqs": configured_max_num_seqs_for_run(
+                    run, args
+                ),
                 "nominal_native_splits": native_splits_for_run(run, args),
                 "effective_native_splits": native_splits_for_run(run, args),
                 "expected_native_max_splits": native_max_splits_for_run(run, args),
@@ -4051,7 +4402,16 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--context", action="append")
-    parser.add_argument("--batch", action="append")
+    parser.add_argument(
+        "--batch",
+        "--client-concurrency",
+        dest="batch",
+        action="append",
+        help=(
+            "offered client concurrency (B1/B4); --batch remains a compatibility "
+            "alias and does not configure engine max-num-seqs"
+        ),
+    )
     parser.add_argument("--output-tokens", type=int, default=512)
     parser.add_argument("--waves-per-run", type=int, default=2)
     parser.add_argument(
@@ -4093,6 +4453,14 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument("--max-model-len", type=int, default=65536)
+    parser.add_argument(
+        "--max-num-seqs",
+        type=int,
+        help=(
+            "engine admission width, independent of the B1/B4 client concurrency; "
+            "by default each workload keeps the historical matching width"
+        ),
+    )
     parser.add_argument(
         "--max-num-batched-tokens",
         type=int,
@@ -4391,6 +4759,21 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             raise RunnerError("formal performance qualification is the 65,536 profile")
         if args.max_num_batched_tokens < 1:
             raise RunnerError("max num batched tokens must be positive")
+        if args.max_num_seqs is not None and (
+            args.max_num_seqs < 1 or args.max_num_seqs < max(args.batch)
+        ):
+            raise RunnerError(
+                "max num seqs must be at least the largest offered client concurrency"
+            )
+        if (
+            launcher_mode(args) == "immutable"
+            and args.max_num_seqs is not None
+            and args.max_num_seqs not in {1, 4}
+        ):
+            raise RunnerError(
+                "immutable launchers only provide max-num-seqs 1 or 4; use "
+                "--launcher-mode runtime-factory for another engine width"
+            )
         if not args.exploratory and (
             set(args.context) != set(DEFAULT_CONTEXTS)
             or set(args.batch) != set(DEFAULT_BATCHES)
@@ -4420,7 +4803,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             and args.num_warmups < max(args.batch)
         ):
             raise RunnerError(
-                "formal performance qualification requires a full-width warmup"
+                "formal performance qualification requires a full offered-client-"
+                "width warmup"
             )
         if (
             args.startup_attempts < 1

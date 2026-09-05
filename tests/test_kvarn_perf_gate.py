@@ -1186,6 +1186,12 @@ def _result(
     request_stable_projection_rows: str = "1",
     request_stable_rmsnorm: str = "1",
     metadata_lifecycle: str = "reference",
+    configured_max_num_seqs: int = 4,
+    startup_maximum_concurrency: float = 4.0,
+    scheduler_peak_running: int = 4,
+    scheduler_peak_waiting: int = 0,
+    scheduler_peak_kv_cache_usage_perc: float = 0.5,
+    scheduler_preemptions_total_delta: int = 0,
 ) -> Path:
     completed = 8
     context = 4096
@@ -1224,10 +1230,84 @@ def _result(
         ),
         encoding="utf-8",
     )
+    startup_capacity = path.with_name(f"{path.stem}-startup-capacity.json")
+    startup_document = {
+        "schema_version": 1,
+        "source": "vllm-engine-startup-log",
+        "kv_cache_tokens": int(startup_maximum_concurrency * 65536),
+        "request_tokens": 65536,
+        "maximum_concurrency": startup_maximum_concurrency,
+        "log_marker": (
+            "GPU KV cache size: capacity tokens, Maximum concurrency for "
+            f"65,536 tokens per request: {startup_maximum_concurrency:.2f}x"
+        ),
+        "offered_concurrency": 4,
+        "configured_max_num_seqs": configured_max_num_seqs,
+        "capacity_covers_offered": startup_maximum_concurrency >= 4,
+    }
+    startup_capacity.write_text(json.dumps(startup_document), encoding="utf-8")
+
+    def scheduler_document(*, warmup_sample: bool) -> dict[str, object]:
+        suffix = 0 if warmup_sample else scheduler_preemptions_total_delta
+        return {
+            "schema_version": 2,
+            "sampling_scope": "full-client-process-lifetime",
+            "metric": "vllm:num_requests_running",
+            "metrics": [
+                "vllm:num_requests_running",
+                "vllm:num_requests_waiting",
+                "vllm:kv_cache_usage_perc",
+                "vllm:num_preemptions_total",
+            ],
+            "offered_concurrency": 4,
+            "configured_max_num_seqs": configured_max_num_seqs,
+            "required_running": 4,
+            "peak_running": scheduler_peak_running,
+            "peak_waiting": scheduler_peak_waiting,
+            "peak_kv_cache_usage_perc": scheduler_peak_kv_cache_usage_perc,
+            "preemptions_total_start": 0,
+            "preemptions_total_end": suffix,
+            "preemptions_total_delta": suffix,
+            "required_overlap_observed": scheduler_peak_running >= 4,
+            "sample_count": 2,
+            "sampling_started_at": "2026-09-05T00:00:00Z",
+            "sampling_finished_at": "2026-09-05T00:00:01Z",
+            "capture_complete": True,
+            "samples": [
+                {
+                    "at": "2026-09-05T00:00:00Z",
+                    "elapsed_seconds": 0.0,
+                    "running": 0,
+                    "waiting": 0,
+                    "kv_cache_usage_perc": 0.0,
+                    "preemptions_total": 0,
+                },
+                {
+                    "at": "2026-09-05T00:00:01Z",
+                    "elapsed_seconds": 1.0,
+                    "running": scheduler_peak_running,
+                    "waiting": scheduler_peak_waiting,
+                    "kv_cache_usage_perc": scheduler_peak_kv_cache_usage_perc,
+                    "preemptions_total": suffix,
+                },
+            ],
+            "errors": [],
+        }
+
+    scheduler_metrics = path.with_name(f"{path.stem}-scheduler-metrics.json")
+    measured_scheduler = scheduler_document(warmup_sample=False)
+    scheduler_metrics.write_text(json.dumps(measured_scheduler), encoding="utf-8")
+    warmup_scheduler_metrics = path.with_name(
+        f"{path.stem}-warmup-scheduler-metrics.json"
+    )
+    warmup_scheduler = scheduler_document(warmup_sample=True)
+    warmup_scheduler_metrics.write_text(
+        json.dumps(warmup_scheduler), encoding="utf-8"
+    )
     warmup.write_text(
         json.dumps(
             {
-                "schema_version": 1,
+                "schema_version": 2,
                 "status": "passed",
                 "arm": arm,
                 "run_uuid": f"run-{run_order}",
@@ -1260,6 +1340,27 @@ def _result(
                 "completed": 4,
                 "failed": 0,
                 "max_concurrent_requests": 4,
+                "concurrency_evidence": {
+                    "offered_client_concurrency": 4,
+                    "observed_client_concurrency": 4,
+                    "configured_max_num_seqs": configured_max_num_seqs,
+                    "scheduler_peak_running": scheduler_peak_running,
+                    "client_concurrency_is_residency_proof": False,
+                    "residency_semantics": (
+                        "client in-flight concurrency is not simultaneous KV residency"
+                    ),
+                },
+                "scheduler_metrics_path": str(
+                    warmup_scheduler_metrics.resolve()
+                ),
+                "scheduler_metrics_sha256": hashlib.sha256(
+                    warmup_scheduler_metrics.read_bytes()
+                ).hexdigest(),
+                "startup_capacity_path": str(startup_capacity.resolve()),
+                "startup_capacity_sha256": hashlib.sha256(
+                    startup_capacity.read_bytes()
+                ).hexdigest(),
+                "startup_capacity": startup_document,
                 "process_package": "/nix/store/package",
                 "process_closure_sha256": "a" * 64,
                 "candidate_closure_sha256": "b" * 64,
@@ -1488,12 +1589,37 @@ def _result(
         "kvarn_workload_id": "fixed-b4",
         "kvarn_seed": "17",
         "kvarn_max_model_len": "65536",
-        "kvarn_max_num_seqs": "4",
+        "kvarn_offered_concurrency": "4",
+        "kvarn_configured_max_num_seqs": str(configured_max_num_seqs),
+        "kvarn_max_num_seqs": str(configured_max_num_seqs),
         "kvarn_enforce_eager": "1",
         "kvarn_prefix_caching": "0",
         "kvarn_mtp": "0",
         "kvarn_xpu_graph": "0",
-        "kvarn_scheduler_peak_running": "4",
+        "kvarn_scheduler_peak_running": str(scheduler_peak_running),
+        "kvarn_scheduler_peak_waiting": str(scheduler_peak_waiting),
+        "kvarn_scheduler_peak_kv_cache_usage_perc": str(
+            scheduler_peak_kv_cache_usage_perc
+        ),
+        "kvarn_scheduler_preemptions_total_delta": str(
+            scheduler_preemptions_total_delta
+        ),
+        "kvarn_scheduler_metrics_path": str(scheduler_metrics.resolve()),
+        "kvarn_scheduler_metrics_sha256": hashlib.sha256(
+            scheduler_metrics.read_bytes()
+        ).hexdigest(),
+        "kvarn_startup_capacity_path": str(startup_capacity.resolve()),
+        "kvarn_startup_capacity_sha256": hashlib.sha256(
+            startup_capacity.read_bytes()
+        ).hexdigest(),
+        "kvarn_startup_kv_cache_tokens": str(
+            startup_document["kv_cache_tokens"]
+        ),
+        "kvarn_startup_capacity_request_tokens": "65536",
+        "kvarn_startup_maximum_concurrency": str(startup_maximum_concurrency),
+        "kvarn_startup_capacity_covers_offered": (
+            startup_maximum_concurrency >= 4
+        ),
         "kvarn_correctness_sha256": correctness_sha256,
         "kvarn_process_package": "/nix/store/package",
         "kvarn_process_closure_sha256": "a" * 64,
@@ -1761,6 +1887,12 @@ def _arms(
     request_stable_projection_rows: str = "1",
     request_stable_rmsnorm: str = "1",
     metadata_lifecycle: str = "reference",
+    reference_startup_maximum_concurrency: float = 4.0,
+    candidate_startup_maximum_concurrency: float = 4.0,
+    reference_scheduler_peak_running: int = 4,
+    candidate_scheduler_peak_running: int = 4,
+    reference_scheduler_peak_waiting: int = 0,
+    candidate_scheduler_peak_waiting: int = 0,
 ) -> tuple[list[Path], list[Path], list[Path], list[Path], Path]:
     selected_splits = (
         dict(gate_module.B70_Q6_SPLITS) if native_splits is None else native_splits
@@ -1842,6 +1974,11 @@ def _arms(
             request_stable_projection_rows=request_stable_projection_rows,
             request_stable_rmsnorm=request_stable_rmsnorm,
             metadata_lifecycle=metadata_lifecycle,
+            startup_maximum_concurrency=(
+                reference_startup_maximum_concurrency
+            ),
+            scheduler_peak_running=reference_scheduler_peak_running,
+            scheduler_peak_waiting=reference_scheduler_peak_waiting,
         )
         for index, order in enumerate(reference_orders)
     ]
@@ -1875,6 +2012,11 @@ def _arms(
             request_stable_projection_rows=request_stable_projection_rows,
             request_stable_rmsnorm=request_stable_rmsnorm,
             metadata_lifecycle=metadata_lifecycle,
+            startup_maximum_concurrency=(
+                candidate_startup_maximum_concurrency
+            ),
+            scheduler_peak_running=candidate_scheduler_peak_running,
+            scheduler_peak_waiting=candidate_scheduler_peak_waiting,
         )
         for index, order in enumerate(candidate_orders)
     ]
@@ -1913,6 +2055,52 @@ def test_match_gate_uses_repeat_medians_and_both_perf_axes(tmp_path: Path) -> No
     assert result["candidate_over_reference"][
         "median_request_decode_throughput"
     ] == pytest.approx(0.05 / 0.052)
+
+
+def test_requested_b4_gate_reports_capacity_limited_auto_without_relabeling(
+    tmp_path: Path,
+) -> None:
+    result = _compare(
+        _arms(
+            tmp_path,
+            reference_startup_maximum_concurrency=2.63,
+            candidate_startup_maximum_concurrency=4.0,
+            reference_scheduler_peak_running=2,
+            candidate_scheduler_peak_running=4,
+            reference_scheduler_peak_waiting=2,
+        )
+    )
+
+    assert result["status"] == "passed"
+    concurrency = result["service_concurrency"]
+    assert concurrency["gate_semantics"] == "requested-concurrency-service-outcome"
+    assert concurrency["offered_client_concurrency"] == 4
+    assert concurrency["configured_max_num_seqs"] == 4
+    assert concurrency["client_concurrency_is_residency_proof"] is False
+    assert set(concurrency["reference"]["startup_maximum_concurrency"]) == {2.63}
+    assert set(concurrency["reference"]["scheduler_peak_running"]) == {2}
+    assert set(concurrency["reference"]["scheduler_peak_waiting"]) == {2}
+    assert set(concurrency["candidate"]["scheduler_peak_running"]) == {4}
+
+
+def test_gate_rejects_incomplete_full_duration_scheduler_capture(
+    tmp_path: Path,
+) -> None:
+    arms = _arms(tmp_path)
+    result_path = arms[0][0]
+    result = json.loads(result_path.read_text(encoding="utf-8"))
+    scheduler_path = Path(result["kvarn_scheduler_metrics_path"])
+    scheduler = json.loads(scheduler_path.read_text(encoding="utf-8"))
+    scheduler["capture_complete"] = False
+    scheduler["errors"] = ["missed interval"]
+    scheduler_path.write_text(json.dumps(scheduler), encoding="utf-8")
+    result["kvarn_scheduler_metrics_sha256"] = hashlib.sha256(
+        scheduler_path.read_bytes()
+    ).hexdigest()
+    result_path.write_text(json.dumps(result), encoding="utf-8")
+
+    with pytest.raises(GateError, match="scheduler metrics are incomplete"):
+        _compare(arms)
 
 
 def test_match_gate_accepts_replay_qualified_request_stability_opt_out(
@@ -2856,7 +3044,7 @@ def test_gate_requires_hashed_b70_and_full_width_warmup_evidence(
     warmup.write_text(json.dumps(evidence), encoding="utf-8")
     result["kvarn_warmup_sha256"] = hashlib.sha256(warmup.read_bytes()).hexdigest()
     arms[1][0].write_text(json.dumps(result), encoding="utf-8")
-    with pytest.raises(GateError, match="not full-width"):
+    with pytest.raises(GateError, match="offered client concurrency"):
         _compare(arms)
 
 

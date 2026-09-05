@@ -566,14 +566,12 @@ def test_default_cli_is_the_matched_b70_factory_matrix() -> None:
             ]
         )
     with pytest.raises(SystemExit):
-        host.parse_args(
-            [*argv, "--factory-split-policy", "b70_wave_sweep"]
-        )
+        host.parse_args([*argv, "--factory-split-policy", "b70_wave_sweep"])
 
-    sinkhorn = host.parse_args(
-        [*argv, "--flush-writer", "sinkhorn_pack_xe2"]
-    )
-    assert sinkhorn.flush_writer == "sinkhorn_pack_xe2"
+    with pytest.raises(SystemExit, match="2"):
+        host.parse_args([*argv, "--flush-writer", "sinkhorn_pack_xe2"])
+    with pytest.raises(SystemExit, match="2"):
+        host.parse_args([*argv, "--variants", "q6_last_arrival_fused_reduce"])
 
 
 @pytest.mark.parametrize(

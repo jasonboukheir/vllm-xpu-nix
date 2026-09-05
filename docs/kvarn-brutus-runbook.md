@@ -12,6 +12,58 @@ the override target and `4d977ffe` explicitly disabled hybrid-model prefix
 caching. `4d977ffe` is therefore the minimum launcher revision for this
 runbook.
 
+## Beta release lane
+
+The release lane is intentionally narrower than the historical acceptance
+procedure below. Use it to qualify the first KVarN beta; keep the remaining
+sections as the reproducible full-matrix procedure for later stable promotion.
+
+Freeze the candidate before starting this lane:
+
+- compact K4V4/G128 cache layout;
+- native `q6_prefetch_record_cursor` (ID18) decode;
+- `b70_q6_id18_v1` adaptive splits (B1=32, B4=24);
+- eager, text-only, no MTP, no prefix caching, and no XPU graph capture.
+
+Retain, checksum, and cite the completed matched B70 measurements instead of
+rerunning a formal matrix:
+
+- `benchmark-results/kvarn/round8-s1-h-id18-20260905`: B1/B4 at 4K;
+- `benchmark-results/kvarn/round8-s1-h-id18-s32-65k-b1`: B1 at 65K.
+
+The beta release gate is exactly:
+
+1. Rebase vLLM and vLLM XPU kernels onto their latest audited upstream commits.
+   Re-evaluate every downstream patch, remove upstream-equivalent changes, and
+   leave one signed KVarN commit in each source repository.
+2. Build all native sources once through the pinned Nix expression. Record the
+   source revisions, Nix closure, driver, hardware, model revision, cache
+   layout, reader variant, and split policy.
+3. Run the native correctness suite against that build: ragged B1/B4 batches,
+   page/split boundaries, FP16 tails, and long-context address arithmetic.
+4. Run one service-level generation/correctness case near the model's 262K
+   limit. This is the long-context release gate; separate 16K and 32K service
+   cells are not required for the beta.
+5. On Brutus, start KVarN with only
+   `kvCacheDtype = "kvarn_k4v4_g128_compact";` and verify startup plus
+   generation without inherited `KVARN_*` variables.
+6. Change only `kvCacheDtype` back to `auto`, restart, and verify generation.
+7. Verify MTP, XPU graph capture, and multimodal/vision configurations each
+   fail at startup with an explicit unsupported-beta diagnostic. Prefix
+   caching remains unsupported and must not be silently enabled.
+8. Cut the coordinated vLLM, kernels, and packaging release refs, build the
+   final Nix release closure, deploy that exact closure, and perform one live
+   KVarN smoke test.
+9. Attach the exact revisions, artifact paths/checksums, results, known
+   limitations, and rollback instructions to the project issue with `tea`.
+
+Do not block this beta on eight-repeat ABBA at every context, standalone 16K or
+32K performance runs, resident B4/65K (the `auto` control does not fit), new
+profiling infrastructure, new kernel variants, compact-prefill optimization,
+or the discarded `sinkhorn_pack_xe2` experiment. The honest beta statement is:
+native decode parity is demonstrated; aggregate B1/65K is about 96% because
+KVarN prefill is slower; correctness remains mandatory through 262K.
+
 Those launchers force K4V4 compact, 65,536 context, B1 or B4, eager, text-only,
 no MTP, no prefix caching, no XPU graph, and `KVARN_NATIVE_XPU=0`. The first
 service is the non-native B1 app. Native B1 is a later A/B only. Temperature
@@ -233,9 +285,9 @@ the warmed runtime cache before classifying a capacity failure.
 
 ## Persistent paired logits
 
-Run these offline with no service holding the GPU. Use vLLM
-`tools/kvarn_forced_decode.py` and `tools/kvarn_compare_logits.py` from a commit
-containing `0d3db399a0`. Each pair must use identical prompt and forced-token
+Run these offline with no service holding the GPU. Use the packaging-owned
+`scripts/kvarn_forced_decode.py` and `scripts/kvarn_compare_logits.py`. Each
+pair must use identical prompt and forced-token
 JSON. Generate the forced sequence once with BF16 KV, retain the input files,
 and never regenerate them between reference and candidate.
 
@@ -357,7 +409,7 @@ compare_logits() {
   local output=$3
   local stdout=$4
 
-  "$candidate_env/bin/python" "$vllm_repo/tools/kvarn_compare_logits.py" \
+  "$candidate_env/bin/python" "$packaging_repo/scripts/kvarn_compare_logits.py" \
     --reference "$reference" \
     --candidate "$candidate" \
     --context-boundary 128 \
@@ -380,7 +432,7 @@ for case_name in \
   cp "$logits_root/kvarn-engine.json" "$case_dir/kvarn-engine.json"
 
   env -u VLLM_XPU_ENABLE_XPU_GRAPH KVARN_NATIVE_XPU=0 \
-    "$candidate_env/bin/python" "$vllm_repo/tools/kvarn_forced_decode.py" \
+    "$candidate_env/bin/python" "$packaging_repo/scripts/kvarn_forced_decode.py" \
     --model "$model" \
     --prompt-token-ids "$case_dir/prompt-token-ids.json" \
     --forced-token-ids "$case_dir/forced-token-ids.json" \
@@ -389,7 +441,7 @@ for case_name in \
     2>&1 | tee "$case_dir/bf16.log"
 
   env -u VLLM_XPU_ENABLE_XPU_GRAPH KVARN_NATIVE_XPU=0 \
-    "$candidate_env/bin/python" "$vllm_repo/tools/kvarn_forced_decode.py" \
+    "$candidate_env/bin/python" "$packaging_repo/scripts/kvarn_forced_decode.py" \
     --model "$model" \
     --prompt-token-ids "$case_dir/prompt-token-ids.json" \
     --forced-token-ids "$case_dir/forced-token-ids.json" \
@@ -419,7 +471,7 @@ with open(sys.argv[1], "w", encoding="utf-8") as stream:
     json.dump(sys.argv[2:], stream, indent=2)
     stream.write("\n")
 ' "$case_dir/argv.json" \
-    "$candidate_env/bin/python" "$vllm_repo/tools/kvarn_forced_decode.py" \
+    "$candidate_env/bin/python" "$packaging_repo/scripts/kvarn_forced_decode.py" \
     --model "$model" \
     --prompt-token-ids "$case_dir/prompt-token-ids.json" \
     --forced-token-ids "$case_dir/forced-token-ids.json" \
@@ -466,7 +518,7 @@ for case_name in \
   reasoning-65023; do
   case_dir="$logits_root/$case_name"
   env -u VLLM_XPU_ENABLE_XPU_GRAPH KVARN_NATIVE_XPU=1 \
-    "$candidate_env/bin/python" "$vllm_repo/tools/kvarn_forced_decode.py" \
+    "$candidate_env/bin/python" "$packaging_repo/scripts/kvarn_forced_decode.py" \
     --model "$model" \
     --prompt-token-ids "$case_dir/prompt-token-ids.json" \
     --forced-token-ids "$case_dir/forced-token-ids.json" \
@@ -496,7 +548,7 @@ with open(sys.argv[1], "w", encoding="utf-8") as stream:
     json.dump(sys.argv[2:], stream, indent=2)
     stream.write("\n")
 ' "$case_dir/argv-native.json" \
-    "$candidate_env/bin/python" "$vllm_repo/tools/kvarn_forced_decode.py" \
+    "$candidate_env/bin/python" "$packaging_repo/scripts/kvarn_forced_decode.py" \
     --model "$model" \
     --prompt-token-ids "$case_dir/prompt-token-ids.json" \
     --forced-token-ids "$case_dir/forced-token-ids.json" \
@@ -927,15 +979,10 @@ Do not promote Kvarn from a kernel-only or logit-only pass. The uncached,
 non-native B1 restart and B4 service gates are the first service acceptance;
 native results remain a separate A/B until they meet the same gates.
 
-Before cutting a release, repeat the terminal qualification against the
-rebased candidate and its exact Nix closure. The ordinary deployed interface
-must remain dtype-only: switching `kvCacheDtype` between `auto` and
-`kvarn_k4v4_g128_compact` must work without any `KVARN_*` variables. Confirm
-that Kvarn startup fails clearly, rather than silently weakening its contract,
-when MTP, XPU graph capture, prefix caching, or multimodal/vision serving is
-enabled. Preserve
-those unsupported-combination checks as release gates even when experimental
-factory selectors are absent from the deployed configuration. Do not merge an
-isolated release draft until dtype-only activation, auto rollback, the full
-correctness suite through 262K, and matched B70 service performance all pass
-from the final rebased source and configuration revisions.
+For this beta, use the release lane at the top of this document. A later stable
+promotion must repeat the full terminal qualification against its rebased
+candidate and exact Nix closure. In both lanes, the ordinary deployed interface
+remains dtype-only: switching `kvCacheDtype` between `auto` and
+`kvarn_k4v4_g128_compact` must work without any `KVARN_*` variables, and an
+unsupported configuration must fail clearly rather than silently weakening
+the cache contract.

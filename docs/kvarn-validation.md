@@ -52,7 +52,7 @@ milestones. Do not add them to a failed first-profile run.
 
 4. **Persistent accumulated decode**
 
-   Use `tools/kvarn_forced_decode.py` from the vLLM checkout, not a succession
+   Use `scripts/kvarn_forced_decode.py` from this packaging checkout, not a succession
    of fresh endpoint requests. BF16 and Kvarn runs must use identical prompt and
    forced token IDs, model/tokenizer revision, and engine arguments. Cover
    natural dialogue, code, math/reasoning, and adversarial repetition near the

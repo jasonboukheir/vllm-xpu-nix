@@ -535,6 +535,30 @@ def test_candidate_profile_cli_rejects_fixed_round2_launcher_contract(
                 str(tmp_path / "fixed"),
             ]
         )
+    with pytest.raises(SystemExit):
+        profile.parse_args(
+            [
+                *common,
+                "--native-kernel-variant",
+                "q6_last_arrival_fused_reduce",
+                "--native-split-policy",
+                "b70_q6",
+                "--output-dir",
+                str(tmp_path / "retired-id22"),
+            ]
+        )
+    with pytest.raises(SystemExit):
+        profile.parse_args(
+            [
+                *common,
+                "--flush-writer",
+                "sinkhorn_pack_xe2",
+                "--native-split-policy",
+                "b70_q6",
+                "--output-dir",
+                str(tmp_path / "retired-sinkhorn"),
+            ]
+        )
 
     args = profile.parse_args(
         [
@@ -571,7 +595,7 @@ def test_candidate_profile_cli_rejects_fixed_round2_launcher_contract(
                     str(tmp_path / f"runtime-{variant}-{split_selector}"),
                 ]
             )
-            assert perf.NATIVE_KERNEL_VARIANTS[variant] in {20, 21, 22}
+            assert perf.NATIVE_KERNEL_VARIANTS[variant] in {20, 21}
             assert variant in perf.B70_Q6_KERNEL_VARIANTS
             assert variant not in perf.IMMUTABLE_QUALIFIED_KERNEL_VARIANTS
             assert runtime.native_kernel_variant == variant

@@ -2,8 +2,10 @@
 
 KVarN is an opt-in beta for the Brutus Intel Arc Pro B70 service. It provides a
 3.74x smaller raw full-attention cache page and has remained coherent at long
-context where the previously tested FP8 KV cache did not. It is not yet a
-performance replacement for the native `auto` KV cache.
+context where the previously tested FP8 KV cache did not. Native decode parity
+with `auto` is demonstrated in the retained exploratory measurements. This is
+not a claim of formal statistical parity: KVarN prefill remains slower, so the
+retained B1/65K aggregate result is about 96% of `auto`.
 
 ## Enable it
 
@@ -19,6 +21,11 @@ narrow problem contract is not satisfied. The native fast path currently
 targets Hq24/Hkv4/D256, K4V4/G128, eager execution, batch sizes through 12, and
 no sliding-window attention. `KVARN_NATIVE_XPU=0` remains a diagnostic rollback
 override; it is not part of the normal service configuration.
+
+The beta profile selects `q6_prefetch_record_cursor` (ID18) with the
+`b70_q6_id18_v1` adaptive split policy. The policy uses 32 splits for B1 and 24
+for B4. Cache layout is an engine-lifetime ABI; do not change the writer,
+reader, or layout selectors after an engine has allocated its cache.
 
 The beta keeps the most recent 16 non-sink KVarN blocks in fp16 while building
 later prompt chunks. Older blocks continue to flush to K4V4, so retained memory
@@ -46,8 +53,11 @@ the entire prompt.
 
 ## Known limitations
 
-- `auto` remains faster. The latest exploratory B4/4K result was about 74% of
-  auto output throughput; it was not the sealed ABBA parity gate.
+- The retained two-repeat exploratory 4K comparison measured KVarN at 99.0% of
+  `auto` output throughput for B1 and 97.8% for B4. Request decode throughput
+  was 99.1% and 98.1%, respectively. At B1/65K, decode was 99.9%, while slower
+  prefill reduced aggregate output throughput to 95.9%. These are matched B70
+  measurements, not the sealed eight-repeat ABBA parity gate.
 - MTP, prefix caching, XPU graphs, multimodal serving, and production graph
   capture are outside the beta contract.
 - Native decode is specialized. Unsupported model shapes use the slower
@@ -64,3 +74,8 @@ kvCacheDtype = "auto";
 
 Continue performance work with [the native XPU gates](kvarn-native-xpu-gates.md)
 and the durable artifacts under `benchmark-results/kvarn/`.
+
+The retained beta performance evidence is:
+
+- `benchmark-results/kvarn/round8-s1-h-id18-20260905`
+- `benchmark-results/kvarn/round8-s1-h-id18-s32-65k-b1`

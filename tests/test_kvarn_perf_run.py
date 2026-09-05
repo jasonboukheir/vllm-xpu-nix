@@ -373,6 +373,28 @@ def test_correctness_is_optional_only_for_exploratory_cli(tmp_path: Path) -> Non
                 str(tmp_path / "reserved-page128"),
             ]
         )
+    with pytest.raises(SystemExit):
+        runner.parse_args(
+            [
+                *common,
+                "--exploratory",
+                "--native-kernel-variant",
+                "q6_last_arrival_fused_reduce",
+                "--output-dir",
+                str(tmp_path / "retired-id22"),
+            ]
+        )
+    with pytest.raises(SystemExit):
+        runner.parse_args(
+            [
+                *common,
+                "--exploratory",
+                "--flush-writer",
+                "sinkhorn_pack_xe2",
+                "--output-dir",
+                str(tmp_path / "retired-sinkhorn"),
+            ]
+        )
 
 
 def test_exploratory_plan_session_has_no_formal_claims(
@@ -583,7 +605,6 @@ def test_perf_launcher_name_binds_each_factory_variant(
     [
         ("q6_page_metadata_cursor", 20),
         ("q6_paired_nibble_half2", 21),
-        ("q6_last_arrival_fused_reduce", 22),
     ],
 )
 def test_factory_only_variants_use_only_the_runtime_factory_launcher(
@@ -1063,9 +1084,7 @@ vllm:num_preemptions_total{engine="0"} 3
             "preemptions_total": 3,
         },
     ]
-    summary = runner.scheduler_summary(
-        samples, [], 4, configured_max_num_seqs=4
-    )
+    summary = runner.scheduler_summary(samples, [], 4, configured_max_num_seqs=4)
     assert summary["sampling_scope"] == "full-client-process-lifetime"
     assert summary["peak_running"] == 2
     assert summary["peak_waiting"] == 2
@@ -1366,7 +1385,7 @@ def test_runtime_factory_environment_carries_exact_per_process_axes(
     args.request_stable_projection_rows = False
     args.request_stable_rmsnorm = True
     args.flush_index_materialization = "shared"
-    args.flush_writer = "sinkhorn_pack_xe2"
+    args.flush_writer = "native_xe2"
     args.prefill_store = "hadamard_scatter"
     args.native_frontend = "qkv_scatter_inline"
     args.forward_pool_ensure = "fused_qkv_proof"
@@ -1384,7 +1403,7 @@ def test_runtime_factory_environment_carries_exact_per_process_axes(
         "KVARN_FACTORY_DECODE_FP16_LOW_WATER_BLOCKS": "12",
         "KVARN_FACTORY_DECODE_FP16_WINDOW_BLOCKS": "20",
         "KVARN_FACTORY_FLUSH_INDEX_MATERIALIZATION": "shared",
-        "KVARN_FACTORY_FLUSH_WRITER": "sinkhorn_pack_xe2",
+        "KVARN_FACTORY_FLUSH_WRITER": "native_xe2",
         "KVARN_FACTORY_FORWARD_POOL_ENSURE": "fused_qkv_proof",
         "KVARN_FACTORY_KERNEL_VARIANT": "q6_next_page_prefetch",
         "KVARN_FACTORY_KV_CACHE_DTYPE": runner.COMPACT_DTYPE,
@@ -1407,7 +1426,7 @@ def test_runtime_factory_environment_carries_exact_per_process_axes(
     )
     assert "KVARN_FORWARD_POOL_ENSURE" not in candidate_environment
     assert candidate_environment["KVARN_FACTORY_QLEN1_INLINE_PLAN"] == "trusted_native"
-    assert candidate_environment["KVARN_FACTORY_FLUSH_WRITER"] == "sinkhorn_pack_xe2"
+    assert candidate_environment["KVARN_FACTORY_FLUSH_WRITER"] == "native_xe2"
     assert candidate_environment["KVARN_FACTORY_PREFILL_STORE"] == "hadamard_scatter"
     assert runner.runtime_factory_axes_for_run(reference, args) == {
         "KVARN_FACTORY_CACHE_LAYOUT": "natural",
@@ -1503,11 +1522,11 @@ def test_id18_policy_runner_selects_b4s24_without_split_override(
     assert loaded[-1]["native_scratch_max_splits"] == 32
 
 
-def test_round8_host_axes_combine_but_auto_stays_reference(tmp_path: Path) -> None:
+def test_beta_host_axes_combine_but_auto_stays_reference(tmp_path: Path) -> None:
     args = _args(tmp_path)
     args.launcher_mode = "runtime-factory"
     args.native_layout = "xe2_dpas"
-    args.native_kernel_variant = runner.LAST_ARRIVAL_KERNEL_VARIANT
+    args.native_kernel_variant = "q6_prefetch_record_cursor"
     args.native_split_policy = "fixed"
     args.native_splits = {4: 24}
     args.native_frontend = "qkv_scatter_inline_current_stream"
@@ -1518,7 +1537,7 @@ def test_round8_host_axes_combine_but_auto_stays_reference(tmp_path: Path) -> No
 
     candidate_axes = runner.runtime_factory_axes_for_run(candidate, args)
     assert candidate_axes["KVARN_FACTORY_KERNEL_VARIANT"] == (
-        runner.LAST_ARRIVAL_KERNEL_VARIANT
+        "q6_prefetch_record_cursor"
     )
     assert candidate_axes["KVARN_FACTORY_NATIVE_XPU_FRONTEND"] == (
         "qkv_scatter_inline_current_stream"
@@ -1986,66 +2005,6 @@ def test_native_log_attests_optimized_qlen1_inline_plan(
             native=True,
             expected_frontend="qkv_scatter_inline",
             expected_qlen1_inline_plan=plan,
-        )
-
-
-def test_native_log_requires_id22_runtime_activation(tmp_path: Path) -> None:
-    engine_log = tmp_path / "engine.log"
-    marker = runner.kvarn_factory_marker(
-        cache_layout="xe2_dpas",
-        kernel_variant=runner.LAST_ARRIVAL_KERNEL_VARIANT,
-        max_decode_splits=24,
-        split_policy="fixed",
-    )
-    base = (
-        "INFO config: device_config=xpu\n"
-        "INFO Actual usage is 17.54 GiB for consumed memory. "
-        "Current kv cache memory in use is 10.92 GiB.\n"
-        f"INFO {runner.NATIVE_DISPATCH} (direct bf16 output=True)\n"
-        f"INFO {marker}\n"
-    )
-    engine_log.write_text(
-        base + f"INFO {runner.LAST_ARRIVAL_ACTIVE_MARKER}\n",
-        encoding="utf-8",
-    )
-    scan = runner.validate_engine_log(
-        engine_log,
-        native=True,
-        expected_layout="xe2_dpas",
-        expected_kernel_variant=runner.LAST_ARRIVAL_KERNEL_VARIANT,
-        expected_max_splits=24,
-        expected_split_policy="fixed",
-        expected_frontend="reference",
-    )
-    assert scan["native_last_arrival_active_verified"] is True
-
-    engine_log.write_text(
-        base
-        + f"INFO {runner.LAST_ARRIVAL_ACTIVE_MARKER}\n"
-        + f"INFO {runner.LAST_ARRIVAL_DOWNGRADE_MARKER} reasons=counter-state\n",
-        encoding="utf-8",
-    )
-    with pytest.raises(RunnerError, match="ID22.*downgrade"):
-        runner.validate_engine_log(
-            engine_log,
-            native=True,
-            expected_layout="xe2_dpas",
-            expected_kernel_variant=runner.LAST_ARRIVAL_KERNEL_VARIANT,
-            expected_max_splits=24,
-            expected_split_policy="fixed",
-            expected_frontend="reference",
-        )
-
-    engine_log.write_text(base, encoding="utf-8")
-    with pytest.raises(RunnerError, match="selected ID22 fused reducer"):
-        runner.validate_engine_log(
-            engine_log,
-            native=True,
-            expected_layout="xe2_dpas",
-            expected_kernel_variant=runner.LAST_ARRIVAL_KERNEL_VARIANT,
-            expected_max_splits=24,
-            expected_split_policy="fixed",
-            expected_frontend="reference",
         )
 
 

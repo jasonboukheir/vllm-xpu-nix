@@ -35,6 +35,9 @@ FALLBACK_PATTERN = re.compile(
 COMPACT_DTYPE = "kvarn_k4v4_g128_compact"
 NATIVE_LAYOUTS = ("natural", "xe2_dpas")
 NATIVE_LAYOUT_ENV = {"natural": "0", "xe2_dpas": "1"}
+# Historical evidence vocabulary. The gate must continue to validate retained
+# experimental artifacts, including variants that release launchers no longer
+# expose. Never import these values to construct a live service command.
 NATIVE_KERNEL_VARIANTS = {
     "baseline": 0,
     "qk_i8u4": 1,
@@ -109,9 +112,7 @@ QLEN1_INLINE_PLAN_ACTIVE_MARKERS = {
     "bound_native_v2": "[KVARN_BOUND_QLEN1_INLINE] active=bound_native_v2;",
 }
 LAST_ARRIVAL_KERNEL_VARIANT = "q6_last_arrival_fused_reduce"
-LAST_ARRIVAL_ACTIVE_MARKER = (
-    "[KVARN_FACTORY] ID22 last-arrival fused reduction active;"
-)
+LAST_ARRIVAL_ACTIVE_MARKER = "[KVARN_FACTORY] ID22 last-arrival fused reduction active;"
 LAST_ARRIVAL_DOWNGRADE_MARKER = (
     "[KVARN_FACTORY] ID22 last-arrival fused reduction downgraded to ID18;"
 )
@@ -411,9 +412,7 @@ def _correctness_phase_spec(
         else None
     )
     nominal_splits = (
-        split_policy.nominal_splits_by_batch(
-            selected_policy, selected_splits or None
-        )
+        split_policy.nominal_splits_by_batch(selected_policy, selected_splits or None)
         if spec["native"]
         else {str(spec["batch"]): 1}
     )
@@ -722,9 +721,7 @@ def validate_factory_qualification(
         and native_split_policy != "b70_q6"
     ):
         if native_splits:
-            raise GateError(
-                f"{path}: named policy must not use a caller split map"
-            )
+            raise GateError(f"{path}: named policy must not use a caller split map")
     elif set(native_splits) != {1, 4}:
         raise GateError(f"{path}: selected factory split map must cover B1 and B4")
     try:
@@ -1311,16 +1308,14 @@ def _validate_correctness_phase(
         expected_spec["native"] and effective_frontend in FUSED_QKV_FRONTEND_VARIANTS
     )
     expected_frontend_inline_active = (
-        expected_spec["native"]
-        and effective_frontend in INLINE_QKV_FRONTEND_VARIANTS
+        expected_spec["native"] and effective_frontend in INLINE_QKV_FRONTEND_VARIANTS
     )
     expected_current_stream_active = (
         expected_spec["native"]
         and effective_frontend == "qkv_scatter_inline_current_stream"
     )
     expected_last_arrival_active = (
-        expected_spec["native"]
-        and expected_kernel == LAST_ARRIVAL_KERNEL_VARIANT
+        expected_spec["native"] and expected_kernel == LAST_ARRIVAL_KERNEL_VARIANT
     )
     expected_forward_pool_marker = FORWARD_POOL_ENSURE_ACTIVE_MARKERS.get(
         effective_forward_pool_ensure
@@ -1557,9 +1552,7 @@ def _validate_correctness_phase(
         raise GateError(f"{owner}: {phase_name} inline frontend runtime proof differs")
     current_stream_active = NATIVE_FRONTEND_CURRENT_STREAM_OP_MARKER in log_text
     if current_stream_active != expected_current_stream_active:
-        raise GateError(
-            f"{owner}: {phase_name} current-stream frontend proof differs"
-        )
+        raise GateError(f"{owner}: {phase_name} current-stream frontend proof differs")
     forward_pool_ensure_active = bool(
         expected_forward_pool_marker and expected_forward_pool_marker in log_text
     )
@@ -1581,8 +1574,7 @@ def _validate_correctness_phase(
     if qlen1_inline_plan_selected is not expected_spec["native"]:
         raise GateError(f"{owner}: {phase_name} qlen1 plan selection proof differs")
     qlen1_inline_plan_active = bool(
-        expected_qlen1_active_marker
-        and expected_qlen1_active_marker in log_text
+        expected_qlen1_active_marker and expected_qlen1_active_marker in log_text
     )
     if qlen1_inline_plan_active != expected_qlen1_inline_plan_active:
         raise GateError(f"{owner}: {phase_name} qlen1 plan runtime proof differs")
@@ -2302,9 +2294,7 @@ def _validate_scheduler_metrics(
     expected = {
         "peak_running": max(item["running"] for item in parsed),
         "peak_waiting": max(item["waiting"] for item in parsed),
-        "peak_kv_cache_usage_perc": max(
-            item["kv_cache_usage_perc"] for item in parsed
-        ),
+        "peak_kv_cache_usage_perc": max(item["kv_cache_usage_perc"] for item in parsed),
         "preemptions_total_start": parsed[0]["preemptions_total"],
         "preemptions_total_end": parsed[-1]["preemptions_total"],
         "preemptions_total_delta": (
@@ -2474,8 +2464,7 @@ def _validate_warmup(
         request_tokens=max_model_len,
     )
     if (
-        concurrency_evidence.get("scheduler_peak_running")
-        != scheduler["peak_running"]
+        concurrency_evidence.get("scheduler_peak_running") != scheduler["peak_running"]
         or document.get("startup_capacity") != startup_capacity
     ):
         raise GateError(f"{owner}: warmup capacity summary differs from artifacts")
@@ -2796,9 +2785,7 @@ def _load_run(path: Path) -> Run:
         ),
         "kvarn_qlen1_inline_plan_active_verified": qlen1_inline_plan_active,
         "kvarn_qlen1_inline_plan_active_log_marker": (
-            qlen1_active_marker
-            if qlen1_inline_plan_active
-            else "not_applicable"
+            qlen1_active_marker if qlen1_inline_plan_active else "not_applicable"
         ),
         "kvarn_decode_flush_batch_active_verified": decode_flush_batch_active,
         "kvarn_decode_flush_batch_execution_required": False,
@@ -2824,9 +2811,7 @@ def _load_run(path: Path) -> Run:
     )
     try:
         offered_concurrency = int(provenance["kvarn_offered_concurrency"])
-        configured_max_num_seqs = int(
-            provenance["kvarn_configured_max_num_seqs"]
-        )
+        configured_max_num_seqs = int(provenance["kvarn_configured_max_num_seqs"])
         legacy_max_num_seqs = int(provenance["kvarn_max_num_seqs"])
     except ValueError as exc:
         raise GateError(f"{path}: concurrency provenance must be integral") from exc
@@ -2849,9 +2834,7 @@ def _load_run(path: Path) -> Run:
         configured_max_num_seqs=configured_max_num_seqs,
     )
     startup_path = _required_text(document, "kvarn_startup_capacity_path", path)
-    startup_sha256 = _required_sha256(
-        document, "kvarn_startup_capacity_sha256", path
-    )
+    startup_sha256 = _required_sha256(document, "kvarn_startup_capacity_sha256", path)
     startup_capacity = _validate_startup_capacity(
         startup_path,
         startup_sha256,
@@ -2866,16 +2849,10 @@ def _load_run(path: Path) -> Run:
         "kvarn_scheduler_peak_kv_cache_usage_perc": scheduler[
             "peak_kv_cache_usage_perc"
         ],
-        "kvarn_scheduler_preemptions_total_delta": scheduler[
-            "preemptions_total_delta"
-        ],
+        "kvarn_scheduler_preemptions_total_delta": scheduler["preemptions_total_delta"],
         "kvarn_startup_kv_cache_tokens": startup_capacity["kv_cache_tokens"],
-        "kvarn_startup_capacity_request_tokens": startup_capacity[
-            "request_tokens"
-        ],
-        "kvarn_startup_maximum_concurrency": startup_capacity[
-            "maximum_concurrency"
-        ],
+        "kvarn_startup_capacity_request_tokens": startup_capacity["request_tokens"],
+        "kvarn_startup_maximum_concurrency": startup_capacity["maximum_concurrency"],
     }
     for name, expected in capacity_fields.items():
         try:
@@ -2885,9 +2862,10 @@ def _load_run(path: Path) -> Run:
         if not math.isclose(actual, float(expected)):
             raise GateError(f"{path}: {name} differs from its raw artifact")
         provenance[name] = _required_text(document, name, path)
-    if document.get("kvarn_startup_capacity_covers_offered") is not startup_capacity[
-        "capacity_covers_offered"
-    ]:
+    if (
+        document.get("kvarn_startup_capacity_covers_offered")
+        is not startup_capacity["capacity_covers_offered"]
+    ):
         raise GateError(f"{path}: startup capacity classification is inconsistent")
     provenance.update(
         kvarn_scheduler_metrics_path=str(Path(scheduler_path).resolve()),
@@ -3272,10 +3250,7 @@ def _load_correctness(path: Path) -> tuple[dict[str, Any], str]:
                 f"{path}: named split policy nominal map differs from its contract"
             )
         native_splits: dict[int, int] = (
-            {
-                int(batch): splits
-                for batch, splits in raw_native_splits.items()
-            }
+            {int(batch): splits for batch, splits in raw_native_splits.items()}
             if native_split_policy == "b70_q6"
             else {}
         )
@@ -3661,8 +3636,7 @@ def _validate_logs(
         if qlen1_inline_plan_selected is not expect_native:
             raise GateError(f"{path}: {arm} qlen1 plan selection proof differs")
         qlen1_inline_plan_active = bool(
-            expected_qlen1_active_marker
-            and expected_qlen1_active_marker in text
+            expected_qlen1_active_marker and expected_qlen1_active_marker in text
         )
         if qlen1_inline_plan_active != expected_qlen1_inline_plan_active:
             raise GateError(f"{path}: {arm} qlen1 plan runtime proof differs")
@@ -3881,9 +3855,7 @@ def compare(
     if concurrency not in {1, 4}:
         raise GateError("performance max_concurrency must be 1 or 4")
     try:
-        offered_concurrency = int(
-            first_ref.provenance["kvarn_offered_concurrency"]
-        )
+        offered_concurrency = int(first_ref.provenance["kvarn_offered_concurrency"])
         configured_max_num_seqs = int(
             first_ref.provenance["kvarn_configured_max_num_seqs"]
         )

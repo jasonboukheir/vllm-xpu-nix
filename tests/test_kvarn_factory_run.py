@@ -84,9 +84,8 @@ def test_named_factory_ids_are_complete_and_stable() -> None:
         "q6_prefetch_record_cursor": 18,
         "q6_page_metadata_cursor": 20,
         "q6_paired_nibble_half2": 21,
-        "q6_last_arrival_fused_reduce": 22,
     }
-    assert set(factory.VARIANTS_BY_ID) == (set(range(19)) - {5}) | {20, 21, 22}
+    assert set(factory.VARIANTS_BY_ID) == (set(range(19)) - {5}) | {20, 21}
     assert all(spec.dpas_layout for spec in factory.VARIANTS.values())
     assert all(spec.cache_layout == "xe2_dpas" for spec in factory.VARIANTS.values())
     assert all(
@@ -123,7 +122,6 @@ def test_named_factory_ids_are_complete_and_stable() -> None:
         "q6_prefetch_record_cursor",
         "q6_page_metadata_cursor",
         "q6_paired_nibble_half2",
-        "q6_last_arrival_fused_reduce",
     )
     assert factory.ALL_VARIANT_NAMES == tuple(factory.VARIANTS)
     assert factory.VARIANTS["q6_page_pair"].scheduling_variant == "paired_page_k128"
@@ -154,18 +152,7 @@ def test_named_factory_ids_are_complete_and_stable() -> None:
         "q6_page_metadata_cursor",
         "q6_paired_nibble_half2",
     ):
-        assert (
-            factory.VARIANTS[name].fusion_strategy
-            == "specialized_split_reduction"
-        )
-    assert (
-        factory.VARIANTS["q6_last_arrival_fused_reduce"].fusion_strategy
-        == "last_arrival_fused_reduction"
-    )
-    assert (
-        factory.VARIANTS["q6_last_arrival_fused_reduce"].scheduling_variant
-        == "tile64_next_page_current_half_v_prefetch_record_cursor"
-    )
+        assert factory.VARIANTS[name].fusion_strategy == "specialized_split_reduction"
     assert (
         factory.VARIANTS["q6_current_half_v_prefetch"].scheduling_variant
         == "tile64_next_page_current_half_v_prefetch"
@@ -182,12 +169,8 @@ def test_named_factory_ids_are_complete_and_stable() -> None:
         factory.VARIANTS["q6_page_metadata_cursor"].scheduling_variant
         == "tile64_next_page_current_half_v_prefetch_record_metadata_cursor"
     )
-    assert (
-        factory.VARIANTS["q6_paired_nibble_half2"].scheduling_variant
-        == (
-            "tile64_next_page_current_half_v_prefetch_record_cursor_"
-            "paired_nibble_half2"
-        )
+    assert factory.VARIANTS["q6_paired_nibble_half2"].scheduling_variant == (
+        "tile64_next_page_current_half_v_prefetch_record_cursor_paired_nibble_half2"
     )
 
 
@@ -219,7 +202,6 @@ def test_variant_parser_accepts_names_and_all_but_not_numeric_aliases() -> None:
         18,
         20,
         21,
-        22,
     ]
     with pytest.raises(factory.FactoryError, match="ID 5.*reserved"):
         factory.parse_variants("page128")
@@ -249,7 +231,6 @@ def test_focused_kill_suite_maps_every_variant_to_multisplit_and_262k() -> None:
         18: "q6-prefetch-record-cursor",
         20: "q6-page-metadata-cursor",
         21: "q6-paired-nibble-half2",
-        22: "test_id22_b4_long_ragged_repeated_calls_match_id18_bf16",
     }
     assert set(expected_node_ids) == set(factory.VARIANTS_BY_ID)
     assert set(factory.FOCUSED_XPU_MULTISPLIT_TESTS) == set(factory.VARIANTS_BY_ID)
@@ -258,13 +239,10 @@ def test_focused_kill_suite_maps_every_variant_to_multisplit_and_262k() -> None:
     for variant_id, node_id in expected_node_ids.items():
         assert factory.FOCUSED_XPU_MULTISPLIT_TESTS[variant_id] in selected
         assert factory.FOCUSED_XPU_262K_TESTS[variant_id] in selected
-        if variant_id == 22:
-            assert node_id in "\n".join(selected)
-        else:
-            assert (
-                "test_long_context_ragged_b4_matches_structured_oracle["
-                f"{node_id}]" in "\n".join(selected)
-            )
+        assert (
+            "test_long_context_ragged_b4_matches_structured_oracle["
+            f"{node_id}]" in "\n".join(selected)
+        )
 
 
 def test_focused_kill_suite_limits_attributable_gates_to_requested_variants() -> None:
@@ -312,14 +290,11 @@ def test_focused_kill_suite_selects_writer_and_prefill_direct_op_gates() -> None
     assert any("invalid_ragged_block_ids" in node for node in selected)
     assert any("backend_strides_and_appends" in node for node in selected)
 
-    sinkhorn = factory.focused_xpu_tests(
-        variants,
-        flush_writer="sinkhorn_pack_xe2",
-    )
-    assert set(factory.FOCUSED_XPU_SINKHORN_WRITER_TESTS) <= set(sinkhorn)
-    assert not set(factory.FOCUSED_XPU_NATIVE_WRITER_TESTS) & set(sinkhorn)
-    assert any("matches_reference" in node for node in sinkhorn)
-    assert any("int64_long_context" in node for node in sinkhorn)
+    with pytest.raises(factory.FactoryError, match="unsupported flush writer"):
+        factory.focused_xpu_tests(
+            variants,
+            flush_writer="sinkhorn_pack_xe2",
+        )
 
 
 def test_matrix_expands_auto_and_explicit_split_sweeps() -> None:
@@ -344,8 +319,7 @@ def test_matrix_expands_auto_and_explicit_split_sweeps() -> None:
     assert all(case.effective_splits == case.requested_splits for case in cases)
     assert all(case.output_dtype == "fp16" for case in cases)
     assert all(
-        {"forward_pool_ensure", "kvarn_forward_pool_ensure"}
-        .isdisjoint(case.as_dict())
+        {"forward_pool_ensure", "kvarn_forward_pool_ensure"}.isdisjoint(case.as_dict())
         for case in cases
     )
     assert [case.requested_split_policy for case in cases] == [
@@ -445,9 +419,7 @@ def test_b70_wave_selector_expands_exact_id18_candidate_set() -> None:
     splits = factory.resolve_factory_split_tokens(selector, None)
 
     assert splits == [8, 16, 17, 24, 32]
-    assert factory.resolve_factory_split_tokens(
-        selector, "8,16,17,24,32"
-    ) == splits
+    assert factory.resolve_factory_split_tokens(selector, "8,16,17,24,32") == splits
     with pytest.raises(factory.FactoryError, match="owns --splits"):
         factory.resolve_factory_split_tokens(selector, "8,32")
 
@@ -460,9 +432,7 @@ def test_b70_wave_selector_expands_exact_id18_candidate_set() -> None:
         factory_split_policy=policy_name,
     )
     assert len(cases) == 20
-    assert {
-        case.requested_splits for case in cases
-    } == {8, 16, 17, 24, 32}
+    assert {case.requested_splits for case in cases} == {8, 16, 17, 24, 32}
     assert {case.requested_split_policy for case in cases} == {selector}
     assert {case.as_dict()["split_policy"] for case in cases} == {selector}
 
@@ -529,9 +499,7 @@ def test_service_sweep_normalization_preserves_raw_and_divides_every_sample() ->
     raw = {
         "order_policy": "test",
         "arms": {
-            "candidate": factory.timing_summary(
-                [160.0, 320.0], [176.0, 352.0]
-            ),
+            "candidate": factory.timing_summary([160.0, 320.0], [176.0, 352.0]),
             "auto": factory.timing_summary([80.0, 160.0], [96.0, 192.0]),
         },
     }
@@ -542,9 +510,7 @@ def test_service_sweep_normalization_preserves_raw_and_divides_every_sample() ->
         10.0,
         20.0,
     ]
-    assert normalized["per_layer"]["arms"]["candidate"][
-        "device_median_us"
-    ] == 15.0
+    assert normalized["per_layer"]["arms"]["candidate"]["device_median_us"] == 15.0
     assert raw["arms"]["candidate"]["device_us"] == [160.0, 320.0]
 
 
@@ -593,12 +559,18 @@ def test_service_pair_uses_sixteen_layers_inside_one_outer_event() -> None:
     # Four measured arm sweeps each have exactly one start/end event pair.
     assert [kind for kind, _ in trace].count("event") == 8
     timing = result["timing"]
-    assert timing["raw_sweep"]["arms"]["candidate_frontend_plus_decode"][
-        "device_median_us"
-    ] == 160.0
-    assert timing["per_layer"]["arms"]["candidate_frontend_plus_decode"][
-        "device_median_us"
-    ] == 10.0
+    assert (
+        timing["raw_sweep"]["arms"]["candidate_frontend_plus_decode"][
+            "device_median_us"
+        ]
+        == 160.0
+    )
+    assert (
+        timing["per_layer"]["arms"]["candidate_frontend_plus_decode"][
+            "device_median_us"
+        ]
+        == 10.0
+    )
 
 
 def test_service_storage_pointer_guard_rejects_cross_group_aliases() -> None:
@@ -632,9 +604,10 @@ def test_service_allocation_estimator_and_budget_are_fail_closed() -> None:
         estimate["resident_device_bytes"],
         estimate["construction_peak_device_bytes"],
     )
-    assert estimate["components"]["auto_cache_replicas"] > estimate[
-        "components"
-    ]["candidate_cache_replicas"]
+    assert (
+        estimate["components"]["auto_cache_replicas"]
+        > estimate["components"]["candidate_cache_replicas"]
+    )
     one_layer = factory.estimate_service_layer_allocation(
         batch=4,
         context=65_023,
@@ -642,12 +615,13 @@ def test_service_allocation_estimator_and_budget_are_fail_closed() -> None:
         num_kv_splits=8,
         layer_count=1,
     )
-    assert one_layer["construction_peak_device_bytes"] > one_layer[
-        "resident_device_bytes"
-    ]
-    assert one_layer["estimated_new_device_bytes"] == one_layer[
-        "construction_peak_device_bytes"
-    ]
+    assert (
+        one_layer["construction_peak_device_bytes"] > one_layer["resident_device_bytes"]
+    )
+    assert (
+        one_layer["estimated_new_device_bytes"]
+        == one_layer["construction_peak_device_bytes"]
+    )
 
     total = 32 << 30
     fits = factory.assess_service_memory_budget(
@@ -711,9 +685,7 @@ def _leaderboard_result(
             }
         },
         "diagnostic_ratios": {
-            "decode": factory.latency_speed_ratios(
-                candidate_decode_us, auto_decode_us
-            ),
+            "decode": factory.latency_speed_ratios(candidate_decode_us, auto_decode_us),
             "separate_device_stage": stage,
             "fused_device_stage": stage,
         },
@@ -899,87 +871,6 @@ def test_native_decode_invocation_uses_all_explicit_factory_args() -> None:
     assert calls[0][-3:] == (24, 3, True)
     assert calls[0][-6:-3] == (factory.SOFTMAX_SCALE, True, True)
 
-    completion = object()
-    factory.invoke_native_decode(
-        operation,
-        query="q",
-        cache="cache",
-        block_table="table",
-        seq_lens="lens",
-        block_to_slot="lookup",
-        tail_key="tail-k",
-        tail_value="tail-v",
-        temp_output="temp",
-        exp_sums="lse",
-        max_logits="max",
-        output="out",
-        context=4096,
-        unrotate_output=True,
-        write_bf16_output=True,
-        num_kv_splits=24,
-        kernel_variant=22,
-        dpas_layout=True,
-        completion_state=completion,
-    )
-    assert calls[-1][-4:] == (24, 22, True, completion)
-
-
-class _FakeCompletionScalar:
-    def __init__(self, value: int) -> None:
-        self.value = value
-
-    def item(self) -> int:
-        return self.value
-
-
-class _FakeCompletionState:
-    shape = (4, factory.H_KV)
-    dtype = "torch.int32"
-
-    def __init__(self, nonzero: int) -> None:
-        self.nonzero = nonzero
-
-    def detach(self) -> _FakeCompletionState:
-        return self
-
-    def cpu(self) -> _FakeCompletionState:
-        return self
-
-    def count_nonzero(self) -> _FakeCompletionScalar:
-        return _FakeCompletionScalar(self.nonzero)
-
-
-def test_id22_completion_state_reset_receipt_is_fail_closed() -> None:
-    evidence = factory.completion_state_reset_evidence(
-        _FakeCompletionState(0), batch=4, expected_active=True
-    )
-    assert evidence == {
-        "allocated_shape": [4, factory.H_KV],
-        "dtype": "torch.int32",
-        "expected_native_path": "q6_last_arrival_fused_reduce",
-        "zero_initialized": True,
-        "zero_after_synchronized_calls": True,
-        "nonzero_elements_after_calls": 0,
-        "reset_verified": True,
-    }
-    downgraded = factory.completion_state_reset_evidence(
-        _FakeCompletionState(0), batch=4, expected_active=False
-    )
-    assert (
-        downgraded["expected_native_path"]
-        == "id18_plus_standalone_reducer_downgrade"
-    )
-    with pytest.raises(factory.FactoryError, match="not reset"):
-        factory.completion_state_reset_evidence(
-            _FakeCompletionState(1), batch=4, expected_active=True
-        )
-    wrong_shape = _FakeCompletionState(0)
-    wrong_shape.shape = (4, factory.H_KV + 1)
-    with pytest.raises(factory.FactoryError, match="shape mismatch"):
-        factory.completion_state_reset_evidence(
-            wrong_shape, batch=4, expected_active=True
-        )
-
 
 class _Packet:
     def __init__(self, schema: str) -> None:
@@ -1014,8 +905,7 @@ def test_operator_loader_requires_explicit_abi_and_detects_fused_symbol(
     base = tmp_path / "base.so"
     flash = tmp_path / "flash.so"
     torch_module = _fake_torch_ops(
-        "kvarn_decode_with_scratch(... num_kv_splits, kernel_variant, "
-        "dpas_layout, completion_state)",
+        "kvarn_decode_with_scratch(... num_kv_splits, kernel_variant, dpas_layout)",
         fused=True,
     )
     operations, schemas = factory.load_operators(
@@ -1025,7 +915,7 @@ def test_operator_loader_requires_explicit_abi_and_detects_fused_symbol(
     )
     assert operations.fused_qkv_scatter is not None
     assert "kernel_variant" in schemas["kvarn_decode_with_scratch"]
-    assert "completion_state" in schemas["kvarn_decode_with_scratch"]
+    assert "dpas_layout" in schemas["kvarn_decode_with_scratch"]
 
     legacy = _fake_torch_ops("kvarn_decode_with_scratch(...)", fused=False)
     with pytest.raises(factory.FactoryError, match="explicit factory ABI"):
@@ -1433,55 +1323,6 @@ def test_focused_xpu_kill_suite_is_bound_to_library_and_fail_closed(
         factory.require_focused_xpu_kill_suite(skipped)
 
 
-def test_fused_writer_kill_suite_includes_production_vllm_differential(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    kernels_repo = tmp_path / "kernels"
-    vllm_repo = tmp_path / "vllm"
-    variant = [factory.VARIANTS["q6_prefetch_record_cursor"]]
-    kernel_selections = factory.focused_xpu_tests(
-        variant, flush_writer="sinkhorn_pack_xe2"
-    )
-    for repo, selections in (
-        (kernels_repo, kernel_selections),
-        (vllm_repo, factory.FOCUSED_XPU_VLLM_SINKHORN_WRITER_TESTS),
-    ):
-        for selection in selections:
-            source = repo / selection.partition("::")[0]
-            source.parent.mkdir(parents=True, exist_ok=True)
-            source.touch()
-    library = tmp_path / "flash.so"
-    library.touch()
-    minimum_passed = len(kernel_selections) + len(
-        factory.FOCUSED_XPU_VLLM_SINKHORN_WRITER_TESTS
-    )
-
-    def passing_run(command, **kwargs):
-        return SimpleNamespace(
-            returncode=0,
-            stdout=f"{minimum_passed} passed in 1.00s\n",
-            stderr="",
-        )
-
-    monkeypatch.setattr(factory.subprocess, "run", passing_run)
-    result = factory.run_focused_xpu_kill_suite(
-        kernels_repo=kernels_repo,
-        vllm_repo=vllm_repo,
-        flash_library=library,
-        variants=variant,
-        flush_writer="sinkhorn_pack_xe2",
-    )
-
-    factory.require_focused_xpu_kill_suite(result)
-    assert result["minimum_passed_required"] == minimum_passed
-    assert all(
-        f"vllm:{selection}" in result["test_selections"]
-        for selection in factory.FOCUSED_XPU_VLLM_SINKHORN_WRITER_TESTS
-    )
-    assert "--import-mode=importlib" in result["command"]
-    assert any(str(vllm_repo.resolve()) in item for item in result["command"])
-
-
 def test_focused_pytest_command_collects_duplicate_module_basenames(
     tmp_path: Path,
 ) -> None:
@@ -1504,25 +1345,6 @@ def test_focused_pytest_command_collects_duplicate_module_basenames(
 
     assert completed.returncode == 0, completed.stdout + completed.stderr
     assert "2 passed" in completed.stdout
-
-
-def test_fused_writer_command_requires_vllm_repository(tmp_path: Path) -> None:
-    kernels_repo = tmp_path / "kernels"
-    selections = factory.focused_xpu_tests(
-        [factory.VARIANTS["q6_prefetch_record_cursor"]],
-        flush_writer="sinkhorn_pack_xe2",
-    )
-    for selection in selections:
-        source = kernels_repo / selection.partition("::")[0]
-        source.parent.mkdir(parents=True, exist_ok=True)
-        source.touch()
-
-    with pytest.raises(factory.FactoryError, match="requires the vLLM repository"):
-        factory.focused_xpu_test_command(
-            kernels_repo,
-            [factory.VARIANTS["q6_prefetch_record_cursor"]],
-            flush_writer="sinkhorn_pack_xe2",
-        )
 
 
 def _valid_matched_manifest() -> dict:
@@ -1731,6 +1553,10 @@ def test_matched_fixture_is_default_and_unmatched_is_explicit_diagnostic(
     assert sixteen_layers.service_layer_count == 16
     with pytest.raises(SystemExit):
         factory.parse_args([*common, "--service-layer-count", "4"])
+    with pytest.raises(SystemExit):
+        factory.parse_args([*common, "--variants", "q6_last_arrival_fused_reduce"])
+    with pytest.raises(SystemExit):
+        factory.parse_args([*common, "--flush-writer", "sinkhorn_pack_xe2"])
 
     wave = factory.parse_args(
         [

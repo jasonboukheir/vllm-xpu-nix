@@ -42,7 +42,7 @@ KVARN_RECORD_STRIDE = 35_072
 SOFTMAX_SCALE = 1.0 / 16.0
 VALID_SPLITS = (1, 2, 4, 8, 16, 17, 24, 32)
 VALID_OUTPUT_DTYPES = ("fp16", "bf16")
-FLUSH_WRITER_VARIANTS = ("reference", "native_xe2", "sinkhorn_pack_xe2")
+FLUSH_WRITER_VARIANTS = ("reference", "native_xe2")
 PREFILL_STORE_VARIANTS = ("reference", "hadamard_scatter")
 MATCHED_FIXTURE_MODE = "matched-production"
 UNMATCHED_FIXTURE_MODE = "unmatched-diagnostic"
@@ -301,16 +301,6 @@ VARIANTS = {
             "specialized_split_reduction",
             "tile64_next_page_current_half_v_prefetch_record_cursor_paired_nibble_half2",
         ),
-        VariantSpec(
-            22,
-            "q6_last_arrival_fused_reduce",
-            "q6 ID18 producer plus last-arrival fused split reduction",
-            "xe2_dpas",
-            "native_xe2_qlen1_q6_last_arrival_fused_reduce",
-            "runtime_explicit_count",
-            "last_arrival_fused_reduction",
-            "tile64_next_page_current_half_v_prefetch_record_cursor",
-        ),
     )
 }
 VARIANTS_BY_ID = {spec.variant_id: spec for spec in VARIANTS.values()}
@@ -332,7 +322,6 @@ DEFAULT_VARIANT_NAMES = (
     "q6_prefetch_record_cursor",
     "q6_page_metadata_cursor",
     "q6_paired_nibble_half2",
-    "q6_last_arrival_fused_reduce",
 )
 # ``all`` is literal: every runnable layout-compatible dispatch compiled into
 # the shared attention DSO participates.  DEFAULT_VARIANT_NAMES remains the
@@ -343,8 +332,7 @@ _XPU_LONG_CONTEXT_TEST = (
     f"{_XPU_DECODE_TEST}::test_long_context_ragged_b4_matches_structured_oracle"
 )
 _XPU_Q6_MULTISPLIT_TEST = (
-    f"{_XPU_DECODE_TEST}::"
-    "test_q6_multisplit_lse_owns_all_six_distinct_query_rows"
+    f"{_XPU_DECODE_TEST}::test_q6_multisplit_lse_owns_all_six_distinct_query_rows"
 )
 FOCUSED_XPU_INVARIANT_TESTS = (
     "tests/flash_attn/test_kvarn_decode_xpu.py::test_structured_permuted_pages",
@@ -402,10 +390,6 @@ FOCUSED_XPU_262K_TESTS = {
     18: f"{_XPU_LONG_CONTEXT_TEST}[q6-prefetch-record-cursor]",
     20: f"{_XPU_LONG_CONTEXT_TEST}[q6-page-metadata-cursor]",
     21: f"{_XPU_LONG_CONTEXT_TEST}[q6-paired-nibble-half2]",
-    22: (
-        f"{_XPU_DECODE_TEST}::"
-        "test_id22_b4_long_ragged_repeated_calls_match_id18_bf16"
-    ),
 }
 # The Q8-family variants (0, 1, and 3) use a direct split-24 262K case as
 # both gates. Q6 variants also get the query-row/LSE multisplit attribution.
@@ -435,35 +419,15 @@ FOCUSED_XPU_MULTISPLIT_TESTS = {
             21,
         )
     },
-    22: (
-        f"{_XPU_DECODE_TEST}::"
-        "test_id22_reuses_persistent_counters_for_1000_queued_ragged_calls"
-    ),
 }
 FOCUSED_XPU_ID15_TEST = (
-    f"{_XPU_DECODE_TEST}::"
-    "test_q6_block_output_store_matches_scalar_across_reducers"
+    f"{_XPU_DECODE_TEST}::test_q6_block_output_store_matches_scalar_across_reducers"
 )
 FOCUSED_XPU_NATIVE_WRITER_TESTS = (
     "tests/flash_attn/test_kvarn_hadamard_scatter_xpu.py::test_kvarn_balanced_writer_matches_dpas_record_bytes",
     "tests/flash_attn/test_kvarn_hadamard_scatter_xpu.py::test_kvarn_balanced_writer_skips_invalid_ragged_block_ids",
     "tests/flash_attn/test_kvarn_hadamard_scatter_xpu.py::test_kvarn_balanced_writer_matches_nontrivial_rounding",
     "tests/flash_attn/test_kvarn_hadamard_scatter_xpu.py::test_kvarn_balanced_writer_rejects_non_abi_record_stride",
-)
-FOCUSED_XPU_SINKHORN_WRITER_TESTS = (
-    "tests/flash_attn/test_kvarn_sinkhorn_writer_xpu.py::test_sinkhorn_writer_matches_reference",
-    "tests/flash_attn/test_kvarn_sinkhorn_writer_xpu.py::test_sinkhorn_writer_preserves_rtn_halfway_ties",
-    "tests/flash_attn/test_kvarn_sinkhorn_writer_xpu.py::test_sinkhorn_writer_masks_ragged_ownership",
-    "tests/flash_attn/test_kvarn_sinkhorn_writer_xpu.py::test_sinkhorn_writer_uses_int64_long_context_record_addressing",
-    "tests/flash_attn/test_kvarn_sinkhorn_writer_xpu.py::test_sinkhorn_writer_handles_multiple_valid_blocks_at_iteration16",
-    "tests/flash_attn/test_kvarn_sinkhorn_writer_xpu.py::test_sinkhorn_writer_empty_schedule_is_noop",
-    "tests/flash_attn/test_kvarn_sinkhorn_writer_xpu.py::test_sinkhorn_writer_rejects_non_abi_inputs",
-)
-FOCUSED_XPU_VLLM_SINKHORN_WRITER_TESTS = (
-    "tests/v1/attention/test_kvarn_sinkhorn_writer_xpu.py::test_fused_writer_is_byte_identical_to_production_path",
-    "tests/v1/attention/test_kvarn_sinkhorn_writer_xpu.py::test_fused_writer_multi_block_iteration16_matches_production_path",
-    "tests/v1/attention/test_kvarn_sinkhorn_writer_xpu.py::test_fused_writer_empty_and_negative_iteration_contracts",
-    "tests/v1/attention/test_kvarn_sinkhorn_writer_xpu.py::test_fused_writer_records_temporary_allocator_lifetimes",
 )
 FOCUSED_XPU_PREFILL_STORE_TESTS = (
     "tests/flash_attn/test_kvarn_hadamard_scatter_xpu.py::test_kvarn_hadamard_scatter_matches_fp32",
@@ -1104,9 +1068,7 @@ def parse_split_tokens(value: str) -> list[int | None]:
     return result
 
 
-def resolve_factory_split_tokens(
-    selector: str, value: str | None
-) -> list[int | None]:
+def resolve_factory_split_tokens(selector: str, value: str | None) -> list[int | None]:
     """Resolve one factory selector into an explicit, ordered split sweep."""
     if selector not in split_policy.FACTORY_SPLIT_POLICIES:
         raise FactoryError(f"unknown factory split policy: {selector}")
@@ -1301,19 +1263,10 @@ def estimate_service_layer_allocation(
     )
     # All model-facing inputs and cache values are BF16/FP16 (two bytes).
     auto_cache_per_layer = (
-        batch
-        * auto_pages
-        * H_KV
-        * auto_block_size
-        * (2 * HEAD_DIM)
-        * 2
+        batch * auto_pages * H_KV * auto_block_size * (2 * HEAD_DIM) * 2
     )
-    candidate_cache_per_layer = (
-        batch * native_pages * H_KV * KVARN_RECORD_STRIDE
-    )
-    candidate_tail_per_layer = (
-        2 * tail_slots * KVARN_PAGE * H_KV * HEAD_DIM * 2
-    )
+    candidate_cache_per_layer = batch * native_pages * H_KV * KVARN_RECORD_STRIDE
+    candidate_tail_per_layer = 2 * tail_slots * KVARN_PAGE * H_KV * HEAD_DIM * 2
     inputs_per_layer = batch * (H_Q + 2 * H_KV) * HEAD_DIM * 2
     replicated_per_layer = (
         auto_cache_per_layer
@@ -1325,9 +1278,6 @@ def estimate_service_layer_allocation(
         batch * H_Q * num_kv_splits * HEAD_DIM * 2
         + 2 * batch * H_Q * num_kv_splits * 4
         + batch * H_Q * HEAD_DIM * 2
-        # Persistent ID22 completion counters. Both the candidate and natural
-        # buffer sets allocate these so the runner's ownership is explicit.
-        + batch * H_KV * 4
     )
     output_bytes = batch * H_Q * HEAD_DIM * 2
     shared_scratch = (
@@ -1613,9 +1563,7 @@ def build_primitive_leaderboard(results: Sequence[dict[str, Any]]) -> dict[str, 
             for case in cases
         ]
         decode = _leaderboard_stage(cases, "decode")
-        decode["candidate_device_median_range"] = _latency_range(
-            decode_candidate_us
-        )
+        decode["candidate_device_median_range"] = _latency_range(decode_candidate_us)
         decode["auto_device_median_range"] = _latency_range(decode_auto_us)
         separate = _leaderboard_stage(cases, "separate_device_stage")
         fused = _leaderboard_stage(cases, "fused_device_stage")
@@ -1666,9 +1614,7 @@ def build_primitive_leaderboard(results: Sequence[dict[str, Any]]) -> dict[str, 
     for rank, row in enumerate(rows, start=1):
         row["primitive_rank"] = rank
         row["decision_signal"] = (
-            "leading_primitive_candidate"
-            if rank == 1
-            else "ranked_primitive_candidate"
+            "leading_primitive_candidate" if rank == 1 else "ranked_primitive_candidate"
         )
     return {
         "scope": "xpu_primitive_and_per_layer_device_stage_only",
@@ -1830,6 +1776,8 @@ def focused_xpu_tests(
     """Select invariant tests and direct gates for only requested variants."""
     if not variants:
         raise FactoryError("focused XPU kill suite requires at least one variant")
+    if flush_writer not in FLUSH_WRITER_VARIANTS:
+        raise FactoryError(f"unsupported flush writer {flush_writer!r}")
     selected: list[str] = list(FOCUSED_XPU_INVARIANT_TESTS)
     selected_ids: set[int] = set()
     for variant in variants:
@@ -1847,10 +1795,6 @@ def focused_xpu_tests(
         selected.append(FOCUSED_XPU_ID15_TEST)
     if flush_writer == "native_xe2":
         selected.extend(FOCUSED_XPU_NATIVE_WRITER_TESTS)
-    elif flush_writer == "sinkhorn_pack_xe2":
-        selected.extend(FOCUSED_XPU_SINKHORN_WRITER_TESTS)
-    elif flush_writer != "reference":
-        raise FactoryError(f"unsupported flush writer {flush_writer!r}")
     if prefill_store == "hadamard_scatter":
         selected.extend(FOCUSED_XPU_PREFILL_STORE_TESTS)
     elif prefill_store != "reference":
@@ -1883,7 +1827,6 @@ def focused_xpu_test_command(
     kernels_repo: Path,
     variants: Sequence[VariantSpec],
     *,
-    vllm_repo: Path | None = None,
     flush_writer: str = "reference",
     prefill_store: str = "reference",
 ) -> list[str]:
@@ -1899,30 +1842,12 @@ def focused_xpu_test_command(
         if not source.is_relative_to(resolved):
             raise FactoryError(f"focused XPU test escapes kernel repository: {source}")
         node_ids.append(f"{source}::{test_name}")
-    vllm_selections = (
-        FOCUSED_XPU_VLLM_SINKHORN_WRITER_TESTS
-        if flush_writer == "sinkhorn_pack_xe2"
-        else ()
-    )
-    if vllm_selections:
-        if vllm_repo is None:
-            raise FactoryError("fused writer kill suite requires the vLLM repository")
-        resolved_vllm = vllm_repo.expanduser().resolve(strict=True)
-        for selection in vllm_selections:
-            relative, separator, test_name = selection.partition("::")
-            if not separator:
-                raise FactoryError(f"invalid focused vLLM XPU selection: {selection}")
-            source = (resolved_vllm / relative).resolve(strict=True)
-            if not source.is_relative_to(resolved_vllm):
-                raise FactoryError(f"focused XPU test escapes vLLM repository: {source}")
-            node_ids.append(f"{source}::{test_name}")
     return _focused_pytest_command(node_ids)
 
 
 def run_focused_xpu_kill_suite(
     *,
     kernels_repo: Path,
-    vllm_repo: Path | None = None,
     flash_library: Path,
     variants: Sequence[VariantSpec],
     flush_writer: str = "reference",
@@ -1933,16 +1858,10 @@ def run_focused_xpu_kill_suite(
     selections = focused_xpu_tests(
         variants, flush_writer=flush_writer, prefill_store=prefill_store
     )
-    vllm_selections = (
-        FOCUSED_XPU_VLLM_SINKHORN_WRITER_TESTS
-        if flush_writer == "sinkhorn_pack_xe2"
-        else ()
-    )
-    reported_selections = [*selections, *(f"vllm:{item}" for item in vllm_selections)]
+    reported_selections = list(selections)
     command = focused_xpu_test_command(
         resolved_repo,
         variants,
-        vllm_repo=vllm_repo,
         flush_writer=flush_writer,
         prefill_store=prefill_store,
     )
@@ -2071,7 +1990,6 @@ def load_operators(
         "num_kv_splits",
         "kernel_variant",
         "dpas_layout",
-        "completion_state",
     ):
         if argument not in native_schema:
             raise FactoryError(
@@ -2900,9 +2818,7 @@ def _build_service_layer_storage(
             0, native_indices
         ).contiguous()
         candidate_caches = [first_candidate]
-        candidate_caches.extend(
-            first_candidate.clone() for _ in range(1, layer_count)
-        )
+        candidate_caches.extend(first_candidate.clone() for _ in range(1, layer_count))
         first_tail_key = source_tail_key[:tail_slots].clone()
         first_tail_value = source_tail_value[:tail_slots].clone()
         candidate_tail_keys = [first_tail_key]
@@ -2938,12 +2854,8 @@ def _build_service_layer_storage(
     pointer_evidence = require_unique_storage_pointers(
         {
             "auto_cache_bases": [value.data_ptr() for value in auto_bases],
-            "candidate_packed_caches": [
-                value.data_ptr() for value in candidate_caches
-            ],
-            "candidate_tail_keys": [
-                value.data_ptr() for value in candidate_tail_keys
-            ],
+            "candidate_packed_caches": [value.data_ptr() for value in candidate_caches],
+            "candidate_tail_keys": [value.data_ptr() for value in candidate_tail_keys],
             "candidate_tail_values": [
                 value.data_ptr() for value in candidate_tail_values
             ],
@@ -2960,8 +2872,7 @@ def _build_service_layer_storage(
             - memory_before["torch_allocated_bytes"]
         ),
         "observed_device_free_delta_bytes": (
-            memory_before["free_device_bytes"]
-            - memory_after["free_device_bytes"]
+            memory_before["free_device_bytes"] - memory_after["free_device_bytes"]
         ),
         "pointer_uniqueness": pointer_evidence,
         "auto_key_value_are_disjoint_views_of_each_layer_base": True,
@@ -3054,7 +2965,6 @@ def invoke_native_decode(
     num_kv_splits: int,
     kernel_variant: int,
     dpas_layout: bool,
-    completion_state: Any | None = None,
 ) -> None:
     arguments = (
         query,
@@ -3076,50 +2986,7 @@ def invoke_native_decode(
         kernel_variant,
         dpas_layout,
     )
-    if completion_state is not None:
-        arguments = (*arguments, completion_state)
     operation(*arguments)
-
-
-def completion_state_reset_evidence(
-    completion_state: Any,
-    *,
-    batch: int,
-    expected_active: bool,
-) -> dict[str, Any]:
-    """Fail closed when ID22 leaves a persistent completion word armed.
-
-    Callers synchronize the XPU before entering this helper.  Keeping the
-    device-to-host receipt outside the timed region prevents the reset audit
-    from contaminating the candidate measurements.
-    """
-    expected_shape = (batch, H_KV)
-    actual_shape = tuple(completion_state.shape)
-    if actual_shape != expected_shape:
-        raise FactoryError(
-            "ID22 completion_state shape mismatch: "
-            f"expected {expected_shape}, observed {actual_shape}"
-        )
-    snapshot = completion_state.detach().cpu()
-    nonzero_elements = int(snapshot.count_nonzero().item())
-    if nonzero_elements:
-        raise FactoryError(
-            "ID22 completion_state was not reset after the synchronized decode: "
-            f"{nonzero_elements} persistent words remain nonzero"
-        )
-    return {
-        "allocated_shape": list(actual_shape),
-        "dtype": str(completion_state.dtype),
-        "expected_native_path": (
-            "q6_last_arrival_fused_reduce"
-            if expected_active
-            else "id18_plus_standalone_reducer_downgrade"
-        ),
-        "zero_initialized": True,
-        "zero_after_synchronized_calls": True,
-        "nonzero_elements_after_calls": nonzero_elements,
-        "reset_verified": True,
-    }
 
 
 def _difference_metrics(torch_module: Any, candidate: Any, reference: Any) -> dict:
@@ -3242,14 +3109,9 @@ def _run_service_layer_diagnostic(
             output=torch_module.empty(
                 (batch, H_Q, HEAD_DIM),
                 dtype=(
-                    torch_module.bfloat16
-                    if write_bf16_output
-                    else torch_module.float16
+                    torch_module.bfloat16 if write_bf16_output else torch_module.float16
                 ),
                 device="xpu:0",
-            ),
-            completion=torch_module.zeros(
-                (batch, 4), dtype=torch_module.int32, device="xpu:0"
             ),
         )
 
@@ -3268,25 +3130,17 @@ def _run_service_layer_diagnostic(
     auto_offset = (context - 1) % auto_block_size
     native_offset = (context - 1) % KVARN_PAGE
     auto_slots = (
-        (
-            torch_module.arange(batch, dtype=torch_module.int64, device="xpu:0")
-            * auto_pages
-            + auto_pages
-            - 1
-        )
-        * auto_block_size
-        + auto_offset
-    )
+        torch_module.arange(batch, dtype=torch_module.int64, device="xpu:0")
+        * auto_pages
+        + auto_pages
+        - 1
+    ) * auto_block_size + auto_offset
     candidate_slots = (
-        (
-            torch_module.arange(batch, dtype=torch_module.int64, device="xpu:0")
-            * native_pages
-            + native_pages
-            - 1
-        )
-        * KVARN_PAGE
-        + native_offset
-    )
+        torch_module.arange(batch, dtype=torch_module.int64, device="xpu:0")
+        * native_pages
+        + native_pages
+        - 1
+    ) * KVARN_PAGE + native_offset
     k_scale = torch_module.ones((), dtype=torch_module.float32, device="xpu:0")
     v_scale = torch_module.ones((), dtype=torch_module.float32, device="xpu:0")
 
@@ -3351,9 +3205,6 @@ def _run_service_layer_diagnostic(
             num_kv_splits=splits,
             kernel_variant=variant,
             dpas_layout=dpas_layout,
-            completion_state=(
-                buffers.completion if variant == 22 else None
-            ),
         )
 
     def candidate_decode(layer: int) -> None:
@@ -3478,7 +3329,9 @@ def _run_service_layer_diagnostic(
                 natural_buffers.output.reshape(-1, HEAD_DIM),
                 normalized_natural.reshape(-1, HEAD_DIM),
             )
-        natural_result = natural_buffers.output if unrotate_output else normalized_natural
+        natural_result = (
+            natural_buffers.output if unrotate_output else normalized_natural
+        )
         natural_outputs.append(natural_result.clone())
         if fixture_mode == MATCHED_FIXTURE_MODE:
             auto_store_and_decode(layer)
@@ -3513,9 +3366,7 @@ def _run_service_layer_diagnostic(
             fused_metrics.append(
                 {
                     "layer": layer,
-                    **_difference_metrics(
-                        torch_module, fused_result, natural_result
-                    ),
+                    **_difference_metrics(torch_module, fused_result, natural_result),
                 }
             )
         if fixture_mode == MATCHED_FIXTURE_MODE:
@@ -3539,9 +3390,7 @@ def _run_service_layer_diagnostic(
     torch_module.xpu.empty_cache()
     torch_module.xpu.synchronize()
     memory_ready = _xpu_memory_snapshot(torch_module)
-    required_headroom = storage.allocation_evidence["budget"][
-        "required_headroom_bytes"
-    ]
+    required_headroom = storage.allocation_evidence["budget"]["required_headroom_bytes"]
     if memory_ready["free_device_bytes"] < required_headroom:
         raise FactoryError(
             "service-shaped live allocation violated reserved XPU headroom: "
@@ -3551,8 +3400,7 @@ def _run_service_layer_diagnostic(
     storage.allocation_evidence["memory_ready_for_timing"] = memory_ready
     observed_allocated_delta = max(
         0,
-        memory_ready["torch_allocated_bytes"]
-        - memory_before["torch_allocated_bytes"],
+        memory_ready["torch_allocated_bytes"] - memory_before["torch_allocated_bytes"],
     )
     storage.allocation_evidence["observed_ready_torch_allocated_delta_bytes"] = (
         observed_allocated_delta
@@ -3596,9 +3444,7 @@ def _run_service_layer_diagnostic(
         )
     separate_medians = separate_group["timing"]["per_layer"]["arms"]
     separate_candidate_us = separate_medians[separate_name]["device_median_us"]
-    separate_auto_us = separate_medians["auto_store_plus_decode"][
-        "device_median_us"
-    ]
+    separate_auto_us = separate_medians["auto_store_plus_decode"]["device_median_us"]
     fused_group = timing_groups.get("fused_vs_auto")
     ratios = {
         separate_name: latency_speed_ratios(
@@ -3607,23 +3453,17 @@ def _run_service_layer_diagnostic(
         ),
         "candidate_fused_frontend_plus_decode": (
             latency_speed_ratios(
-                fused_group["timing"]["per_layer"]["arms"]
-                ["candidate_fused_frontend_plus_decode"]["device_median_us"],
-                fused_group["timing"]["per_layer"]["arms"]
-                ["auto_store_plus_decode"]["device_median_us"],
+                fused_group["timing"]["per_layer"]["arms"][
+                    "candidate_fused_frontend_plus_decode"
+                ]["device_median_us"],
+                fused_group["timing"]["per_layer"]["arms"]["auto_store_plus_decode"][
+                    "device_median_us"
+                ],
             )
             if fused_group is not None
             else None
         ),
     }
-    completion_state_evidence = None
-    if case.variant.variant_id == 22:
-        torch_module.xpu.synchronize()
-        completion_state_evidence = completion_state_reset_evidence(
-            candidate_buffers.completion,
-            batch=batch,
-            expected_active=(unrotate_output and write_bf16_output),
-        )
     return {
         "status": "correctness_passed_and_timed",
         "scope": "service_shaped_multi_layer_xpu_primitive_device_stage",
@@ -3645,7 +3485,6 @@ def _run_service_layer_diagnostic(
         "allocation_evidence": {
             **storage.allocation_evidence,
             "input_pointer_uniqueness": input_pointer_evidence,
-            "id22_completion_state": completion_state_evidence,
         },
         "payload_replication_provenance": {
             "fixture_mode": fixture_mode,
@@ -3688,9 +3527,7 @@ def _run_service_layer_diagnostic(
                     else "not_available"
                 ),
                 "layers_vs_natural": (
-                    fused_metrics
-                    if operations.fused_qkv_scatter is not None
-                    else None
+                    fused_metrics if operations.fused_qkv_scatter is not None else None
                 ),
             },
             "matched_auto_layers_vs_natural": (
@@ -3892,9 +3729,6 @@ def run_case(
                 ),
                 device="xpu:0",
             ),
-            completion=torch_module.zeros(
-                (batch, 4), dtype=torch_module.int32, device="xpu:0"
-            ),
         )
 
     unrotate_output = case.effective_splits > 1
@@ -3931,9 +3765,6 @@ def run_case(
             num_kv_splits=splits,
             kernel_variant=variant,
             dpas_layout=dpas,
-            completion_state=(
-                buffers.completion if variant == 22 else None
-            ),
         )
 
     def normalized_output(buffers: SimpleNamespace) -> Any:
@@ -3988,13 +3819,6 @@ def run_case(
         structured_auto_output,
     )
     torch_module.xpu.synchronize()
-    structured_completion_state_evidence = None
-    if case.variant.variant_id == 22:
-        structured_completion_state_evidence = completion_state_reset_evidence(
-            structured_candidate_buffers.completion,
-            batch=batch,
-            expected_active=(unrotate_output and write_bf16_output),
-        )
     structured_natural_output = normalized_output(structured_natural_buffers)
     structured_candidate_output = normalized_output(structured_candidate_buffers)
     expected = _structured_expected(torch_module, batch, context)
@@ -4233,14 +4057,6 @@ def run_case(
         warmup_rounds=warmup_rounds,
         sample_rounds=sample_rounds,
     )
-    completion_state_evidence = None
-    if case.variant.variant_id == 22:
-        torch_module.xpu.synchronize()
-        completion_state_evidence = completion_state_reset_evidence(
-            candidate_buffers.completion,
-            batch=batch,
-            expected_active=(unrotate_output and write_bf16_output),
-        )
     frontend_arms = {
         "kvarn_separate_q_plus_kv": separate_qkv_frontend,
         "auto_cache_store": auto_store,
@@ -4321,9 +4137,7 @@ def run_case(
         source_tail_value=tail_value,
         seq_lens=seq_lens,
         logical_corpus_sha256=(
-            corpus.provenance["logical_corpus_sha256"]
-            if corpus is not None
-            else None
+            corpus.provenance["logical_corpus_sha256"] if corpus is not None else None
         ),
         warmup_rounds=warmup_rounds,
         sample_rounds=sample_rounds,
@@ -4359,7 +4173,6 @@ def run_case(
             "natural_cache_data_ptr": natural_cache.data_ptr(),
             "candidate_cache_data_ptr": candidate_cache.data_ptr(),
             "auto_cache_data_ptr": auto_base.data_ptr(),
-            "id22_completion_state": completion_state_evidence,
         },
         "correctness": {
             "thresholds": {
@@ -4367,9 +4180,6 @@ def run_case(
                 "rtol": correctness_rtol,
             },
             "structured_candidate_vs_natural": structured_candidate_metrics,
-            "structured_id22_completion_state": (
-                structured_completion_state_evidence
-            ),
             "structured_auto_vs_natural": auto_metrics,
             "dense_candidate_vs_natural": dense_metrics,
             "matched_auto_vs_quantized_natural": matched_auto_metrics,
@@ -4399,9 +4209,7 @@ def run_case(
             "candidate_decode_over_natural": (
                 decode_medians["candidate"] / decode_medians["natural_oracle"]
             ),
-            "candidate_decode_over_auto": decode_ratios[
-                "candidate_latency_over_auto"
-            ],
+            "candidate_decode_over_auto": decode_ratios["candidate_latency_over_auto"],
             "candidate_separate_device_stage_over_auto": separate_stage_ratios[
                 "candidate_latency_over_auto"
             ],
@@ -4570,10 +4378,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             output_dtypes=args.output_dtype_values,
             factory_split_policy=args.factory_split_policy,
         )
-        args.factory_split_policy_contract = (
-            split_policy.factory_split_policy_contract(
-                args.factory_split_policy, args.split_values
-            )
+        args.factory_split_policy_contract = split_policy.factory_split_policy_contract(
+            args.factory_split_policy, args.split_values
         )
         args.output = ensure_durable_output(args.output, allow_tmp=args.allow_tmp)
         if args.auto_block_size <= 0:
@@ -4794,7 +4600,6 @@ def execute(args: argparse.Namespace) -> int:
         document["hardware_preflight"] = preflight_xpu(torch)
         document["kernel_kill_suite"] = run_focused_xpu_kill_suite(
             kernels_repo=args.kernels_repo,
-            vllm_repo=args.vllm_repo,
             flash_library=Path(flash_record["path"]),
             variants=args.variant_specs,
             flush_writer=args.flush_writer,

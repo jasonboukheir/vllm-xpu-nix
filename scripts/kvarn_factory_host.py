@@ -35,6 +35,28 @@ NIX_STORE_HASH = re.compile(r"^[0-9abcdfghijklmnpqrsvwxyz]{32}$")
 # Resolve ``all`` in the runner so every layout-compatible candidate compiled
 # into the shared library automatically participates in the default sweep.
 DEFAULT_VARIANTS = "all"
+FACTORY_VARIANTS = (
+    "baseline",
+    "qk_i8u4",
+    "q6_scalar",
+    "q8_vector",
+    "q6_vector",
+    "q6_cached_weights",
+    "q6_exact_rows",
+    "q6_cached_weights_exact_rows",
+    "q6_page_pair",
+    "q6_main_grf128",
+    "q6_split_reducer_specialized",
+    "q6_next_page_prefetch",
+    "q6_next_page_prefetch_split_reducer",
+    "q6_simd_unpack",
+    "q6_block_output_store",
+    "q6_current_half_v_prefetch",
+    "q6_page_record_cursor",
+    "q6_prefetch_record_cursor",
+    "q6_page_metadata_cursor",
+    "q6_paired_nibble_half2",
+)
 FACTORY_SPLIT_POLICY_EXPLICIT = "explicit"
 FACTORY_SPLIT_POLICY_B70_WAVE_SWEEP = "b70_wave_sweep"
 FACTORY_SPLIT_POLICIES = (
@@ -46,7 +68,7 @@ FACTORY_SPLIT_POLICIES = (
 # revalidates both this expansion and the exact ID18 kernel scope after exec.
 B70_WAVE_SWEEP_SPLITS = (8, 16, 17, 24, 32)
 B70_WAVE_SWEEP_KERNEL_VARIANT = "q6_prefetch_record_cursor"
-FLUSH_WRITER_VARIANTS = ("reference", "native_xe2", "sinkhorn_pack_xe2")
+FLUSH_WRITER_VARIANTS = ("reference", "native_xe2")
 PREFILL_STORE_VARIANTS = ("reference", "hadamard_scatter")
 DEFAULT_FLUSH_WRITER = "reference"
 DEFAULT_PREFILL_STORE = "reference"
@@ -104,6 +126,14 @@ class NativeAttentionExpectation:
 
 CommandRunner = Callable[[Sequence[str]], str]
 Executor = Callable[[Sequence[str]], NoReturn]
+
+
+def _parse_variants(value: str) -> str:
+    names = FACTORY_VARIANTS if value == "all" else tuple(value.split(","))
+    unknown = [name for name in names if not name or name not in FACTORY_VARIANTS]
+    if unknown:
+        raise argparse.ArgumentTypeError(f"unknown beta factory variant {unknown[0]!r}")
+    return value
 
 
 def _run(command: Sequence[str]) -> str:
@@ -612,7 +642,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--output-dir", type=Path, default=project / "benchmark-results/kvarn"
     )
-    parser.add_argument("--variants", default=DEFAULT_VARIANTS)
+    parser.add_argument("--variants", type=_parse_variants, default=DEFAULT_VARIANTS)
     parser.add_argument(
         "--flush-writer",
         choices=FLUSH_WRITER_VARIANTS,
@@ -647,16 +677,13 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=DEFAULT_SERVICE_LAYER_COUNT,
     )
     args = parser.parse_args(argv)
-    if (
-        args.factory_split_policy == FACTORY_SPLIT_POLICY_B70_WAVE_SWEEP
-    ):
+    if args.factory_split_policy == FACTORY_SPLIT_POLICY_B70_WAVE_SWEEP:
         if args.splits is not None:
             parser.error("b70_wave_sweep owns --splits; do not pass both selectors")
         variants = args.variants.split(",")
         if variants != [B70_WAVE_SWEEP_KERNEL_VARIANT]:
             parser.error(
-                "b70_wave_sweep requires --variants "
-                + B70_WAVE_SWEEP_KERNEL_VARIANT
+                "b70_wave_sweep requires --variants " + B70_WAVE_SWEEP_KERNEL_VARIANT
             )
         args.splits = ",".join(str(item) for item in B70_WAVE_SWEEP_SPLITS)
     else:

@@ -105,15 +105,9 @@ def test_b70_q6_v2_contract_is_context_explicit_and_boundary_exact() -> None:
         ],
     }
     assert policy.nominal_splits_by_batch("b70_q6_v2") is None
-    assert policy.effective_splits(
-        "b70_q6_v2", batch=1, context_tokens=262144
-    ) == 32
-    assert policy.effective_splits(
-        "b70_q6_v2", batch=4, context_tokens=49152
-    ) == 8
-    assert policy.effective_splits(
-        "b70_q6_v2", batch=4, context_tokens=49153
-    ) == 32
+    assert policy.effective_splits("b70_q6_v2", batch=1, context_tokens=262144) == 32
+    assert policy.effective_splits("b70_q6_v2", batch=4, context_tokens=49152) == 8
+    assert policy.effective_splits("b70_q6_v2", batch=4, context_tokens=49153) == 32
 
 
 def test_b70_q6_v2_accepts_profiled_id12_and_id13_only() -> None:
@@ -172,7 +166,7 @@ def test_b70_q6_id18_v1_contract_matches_vllm_runtime_policy() -> None:
         "q6_prefetch_record_cursor",
         q6_variants=perf.B70_Q6_KERNEL_VARIANTS,
     )
-    for other_variant in ("q6_page_record_cursor", "q6_last_arrival_fused_reduce"):
+    for other_variant in ("q6_page_record_cursor", "q6_paired_nibble_half2"):
         with pytest.raises(ValueError, match="ID18"):
             policy.validate_kernel_compatibility(
                 "b70_q6_id18_v1",
@@ -190,10 +184,13 @@ def test_runtime_factory_resolves_v2_per_context_without_split_environment() -> 
     assert perf.native_splits_for_run(long, args) == 32
     assert perf.native_max_splits_for_run(short, args) == 32
     assert perf.native_nominal_splits_by_batch(args) is None
-    assert perf.runtime_factory_axes_for_run(short, args)["KVARN_FACTORY_SPLITS"] is None
-    assert perf.runtime_factory_axes_for_run(short, args)[
-        "KVARN_FACTORY_SPLIT_POLICY"
-    ] == "b70_q6_v2"
+    assert (
+        perf.runtime_factory_axes_for_run(short, args)["KVARN_FACTORY_SPLITS"] is None
+    )
+    assert (
+        perf.runtime_factory_axes_for_run(short, args)["KVARN_FACTORY_SPLIT_POLICY"]
+        == "b70_q6_v2"
+    )
 
 
 @pytest.mark.parametrize(
@@ -258,9 +255,7 @@ def test_exploratory_perf_and_profile_clis_accept_v2_profiled_variants(
         ]
     )
     assert profile_args.native_splits == {}
-    profile_run = perf.PlannedRun(
-        perf.Workload(49153, 4, 96, 4, 17), "candidate", 1
-    )
+    profile_run = perf.PlannedRun(perf.Workload(49153, 4, 96, 4, 17), "candidate", 1)
     assert perf.native_splits_for_run(profile_run, profile_args) == 32
 
     wrong_kernel = list(common)
@@ -337,9 +332,7 @@ def test_correctness_cli_records_v2_contract_without_nominal_map(
 def test_correctness_and_formal_gate_phase_schema_do_not_invent_nominal_map() -> None:
     args = _runtime_args()
     native_b4 = next(
-        spec
-        for spec in correctness.SERVICE_PLAN
-        if spec.name == "native-65k-b4"
+        spec for spec in correctness.SERVICE_PLAN if spec.name == "native-65k-b4"
     )
     runtime_spec = correctness.service_spec_evidence(native_b4, args)
     gate_spec = gate._correctness_phase_spec(
@@ -355,7 +348,8 @@ def test_correctness_and_formal_gate_phase_schema_do_not_invent_nominal_map() ->
     assert runtime_spec == gate_spec
     assert runtime_spec["nominal_decode_splits"] is None
     assert gate_spec["nominal_decode_splits"] is None
-    assert runtime_spec["native_split_policy_contract"] == gate_spec[
-        "native_split_policy_contract"
-    ]
+    assert (
+        runtime_spec["native_split_policy_contract"]
+        == gate_spec["native_split_policy_contract"]
+    )
     assert runtime_spec["max_decode_splits"] == gate_spec["max_decode_splits"] == 32

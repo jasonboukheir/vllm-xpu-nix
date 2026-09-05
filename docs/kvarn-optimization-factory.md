@@ -60,10 +60,10 @@ extension:
 | Selector | Values in the combined build | Lifetime |
 |---|---|---|
 | `KVARN_NATIVE_XPU_CACHE_LAYOUT` | `natural`, `xe2_dpas` | engine/cache ABI; restart and allocate a fresh cache to change |
-| `KVARN_NATIVE_XPU_KERNEL_VARIANT` | `baseline`, `qk_i8u4`, `q6_scalar`, `q8_vector`, `q6_vector`, `q6_cached_weights`, `q6_exact_rows`, `q6_cached_weights_exact_rows`, `q6_page_pair`, `q6_main_grf128`, `q6_split_reducer_specialized`, `q6_next_page_prefetch`, `q6_next_page_prefetch_split_reducer`, `q6_simd_unpack`, `q6_block_output_store`, `q6_current_half_v_prefetch`, `q6_page_record_cursor`, `q6_prefetch_record_cursor`, `q6_page_metadata_cursor`, `q6_paired_nibble_half2`, `q6_last_arrival_fused_reduce` | startup selector; every listed specialization is in the same library |
+| `KVARN_NATIVE_XPU_KERNEL_VARIANT` | `baseline`, `qk_i8u4`, `q6_scalar`, `q8_vector`, `q6_vector`, `q6_cached_weights`, `q6_exact_rows`, `q6_cached_weights_exact_rows`, `q6_page_pair`, `q6_main_grf128`, `q6_split_reducer_specialized`, `q6_next_page_prefetch`, `q6_next_page_prefetch_split_reducer`, `q6_simd_unpack`, `q6_block_output_store`, `q6_current_half_v_prefetch`, `q6_page_record_cursor`, `q6_prefetch_record_cursor`, `q6_page_metadata_cursor`, `q6_paired_nibble_half2` | startup selector; every listed specialization is in the same library |
 | `KVARN_NATIVE_XPU_SPLIT_POLICY` | `fixed`, `b70_q6`, `b70_q6_v2`, `b70_q6_id18_v1` | startup policy; named policies select the effective count per decode call |
 | `KVARN_NATIVE_XPU_SPLITS` | `1`, `2`, `4`, `8`, `16`, `17`, `24`, `32` | scratch-allocation maximum; effective count may be selected per call |
-| `KVARN_FLUSH_WRITER` | `reference`, `native_xe2`, `sinkhorn_pack_xe2` | startup writer; both native writers require the `xe2_dpas` D256/G128/K4V4/Hkv4 cache ABI |
+| `KVARN_FLUSH_WRITER` | `reference`, `native_xe2` | startup writer; `native_xe2` requires the `xe2_dpas` D256/G128/K4V4/Hkv4 cache ABI |
 | `KVARN_NATIVE_XPU_PREFILL_STORE` | `reference`, `hadamard_scatter` | startup multi-token store; unsupported calls fall back to the reference path |
 | `KVARN_NATIVE_XPU_FRONTEND` | `reference`, `qkv_scatter`, `qkv_scatter_inline`, `qkv_scatter_inline_current_stream` | startup Q/K/V frontend; inline selection must report both the fused-QKV active marker and its inline-specific marker; the current-stream variant must additionally name its exact native op on an active qlen=1 line |
 | `KVARN_FORWARD_POOL_ENSURE` | `always`, `epoch_latch`, `fused_qkv_proof` | startup service-only forward-pool guard; `always` is the conservative default |
@@ -73,8 +73,7 @@ extension:
 The writer/store selectors are orthogonal to the reader ID. `reference` remains
 the public-beta default for both. `native_xe2` replaces the completed-page
 Sinkhorn/RTN packer with the native Xe2 balanced-record writer, while
-`sinkhorn_pack_xe2` additionally fuses Sinkhorn balancing with record packing,
-and `hadamard_scatter` replaces eligible pure multi-token prefill scatters.
+`hadamard_scatter` replaces eligible pure multi-token prefill scatters.
 None of these selectors permits changing the cache layout after allocation. The factory
 harness records both selectors independently so a winning reader is not
 mistaken for a writer or prefill-store gain.
@@ -171,7 +170,7 @@ Zero, compute-runtime, IGC, oneAPI, compiler, and JIT-linker environment, so
 the harness's Python XPU proof cannot silently use `/run/opengl-driver` while
 the service uses the candidate closure. The underlying
 `vllm-xpu-kvarn-factory` compiles every implemented decode specialization
-through ID22 plus the fused-QKV operators into one BMG-AOT attention library.
+through ID21 plus the fused-QKV operators into one BMG-AOT attention library.
 Runtime selection therefore does not start another Nix build. The package also
 freezes the generated upstream FA2 buildout to Brutus's text-only Qwen3.8
 profile: two head-dimension-256 chunk-prefill policies and one qgroup-8,
@@ -220,7 +219,7 @@ scripts/kvarn_perf_run.py \
   --native-layout xe2_dpas \
   --native-kernel-variant q6_next_page_prefetch \
   --native-split-policy b70_q6_v2 \
-  --flush-writer sinkhorn_pack_xe2 \
+  --flush-writer native_xe2 \
   --prefill-store hadamard_scatter \
   --native-frontend qkv_scatter_inline \
   --forward-pool-ensure fused_qkv_proof \
@@ -308,7 +307,7 @@ nix run .#kvarn-factory -- \
   --vllm-xpu-nix-repo "$PWD" \
   --vllm-repo /tmp/vllm-kvarn-upstream-sync \
   --kernels-repo /tmp/vllm-xpu-kernels-upstream-sync \
-  --flush-writer sinkhorn_pack_xe2 \
+  --flush-writer native_xe2 \
   --prefill-store hadamard_scatter
 ```
 
@@ -330,12 +329,11 @@ repositories, with ambiguous shared libraries, or without exact Nix
 derivation and closure attestations. Evidence is written atomically under
 `benchmark-results/kvarn/`; `/tmp` and overwrites are rejected.
 
-The `sinkhorn_pack_xe2` writer is an independently selectable Round5
-candidate. It fuses Sinkhorn balancing and DPAS-record packing directly from
-the FP16/BF16 tail pages, while `native_xe2` remains the prior native packer
-for already-balanced FP32 tensors and `reference` remains the correctness
-implementation. All three preserve the same immutable `xe2_dpas` cache ABI;
-only the two native writers require that layout.
+Historical note: Round 5 evaluated a `sinkhorn_pack_xe2` writer that fused
+Sinkhorn balancing and DPAS-record packing directly from FP16/BF16 tail pages.
+It is not present in the beta library and every live launcher rejects it. Its
+name remains in archived evidence and the performance gate solely so old
+result directories can still be audited.
 
 Use `--service-layer-count 16` to add the service-shaped primitive screen. It
 allocates disjoint auto caches and Kvarn packed-cache/tail pools for sixteen
@@ -356,9 +354,10 @@ oracle before their timing is reported.
 
 The mandatory B70 kill suite is selector-scoped. A `native_xe2` writer run
 adds compact/padded byte-exact packing, ragged block IDs, arbitrary values,
-ties-to-even, constant rows, and invalid-stride rejection. A
-`sinkhorn_pack_xe2` run adds raw FP16/BF16 Sinkhorn-to-record differential,
-halfway-rounding, ragged ownership, long-address, and invalid-ABI gates. A
+ties-to-even, constant rows, and invalid-stride rejection. Historical
+`sinkhorn_pack_xe2` artifacts recorded raw FP16/BF16 Sinkhorn-to-record
+differential, halfway-rounding, ragged ownership, long-address, and invalid-ABI
+gates, but that writer is no longer runnable. A
 `hadamard_scatter` prefill run adds FP16/BF16, structured rows, deterministic
 repeat, allocator reuse, and B1/B4 backend-stride append cases. Incorrect
 writers therefore fail before the slower service correctness matrix.
@@ -623,7 +622,14 @@ and an ID18 last-arrival fused reduction. Build compatible variants together,
 retain ID18 unchanged as the native control, and screen B1/B4 at 4K before any
 long-context or formal service matrix.
 
-The Round 8 one-build selectors are independently composable:
+### Historical Round 8 discarded experiments
+
+The remainder of this Round 8 section records archived experiment provenance,
+not a runnable recipe. ID22 and `sinkhorn_pack_xe2` are absent from the beta
+library and rejected by current launchers; the performance gate alone retains
+their vocabulary to validate old artifacts.
+
+The archived Round 8 one-build selectors were independently composable:
 
 - `--native-frontend qkv_scatter_inline_current_stream` selects S1 and must
   execute an active line containing
@@ -639,11 +645,8 @@ S1 screening assumes the factory's single eager, in-order XPU stream. It is
 not promotable until service evidence also binds that stream-identity receipt;
 the current-stream op must never be inferred merely from the startup selector.
 
-Use this compact, non-promotable Round 8 screen after building the shared
-candidate once. It exercises the combined S1 + H + ID22 hypothesis at B1 and
-B4 under the unchanged Round 7 4K workload; run the retained ID18/current-QKV/
-`trusted_native` control from the same candidate closure before drawing a
-comparison.
+The following command is preserved verbatim as historical provenance. Current
+launchers intentionally reject it.
 
 ```console
 scripts/kvarn_perf_run.py \

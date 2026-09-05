@@ -74,12 +74,11 @@ NATIVE_KERNEL_VARIANTS = {
     "q6_prefetch_record_cursor": 18,
     "q6_page_metadata_cursor": 20,
     "q6_paired_nibble_half2": 21,
-    "q6_last_arrival_fused_reduce": 22,
 }
 REFERENCE_NATIVE_KERNEL_VARIANT = "baseline"
 NATIVE_SPLIT_POLICIES = split_policy.NATIVE_SPLIT_POLICIES
 FLUSH_INDEX_MATERIALIZATION_VARIANTS = ("per_layer", "shared")
-FLUSH_WRITER_VARIANTS = ("reference", "native_xe2", "sinkhorn_pack_xe2")
+FLUSH_WRITER_VARIANTS = ("reference", "native_xe2")
 PREFILL_STORE_VARIANTS = ("reference", "hadamard_scatter")
 NATIVE_FRONTEND_VARIANTS = (
     "reference",
@@ -127,13 +126,6 @@ QLEN1_INLINE_PLAN_ACTIVE_MARKERS = {
     "trusted_native": QLEN1_INLINE_PLAN_ACTIVE_MARKER,
     "bound_native_v2": "[KVARN_BOUND_QLEN1_INLINE] active=bound_native_v2;",
 }
-LAST_ARRIVAL_KERNEL_VARIANT = "q6_last_arrival_fused_reduce"
-LAST_ARRIVAL_ACTIVE_MARKER = (
-    "[KVARN_FACTORY] ID22 last-arrival fused reduction active;"
-)
-LAST_ARRIVAL_DOWNGRADE_MARKER = (
-    "[KVARN_FACTORY] ID22 last-arrival fused reduction downgraded to ID18;"
-)
 DECODE_FLUSH_SCOPES = ("per_row", "batch_cohort")
 DECODE_FLUSH_SCOPE_IDS = {"per_row": "dfs-r", "batch_cohort": "dfs-b"}
 DECODE_FLUSH_BATCH_MARKER_PATTERN = re.compile(
@@ -167,14 +159,12 @@ B70_Q6_KERNEL_VARIANTS = frozenset(
         "q6_prefetch_record_cursor",
         "q6_page_metadata_cursor",
         "q6_paired_nibble_half2",
-        "q6_last_arrival_fused_reduce",
     }
 )
 RUNTIME_FACTORY_ONLY_KERNEL_VARIANTS = frozenset(
     {
         "q6_page_metadata_cursor",
         "q6_paired_nibble_half2",
-        "q6_last_arrival_fused_reduce",
     }
 )
 IMMUTABLE_QUALIFIED_KERNEL_VARIANTS = (
@@ -483,9 +473,7 @@ class SchedulerSampling:
     started_monotonic: float
 
 
-def configured_max_num_seqs_for_run(
-    run: PlannedRun, args: argparse.Namespace
-) -> int:
+def configured_max_num_seqs_for_run(run: PlannedRun, args: argparse.Namespace) -> int:
     """Return engine admission width independently of client concurrency.
 
     The historical behavior remains the default: each B1/B4 workload launches
@@ -1138,10 +1126,7 @@ def load_correctness(
                 "named correctness split policy nominal map differs from its contract"
             )
         native_splits: dict[int, int] = (
-            {
-                int(batch): splits
-                for batch, splits in raw_native_splits.items()
-            }
+            {int(batch): splits for batch, splits in raw_native_splits.items()}
             if native_split_policy == "b70_q6"
             else {}
         )
@@ -1340,9 +1325,7 @@ def runtime_factory_axes_for_run(
         "KVARN_FACTORY_KV_CACHE_DTYPE": ARM_SETTINGS[run.arm]["kv_cache_dtype"],
         "KVARN_FACTORY_METADATA_LIFECYCLE": metadata_lifecycle_for_run(run, args),
         "KVARN_FACTORY_MAX_MODEL_LEN": str(args.max_model_len),
-        "KVARN_FACTORY_MAX_NUM_SEQS": str(
-            configured_max_num_seqs_for_run(run, args)
-        ),
+        "KVARN_FACTORY_MAX_NUM_SEQS": str(configured_max_num_seqs_for_run(run, args)),
         "KVARN_FACTORY_NATIVE_XPU_FRONTEND": native_frontend_for_run(run, args),
         "KVARN_FACTORY_ONEDNN_DETERMINISTIC": (onednn_deterministic_environment(args)),
         "KVARN_FACTORY_PREFILL_STORE": prefill_store_for_run(run, args),
@@ -1374,9 +1357,7 @@ def runtime_factory_axes_for_run(
         "KVARN_FACTORY_KV_CACHE_DTYPE": "auto",
         "KVARN_FACTORY_METADATA_LIFECYCLE": "reference",
         "KVARN_FACTORY_MAX_MODEL_LEN": str(args.max_model_len),
-        "KVARN_FACTORY_MAX_NUM_SEQS": str(
-            configured_max_num_seqs_for_run(run, args)
-        ),
+        "KVARN_FACTORY_MAX_NUM_SEQS": str(configured_max_num_seqs_for_run(run, args)),
         "KVARN_FACTORY_NATIVE_XPU_FRONTEND": "reference",
         "KVARN_FACTORY_ONEDNN_DETERMINISTIC": (onednn_deterministic_environment(args)),
         "KVARN_FACTORY_PREFILL_STORE": "reference",
@@ -1779,9 +1760,7 @@ def parse_startup_capacity(
     matches = [
         {
             "kv_cache_tokens": int(match.group("kv_tokens").replace(",", "")),
-            "request_tokens": int(
-                match.group("request_tokens").replace(",", "")
-            ),
+            "request_tokens": int(match.group("request_tokens").replace(",", "")),
             "maximum_concurrency": float(match.group("max_concurrency")),
             "log_marker": match.group(0),
         }
@@ -2438,12 +2417,8 @@ def sample_scheduler(
                         "elapsed_seconds": time.monotonic() - started_monotonic,
                         "running": metrics["vllm:num_requests_running"],
                         "waiting": metrics["vllm:num_requests_waiting"],
-                        "kv_cache_usage_perc": metrics[
-                            "vllm:kv_cache_usage_perc"
-                        ],
-                        "preemptions_total": metrics[
-                            "vllm:num_preemptions_total"
-                        ],
+                        "kv_cache_usage_perc": metrics["vllm:kv_cache_usage_perc"],
+                        "preemptions_total": metrics["vllm:num_preemptions_total"],
                     }
                 )
             except (OSError, ValueError, RunnerError) as exc:
@@ -2474,7 +2449,9 @@ def scheduler_summary(
     *,
     configured_max_num_seqs: int | None = None,
 ) -> dict[str, Any]:
-    configured = required if configured_max_num_seqs is None else configured_max_num_seqs
+    configured = (
+        required if configured_max_num_seqs is None else configured_max_num_seqs
+    )
     peak = max((float(sample["running"]) for sample in samples), default=0.0)
     peak_waiting = max((float(sample["waiting"]) for sample in samples), default=0.0)
     peak_kv = max(
@@ -2719,9 +2696,7 @@ def validate_engine_log(
             f"{scope} engine log must {expectation} the selected qlen1 inline plan"
         )
     if unexpected_qlen1_markers:
-        raise RunnerError(
-            "engine log must not execute a different qlen1 inline plan"
-        )
+        raise RunnerError("engine log must not execute a different qlen1 inline plan")
     if expected_forward_pool_ensure not in FORWARD_POOL_ENSURE_VARIANTS:
         raise RunnerError(
             f"unsupported forward pool ensure {expected_forward_pool_ensure!r}"
@@ -2841,17 +2816,6 @@ def validate_engine_log(
                 "engine log lacks the exact immutable Kvarn factory selection: "
                 + marker
             )
-    if LAST_ARRIVAL_DOWNGRADE_MARKER in text:
-        raise RunnerError("engine log reports an ID22 fused-reducer downgrade")
-    last_arrival_active = LAST_ARRIVAL_ACTIVE_MARKER in text
-    expected_last_arrival_active = (
-        native and expected_kernel_variant == LAST_ARRIVAL_KERNEL_VARIANT
-    )
-    if last_arrival_active != expected_last_arrival_active:
-        expectation = "execute" if expected_last_arrival_active else "not execute"
-        raise RunnerError(
-            f"engine log must {expectation} the selected ID22 fused reducer"
-        )
     result["xpu_runtime"] = xpu
     result["native_layout_expected"] = expected_layout
     result["native_layout_log_marker"] = marker or "unavailable"
@@ -2886,12 +2850,6 @@ def validate_engine_log(
     result["qlen1_inline_plan_active_log_marker"] = (
         expected_qlen1_active_marker
         if expected_qlen1_inline_active
-        else "not_applicable"
-    )
-    result["native_last_arrival_active_verified"] = last_arrival_active
-    result["native_last_arrival_log_marker"] = (
-        LAST_ARRIVAL_ACTIVE_MARKER
-        if expected_last_arrival_active
         else "not_applicable"
     )
     result["forward_pool_ensure_expected"] = expected_forward_pool_ensure
@@ -3015,10 +2973,8 @@ def persist_warmup_result(
     ):
         raise RunnerError("warmup scheduler metrics are incomplete or mismatched")
     if (
-        startup_capacity.get("offered_concurrency")
-        != workload.offered_concurrency
-        or startup_capacity.get("configured_max_num_seqs")
-        != configured_max_num_seqs
+        startup_capacity.get("offered_concurrency") != workload.offered_concurrency
+        or startup_capacity.get("configured_max_num_seqs") != configured_max_num_seqs
     ):
         raise RunnerError("warmup startup-capacity evidence is mismatched")
     result = {
@@ -3096,10 +3052,8 @@ def seal_benchmark_result(
     ):
         raise RunnerError("full-duration scheduler evidence is invalid")
     if (
-        startup_capacity.get("offered_concurrency")
-        != workload.offered_concurrency
-        or startup_capacity.get("configured_max_num_seqs")
-        != configured_max_num_seqs
+        startup_capacity.get("offered_concurrency") != workload.offered_concurrency
+        or startup_capacity.get("configured_max_num_seqs") != configured_max_num_seqs
     ):
         raise RunnerError("startup-capacity evidence is invalid")
     max_num_batched_tokens = profile.get("max_num_batched_tokens")
@@ -3346,12 +3300,6 @@ def seal_benchmark_result(
         ],
         "kvarn_native_frontend_current_stream_log_marker": scan_document[
             "native_frontend_current_stream_log_marker"
-        ],
-        "kvarn_native_last_arrival_active_verified": scan_document[
-            "native_last_arrival_active_verified"
-        ],
-        "kvarn_native_last_arrival_log_marker": scan_document[
-            "native_last_arrival_log_marker"
         ],
         "kvarn_qlen1_inline_plan_selection_verified": scan_document[
             "qlen1_inline_plan_selection_verified"
@@ -3646,9 +3594,7 @@ def run_one(
             engine_log_sha256=sealed["kvarn_engine_log_sha256"],
             scheduler_peak_running=scheduler["peak_running"],
             scheduler_peak_waiting=scheduler["peak_waiting"],
-            scheduler_preemptions_total_delta=scheduler[
-                "preemptions_total_delta"
-            ],
+            scheduler_preemptions_total_delta=scheduler["preemptions_total_delta"],
             offered_concurrency=run.workload.offered_concurrency,
             configured_max_num_seqs=configured_max_num_seqs_for_run(run, args),
             startup_maximum_concurrency=startup_capacity["maximum_concurrency"],
@@ -4148,9 +4094,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             {
                 **dataclasses.asdict(run),
                 "offered_concurrency": run.workload.offered_concurrency,
-                "configured_max_num_seqs": configured_max_num_seqs_for_run(
-                    run, args
-                ),
+                "configured_max_num_seqs": configured_max_num_seqs_for_run(run, args),
                 "nominal_native_splits": native_splits_for_run(run, args),
                 "effective_native_splits": native_splits_for_run(run, args),
                 "expected_native_max_splits": native_max_splits_for_run(run, args),

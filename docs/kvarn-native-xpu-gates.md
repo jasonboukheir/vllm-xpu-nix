@@ -499,10 +499,12 @@ proofs plus an active qlen=1 frontend line containing
 is screened only on the single eager, in-order XPU stream until a separate
 stream-identity receipt qualifies it for promotion.
 `--qlen1-inline-plan bound_native_v2` requires the exact
-`[KVARN_BOUND_QLEN1_INLINE] active=bound_native_v2;` execution marker. ID22
-requires `[KVARN_FACTORY] ID22 last-arrival fused reduction active;`; selecting
-ID22 at startup but downgrading to ID18 at runtime fails the selected-variant
-gate.
+`[KVARN_BOUND_QLEN1_INLINE] active=bound_native_v2;` execution marker.
+Historical Round 8 artifacts for the now-retired ID22 require
+`[KVARN_FACTORY] ID22 last-arrival fused reduction active;`; selecting ID22 at
+startup but downgrading to ID18 fails historical-artifact validation. Current
+launchers reject ID22, while the performance gate retains this check solely for
+auditing archived results.
 The service-only `--forward-pool-ensure always|epoch_latch|fused_qkv_proof`
 selector is
 captured in service profiles and sealed provenance. `fused_qkv_proof` requires

@@ -78,8 +78,9 @@ Local qualification passed on 2026-09-06 for vLLM
   passed. Both 6,143-token prompts exercised compressed image history and
   crossed a decode page boundary.
 - No missing-kernel/reference-attention fallback warnings in either final arm.
-- The earlier packaging Nix check passed 471 tests. The final remote-pin
-  check remains pending SSH authentication and lock refresh.
+- The final remote-pinned packaging Nix check passed 471 tests, including
+  exact source-pin assertions. Building from the remote pins reproduced the
+  already-qualified immutable runtime exactly; no GPU rerun was necessary.
 
 Final warmed medians (three 96-output-token samples per arm):
 
@@ -102,7 +103,13 @@ One transient `/proc` sampling error and a shutdown semaphore-cleanup warning
 are retained; the managed services exited. The general multi-device package
 was not rebuilt; qualification used the documented narrow B70 build.
 
-**Publication pending:** the final branch push, lock refresh/check, coordinated
-tags, and release pages must finish after the local SSH authentication agent
-responds. No xpu-v1.6 tag or release page has been published. Do not present
-this draft as an already published release.
+## Coordinated release
+
+The coordinated `xpu-v1.6` tag identifies this beta release in
+`jasonbk/vllm-xpu-nix`, `jasonbk/vllm`, and `jasonbk/vllm-xpu-kernels`.
+The packaging lockfile pins the exact qualified source commits above.
+The packaging release page carries the raw qualification evidence archive
+and its SHA256 checksum. Historical diagnostic captures remain identified as
+such; they are not substituted for the final qualified pair.
+
+Production is not deployed by this release. Frozen xpu-v1.5 refs are unchanged.

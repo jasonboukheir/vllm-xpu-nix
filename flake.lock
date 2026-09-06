@@ -135,11 +135,11 @@
     "vllm-xpu-unstable-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1788681034,
-        "narHash": "sha256-07ChJiEqghK9JidYr5WNiCQ+jO17SdYHrtk9bWZ/Mp0=",
+        "lastModified": 1788681724,
+        "narHash": "sha256-kRZbAx1u3j4jAC5ygfK0sHqtmB8LzSUWMeIS2o2kbvc=",
         "ref": "refs/heads/releases/xpu-v1.6",
-        "rev": "86bd76cd03fefabef85d3f0a23d64eea43099f0a",
-        "revCount": 20906,
+        "rev": "f9a7a62a1ae02d2b33385663c97049172f98f4c9",
+        "revCount": 20907,
         "type": "git",
         "url": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm.git"
       },

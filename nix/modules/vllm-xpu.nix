@@ -181,10 +181,11 @@ let
             MSE-Lloyd-Max + V to 4-bit. KL vs FP16 KV at 4096 ctx
             measured at 0.0179 — functionally identical for greedy
             decoding.
-          - `kvarn_k4v4_g128_compact` — experimental calibration-free K/V
-            compression in one natural-size 128-token record. Requires a
-            vLLM and kernel build carrying Kvarn support; bring it up eager,
-            text-only, without speculative decoding or prefix caching first.
+          - `kvarn_k4v4_g128_compact` — calibration-free K/V compression in
+            one 128-token record. On the xpu-v1.6 package this selects the
+            fixed B70 profile; no `KVARN_*` tuning variables are required.
+            The qualified vision envelope is Qwen3.5 images with video off,
+            V1 eager mode, batch 1, and no prefix cache or speculation.
           Tighter KV is the headroom that lets concurrent agentic
           sessions accumulate context without evicting.
         '';

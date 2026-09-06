@@ -1,5 +1,9 @@
 # Run Kvarn acceptance on Brutus
 
+> **Frozen xpu-v1.5 archive.** Named launchers and `KVARN_*` trial switches in
+> this runbook are retained solely to interpret historical evidence. They are
+> not supported release interfaces and must not be used with xpu-v1.6.
+
 This runbook realizes the frozen profile in
 [`kvarn-validation.md`](kvarn-validation.md) from the three local feature
 branches without changing the deployed NixOS configuration. Run it locally on

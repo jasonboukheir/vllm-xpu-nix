@@ -1,5 +1,9 @@
 # Native XPU Kvarn gate sequence
 
+> **Frozen xpu-v1.5 archive.** This document records the gates used while the
+> B70 path was selected. Its candidate switches are not shipped or accepted as
+> xpu-v1.6 configuration; the released KVarN dtype uses one fixed profile.
+
 This is the short operational checklist for moving the Brutus Qwen3.8 service
 from the accepted Triton Kvarn reader to the native Xe2 decoder. The existing
 non-native Kvarn service remains the rollback until every correctness gate

@@ -21,7 +21,7 @@
     vllm-xpu-kernels-unstable-src = {
       type = "git";
       url = "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm-xpu-kernels.git";
-      ref = "refs/heads/releases/xpu-v1.5";
+      ref = "refs/heads/releases/xpu-v1.6";
       submodules = true;
       flake = false;
     };
@@ -36,7 +36,7 @@
     vllm-xpu-unstable-src = {
       type = "git";
       url = "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm.git";
-      ref = "refs/heads/releases/xpu-v1.5";
+      ref = "refs/heads/releases/xpu-v1.6";
       flake = false;
     };
 
@@ -226,16 +226,17 @@
             version = vllmUnstableVersion;
             kernels = vllm-xpu-kernels-unstable;
             mcpPackage = python312PackagesXpu.mcp-v2;
+            withTorchvision = true;
           };
 
-          # Kvarn optimization factory for Brutus's frozen Qwen3.8 profile.
-          # The static attention sources contain every runtime-selectable
-          # Kvarn candidate; these config files narrow only upstream's
-          # generated FA2 Cartesian sweep.  Keep the two arms in the same
-          # package so auto and Kvarn cannot accidentally benchmark different
-          # builds.
-          kvarnFactoryKernelConfig = {
+          # Narrow kernel build used to qualify the released B70 KVarN path.
+          # These files limit upstream's generated FA2 Cartesian sweep; KVarN
+          # itself is selected solely by --kv-cache-dtype and has no packaged
+          # experiment-selector wrapper.
+          kvarnValidationKernelConfig = {
             chunkPrefill = builtins.toFile "brutus-kvarn-chunk-prefill.conf" ''
+              # qualified Qwen vision encoder, noncausal head dimension 96
+              96,false,false,false,false,false
               # auto paged prompt/chunk processing
               256,true,true,false,false,false
 
@@ -248,22 +249,16 @@
             '';
           };
 
-          vllm-xpu-kvarn-factory = vllm-xpu-unstable.override {
-            withTorchvision = true;
+          # Narrow qualification build for the released B70 KVarN profile.
+          # Runtime selection is owned by the KVarN dtype defaults; this
+          # artifact deliberately exposes no candidate/factory launcher.
+          vllm-xpu-kvarn-validation = vllm-xpu-unstable.override {
             aotDevices = [ "bmg" ];
-            kernelConfig = kvarnFactoryKernelConfig;
+            kernelConfig = kvarnValidationKernelConfig;
           };
-          kvarnFactoryAttentionLibrary =
-            vllm-xpu-kvarn-factory.kernelPackage.kernelLibraries.attn-kernels-xe-2;
-          kvarnFactoryAttentionSourceProvenance = kvarnFactoryAttentionLibrary.kernelSourceProvenance;
-
-          # Run the entire B70 candidate matrix from the same Python closure
-          # as the factory package.  The host script receives the embedded
-          # package as its positional artifact, so the environment and the
-          # attested shared objects cannot silently come from different
-          # builds.
-          kvarnFactoryPython = pkgs.python312.withPackages (_: [
-            vllm-xpu-kvarn-factory
+          # Python/service wrapper from the same immutable package closure.
+          kvarnValidationPython = pkgs.python312.withPackages (_: [
+            vllm-xpu-kvarn-validation
             pkgs.python312Packages.pytest
           ]);
 
@@ -276,85 +271,21 @@
           # arguments to Python.  PYTHONPATH is the sole exception: the
           # withPackages environment already owns its complete module path,
           # while vLLM's argument contains a package-output placeholder.
-          kvarnFactoryRuntimeWrapperArgs = builtins.filter (
+          kvarnValidationRuntimeWrapperArgs = builtins.filter (
             arg: !(pkgs.lib.hasPrefix "--prefix PYTHONPATH " arg)
-          ) vllm-xpu-kvarn-factory.makeWrapperArgs;
-          vllm-xpu-kvarn-factory-env = pkgs.symlinkJoin {
-            name = "vllm-xpu-kvarn-factory-env";
-            paths = [ kvarnFactoryPython ];
+          ) vllm-xpu-kvarn-validation.makeWrapperArgs;
+          vllm-xpu-kvarn-validation-env = pkgs.symlinkJoin {
+            name = "vllm-xpu-kvarn-validation-env";
+            paths = [ kvarnValidationPython ];
             nativeBuildInputs = [ pkgs.makeWrapper ];
             postBuild = ''
               rm -f "$out/bin/python" "$out/bin/python3" "$out/bin/python3.12"
               makeWrapper \
-                ${kvarnFactoryPython}/bin/python \
+                ${kvarnValidationPython}/bin/python \
                 "$out/bin/python" \
-                ${builtins.concatStringsSep " " kvarnFactoryRuntimeWrapperArgs}
+                ${builtins.concatStringsSep " " kvarnValidationRuntimeWrapperArgs}
               ln -s python "$out/bin/python3"
               ln -s python "$out/bin/python3.12"
-            '';
-          };
-          kvarn-factory-host = pkgs.writeShellApplication {
-            name = "kvarn-factory-host";
-            runtimeInputs = [
-              pkgs.gitMinimal
-              pkgs.nix
-            ];
-            text = ''
-              # Factory selectors and model-service settings must not leak
-              # into the direct primitive runner.  The runner passes every
-              # candidate selector explicitly to the native operators.
-              for variable in ''${!KVARN_@} ''${!VLLM_@}; do
-                unset "$variable"
-              done
-              unset \
-                PYTHONHOME PYTHONPATH PYTHONSTARTUP PYTHONUSERBASE \
-                PYTEST_ADDOPTS PYTEST_PLUGINS LD_AUDIT LD_PRELOAD \
-                LD_LIBRARY_PATH LIBRARY_PATH CC CXX CMPLR_ROOT \
-                LEVEL_ZERO_V1_SDK_PATH ONEAPI_ROOT SYCL_HOME \
-                ONEAPI_DEVICE_SELECTOR SYCL_DEVICE_FILTER ZE_AFFINITY_MASK \
-                CUDA_VISIBLE_DEVICES
-
-              export PYTHONNOUSERSITE=1
-              export PYTHONDONTWRITEBYTECODE=1
-              export PYTEST_DISABLE_PLUGIN_AUTOLOAD=1
-              export ONEAPI_ROOT=${intel-oneapi}
-              export SYCL_HOME=${intel-oneapi}/compiler/latest
-              export CMPLR_ROOT=${intel-oneapi}/compiler/latest
-              export LEVEL_ZERO_V1_SDK_PATH=${pkgs.level-zero}
-              export LIBRARY_PATH=${pkgs.level-zero}/lib
-              export LD_LIBRARY_PATH=${
-                pkgs.lib.makeLibraryPath [
-                  pkgs.level-zero
-                  pkgs.intel-graphics-compiler
-                  pkgs.intel-compute-runtime
-                  pkgs.intel-compute-runtime.drivers
-                ]
-              }
-              export CC=${pkgs.stdenv.cc}/bin/cc
-              export CXX=${pkgs.stdenv.cc}/bin/c++
-              export PATH=${
-                pkgs.lib.makeBinPath [
-                  pkgs.gitMinimal
-                  pkgs.nix
-                  pkgs.intel-compute-runtime
-                ]
-              }
-
-              exec ${kvarnFactoryPython}/bin/python \
-                ${./scripts/kvarn_factory_host.py} \
-                ${vllm-xpu-kvarn-factory} \
-                ${sourceRevision self} \
-                ${sourceRevision vllm-xpu-unstable-src} \
-                ${sourceRevision vllm-xpu-kernels-unstable-src} \
-                "$@" \
-                --expected-native-attention-output \
-                ${kvarnFactoryAttentionLibrary} \
-                --native-attention-source-scheme \
-                ${pkgs.lib.escapeShellArg kvarnFactoryAttentionSourceProvenance.artifactIdentity.scheme} \
-                --native-attention-source-store-hash \
-                ${pkgs.lib.escapeShellArg kvarnFactoryAttentionSourceProvenance.artifactIdentity.filteredSourceStoreHash} \
-                --native-attention-compatible-revision \
-                ${pkgs.lib.escapeShellArg kvarnFactoryAttentionSourceProvenance.compatibilityProvenance.upstreamRevision}
             '';
           };
 
@@ -372,6 +303,7 @@
           testPython = pkgs.python312.withPackages (_: [
             llm-compressor-xpu
             pkgs.python312Packages.huggingface-hub
+            pkgs.python312Packages.pillow
             pkgs.python312Packages.pytest
           ]);
         in
@@ -416,9 +348,8 @@
               vllm-xpu-kernels-unstable
               vllm-xpu
               vllm-xpu-unstable
-              vllm-xpu-kvarn-factory
-              vllm-xpu-kvarn-factory-env
-              kvarn-factory-host
+              vllm-xpu-kvarn-validation
+              vllm-xpu-kvarn-validation-env
               ;
             inherit (stableLibs)
               attn-kernels-xe-2
@@ -453,10 +384,6 @@
             kv-kernel-ab = {
               type = "app";
               program = "${kv-kernel-ab}/bin/kv-kernel-ab";
-            };
-            kvarn-factory = {
-              type = "app";
-              program = "${kvarn-factory-host}/bin/kvarn-factory-host";
             };
             lint = {
               type = "app";
@@ -510,7 +437,16 @@
                   # are collected. Keep files in separate processes because
                   # quantization modules use global plugin registries.
                   for test_file in tests/test_*.py; do
-                    python -m pytest "$test_file" -v -p no:cacheprovider
+                    # vLLM and llm-compressor pin different compressed-tensors
+                    # versions; validate each in its actual runtime closure.
+                    case "$test_file" in
+                      tests/test_kvarn_forced_decode.py)
+                        ${kvarnValidationPython}/bin/python -m pytest "$test_file" -v -p no:cacheprovider
+                        ;;
+                      *)
+                        ${testPython}/bin/python -m pytest "$test_file" -v -p no:cacheprovider
+                        ;;
+                    esac
                   done
                   touch $out
                 '';
@@ -564,7 +500,7 @@
         // pick "vllm-xpu-kernels-unstable"
         // pick "vllm-xpu"
         // pick "vllm-xpu-unstable"
-        // pick "vllm-xpu-kvarn-factory"
-        // pick "vllm-xpu-kvarn-factory-env";
+        // pick "vllm-xpu-kvarn-validation"
+        // pick "vllm-xpu-kvarn-validation-env";
     };
 }

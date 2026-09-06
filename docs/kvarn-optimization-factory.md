@@ -1,5 +1,10 @@
 # Kvarn Xe2 optimization factory
 
+> **Frozen xpu-v1.5 archive.** The factory selectors and launchers documented
+> here are historical experiment machinery, are not shipped by xpu-v1.6, and
+> must not be used to configure the xpu-v1.6 runtime. Select KVarN only with
+> `--kv-cache-dtype kvarn_k4v4_g128_compact`; its qualified profile is fixed.
+
 This document is the compact operating record for Kvarn decode optimization on
 the Intel Arc Pro B70. It complements the formal service gates in
 `kvarn-native-xpu-gates.md`; it does not weaken them.

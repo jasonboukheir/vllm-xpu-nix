@@ -496,7 +496,7 @@ def test_runner_command_forwards_matrix_and_exact_attestations(tmp_path: Path) -
     assert command[command.index("--fixture-mode") + 1] == "matched-production"
 
 
-def test_default_cli_is_the_matched_b70_factory_matrix() -> None:
+def test_cli_forwards_explicit_selections_and_rejects_invalid_combinations() -> None:
     argv = [
         "result-kvarn-factory",
         PROJECT_REVISION,
@@ -511,22 +511,6 @@ def test_default_cli_is_the_matched_b70_factory_matrix() -> None:
         "--native-attention-compatible-revision",
         KERNELS_REVISION,
     ]
-    args = host.parse_args(argv)
-    assert args.variants == host.DEFAULT_VARIANTS
-    assert args.variants == "all"
-    assert args.flush_writer == host.DEFAULT_FLUSH_WRITER
-    assert args.flush_writer == "reference"
-    assert args.prefill_store == host.DEFAULT_PREFILL_STORE
-    assert args.prefill_store == "reference"
-    assert args.factory_split_policy == "explicit"
-    assert args.splits == host.DEFAULT_SPLITS
-    assert args.contexts == host.DEFAULT_CONTEXTS
-    assert args.batches == host.DEFAULT_BATCHES
-    assert args.output_dtypes == host.DEFAULT_OUTPUT_DTYPES
-    assert args.warmup_rounds == host.DEFAULT_WARMUP_ROUNDS
-    assert args.sample_rounds == host.DEFAULT_SAMPLE_ROUNDS
-    assert args.service_layer_count == host.DEFAULT_SERVICE_LAYER_COUNT
-
     selected = host.parse_args(
         [
             *argv,

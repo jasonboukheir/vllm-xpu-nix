@@ -87,14 +87,16 @@ def audit(directory: Path) -> tuple[dict, list[dict]]:
         if not done or content != result["content"] or usage != result["usage"]:
             raise ValueError(f"response disagrees with raw stream: {case['id']}")
         if case.get("coverage"):
+            target = case["coverage"]["prompt_tokens"]
             tokenized = load(directory / f"{case['id']}-tokenize.json")
             positions = [
                 i for i, token in enumerate(tokenized["tokens"]) if token == 248056
             ]
             if (
                 not result["coverage_valid"]
-                or tokenized["count"] != 6143
-                or len(tokenized["tokens"]) != 6143
+                or tokenized["count"] != target
+                or len(tokenized["tokens"]) != target
+                or result["usage"]["prompt_tokens"] != target
                 or min(positions) <= 128
                 or max(positions) >= 2048
             ):

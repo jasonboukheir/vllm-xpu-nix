@@ -21,8 +21,6 @@ container, no host-managed `~/.local/lib/python*/site-packages`, no
 - [Quantize / eval](docs/quantize.md)
 - [Stable vs unstable](docs/stable-vs-unstable.md)
 - [KVarN XPU beta](docs/kvarn-beta.md)
-- [xpu-v1.7: qualified KVarN + images + bundled MTP](docs/releases/xpu-v1.7.md)
-- [Historical KVarN acceptance runbook](docs/kvarn-brutus-runbook.md)
 
 The non-trivial roadmap lives in the
 [issue tracker](https://github.com/jasonboukheir/vllm-xpu-nix/issues).

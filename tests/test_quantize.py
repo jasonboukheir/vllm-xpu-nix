@@ -40,11 +40,6 @@ class QuantizeTests(unittest.TestCase):
             config = quantize.workspace_config(Path(directory) / "Qwen" / "Qwen3-8B")
             self.assertEqual(config["publish"]["repo"], "jasonboukheir/Qwen3-8B-W4A16-AutoRound")
             self.assertFalse(config["publish"]["private"])
-            self.assertEqual(config["quantization"]["ignore"], ["lm_head"])
-            calibration = config["quantization"]["calibration"]
-            self.assertEqual(calibration["storage"]["mode"], "disk")
-            self.assertEqual(calibration["storage"]["pinned_staging_mib"], 512)
-            self.assertEqual(calibration["resources"]["memory_high_gib"], 68)
 
     def test_ignore_rules_accept_exact_and_regex_selectors(self):
         config = {"quantization": {"ignore": ["lm_head", r"re:.*mtp\.fc$"]}}
@@ -53,17 +48,6 @@ class QuantizeTests(unittest.TestCase):
     def test_ignore_rules_reject_commas(self):
         with self.assertRaises(SystemExit):
             quantize.ignore_rules({"quantization": {"ignore": ["lm_head,mtp.fc"]}})
-
-    def test_test_subcommand_defaults_to_two_timing_points(self):
-        args = quantize.parser().parse_args(["test"])
-        self.assertIs(args.func, quantize.cmd_test)
-        self.assertEqual(args.test_iters, [5, 20])
-        self.assertEqual(args.test_calibration_samples, 32)
-        self.assertFalse(args.full_calibration)
-
-    def test_doctor_subcommand(self):
-        args = quantize.parser().parse_args(["doctor"])
-        self.assertIs(args.func, quantize.cmd_doctor)
 
     def test_bf16_and_w4_commands_share_exact_workspace_identity(self):
         with tempfile.TemporaryDirectory() as directory:

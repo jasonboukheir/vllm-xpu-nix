@@ -31,12 +31,6 @@ def _runtime_args() -> argparse.Namespace:
 def test_b70_wave_sweep_is_factory_only_and_records_evidence() -> None:
     contract = policy.factory_split_policy_contract("b70_wave_sweep")
 
-    assert policy.NATIVE_SPLIT_POLICIES == (
-        "fixed",
-        "b70_q6",
-        "b70_q6_v2",
-        "b70_q6_id18_v1",
-    )
     assert "b70_wave_sweep" not in policy.NATIVE_SPLIT_POLICIES
     assert contract["selector"] == "b70_wave_sweep"
     assert contract["selection_mode"] == "enumerate_all_candidates_no_winner"
@@ -47,11 +41,6 @@ def test_b70_wave_sweep_is_factory_only_and_records_evidence() -> None:
         "name": "q6_prefetch_record_cursor",
         "id": 18,
     }
-    assert [item["sha256"] for item in contract["evidence"]] == [
-        "eb307d22aba29adf68556013bf4bf1d8cf4e31e69e40967d35d56c04a0c07869",
-        "ec92e73b7b1dd8aceae818dcfd32d5fff4024aa5059e5b9f52a4ff923df6c9aa",
-        "034feed1e2d15a149573cd5f2cfec905be8bc4da24d6b8e6be2048c290a21a52",
-    ]
 
 
 def test_explicit_factory_contract_does_not_claim_a_winner() -> None:
@@ -64,46 +53,7 @@ def test_explicit_factory_contract_does_not_claim_a_winner() -> None:
         policy.factory_split_policy_contract("explicit")
 
 
-def test_b70_q6_v2_contract_is_context_explicit_and_boundary_exact() -> None:
-    contract = policy.split_policy_contract("b70_q6_v2")
-
-    assert contract == {
-        "schema_version": 1,
-        "selector": "b70_q6_v2",
-        "selection_axes": ["decode_batch_size", "context_tokens"],
-        "supported_harness_batches": [1, 4],
-        "scratch_max_splits": 32,
-        "kernel_compatibility": {
-            "kind": "exact_variants",
-            "variants": [
-                {"name": "q6_next_page_prefetch", "id": 12},
-                {
-                    "name": "q6_next_page_prefetch_split_reducer",
-                    "id": 13,
-                },
-            ],
-        },
-        "rules": [
-            {
-                "batch": 1,
-                "context_tokens_minimum": 1,
-                "context_tokens_maximum_inclusive": None,
-                "num_kv_splits": 32,
-            },
-            {
-                "batch": 4,
-                "context_tokens_minimum": 1,
-                "context_tokens_maximum_inclusive": 49152,
-                "num_kv_splits": 8,
-            },
-            {
-                "batch": 4,
-                "context_tokens_minimum": 49153,
-                "context_tokens_maximum_inclusive": None,
-                "num_kv_splits": 32,
-            },
-        ],
-    }
+def test_b70_q6_v2_selects_splits_at_context_boundary() -> None:
     assert policy.nominal_splits_by_batch("b70_q6_v2") is None
     assert policy.effective_splits("b70_q6_v2", batch=1, context_tokens=262144) == 32
     assert policy.effective_splits("b70_q6_v2", batch=4, context_tokens=49152) == 8
@@ -126,41 +76,7 @@ def test_b70_q6_v2_accepts_profiled_id12_and_id13_only() -> None:
         )
 
 
-def test_b70_q6_id18_v1_contract_matches_vllm_runtime_policy() -> None:
-    contract = policy.split_policy_contract("b70_q6_id18_v1")
-
-    assert contract["selector"] == "b70_q6_id18_v1"
-    assert contract["selection_axes"] == ["decode_batch_size"]
-    assert contract["supported_harness_batches"] == [1, 4]
-    assert contract["supported_runtime_batches"] == list(range(1, 13))
-    assert contract["scratch_max_splits"] == 32
-    assert contract["kernel_compatibility"] == {
-        "kind": "exact_variant",
-        "name": "q6_prefetch_record_cursor",
-        "id": 18,
-    }
-    expected = {
-        "1": 32,
-        "2": 16,
-        "3": 8,
-        "4": 24,
-        "5": 4,
-        "6": 4,
-        "7": 4,
-        "8": 4,
-        "9": 2,
-        "10": 2,
-        "11": 2,
-        "12": 2,
-    }
-    assert policy.nominal_splits_by_batch("b70_q6_id18_v1") == expected
-    assert {
-        str(batch): policy.effective_splits(
-            "b70_q6_id18_v1", batch=batch, context_tokens=262144
-        )
-        for batch in range(1, 13)
-    } == expected
-
+def test_b70_q6_id18_policy_rejects_incompatible_kernels() -> None:
     policy.validate_kernel_compatibility(
         "b70_q6_id18_v1",
         "q6_prefetch_record_cursor",

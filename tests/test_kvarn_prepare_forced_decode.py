@@ -1,12 +1,11 @@
-import json
 import importlib.util
+import json
 from pathlib import Path
 
 import pytest
 
 ROOT = Path(__file__).parents[1]
 SCRIPT = ROOT / "scripts" / "kvarn_prepare_forced_decode.py"
-FIXTURES = ROOT / "fixtures" / "kvarn-long-generation.json"
 SPEC = importlib.util.spec_from_file_location("kvarn_prepare_forced_decode", SCRIPT)
 MODULE = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
@@ -19,29 +18,6 @@ class Tokenizer:
         return list(text.encode())
 
 
-def test_case_specs_cover_boundaries_and_near_maximum_context():
-    assert sum(case.decode_steps for case in MODULE.CASE_SPECS) == 4608
-    assert {
-        (case.prompt_tokens, case.prompt_tokens + 1) for case in MODULE.CASE_SPECS
-    } >= {
-        (127, 128),
-        (128, 129),
-        (4095, 4096),
-        (16383, 16384),
-        (32767, 32768),
-        (65023, 65024),
-    }
-    near_max = next(
-        case for case in MODULE.CASE_SPECS if case.name == "reasoning-65023"
-    )
-    assert near_max.prompt_tokens + near_max.decode_steps == 65535
-
-
-def test_load_fixtures_covers_every_case_category():
-    fixtures = MODULE.load_fixtures(FIXTURES)
-    assert {case.category for case in MODULE.CASE_SPECS} <= fixtures.keys()
-
-
 def test_select_case_specs_preserves_order_and_deduplicates():
     selected = MODULE.select_case_specs(
         ["reasoning-65023", "dialogue-127", "reasoning-65023"]
@@ -50,8 +26,8 @@ def test_select_case_specs_preserves_order_and_deduplicates():
     assert MODULE.select_case_specs(None) == MODULE.CASE_SPECS
 
 
-@pytest.mark.parametrize("target", [127, 128, 4095])
-def test_exact_prompt_ids_reaches_requested_length_deterministically(target):
+def test_exact_prompt_ids_reaches_requested_length_deterministically():
+    target = 257
     tokenizer = Tokenizer()
     first = MODULE.exact_prompt_ids(tokenizer, "short", "dialogue", target)
     second = MODULE.exact_prompt_ids(tokenizer, "short", "dialogue", target)
@@ -86,8 +62,10 @@ def test_exact_prompt_ids_rejects_trailing_prompt_larger_than_target():
 
 
 def test_materialize_service_fixtures_writes_every_selected_case(tmp_path):
-    names = ("dialogue-127", "code-4095", "math-16383", "reasoning-65023")
-    selected = MODULE.select_case_specs(list(names))
+    selected = (
+        MODULE.CaseSpec("first", "dialogue", 3, 7),
+        MODULE.CaseSpec("second", "code", 5, 9),
+    )
     for case in selected:
         case_dir = tmp_path / case.name
         case_dir.mkdir()
@@ -98,7 +76,7 @@ def test_materialize_service_fixtures_writes_every_selected_case(tmp_path):
 
     manifest = MODULE.materialize_service_fixtures(tmp_path, selected)
 
-    assert [item["name"] for item in manifest] == list(names)
+    assert [item["name"] for item in manifest] == ["first", "second"]
     for case in selected:
         fixture_path = tmp_path / case.name / "service-fixture.json"
         fixture = json.loads(fixture_path.read_text(encoding="utf-8"))

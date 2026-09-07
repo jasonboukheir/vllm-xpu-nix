@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Capture a diagnostic Kineto XPU timeline for one Brutus decode workload.
+"""Capture a diagnostic Kineto XPU timeline for one Brutus service workload.
 
 This runner deliberately does not implement a performance gate.  Profiling
 changes execution timing, so its output may explain an auto/Kvarn gap but may
@@ -29,13 +29,24 @@ from typing import Any
 
 try:
     from scripts import kvarn_perf_run as perf
+    from scripts.kvarn_xpu_profile_overhead import summarize_overhead
+    from scripts.kvarn_xpu_profile_sources import snapshot_sources, verify_sources
+    from scripts.kvarn_xpu_trace import analyze_attribution
 except ModuleNotFoundError:  # Direct execution from the scripts directory.
     import kvarn_perf_run as perf
+    from kvarn_xpu_profile_overhead import summarize_overhead
+    from kvarn_xpu_profile_sources import snapshot_sources, verify_sources
+    from kvarn_xpu_trace import analyze_attribution
 
 
 DIAGNOSTIC_WARNING = (
     "Profiled timings include Kineto overhead and are diagnostic only; do not "
     "use them for throughput, latency, parity, promotion, or acceptance claims."
+)
+LEGACY_WINDOW_WARNING = (
+    "Legacy GPU timestamp buckets do not identify submitting CPU steps. "
+    "Use correlated-attribution.json for step ownership; recorded kernel gaps "
+    "exclude copies and untraced work and are not proof of device idle time."
 )
 STEP_PATTERN = re.compile(
     r"^execute_(?P<total>\d+)_context_(?P<context_requests>\d+)"
@@ -62,24 +73,33 @@ def profile_delay_iterations(
 
 
 def profiler_config(
-    trace_dir: Path, *, delay_iterations: int, profile_steps: int
+    trace_dir: Path,
+    *,
+    delay_iterations: int,
+    profile_steps: int,
+    phase: str = "decode",
+    with_stack: bool = False,
+    record_shapes: bool = False,
 ) -> dict[str, Any]:
     if not trace_dir.is_absolute():
         raise perf.RunnerError("Kineto trace directory must be absolute")
     if delay_iterations < 1:
         raise perf.RunnerError("profile delay must be positive")
-    if not MIN_PROFILE_STEPS <= profile_steps <= MAX_PROFILE_STEPS:
+    minimum = MIN_PROFILE_STEPS if phase == "decode" else 1
+    if phase not in ("decode", "prefill"):
+        raise perf.RunnerError("profile phase must be decode or prefill")
+    if not minimum <= profile_steps <= MAX_PROFILE_STEPS:
         raise perf.RunnerError(
-            f"profile steps must be in [{MIN_PROFILE_STEPS}, {MAX_PROFILE_STEPS}]"
+            f"profile steps must be in [{minimum}, {MAX_PROFILE_STEPS}]"
         )
     return {
         "profiler": "torch",
         "torch_profiler_dir": str(trace_dir),
-        "torch_profiler_with_stack": False,
+        "torch_profiler_with_stack": with_stack,
         "torch_profiler_with_flops": False,
         "torch_profiler_use_gzip": True,
         "torch_profiler_dump_cuda_time_total": False,
-        "torch_profiler_record_shapes": False,
+        "torch_profiler_record_shapes": record_shapes,
         "torch_profiler_with_memory": False,
         "detailed_trace_annotation": True,
         "ignore_frontend": True,
@@ -258,6 +278,56 @@ def _parse_steps(
     return steps
 
 
+def _parse_prefill_steps(
+    events: Sequence[Mapping[str, Any]], *, batch: int, expected: int
+) -> list[dict[str, Any]]:
+    """Parse exact pure-prefill annotations while preserving all fields."""
+    steps: list[dict[str, Any]] = []
+    for event in events:
+        name = event.get("name")
+        if event.get("ph") != "X" or not isinstance(name, str):
+            continue
+        match = STEP_PATTERN.fullmatch(name)
+        if match is None:
+            continue
+        start, duration = _numeric(event.get("ts")), _numeric(event.get("dur"))
+        if start is None or duration is None or duration <= 0:
+            raise perf.RunnerError("prefill-step annotation has invalid timestamp")
+        fields = {key: int(value) for key, value in match.groupdict().items()}
+        if not (
+            0 <= fields["context_requests"] <= batch
+            and fields["context_requests"] > 0
+            and fields["total"] == fields["context_tokens"]
+            and fields["generation_requests"] == 0
+            and fields["generation_tokens"] == 0
+            and fields["generation_sk"] == 0
+            and fields["generation_sqsq"] == 0
+            and fields["generation_sqsk"] == 0
+            and fields["context_tokens"] >= fields["context_requests"]
+            and fields["context_sk"] >= fields["context_tokens"]
+            and fields["context_sqsq"] >= fields["context_tokens"]
+            and fields["context_sqsk"] >= fields["context_sqsq"]
+            and fields["context_sqsq"] <= fields["context_tokens"] ** 2
+            and fields["context_tokens"] ** 2
+            <= fields["context_requests"] * fields["context_sqsq"]
+            and fields["context_sqsk"]
+            <= fields["context_tokens"] * fields["context_sk"]
+        ):
+            raise perf.RunnerError("profile contains a non-pure-prefill annotated step")
+        if fields["context_requests"] == 1 and (
+            fields["context_sqsq"] != fields["context_tokens"] ** 2
+            or fields["context_sqsk"] != fields["context_tokens"] * fields["context_sk"]
+        ):
+            raise perf.RunnerError("prefill sequence summaries are inconsistent")
+        steps.append({"ts": start, "end": start + duration, **fields})
+    steps.sort(key=lambda step: step["ts"])
+    if len(steps) != expected:
+        raise perf.RunnerError(
+            f"expected exactly {expected} prefill steps, found {len(steps)}"
+        )
+    return steps
+
+
 def trace_device_names(document: Mapping[str, Any]) -> list[str]:
     properties = document.get("deviceProperties", [])
     if not isinstance(properties, list):
@@ -279,6 +349,7 @@ def analyze_trace(
     batch: int,
     profile_steps: int,
     hardware_preflight: Mapping[str, Any],
+    phase: str = "decode",
 ) -> dict[str, Any]:
     """Validate and summarize GPU events without producing a perf conclusion."""
     perf.validate_xpu_preflight(hardware_preflight)
@@ -296,17 +367,28 @@ def analyze_trace(
             "Kineto trace device properties do not name the preflight B70: "
             + json.dumps(device_names)
         )
-    steps = _parse_steps(events, batch=batch, context=context, expected=profile_steps)
+    if phase not in ("decode", "prefill"):
+        raise perf.RunnerError("profile phase must be decode or prefill")
+    steps = (
+        _parse_steps(events, batch=batch, context=context, expected=profile_steps)
+        if phase == "decode"
+        else _parse_prefill_steps(events, batch=batch, expected=profile_steps)
+    )
     kernels = [event for event in kernels if float(event["ts"]) >= steps[0]["ts"]]
     native_events = [
         event
         for event in events
         if event.get("ph") == "X"
-        and event.get("name") == "kvarn_native_xpu_decode"
+        and event.get("name")
+        in {
+            "kvarn_native_xpu_decode",
+            "_vllm_fa2_C::kvarn_decode",
+            "_vllm_fa2_C::kvarn_decode_with_scratch",
+        }
         and _numeric(event.get("ts")) is not None
     ]
     native_annotations = len(native_events)
-    if arm == "candidate" and native_annotations < profile_steps:
+    if phase == "decode" and arm == "candidate" and native_annotations < profile_steps:
         raise perf.RunnerError(
             "native profile lacks Kvarn decoder annotations for every decode step"
         )
@@ -319,12 +401,10 @@ def analyze_trace(
         selected = [
             event for event in kernels if step["ts"] <= float(event["ts"]) < upper
         ]
-        if not selected:
-            raise perf.RunnerError(f"decode step {index + 1} has no XPU kernel events")
         step_native_annotations = sum(
             step["ts"] <= float(event["ts"]) < upper for event in native_events
         )
-        if arm == "candidate" and step_native_annotations == 0:
+        if phase == "decode" and arm == "candidate" and step_native_annotations == 0:
             raise perf.RunnerError(
                 f"decode step {index + 1} has no native Kvarn annotation"
             )
@@ -332,11 +412,12 @@ def analyze_trace(
         per_step.append(
             {
                 "step": index + 1,
+                **step,
                 "generation_sequence_length_sum": step["generation_sk"],
                 "xpu_kernel_count": len(selected),
                 "xpu_kernel_duration_sum_us": sum(float(e["dur"]) for e in selected),
                 "native_decode_annotation_count": step_native_annotations,
-                **_interval_summary(intervals),
+                **(_interval_summary(intervals) if intervals else {}),
             }
         )
 
@@ -366,15 +447,21 @@ def analyze_trace(
         "acceptance_eligible": False,
         "parity_conclusion": None,
         "warning": DIAGNOSTIC_WARNING,
+        "legacy_timestamp_window_warning": LEGACY_WINDOW_WARNING,
+        "per_step_gpu_attribution_method": "legacy_timestamp_buckets_not_ownership",
         "timing_source": "Kineto XPU device kernel events",
         "accelerator": "xpu",
         "device_name": perf.EXPECTED_XPU_DEVICE_NAME,
         "trace_device_names": device_names,
         "arm": arm,
+        "phase": phase,
         "context": context,
         "batch": batch,
-        "steady_decode_steps": len(steps),
+        "profiled_steps": len(steps),
+        "prefill_steps": len(steps) if phase == "prefill" else 0,
+        "steady_decode_steps": len(steps) if phase == "decode" else 0,
         "native_decode_annotation_count": native_annotations,
+        "native_decode_scope_evidence": "explicit user scope or native dispatcher CPU op",
         "xpu_kernel_count": len(kernels),
         "xpu_kernel_duration_sum_us": kernel_duration_sum,
         "xpu_device_timeline": device_timeline,
@@ -382,7 +469,8 @@ def analyze_trace(
             queue: _interval_summary(intervals)
             for queue, intervals in sorted(by_queue.items())
         },
-        "decode_steps": per_step,
+        "decode_steps": per_step if phase == "decode" else [],
+        "prefill_step_details": per_step if phase == "prefill" else [],
         "distinct_xpu_kernel_names": len(kernel_table),
         "xpu_kernels_by_device_time": kernel_table[:100],
         "gpu_leaderboard_metrics": {
@@ -496,12 +584,36 @@ def _replace_option(command: list[str], name: str, value: str) -> None:
 
 
 def profile_benchmark_command(
-    run: perf.PlannedRun, args: argparse.Namespace, raw_result: Path
+    run: perf.PlannedRun,
+    args: argparse.Namespace,
+    raw_result: Path,
+    *,
+    collect_profile: bool = True,
 ) -> list[str]:
     command = perf.benchmark_command(run, args, raw_result)
     _replace_option(command, "--num-warmups", str(run.workload.batch))
-    command.append("--profile")
+    if collect_profile:
+        command.append("--profile")
     return command
+
+
+def run_unprofiled_bracket(run, args, run_dir: Path, label: str) -> dict:
+    raw = run_dir / f"{label}.raw.json"
+    command = profile_benchmark_command(run, args, raw, collect_profile=False)
+    perf.write_json_atomic(run_dir / f"{label}-argv.json", command)
+    with (run_dir / f"{label}.stdout.log").open("w", encoding="utf-8") as output:
+        status = perf.run_managed_process(
+            command,
+            cwd=args.packaging_repo,
+            environment=perf.runner_environment(args),
+            output=output,
+            timeout=args.benchmark_timeout,
+            supervisor=args.supervisor,
+            label=f"unprofiled overhead bracket: {label}",
+        )
+    if status != 0:
+        raise perf.RunnerError(f"{label} benchmark exited {status}")
+    return perf.load_and_validate_benchmark_result(raw, run.workload)
 
 
 def verify_profiler_process_config(
@@ -612,6 +724,10 @@ def _run_directory(args: argparse.Namespace) -> Path:
 
 
 def execute(args: argparse.Namespace) -> dict[str, Any]:
+    run_dir = _run_directory(args)
+    run_dir.mkdir(parents=True, exist_ok=False)
+    source_snapshot = run_dir / "source-snapshot"
+    snapshot_sources(args.packaging_repo, source_snapshot)
     workload = perf.Workload(
         context=args.context,
         batch=args.batch,
@@ -632,21 +748,51 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         )
     args.resolved_launchers = perf.resolve_launchers([run], args)
     variant = variant_provenance(run, args)
-    run_dir = _run_directory(args)
-    run_dir.mkdir(parents=True, exist_ok=False)
     trace_dir = (run_dir / "kineto").resolve()
     trace_dir.mkdir()
-    delay = profile_delay_iterations(
-        context=args.context,
-        batch=args.batch,
-        max_num_batched_tokens=args.max_num_batched_tokens,
+    delay = (
+        args.profile_start_step
+        if args.profile_start_step is not None
+        else profile_delay_iterations(
+            context=args.context,
+            batch=args.batch,
+            max_num_batched_tokens=args.max_num_batched_tokens,
+        )
     )
     config = profiler_config(
-        trace_dir, delay_iterations=delay, profile_steps=args.profile_steps
+        trace_dir,
+        delay_iterations=delay,
+        profile_steps=args.profile_steps,
+        phase=args.profile_phase,
+        with_stack=args.profile_with_stack,
+        record_shapes=args.profile_record_shapes,
     )
     hardware = perf.probe_xpu_hardware(args)
     hardware_path = run_dir / "hardware-preflight.json"
     perf.write_json_atomic(hardware_path, hardware)
+    # An ordinary XPU operation does not prove that Kineto/PTI can trace it.
+    # Verify device events and CPU correlation before loading the full model.
+    profiler_preflight = run_dir / "profiler-preflight.pt.trace.json"
+    with (run_dir / "profiler-preflight.log").open("w", encoding="utf-8") as log:
+        preflight_status = perf.run_managed_process(
+            [
+                str(args.candidate_env / "bin/python"),
+                "-m",
+                "scripts.kvarn_xpu_profile_smoke",
+                "--output",
+                str(profiler_preflight),
+            ],
+            cwd=args.packaging_repo,
+            environment=perf.runner_environment(args),
+            output=log,
+            timeout=120.0,
+            supervisor=args.supervisor,
+            label="XPU profiler preflight",
+        )
+    if preflight_status != 0:
+        raise perf.RunnerError(
+            "XPU profiler preflight failed; inspect profiler-preflight.log"
+        )
 
     run_uuid = str(uuid.uuid4())
     manifest: dict[str, Any] = {
@@ -659,9 +805,17 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         "parity_conclusion": None,
         "warning": DIAGNOSTIC_WARNING,
         "run_uuid": run_uuid,
+        "source_provenance_qualified": False,
+        "source_snapshot": str(source_snapshot),
+        "source_snapshot_sha256": perf.sha256_file(source_snapshot / "manifest.json"),
         "started_at": perf.utc_timestamp(),
+        "profiler_preflight": str(profiler_preflight),
+        "profiler_preflight_sha256": perf.sha256_file(profiler_preflight),
         "workload": dataclasses.asdict(workload),
         "arm": args.arm,
+        "profile_phase": args.profile_phase,
+        "profile_start_step": args.profile_start_step,
+        "profile_steps": args.profile_steps,
         "native_layout": perf.native_layout_for_run(run, args),
         "native_layout_environment": perf.NATIVE_LAYOUT_ENV[
             perf.native_layout_for_run(run, args)
@@ -744,6 +898,16 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         identity["qlen1_inline_plan"] = qlen1_inline_plan
         perf.write_json_atomic(run_dir / "candidate-identity.json", identity)
 
+        baseline_before = None
+        if args.measure_overhead:
+            baseline_before = run_unprofiled_bracket(
+                run, args, run_dir, "unprofiled-before"
+            )
+            if any(trace_dir.rglob("*.pt.trace.json*")):
+                raise perf.RunnerError(
+                    "unprofiled baseline unexpectedly generated a trace"
+                )
+
         raw_result = run_dir / "profiled-workload.raw.json"
         command = profile_benchmark_command(run, args, raw_result)
         perf.write_json_atomic(run_dir / "profiled-workload-argv.json", command)
@@ -784,11 +948,48 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         perf.write_json_atomic(run_dir / "scheduler-metrics.json", scheduler)
         if returncode != 0:
             raise perf.RunnerError(f"profiled benchmark exited {returncode}")
-        perf.load_and_validate_benchmark_result(raw_result, workload)
+        profiled_result = perf.load_and_validate_benchmark_result(raw_result, workload)
         if scheduler["peak_running"] < args.batch:
             raise perf.RunnerError(
                 f"scheduler peak {scheduler['peak_running']:g} did not reach B{args.batch}"
             )
+
+        if args.measure_overhead:
+            completed_trace = find_kineto_trace(trace_dir)
+            completed_hash = perf.sha256_file(completed_trace)
+            baseline_after = run_unprofiled_bracket(
+                run, args, run_dir, "unprofiled-after"
+            )
+            if (
+                find_kineto_trace(trace_dir) != completed_trace
+                or perf.sha256_file(completed_trace) != completed_hash
+            ):
+                raise perf.RunnerError(
+                    "unprofiled trailing baseline modified the trace"
+                )
+            try:
+                overhead = summarize_overhead(
+                    baseline_before, profiled_result, baseline_after
+                )
+            except ValueError as exc:
+                raise perf.RunnerError(str(exc)) from exc
+            overhead["inputs"] = {
+                name: {
+                    "path": str(run_dir / name),
+                    "sha256": perf.sha256_file(run_dir / name),
+                }
+                for name in (
+                    "unprofiled-before.raw.json",
+                    "profiled-workload.raw.json",
+                    "unprofiled-after.raw.json",
+                )
+            }
+            overhead["profiler_config"] = config
+            overhead["trace_unchanged_during_trailing_baseline"] = True
+            overhead_path = run_dir / "profiler-overhead.json"
+            perf.write_json_atomic(overhead_path, overhead)
+            manifest["profiler_overhead"] = str(overhead_path)
+            manifest["profiler_overhead_sha256"] = perf.sha256_file(overhead_path)
 
         engine_pid = service.engine_pid
         perf.stop_service(service, args.shutdown_timeout)
@@ -827,6 +1028,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         )
         perf.write_json_atomic(run_dir / "engine-log-scan.json", log_scan)
         trace_path = find_kineto_trace(trace_dir)
+        trace_hash = perf.sha256_file(trace_path)
         trace = load_trace(trace_path)
         summary = analyze_trace(
             trace,
@@ -835,11 +1037,35 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             batch=args.batch,
             profile_steps=args.profile_steps,
             hardware_preflight=hardware,
+            phase=args.profile_phase,
         )
+        attribution = analyze_attribution(trace)
+        if attribution["coverage"]["unresolved_host_origins"]:
+            raise perf.RunnerError("trace has unresolved CPU/device correlations")
+        if len(attribution["steps"]) != args.profile_steps or any(
+            not step["device_operation_count"] for step in attribution["steps"]
+        ):
+            raise perf.RunnerError("trace lacks attributed device work for every step")
+        if perf.sha256_file(trace_path) != trace_hash:
+            raise perf.RunnerError("trace changed while being analyzed")
+        attribution["provenance"] = {
+            "kineto_trace": str(trace_path),
+            "kineto_trace_sha256": trace_hash,
+            "analyzer_sha256": perf.sha256_file(
+                Path(__file__).with_name("kvarn_xpu_trace.py")
+            ),
+        }
+        attribution_path = run_dir / "correlated-attribution.json"
+        perf.write_json_atomic(attribution_path, attribution)
         summary.update(
             {
+                "correlated_attribution": str(attribution_path),
+                "correlated_attribution_sha256": perf.sha256_file(attribution_path),
                 "created_at": perf.utc_timestamp(),
                 "run_uuid": run_uuid,
+                "profile_phase": args.profile_phase,
+                "profile_start_step": args.profile_start_step,
+                "profiled_steps": args.profile_steps,
                 "native_layout": perf.native_layout_for_run(run, args),
                 "native_layout_environment": perf.NATIVE_LAYOUT_ENV[
                     perf.native_layout_for_run(run, args)
@@ -970,12 +1196,21 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         )
         summary_path = run_dir / "profile-summary.json"
         perf.write_json_atomic(summary_path, summary)
+        verify_sources(source_snapshot, source_root=args.packaging_repo)
+        if (
+            perf.sha256_file(source_snapshot / "manifest.json")
+            != manifest["source_snapshot_sha256"]
+        ):
+            raise perf.RunnerError("source snapshot manifest changed during capture")
         manifest.update(
             status="valid_diagnostic",
+            source_provenance_qualified=True,
             finished_at=perf.utc_timestamp(),
             service_pid=engine_pid,
             profile_summary=str(summary_path),
             profile_summary_sha256=perf.sha256_file(summary_path),
+            correlated_attribution=str(attribution_path),
+            correlated_attribution_sha256=perf.sha256_file(attribution_path),
             service_profile=str(run_dir / "diagnostic-service-profile.json"),
             service_profile_sha256=perf.sha256_file(
                 run_dir / "diagnostic-service-profile.json"
@@ -1077,6 +1312,29 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--batch", type=int, choices=(1, 4), default=1)
     parser.add_argument("--output-tokens", type=int, default=96)
     parser.add_argument("--profile-steps", type=int, default=32)
+    parser.add_argument(
+        "--profile-phase", choices=("decode", "prefill"), default="decode"
+    )
+    parser.add_argument(
+        "--profile-start-step",
+        type=int,
+        help="One-based worker iteration; required for prefill, optional override for decode.",
+    )
+    parser.add_argument(
+        "--measure-overhead",
+        action="store_true",
+        help="Bracket the profiled benchmark with identical unprofiled benchmarks in the same service.",
+    )
+    parser.add_argument(
+        "--profile-with-stack",
+        action="store_true",
+        help="Request source stacks for focused diagnosis; increases profiling overhead.",
+    )
+    parser.add_argument(
+        "--profile-record-shapes",
+        action="store_true",
+        help="Record operator input shapes for focused diagnosis; may retain tensors.",
+    )
     parser.add_argument("--seed", type=int, default=17)
     parser.add_argument(
         "--variant-id",
@@ -1306,19 +1564,49 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             )
         if args.context < 1 or args.context + args.output_tokens > args.max_model_len:
             raise perf.RunnerError("context plus output tokens exceeds model length")
-        if (
+        if args.output_tokens < 1:
+            raise perf.RunnerError("output tokens must be positive")
+        if args.profile_phase == "prefill" and args.profile_start_step is None:
+            raise perf.RunnerError("prefill profiles require --profile-start-step")
+        if args.profile_start_step is not None and args.profile_start_step < 1:
+            raise perf.RunnerError("profile start step must be positive")
+        if args.profile_phase == "decode" and (
             args.output_tokens
             < args.profile_steps + DECODE_SETTLE_STEPS + args.batch + 1
         ):
             raise perf.RunnerError(
                 "output tokens must leave room for settled profiled decode steps"
             )
-        if not MIN_PROFILE_STEPS <= args.profile_steps <= MAX_PROFILE_STEPS:
+        minimum_steps = MIN_PROFILE_STEPS if args.profile_phase == "decode" else 1
+        if not minimum_steps <= args.profile_steps <= MAX_PROFILE_STEPS:
             raise perf.RunnerError(
-                f"profile steps must be in [{MIN_PROFILE_STEPS}, {MAX_PROFILE_STEPS}]"
+                f"profile steps must be in [{minimum_steps}, {MAX_PROFILE_STEPS}]"
             )
+        if args.profile_phase == "prefill":
+            if args.max_num_batched_tokens < 1:
+                raise perf.RunnerError("max num batched tokens must be positive")
+            prefill_bound = args.batch * math.ceil(
+                args.context / args.max_num_batched_tokens
+            )
+            last_step = args.profile_start_step + args.profile_steps - 1
+            if last_step > prefill_bound:
+                raise perf.RunnerError(
+                    "prefill profile window exceeds conservative prefill bound"
+                )
         if args.max_num_batched_tokens < 1:
             raise perf.RunnerError("max num batched tokens must be positive")
+        if args.profile_phase == "decode" and args.profile_start_step is not None:
+            prefill_bound = args.batch * math.ceil(
+                args.context / args.max_num_batched_tokens
+            )
+            last_step = args.profile_start_step + args.profile_steps - 1
+            if (
+                args.profile_start_step <= prefill_bound
+                or last_step > prefill_bound + args.output_tokens - 1
+            ):
+                raise perf.RunnerError(
+                    "explicit decode window is outside the conservative decode bounds"
+                )
         if args.arm == "reference" and args.native_layout != "natural":
             raise perf.RunnerError("the auto reference layout must be natural")
         if (

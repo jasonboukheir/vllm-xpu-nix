@@ -182,10 +182,12 @@ let
             measured at 0.0179 — functionally identical for greedy
             decoding.
           - `kvarn_k4v4_g128_compact` — calibration-free K/V compression in
-            one 128-token record. On the xpu-v1.6 package this selects the
+            one 128-token record. On the xpu-v1.7 package this selects the
             fixed B70 profile; no `KVARN_*` tuning variables are required.
             The qualified vision envelope is Qwen3.5 images with video off,
-            V1 eager mode, batch 1, and no prefix cache or speculation.
+            V1 eager mode, batch 1, and no prefix cache. Bundled MTP supports
+            one or two draft tokens within the documented 8192-token envelope;
+            two is recommended. Speculation remains opt-in.
           Tighter KV is the headroom that lets concurrent agentic
           sessions accumulate context without evicting.
         '';
@@ -244,7 +246,12 @@ let
             drafter, model-aware fast path. Use this for
             Qwen3.6-35B-A3B (the model card's recommendation).
           - `eagle` / `eagle3` — separate draft model.
-          The K value (`num_speculative_tokens`) must match
+          For KVarN on xpu-v1.7 use `method = "mtp"` and
+          `num_speculative_tokens = 2` in the bounded Qwen3.5 B1/BF16
+          image envelope, with eager execution and no prefix cache.
+          One draft token is also qualified. KVarN does not support graphs.
+          For graph-enabled configurations outside KVarN, the K value
+          (`num_speculative_tokens`) must match
           `cudagraphCaptureSizes` because vLLM rounds capture sizes up
           to multiples of (K + 1) — verify-pass shape = 1 real + K
           spec. K=2 wants `[3]`, K=3 wants `[4]`, etc. Requires the
@@ -252,7 +259,7 @@ let
           tracks it); otherwise the SYCL `gdn_attention` kernel
           asserts on the first verify pass.
         '';
-        example = lib.literalExpression ''{ method = "qwen3_next_mtp"; num_speculative_tokens = 2; }'';
+        example = lib.literalExpression ''{ method = "mtp"; num_speculative_tokens = 2; }'';
       };
 
       enforceEager = lib.mkOption {

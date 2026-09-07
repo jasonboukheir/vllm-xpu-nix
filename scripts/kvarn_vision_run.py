@@ -35,6 +35,13 @@ def runtime_environment() -> dict[str, str]:
     return dict(TRANSPORT_ENVIRONMENT)
 
 
+def speculative_config(mtp: bool | int) -> dict | None:
+    """Normal bundled MTP configuration; runtime guards own support qualification."""
+    if mtp not in (0, 1, 2):
+        raise ValueError("draft count must be 0, 1 or 2")
+    return {"method": "mtp", "num_speculative_tokens": int(mtp)} if mtp else None
+
+
 def fixtures(directory: Path) -> list[dict]:
     """Deterministic image-grounded inputs with explicit expected answers."""
     from PIL import Image, ImageDraw, ImageFont
@@ -373,6 +380,58 @@ def request_case(base_url: str, case: dict, output: Path) -> dict:
     return result
 
 
+def performance_cases(base_url: str, source: dict, output: Path) -> list[dict]:
+    """Fixed B1 screen: short image, exact 4K text and aged 6143-token image."""
+    short = copy.deepcopy(source)
+    short["messages"][0]["content"][-1]["text"] = (
+        "Describe this image in detail in 300 words."
+    )
+    long = long_case(base_url, short, output)
+    text_case = {"id": "text-4k", "messages": [{"role": "user", "content": ""}]}
+    padding = 0
+    for _ in range(6):
+        text_case["messages"][0]["content"] = (
+            "Ignore this unrelated padding:\n"
+            + " x" * padding
+            + "\nExplain how rainbows form in 300 words."
+        )
+        tokenized = tokenize_case(base_url, text_case)
+        delta = 4096 - tokenized["count"]
+        if delta == 0:
+            break
+        padding += delta
+        if padding < 0:
+            raise ValueError("text prompt exceeds fixed performance context")
+    else:
+        raise ValueError("could not construct exact 4096-token text prompt")
+    perf.write_json_atomic(output / "text-4k-tokenize.json", tokenized)
+    cases = []
+    for index in range(4):
+        for name, template in (
+            ("short-image", short),
+            ("text-4k", text_case),
+            ("long-image", long),
+        ):
+            case = copy.deepcopy(template)
+            case.update(
+                id=f"bench-{name}-{index}",
+                expected_terms=[],
+                phase="warmup" if index == 0 else "performance",
+                generation={
+                    "max_tokens": 256,
+                    "ignore_eos": True,
+                    "return_token_ids": True,
+                },
+            )
+            if name == "long-image":
+                shutil.copyfile(
+                    output / f"{long['id']}-tokenize.json",
+                    output / f"{case['id']}-tokenize.json",
+                )
+            cases.append(case)
+    return cases
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
@@ -387,8 +446,49 @@ def main() -> None:
     )
     parser.add_argument("--max-model-len", type=int, default=8192)
     parser.add_argument("--port", type=int, default=8017)
-    parser.add_argument("--qualify", action="store_true")
+    suite = parser.add_mutually_exclusive_group()
+    suite.add_argument("--qualify", action="store_true")
+    suite.add_argument(
+        "--perf-suite",
+        action="store_true",
+        help="fixed 256-token short-image/4K-text/long-image timing suite",
+    )
+    suite.add_argument(
+        "--profile-workload",
+        choices=("short-image", "text-4k", "long-image"),
+        help="one warmed workload with an off/on/off diagnostic trace bracket",
+    )
+    parser.add_argument("--profile-stacks", action="store_true")
+    draft = parser.add_mutually_exclusive_group()
+    draft.add_argument(
+        "--mtp",
+        dest="draft_tokens",
+        action="store_const",
+        const=1,
+        default=0,
+        help="enable one-token bundled MTP",
+    )
+    draft.add_argument(
+        "--draft-tokens",
+        type=int,
+        choices=(0, 1, 2),
+        help="screen zero, one or two bundled draft tokens",
+    )
+    parser.add_argument(
+        "--token-evidence",
+        action="store_true",
+        help="retain generated token IDs in raw SSE",
+    )
+    parser.add_argument(
+        "--logprob-evidence",
+        action="store_true",
+        help="retain target top-5 logprobs for numerical correctness diagnosis",
+    )
     args = parser.parse_args()
+    if (args.perf_suite or args.profile_workload) and args.logprob_evidence:
+        parser.error("timed performance suite must not collect logprobs")
+    if args.profile_stacks and not args.profile_workload:
+        parser.error("--profile-stacks requires --profile-workload")
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=False)
     snapshot = output / "harness-source"
@@ -401,9 +501,22 @@ def main() -> None:
         "kvarn_scan_engine_log.py",
     ):
         shutil.copy2(ROOT / "scripts" / name, snapshot / name)
+    profile_config = None
+    if args.profile_workload:
+        from scripts.kvarn_xpu_profile import profiler_config
+
+        shutil.copy2(
+            ROOT / "scripts/kvarn_xpu_profile.py", snapshot / "kvarn_xpu_profile.py"
+        )
+        profile_config = profiler_config(
+            output / "traces", delay_iterations=7, profile_steps=20
+        )
+        profile_config["torch_profiler_with_stack"] = args.profile_stacks
     cases = fixtures(output / "images")
     perf.write_json_atomic(output / "workload.json", cases)
     selected_env = runtime_environment()
+    if profile_config is not None:
+        selected_env["VLLM_CUSTOM_SCOPES_FOR_PROFILING"] = "1"
     selected_env.update(
         {
             "VLLM_TARGET_DEVICE": "xpu",
@@ -457,6 +570,11 @@ def main() -> None:
         "qwen3",
         "--enable-prompt-tokens-details",
     ]
+    spec = speculative_config(args.draft_tokens)
+    if spec is not None:
+        argv.extend(["--speculative-config", json.dumps(spec, sort_keys=True)])
+    if profile_config is not None:
+        argv.extend(["--profiler-config", json.dumps(profile_config, sort_keys=True)])
     manifest = {
         "schema": "kvarn-vision-experiment-v1",
         "argv": argv,
@@ -464,6 +582,11 @@ def main() -> None:
         "service_env": str(service_env),
         "transport_environment": TRANSPORT_ENVIRONMENT,
         "kvarn_selection": "dtype-defaults-no-environment-overrides",
+        "speculative_config": spec,
+        "suite": "mtp-profile-256-v1"
+        if args.profile_workload
+        else ("mtp-performance-256-v1" if args.perf_suite else "vision-correctness"),
+        "profiler_config": profile_config,
         "harness_sha256": {p.name: perf.sha256_file(p) for p in snapshot.iterdir()},
         "workload_sha256": perf.sha256_file(output / "workload.json"),
         "image_sha256": {
@@ -513,7 +636,24 @@ def main() -> None:
                 ),
             }
         )
-        if args.qualify:
+        if profile_config is not None:
+            assert (
+                json.loads(actual_argv[actual_argv.index("--profiler-config") + 1])
+                == profile_config
+            )
+            assert actual_env["VLLM_CUSTOM_SCOPES_FOR_PROFILING"] == "1"
+        if args.perf_suite or args.profile_workload:
+            cases = performance_cases(args.base_url, cases[0], output)
+            if args.profile_workload:
+                cases = [
+                    case
+                    for case in cases
+                    if case["id"].startswith(f"bench-{args.profile_workload}-")
+                ]
+                cases[2]["phase"] = "profiled-diagnostic"
+            perf.write_json_atomic(output / "workload.json", cases)
+            manifest["workload_sha256"] = perf.sha256_file(output / "workload.json")
+        elif args.qualify:
             cases.extend(
                 long_case(args.base_url, source, output) for source in cases[:2]
             )
@@ -544,13 +684,54 @@ def main() -> None:
                     cases.append(case)
             perf.write_json_atomic(output / "workload.json", cases)
             manifest["workload_sha256"] = perf.sha256_file(output / "workload.json")
+        if args.token_evidence or args.logprob_evidence:
+            for case in cases:
+                case.setdefault("generation", {})["return_token_ids"] = True
+                if args.logprob_evidence:
+                    case["generation"].update(
+                        logprobs=True, top_logprobs=5, return_tokens_as_token_ids=True
+                    )
+            perf.write_json_atomic(output / "workload.json", cases)
+            manifest["workload_sha256"] = perf.sha256_file(output / "workload.json")
         perf.write_json_atomic(output / "manifest.json", manifest)
         results = []
         for case in cases:
+            if args.perf_suite or args.profile_workload:
+                (output / f"{case['id']}-metrics-before.txt").write_text(
+                    perf.http_text(args.base_url + "/metrics", timeout=10)
+                )
+            profiled = case.get("phase") == "profiled-diagnostic"
+            if profiled:
+                with urllib.request.urlopen(
+                    urllib.request.Request(
+                        args.base_url + "/start_profile", data=b"", method="POST"
+                    ),
+                    timeout=60,
+                ) as response:
+                    manifest["start_profile_status"] = response.status
             results.append(request_case(args.base_url, case, output))
+            if profiled:
+                with urllib.request.urlopen(
+                    urllib.request.Request(
+                        args.base_url + "/stop_profile", data=b"", method="POST"
+                    ),
+                    timeout=60,
+                ) as response:
+                    manifest["stop_profile_status"] = response.status
+            if args.perf_suite or args.profile_workload:
+                (output / f"{case['id']}-metrics-after.txt").write_text(
+                    perf.http_text(args.base_url + "/metrics", timeout=10)
+                )
         (output / "metrics.txt").write_text(
             perf.http_text(args.base_url + "/metrics", timeout=10)
         )
+        if profile_config is not None:
+            traces = sorted((output / "traces").glob("*.pt.trace.json.gz"))
+            if len(traces) != 1:
+                raise ValueError(f"expected one worker trace, found {len(traces)}")
+            manifest["trace_sha256"] = {
+                str(p.relative_to(output)): perf.sha256_file(p) for p in traces
+            }
         manifest["status"] = "requests-completed-not-yet-qualified"
         manifest["all_term_checks"] = all(result["term_check"] for result in results)
     except BaseException as error:

@@ -1,83 +1,70 @@
-# KVarN XPU beta
+# KVarN on Intel Arc Pro B70
 
-KVarN is an opt-in beta for the Brutus Intel Arc Pro B70 service. It provides a
-3.74x smaller raw full-attention cache page and has remained coherent at long
-context where the previously tested FP8 KV cache did not. Native decode parity
-with `auto` is demonstrated in the retained exploratory measurements. This is
-not a claim of formal statistical parity: KVarN prefill remains slower, so the
-retained B1/65K aggregate result is about 96% of `auto`.
+KVarN is opt-in compressed KV storage. xpu-v1.7 promotes the qualified
+performance, image and bundled-MTP implementation, with fixed release defaults
+instead of runtime experiment selectors. Its supported model envelope remains
+bounded; the release does not claim universal service parity or vision quality.
 
-## Enable it
-
-Change only the cache dtype:
+## Enable cache compression
 
 ```nix
 kvCacheDtype = "kvarn_k4v4_g128_compact";
 ```
 
-No `KVARN_*` environment variables are required. On XPU, this dtype binds the
-validated native Xe2 qlen=1 reader automatically. The native fast path targets
-Hq24/Hkv4/D256, K4V4/G128, eager execution, batch sizes through 12, and no
-sliding-window attention. Its `xe2_dpas` writer/reader layout is an immutable
-cache ABI, so an incompatible native problem fails closed instead of reading
-that cache through a natural-layout fallback. Use `kvCacheDtype = "auto"` for
-rollback; the `KVARN_*` variables are development diagnostics, not service
-configuration.
+This selects the Xe2 DPAS K4V4/G128 cache ABI, ID18 native decoder with adaptive
+splits, qualified Sinkhorn writer, and request-stable model operations.
+No `KVARN_*` tuning overrides are required. Historical experiment selectors
+are rejected at startup; remove them rather than copying old factory runbooks.
+Layout/reader/writer are fixed for the engine lifetime.
 
-The beta profile selects `q6_prefetch_record_cursor` (ID18) with the
-`b70_q6_id18_v1` adaptive split policy. The policy uses 32 splits for B1 and 24
-for B4. Cache layout is an engine-lifetime ABI; do not change the writer,
-reader, or layout selectors after an engine has allocated its cache.
+## Images and recommended two-token MTP
 
-The beta keeps the most recent 16 non-sink KVarN blocks in fp16 while building
-later prompt chunks. Older blocks continue to flush to K4V4, so retained memory
-is bounded independently of total context. Tail-pool sizing and the scheduler's
-concurrency cap account for this window.
+The qualified checkpoint is
+`jasonboukheir/Qwen3.8-27B-AEON-Ultimate-Uncensored-BF16-W4A16-AutoRound`,
+revision `6b0622f4354481d5d04577d48ba0db844efc1330` (Qwen3.5 architecture).
+Use BF16 compute, compressed-tensors W4A16, one request at a time, TP1/PP1,
+V1/eager, no prefix cache, maximum context8192, prefill budget2048, GPU memory
+budget0.90, at most two448x448 images, and video disabled.
 
-## Validated envelope
-
-- Model: `jasonboukheir/Qwen3.8-27B-AEON-Ultimate-Uncensored-BF16-W4A16-AutoRound`
-- Revision: `6b0622f4354481d5d04577d48ba0db844efc1330`
-- `kvarn_k4v4_g128_compact`, BF16 compute, `compressed-tensors` weights
-- Eager and text-only
-- No speculative decoding, prefix caching, or XPU graphs
-- `max_num_batched_tokens=2048`
-- B1 and B4 native decoder primitives, including ragged sequences through
-  262,144 tokens and split counts 1, 2, 4, 8, 16, 17, 24, and 32
-- Service lifecycle coverage includes replay, concurrent isolation,
-  cancellation/replacement, teardown, and a 65,023-token prompt on the
-  correctness-first candidate
-
-The current branch also carries a bounded continuation-prefill guardrail for a
-4,095-token fixture whose normal K4V4 history caused greedy repetition. Keeping
-recent prompt history in fp16 makes that failure disappear without retaining
-the entire prompt.
-
-## Known limitations
-
-- The retained two-repeat exploratory 4K comparison measured KVarN at 99.0% of
-  `auto` output throughput for B1 and 97.8% for B4. Request decode throughput
-  was 99.1% and 98.1%, respectively. At B1/65K, decode was 99.9%, while slower
-  prefill reduced aggregate output throughput to 95.9%. These are matched B70
-  measurements, not the sealed eight-repeat ABBA parity gate.
-- MTP, prefix caching, XPU graphs, multimodal serving, and production graph
-  capture are outside the beta contract.
-- Native decode is specialized. The dtype-only B70 profile fails clearly when
-  its model-shape or native-operation contract is unavailable.
-- The bounded recent-fp16 policy spends additional fixed pool memory and may
-  reduce the automatically supported concurrency on memory-constrained models.
-- K4V2 and non-compact presets have not received the same service validation.
-
-Use `auto` as the rollback:
+MTP stays opt-in. Within that envelope, two bundled draft tokens are recommended:
 
 ```nix
-kvCacheDtype = "auto";
+speculativeConfig = { method = "mtp"; num_speculative_tokens = 2; };
 ```
 
-Continue performance work with [the native XPU gates](kvarn-native-xpu-gates.md)
-and the durable artifacts under `benchmark-results/kvarn/`.
+Equivalent CLI:
 
-The retained beta performance evidence is:
+```sh
+--kv-cache-dtype kvarn_k4v4_g128_compact \
+--speculative-config '{"method":"mtp","num_speculative_tokens":2}'
+```
 
-- `benchmark-results/kvarn/round8-s1-h-id18-20260905`
-- `benchmark-results/kvarn/round8-s1-h-id18-s32-65k-b1`
+Keep the other serving limits above; these two options alone do not configure
+the entire envelope. One draft token also passes the correctness gate.
+Eligible verification uses the native causal packed-cache reader automatically;
+there is no materialized-versus-native trial selector. Necessary non-XPU and
+other-query-shape correctness fallbacks are not alternative B70 MTP experiments.
+
+## Results and limits
+
+The fixed warmed short-image/text4096/image-history6143 matrix measures final
+two-token KVarN at46.20/44.95/43.73 decode tok/s:40–49% above KVarN without
+MTP,9–16% above one draft, and91–95% of auto with two drafts. These are
+workload-specific decode results, not equal TTFT gains or a parity guarantee.
+Both counts pass the16-fixture exact-token image/text gate against KVarN-off.
+See [release notes](releases/xpu-v1.7.md) for profiling, tests and evidence.
+
+Sampled resident VRAM27.98GiB includes preallocated cache/scratch and is not
+an instantaneous allocator peak. The bounded recent-FP16 cache window trades
+fixed memory for correctness. Broader concurrency, contexts, image sizes,
+models, DFlash, video/audio, prefix caching and graph/V2 serving remain
+unqualified for this MTP combination. Other cache presets are not covered.
+
+## Rollback and historical evidence
+
+Set `speculativeConfig = null` to disable MTP, or `kvCacheDtype = "auto"` to
+return to automatic cache storage. Old xpu-v1.5/v1.6 tags are preserved.
+Historical experiment scripts/artifacts are diagnostic records, not release
+configuration choices. The public optimization-factory surface remains removed.
+
+[Megaissue: measurements and deferred work](https://git.sunnycareboo.com/jasonbk/vllm-xpu-nix/issues/5).

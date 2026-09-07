@@ -21,15 +21,15 @@ def test_only_unstable_release_package_enables_vision() -> None:
     assert "96,false,false,false,false,false" in source
 
 
-def test_release_refs_and_lock_are_xpu_v1_6() -> None:
+def test_release_refs_and_lock_are_xpu_v1_7() -> None:
     source = (ROOT / "flake.nix").read_text()
-    assert source.count('ref = "refs/heads/releases/xpu-v1.6";') == 2
-    assert "refs/heads/releases/xpu-v1.5" not in source
+    assert source.count('ref = "refs/heads/releases/xpu-v1.7";') == 2
+    assert "refs/heads/releases/xpu-v1.6" not in source
     nodes = json.loads((ROOT / "flake.lock").read_text())["nodes"]
     expected = {
-        "vllm-xpu-unstable-src": "f9a7a62a1ae02d2b33385663c97049172f98f4c9",
+        "vllm-xpu-unstable-src": "f39814bbdf7bbd94bfeb453e2332d78f4518cc22",
         "vllm-xpu-kernels-unstable-src": "767dc3ddf3a614f765e34b566ce788cb79bb2798",
     }
     for name, revision in expected.items():
-        assert nodes[name]["locked"]["ref"] == "refs/heads/releases/xpu-v1.6"
+        assert nodes[name]["locked"]["ref"] == "refs/heads/releases/xpu-v1.7"
         assert nodes[name]["locked"]["rev"] == revision

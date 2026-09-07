@@ -99,11 +99,10 @@ def audit(directory: Path) -> tuple[dict, list[dict]]:
                 or max(positions) >= 2048
             ):
                 raise ValueError(f"invalid compression/page coverage: {case['id']}")
-        if (
-            result["phase"] == "performance"
-            and result["usage"]["completion_tokens"] != 96
-        ):
-            raise ValueError("performance capture did not produce 96 tokens")
+        if result["phase"] == "performance" and result["usage"][
+            "completion_tokens"
+        ] != case.get("generation", {}).get("max_tokens", 96):
+            raise ValueError("performance capture did not produce requested token cap")
         results.append(result)
     return manifest, results
 
@@ -126,8 +125,11 @@ def memory_summary(directory: Path) -> dict:
                 if raw is None:
                     continue
                 parts = raw.split()
-                if len(parts) == 2 and parts[1] == "KiB":
-                    value = int(parts[0]) * 1024
+                if len(parts) == 2 and parts[1] in ("KiB", "MiB", "GiB"):
+                    value = (
+                        int(parts[0])
+                        * {"KiB": 1024, "MiB": 1024**2, "GiB": 1024**3}[parts[1]]
+                    )
                 elif raw == "0":
                     value = 0
                 else:
@@ -198,13 +200,23 @@ def compare(auto: Path, kvarn: Path) -> dict:
             }
         )
     performance = {}
-    for kind in ("image", "text"):
+    timed_suite = left.get("suite") == "mtp-performance-256-v1"
+    prefixes = (
+        {
+            "short-image": "bench-short-image-",
+            "text-4k": "bench-text-4k-",
+            "long-image": "bench-long-image-",
+        }
+        if timed_suite
+        else {"image": "perf-image-", "text": "perf-text-"}
+    )
+    for kind, prefix in prefixes.items():
         arms = {}
         for label, results in (("auto", ar), ("kvarn", kr)):
             selected = [
                 r
                 for r in results
-                if r["phase"] == "performance" and r["id"].startswith("perf-" + kind)
+                if r["phase"] == "performance" and r["id"].startswith(prefix)
             ]
             if len(selected) != 3:
                 raise ValueError(
@@ -238,7 +250,7 @@ def compare(auto: Path, kvarn: Path) -> dict:
         "performance": performance,
         "memory": {"auto": memory_summary(auto), "kvarn": memory_summary(kvarn)},
         "startup_and_selectors": startup,
-        "timing_scope": "three serial warmed requests per arm, 96 output tokens, profiler off; CPU fdinfo sampling on both arms; no statistical parity claim",
+        "timing_scope": f"three serial warmed requests per workload and arm, {256 if timed_suite else 96} output tokens, profiler off; CPU fdinfo sampling on both arms; no statistical parity claim",
         "semantic_scope": "term checks plus manual review required; token equality is not required for lossy KV",
     }
 

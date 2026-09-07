@@ -20,7 +20,8 @@ MTP is optional; eligible verification selects the native reader automatically.
   revision `6b0622f4354481d5d04577d48ba0db844efc1330` (Qwen3.5 architecture).
 - BF16 compute, compressed-tensors W4A16 weights.
 - One request at a time, TP1/PP1, V1 runner, eager execution.
-- Maximum combined input/output context: 131,072 tokens.
+- Maximum combined input/output context follows the model limit and available
+  KV-cache capacity; there is no separate 128K KVarN MTP ceiling.
 - Prefill token budget: 2,048; GPU memory utilization: 0.90.
 - At most two 448×448 images; no video.
 - No prefix caching or XPU graphs.

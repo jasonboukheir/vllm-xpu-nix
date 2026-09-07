@@ -182,7 +182,9 @@ def tokenize_case(base_url: str, case: dict) -> dict:
     )
 
 
-def long_case(base_url: str, source: dict, output: Path) -> dict:
+def long_case(
+    base_url: str, source: dict, output: Path, target_tokens: int = 6143
+) -> dict:
     """Put image beyond sink, then age it; cross a 128-token page in decode."""
     case = copy.deepcopy(source)
     case["id"] = "long-" + source["id"]
@@ -197,7 +199,7 @@ def long_case(base_url: str, source: dict, output: Path) -> dict:
             + "\nNow answer about the image:\n"
         )
         tokenized = tokenize_case(base_url, case)
-        delta = 6143 - tokenized["count"]
+        delta = target_tokens - tokenized["count"]
         if delta == 0:
             tokens = tokenized["tokens"]
             image_positions = [i for i, token in enumerate(tokens) if token == 248056]
@@ -210,19 +212,19 @@ def long_case(base_url: str, source: dict, output: Path) -> dict:
                     "long image must be beyond sink and in first prefill chunk"
                 )
             case["coverage"] = {
-                "prompt_tokens": 6143,
+                "prompt_tokens": target_tokens,
                 "page_size": 128,
                 "image_token_start": min(image_positions),
                 "image_token_end_inclusive": max(image_positions),
-                "expected_chunk_count": 3,
-                "decode_crosses_page_after_tokens": 1,
+                "expected_chunk_count": (target_tokens + 2047) // 2048,
+                "decode_crosses_page_after_tokens": 128 - target_tokens % 128,
             }
             perf.write_json_atomic(output / f"{case['id']}-tokenize.json", tokenized)
             return case
         count += delta
         if count < 0:
             raise ValueError("long-context base prompt exceeds target length")
-    raise ValueError("failed to construct exact 6143-token vision prompt")
+    raise ValueError(f"failed to construct exact {target_tokens}-token vision prompt")
 
 
 class MemorySampler:
@@ -370,7 +372,7 @@ def request_case(base_url: str, case: dict, output: Path) -> dict:
     if case.get("coverage"):
         result["coverage_valid"] = (
             usage is not None
-            and usage["prompt_tokens"] == 6143
+            and usage["prompt_tokens"] == case["coverage"]["prompt_tokens"]
             and usage["completion_tokens"] > 1
         )
     perf.write_json_atomic(output / f"{case['id']}-response.json", result)
@@ -445,6 +447,11 @@ def main() -> None:
         "--cache-dtype", choices=["auto", perf.COMPACT_DTYPE], default="auto"
     )
     parser.add_argument("--max-model-len", type=int, default=8192)
+    parser.add_argument(
+        "--long-prompt-tokens",
+        type=int,
+        help="qualification-only aged-image context; add an exact context-limit decode",
+    )
     parser.add_argument("--port", type=int, default=8017)
     suite = parser.add_mutually_exclusive_group()
     suite.add_argument("--qualify", action="store_true")
@@ -485,6 +492,12 @@ def main() -> None:
         help="retain target top-5 logprobs for numerical correctness diagnosis",
     )
     args = parser.parse_args()
+    if args.long_prompt_tokens is not None and (
+        not args.qualify
+        or not 6143 <= args.long_prompt_tokens <= args.max_model_len - 128
+        or args.max_model_len - args.long_prompt_tokens > 256
+    ):
+        parser.error("long prompt requires --qualify and 128..256 output slots")
     if (args.perf_suite or args.profile_workload) and args.logprob_evidence:
         parser.error("timed performance suite must not collect logprobs")
     if args.profile_stacks and not args.profile_workload:
@@ -655,8 +668,26 @@ def main() -> None:
             manifest["workload_sha256"] = perf.sha256_file(output / "workload.json")
         elif args.qualify:
             cases.extend(
-                long_case(args.base_url, source, output) for source in cases[:2]
+                long_case(
+                    args.base_url, source, output, args.long_prompt_tokens or 6143
+                )
+                for source in cases[:2]
             )
+            if args.long_prompt_tokens is not None:
+                limit_case = copy.deepcopy(cases[-2])
+                limit_case.update(
+                    id="limit-image-a",
+                    phase="performance",
+                    generation={
+                        "max_tokens": args.max_model_len - args.long_prompt_tokens,
+                        "ignore_eos": True,
+                    },
+                )
+                shutil.copyfile(
+                    output / f"{cases[-2]['id']}-tokenize.json",
+                    output / "limit-image-a-tokenize.json",
+                )
+                cases.append(limit_case)
             image_perf = copy.deepcopy(cases[0])
             image_perf["messages"][0]["content"][-1]["text"] = (
                 "Describe this image in detail in 200 words."

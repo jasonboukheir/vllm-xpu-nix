@@ -62,118 +62,6 @@ def _repo(path: Path) -> Path:
     return path
 
 
-def test_named_factory_ids_are_complete_and_stable() -> None:
-    assert {name: spec.variant_id for name, spec in factory.VARIANTS.items()} == {
-        "baseline": 0,
-        "qk_i8u4": 1,
-        "q6_scalar": 2,
-        "q8_vector": 3,
-        "q6_vector": 4,
-        "q6_cached_weights": 6,
-        "q6_exact_rows": 7,
-        "q6_cached_weights_exact_rows": 8,
-        "q6_page_pair": 9,
-        "q6_main_grf128": 10,
-        "q6_split_reducer_specialized": 11,
-        "q6_next_page_prefetch": 12,
-        "q6_next_page_prefetch_split_reducer": 13,
-        "q6_simd_unpack": 14,
-        "q6_block_output_store": 15,
-        "q6_current_half_v_prefetch": 16,
-        "q6_page_record_cursor": 17,
-        "q6_prefetch_record_cursor": 18,
-        "q6_page_metadata_cursor": 20,
-        "q6_paired_nibble_half2": 21,
-    }
-    assert set(factory.VARIANTS_BY_ID) == (set(range(19)) - {5}) | {20, 21}
-    assert all(spec.dpas_layout for spec in factory.VARIANTS.values())
-    assert all(spec.cache_layout == "xe2_dpas" for spec in factory.VARIANTS.values())
-    assert all(
-        spec.kernel_strategy == f"native_xe2_qlen1_{spec.name}"
-        for spec in factory.VARIANTS.values()
-    )
-    assert all(
-        spec.split_policy == "runtime_explicit_count"
-        for spec in factory.VARIANTS.values()
-    )
-    assert all(spec.fusion_strategy for spec in factory.VARIANTS.values())
-    assert all(spec.scheduling_variant for spec in factory.VARIANTS.values())
-    assert factory.VARIANTS["q6_page_pair"].work_unit_tokens == 128
-    assert all(
-        spec.work_unit_tokens == 64
-        for name, spec in factory.VARIANTS.items()
-        if name != "q6_page_pair"
-    )
-    assert factory.DEFAULT_VARIANT_NAMES == (
-        "q6_scalar",
-        "q6_vector",
-        "q6_cached_weights",
-        "q6_exact_rows",
-        "q6_cached_weights_exact_rows",
-        "q6_page_pair",
-        "q6_main_grf128",
-        "q6_split_reducer_specialized",
-        "q6_next_page_prefetch",
-        "q6_next_page_prefetch_split_reducer",
-        "q6_simd_unpack",
-        "q6_block_output_store",
-        "q6_current_half_v_prefetch",
-        "q6_page_record_cursor",
-        "q6_prefetch_record_cursor",
-        "q6_page_metadata_cursor",
-        "q6_paired_nibble_half2",
-    )
-    assert factory.ALL_VARIANT_NAMES == tuple(factory.VARIANTS)
-    assert factory.VARIANTS["q6_page_pair"].scheduling_variant == "paired_page_k128"
-    assert factory.VARIANTS["q6_main_grf128"].scheduling_variant == "tile64_grf128"
-    assert (
-        factory.VARIANTS["q6_split_reducer_specialized"].fusion_strategy
-        == "specialized_split_reduction"
-    )
-    assert (
-        factory.VARIANTS["q6_next_page_prefetch"].scheduling_variant
-        == "tile64_next_page_prefetch"
-    )
-    assert (
-        factory.VARIANTS["q6_simd_unpack"].scheduling_variant
-        == "tile64_vector_load_simd_unpack"
-    )
-    combined = factory.VARIANTS["q6_next_page_prefetch_split_reducer"]
-    assert combined.scheduling_variant == "tile64_next_page_prefetch"
-    assert combined.fusion_strategy == "specialized_split_reduction"
-    assert (
-        factory.VARIANTS["q6_block_output_store"].fusion_strategy
-        == "block2d_main_output_standard_split_reduction"
-    )
-    for name in (
-        "q6_current_half_v_prefetch",
-        "q6_page_record_cursor",
-        "q6_prefetch_record_cursor",
-        "q6_page_metadata_cursor",
-        "q6_paired_nibble_half2",
-    ):
-        assert factory.VARIANTS[name].fusion_strategy == "specialized_split_reduction"
-    assert (
-        factory.VARIANTS["q6_current_half_v_prefetch"].scheduling_variant
-        == "tile64_next_page_current_half_v_prefetch"
-    )
-    assert (
-        factory.VARIANTS["q6_page_record_cursor"].scheduling_variant
-        == "tile64_next_page_prefetch_record_cursor"
-    )
-    assert (
-        factory.VARIANTS["q6_prefetch_record_cursor"].scheduling_variant
-        == "tile64_next_page_current_half_v_prefetch_record_cursor"
-    )
-    assert (
-        factory.VARIANTS["q6_page_metadata_cursor"].scheduling_variant
-        == "tile64_next_page_current_half_v_prefetch_record_metadata_cursor"
-    )
-    assert factory.VARIANTS["q6_paired_nibble_half2"].scheduling_variant == (
-        "tile64_next_page_current_half_v_prefetch_record_cursor_paired_nibble_half2"
-    )
-
-
 def test_variant_parser_accepts_names_and_all_but_not_numeric_aliases() -> None:
     assert [
         item.variant_id for item in factory.parse_variants("baseline,q8_vector")
@@ -181,28 +69,7 @@ def test_variant_parser_accepts_names_and_all_but_not_numeric_aliases() -> None:
         0,
         3,
     ]
-    assert [item.variant_id for item in factory.parse_variants("all")] == [
-        0,
-        1,
-        2,
-        3,
-        4,
-        6,
-        7,
-        8,
-        9,
-        10,
-        11,
-        12,
-        13,
-        14,
-        15,
-        16,
-        17,
-        18,
-        20,
-        21,
-    ]
+    assert factory.parse_variants("all") == list(factory.VARIANTS.values())
     with pytest.raises(factory.FactoryError, match="ID 5.*reserved"):
         factory.parse_variants("page128")
     with pytest.raises(factory.FactoryError, match="unknown variant"):

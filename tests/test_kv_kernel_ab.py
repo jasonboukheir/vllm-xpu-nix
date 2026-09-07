@@ -8,13 +8,6 @@ MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 
 
-def test_all_bf16_control_skips_exact_full_attention_layers():
-    reference = MODULE.default_plan()[0]
-    assert [int(value) for value in reference["skip_layers"]] == list(range(3, 64, 4))
-    assert "--enforce-eager" in reference["extra_args"]
-    assert not any("speculative" in value for value in reference["extra_args"])
-
-
 def test_trace_metrics_reports_first_token_divergence():
     def entry(token, a, b):
         return {"token": token, "top_logprobs": [

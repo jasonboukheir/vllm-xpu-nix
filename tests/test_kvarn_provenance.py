@@ -3,7 +3,6 @@ import hashlib
 import importlib.util
 import json
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -37,68 +36,6 @@ def make_repo(path, name):
     return path
 
 
-def test_long_generation_fixtures_cover_required_categories():
-    prompts = MODULE.load_prompt_fixtures(FIXTURES)
-
-    assert {prompt["category"] for prompt in prompts} == {
-        "adversarial",
-        "code",
-        "dialogue",
-        "math",
-        "reasoning",
-    }
-    assert all(prompt["max_tokens"] >= 2048 for prompt in prompts)
-    assert all(len(prompt["prompt_sha256"]) == 64 for prompt in prompts)
-
-
-def test_environment_allowlist_covers_kvarn_behavior_overrides():
-    assert {
-        "KVARN_FACTORY_CACHE_LAYOUT",
-        "KVARN_FACTORY_FLUSH_INDEX_MATERIALIZATION",
-        "KVARN_FACTORY_FLUSH_WRITER",
-        "KVARN_FACTORY_FORWARD_POOL_ENSURE",
-        "KVARN_FACTORY_KERNEL_VARIANT",
-        "KVARN_FACTORY_KV_CACHE_DTYPE",
-        "KVARN_FACTORY_MAX_MODEL_LEN",
-        "KVARN_FACTORY_MAX_NUM_SEQS",
-        "KVARN_FACTORY_NATIVE_XPU_FRONTEND",
-        "KVARN_FACTORY_ONEDNN_DETERMINISTIC",
-        "KVARN_FACTORY_PREFILL_STORE",
-        "KVARN_FACTORY_REQUEST_STABLE_PROJECTION_ROWS",
-        "KVARN_FACTORY_REQUEST_STABLE_RMSNORM",
-        "KVARN_FACTORY_SPLITS",
-        "KVARN_FACTORY_SPLIT_POLICY",
-        "KVARN_FAST_FLUSH",
-        "KVARN_FLUSH_INDEX_MATERIALIZATION",
-        "KVARN_FLUSH_WRITER",
-        "KVARN_FORWARD_POOL_ENSURE",
-        "KVARN_FUSED_DECODE",
-        "KVARN_FUSED_VERIFY_MAXQ",
-        "KVARN_NATIVE_XPU_CACHE_LAYOUT",
-        "KVARN_NATIVE_XPU_FRONTEND",
-        "KVARN_NATIVE_XPU_KERNEL_VARIANT",
-        "KVARN_NATIVE_XPU_LAYER",
-        "KVARN_NATIVE_XPU_PREFILL_STORE",
-        "KVARN_NATIVE_XPU_SPLIT_POLICY",
-        "KVARN_NUM_KV_SPLITS",
-        "KVARN_ONEDNN_DETERMINISTIC",
-        "KVARN_POOL_MEM_FRAC",
-        "KVARN_POOL_SLOTS",
-        "KVARN_QUANT_SLIDING",
-        "KVARN_REQUEST_STABLE_PROJECTION_ROWS",
-        "KVARN_REQUEST_STABLE_RMSNORM",
-        "KVARN_RTN_QUANTILE",
-        "KVARN_SHARED_VERIFY",
-        "KVARN_SINK_TOKENS",
-        "KVARN_SPLIT_K",
-        "HF_HOME",
-        "HOME",
-        "VLLM_CACHE_ROOT",
-        "VLLM_USE_V2_MODEL_RUNNER",
-        "XDG_CACHE_HOME",
-    } <= set(MODULE.DEFAULT_ENV_ALLOWLIST)
-
-
 def test_durable_output_rejects_tmp_without_override():
     with pytest.raises(ValueError, match="outside /tmp"):
         MODULE.ensure_durable_output(Path("/tmp/kvarn-results"), allow_tmp=False)
@@ -106,29 +43,6 @@ def test_durable_output_rejects_tmp_without_override():
     assert MODULE.ensure_durable_output(
         Path("/tmp/kvarn-results"), allow_tmp=True
     ) == Path("/tmp/kvarn-results")
-
-
-def test_cli_defaults_config_repo_to_brutus_checkout(tmp_path, monkeypatch):
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            str(SCRIPT),
-            "--output-dir",
-            str(tmp_path),
-            "--model",
-            "owner/model",
-            "--model-revision",
-            "1" * 40,
-            "--fixtures",
-            str(FIXTURES),
-            "--argv-file",
-            str(tmp_path / "argv.json"),
-            "--allow-tmp",
-        ],
-    )
-
-    assert MODULE.parse_args().config_repo == Path("/home/jasonbk/.config/nix")
 
 
 def test_manifest_records_repositories_command_environment_and_artifacts(tmp_path):

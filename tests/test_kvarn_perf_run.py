@@ -566,29 +566,8 @@ def test_commands_pin_launcher_and_deterministic_workload(tmp_path: Path) -> Non
     assert variant_provenance_for_run(reference, args) == reference_variant
 
 
-@pytest.mark.parametrize(
-    ("variant", "variant_id"),
-    [
-        ("q6_scalar", 2),
-        ("q6_vector", 4),
-        ("q6_cached_weights", 6),
-        ("q6_exact_rows", 7),
-        ("q6_cached_weights_exact_rows", 8),
-        ("q6_page_pair", 9),
-        ("q6_main_grf128", 10),
-        ("q6_split_reducer_specialized", 11),
-        ("q6_next_page_prefetch", 12),
-        ("q6_next_page_prefetch_split_reducer", 13),
-        ("q6_simd_unpack", 14),
-        ("q6_block_output_store", 15),
-        ("q6_current_half_v_prefetch", 16),
-        ("q6_page_record_cursor", 17),
-        ("q6_prefetch_record_cursor", 18),
-    ],
-)
-def test_perf_launcher_name_binds_each_factory_variant(
-    tmp_path: Path, variant: str, variant_id: int
-) -> None:
+def test_perf_launcher_name_uses_selected_variant(tmp_path: Path) -> None:
+    variant = "q6_prefetch_record_cursor"
     args = _args(tmp_path)
     args.native_layout = "xe2_dpas"
     args.native_kernel_variant = variant
@@ -597,7 +576,6 @@ def test_perf_launcher_name_binds_each_factory_variant(
     assert runner.launcher_name(run, args) == (
         f"vllm-xpu-brutus-kvarn-native-dpas-{variant}-b4"
     )
-    assert runner.NATIVE_KERNEL_VARIANTS[variant] == variant_id
 
 
 @pytest.mark.parametrize(

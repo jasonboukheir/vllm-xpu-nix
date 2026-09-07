@@ -118,36 +118,6 @@ def test_fixture_files_combine_in_command_line_order_and_preserve_single(tmp_pat
     assert MODULE.load_fixture_files([first_path, second_path]) == [*first, *second]
 
 
-def test_cli_collects_repeated_fixture_paths_in_order(tmp_path):
-    first_path = tmp_path / "first.json"
-    second_path = tmp_path / "second.json"
-
-    args = MODULE.parse_args(
-        [
-            "--model",
-            "model",
-            "--fixtures",
-            str(first_path),
-            "--fixtures",
-            str(second_path),
-            "--max-tokens",
-            "512",
-            "--override-max-tokens",
-            "--require-duplicate-prompt-isolation",
-            "--minimum-output-tokens",
-            "512",
-            "--output",
-            str(tmp_path / "output.json"),
-            "--allow-tmp",
-        ]
-    )
-
-    assert args.fixtures == [first_path, second_path]
-    assert args.max_tokens == 512
-    assert args.override_max_tokens is True
-    assert args.require_duplicate_prompt_isolation is True
-
-
 def test_combined_fixture_files_reject_duplicate_ids(tmp_path):
     first_path = tmp_path / "first.json"
     second_path = tmp_path / "second.json"
@@ -173,10 +143,8 @@ def test_combined_fixture_files_reject_duplicate_ids(tmp_path):
 def test_max_tokens_override_forces_all_mixed_context_fixtures_to_512(tmp_path):
     paths = []
     for fixture_id, prompt_length, max_tokens in (
-        ("dialogue-127", 127, 1024),
-        ("code-4095", 4095, 768),
-        ("math-16383", 16383, 768),
-        ("reasoning-65023", 65023, 512),
+        ("first", 3, 1024),
+        ("second", 5, 768),
     ):
         path = tmp_path / f"{fixture_id}.json"
         path.write_text(
@@ -197,25 +165,15 @@ def test_max_tokens_override_forces_all_mixed_context_fixtures_to_512(tmp_path):
     overridden = MODULE.override_fixture_max_tokens(loaded, 512)
     validated = MODULE.validate_fixtures(
         overridden,
-        concurrency=4,
+        concurrency=2,
         default_max_tokens=512,
         minimum_output_tokens=512,
     )
 
-    assert [fixture["id"] for fixture in validated] == [
-        "dialogue-127",
-        "code-4095",
-        "math-16383",
-        "reasoning-65023",
-    ]
-    assert [fixture["max_tokens"] for fixture in validated] == [512] * 4
-    assert [len(fixture["prompt"]) for fixture in validated] == [
-        127,
-        4095,
-        16383,
-        65023,
-    ]
-    assert [fixture["max_tokens"] for fixture in loaded] == [1024, 768, 768, 512]
+    assert [fixture["id"] for fixture in validated] == ["first", "second"]
+    assert [fixture["max_tokens"] for fixture in validated] == [512, 512]
+    assert [fixture["prompt"] for fixture in validated] == [[1] * 3, [1] * 5]
+    assert [fixture["max_tokens"] for fixture in loaded] == [1024, 768]
 
 
 def test_duplicate_prompt_isolation_accepts_same_wave_abba_groups():

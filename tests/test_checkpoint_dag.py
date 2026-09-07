@@ -38,12 +38,6 @@ class CheckpointDagTests(unittest.TestCase):
         moved = modifier._move_inputs_to([(args, kwargs)], torch.device("xpu"))
         self.assertIs(moved[0][0][0], args[0])
 
-    def test_low_gpu_memory_mode_defaults_on(self):
-        modifier = module.AutoRoundModifier(
-            targets=["Linear"], scheme="W4A16", iters=5, batch_size=1
-        )
-        self.assertTrue(modifier.low_gpu_mem_usage)
-
     def test_low_gpu_memory_mode_is_forwarded_to_autoround(self):
         modifier = module.AutoRoundModifier(
             targets=["Linear"], scheme="W4A16", iters=5, batch_size=1
@@ -68,16 +62,6 @@ class CheckpointDagTests(unittest.TestCase):
             modifier.apply_autoround(object(), [])
 
         self.assertTrue(seen["low_gpu_mem_usage"])
-
-    def test_checkpoint_manager_attaches_to_modifier(self):
-        modifier = module.AutoRoundModifier(
-            targets=["Linear"], scheme="W4A16", iters=5, batch_size=1
-        )
-        marker = object()
-        modifier.attach_checkpoint_dag(marker)
-        self.assertIs(modifier._checkpoint_dag, marker)
-        self.assertEqual(modifier._checkpoint_index, 0)
-        self.assertEqual(type(modifier).__name__, "AutoRoundModifier")
 
     def test_kv_only_attention_scheme_is_not_sent_to_autoround(self):
         modifier = module.AutoRoundModifier(

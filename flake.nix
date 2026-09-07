@@ -21,7 +21,7 @@
     vllm-xpu-kernels-unstable-src = {
       type = "git";
       url = "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm-xpu-kernels.git";
-      ref = "refs/heads/releases/xpu-v1.7";
+      ref = "refs/tags/xpu-v1.7.1";
       submodules = true;
       flake = false;
     };
@@ -36,7 +36,7 @@
     vllm-xpu-unstable-src = {
       type = "git";
       url = "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm.git";
-      ref = "refs/heads/releases/xpu-v1.7";
+      ref = "refs/tags/xpu-v1.7.1";
       flake = false;
     };
 

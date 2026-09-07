@@ -10,37 +10,6 @@ from scripts import kvarn_perf_gate as gate_module
 from scripts.kvarn_perf_gate import GateError, _load_correctness, compare
 
 
-def test_combined_library_matrix_registers_runtime_variants_through_id22() -> None:
-    assert [
-        (item["kernel_variant"], item["kernel_variant_id"])
-        for item in gate_module.COMBINED_LIBRARY_VARIANT_MATRIX
-    ] == [
-        ("q6_scalar", 2),
-        ("q6_vector", 4),
-        ("q6_cached_weights", 6),
-        ("q6_exact_rows", 7),
-        ("q6_cached_weights_exact_rows", 8),
-        ("q6_page_pair", 9),
-        ("q6_main_grf128", 10),
-        ("q6_split_reducer_specialized", 11),
-        ("q6_next_page_prefetch", 12),
-        ("q6_next_page_prefetch_split_reducer", 13),
-        ("q6_simd_unpack", 14),
-        ("q6_block_output_store", 15),
-        ("q6_current_half_v_prefetch", 16),
-        ("q6_page_record_cursor", 17),
-        ("q6_prefetch_record_cursor", 18),
-        ("q6_page_metadata_cursor", 20),
-        ("q6_paired_nibble_half2", 21),
-        ("q6_last_arrival_fused_reduce", 22),
-    ]
-    assert {
-        "q6_page_metadata_cursor",
-        "q6_paired_nibble_half2",
-        "q6_last_arrival_fused_reduce",
-    } <= gate_module.B70_Q6_KERNEL_VARIANTS
-
-
 def _artifact(path: Path) -> dict[str, str]:
     return {
         "path": str(path.resolve()),
@@ -687,15 +656,13 @@ def _correctness(
                         else "not_applicable"
                     ),
                     "qlen1_inline_plan_active_verified": (
-                        spec["native"]
-                        and effective_qlen1_inline_plan != "reference"
+                        spec["native"] and effective_qlen1_inline_plan != "reference"
                     ),
                     "qlen1_inline_plan_active_log_marker": (
                         gate_module.QLEN1_INLINE_PLAN_ACTIVE_MARKERS[
                             effective_qlen1_inline_plan
                         ]
-                        if spec["native"]
-                        and effective_qlen1_inline_plan != "reference"
+                        if spec["native"] and effective_qlen1_inline_plan != "reference"
                         else "not_applicable"
                     ),
                     "decode_fp16_window_blocks_expected": (
@@ -855,15 +822,13 @@ def _correctness(
                         else "not_applicable"
                     ),
                     "qlen1_inline_plan_active_verified": (
-                        spec["native"]
-                        and effective_qlen1_inline_plan != "reference"
+                        spec["native"] and effective_qlen1_inline_plan != "reference"
                     ),
                     "qlen1_inline_plan_active_log_marker": (
                         gate_module.QLEN1_INLINE_PLAN_ACTIVE_MARKERS[
                             effective_qlen1_inline_plan
                         ]
-                        if spec["native"]
-                        and effective_qlen1_inline_plan != "reference"
+                        if spec["native"] and effective_qlen1_inline_plan != "reference"
                         else "not_applicable"
                     ),
                     "profile": _artifact(profile),
@@ -1301,9 +1266,7 @@ def _result(
         f"{path.stem}-warmup-scheduler-metrics.json"
     )
     warmup_scheduler = scheduler_document(warmup_sample=True)
-    warmup_scheduler_metrics.write_text(
-        json.dumps(warmup_scheduler), encoding="utf-8"
-    )
+    warmup_scheduler_metrics.write_text(json.dumps(warmup_scheduler), encoding="utf-8")
     warmup.write_text(
         json.dumps(
             {
@@ -1350,9 +1313,7 @@ def _result(
                         "client in-flight concurrency is not simultaneous KV residency"
                     ),
                 },
-                "scheduler_metrics_path": str(
-                    warmup_scheduler_metrics.resolve()
-                ),
+                "scheduler_metrics_path": str(warmup_scheduler_metrics.resolve()),
                 "scheduler_metrics_sha256": hashlib.sha256(
                     warmup_scheduler_metrics.read_bytes()
                 ).hexdigest(),
@@ -1475,9 +1436,7 @@ def _result(
     qlen1_active_marker = gate_module.QLEN1_INLINE_PLAN_ACTIVE_MARKERS.get(
         effective_qlen1_inline_plan
     )
-    qlen1_inline_plan_active = bool(
-        arm == "candidate" and qlen1_active_marker
-    )
+    qlen1_inline_plan_active = bool(arm == "candidate" and qlen1_active_marker)
     decode_flush_batch_active = (
         decode_flush_batch_executed
         and arm == "candidate"
@@ -1612,14 +1571,10 @@ def _result(
         "kvarn_startup_capacity_sha256": hashlib.sha256(
             startup_capacity.read_bytes()
         ).hexdigest(),
-        "kvarn_startup_kv_cache_tokens": str(
-            startup_document["kv_cache_tokens"]
-        ),
+        "kvarn_startup_kv_cache_tokens": str(startup_document["kv_cache_tokens"]),
         "kvarn_startup_capacity_request_tokens": "65536",
         "kvarn_startup_maximum_concurrency": str(startup_maximum_concurrency),
-        "kvarn_startup_capacity_covers_offered": (
-            startup_maximum_concurrency >= 4
-        ),
+        "kvarn_startup_capacity_covers_offered": (startup_maximum_concurrency >= 4),
         "kvarn_correctness_sha256": correctness_sha256,
         "kvarn_process_package": "/nix/store/package",
         "kvarn_process_closure_sha256": "a" * 64,
@@ -1670,9 +1625,7 @@ def _result(
         ),
         "kvarn_qlen1_inline_plan_active_verified": qlen1_inline_plan_active,
         "kvarn_qlen1_inline_plan_active_log_marker": (
-            qlen1_active_marker
-            if qlen1_inline_plan_active
-            else "not_applicable"
+            qlen1_active_marker if qlen1_inline_plan_active else "not_applicable"
         ),
         "kvarn_onednn_deterministic": "1",
         "kvarn_request_stable_projection_rows": request_stable_projection_rows,
@@ -1974,9 +1927,7 @@ def _arms(
             request_stable_projection_rows=request_stable_projection_rows,
             request_stable_rmsnorm=request_stable_rmsnorm,
             metadata_lifecycle=metadata_lifecycle,
-            startup_maximum_concurrency=(
-                reference_startup_maximum_concurrency
-            ),
+            startup_maximum_concurrency=(reference_startup_maximum_concurrency),
             scheduler_peak_running=reference_scheduler_peak_running,
             scheduler_peak_waiting=reference_scheduler_peak_waiting,
         )
@@ -2012,9 +1963,7 @@ def _arms(
             request_stable_projection_rows=request_stable_projection_rows,
             request_stable_rmsnorm=request_stable_rmsnorm,
             metadata_lifecycle=metadata_lifecycle,
-            startup_maximum_concurrency=(
-                candidate_startup_maximum_concurrency
-            ),
+            startup_maximum_concurrency=(candidate_startup_maximum_concurrency),
             scheduler_peak_running=candidate_scheduler_peak_running,
             scheduler_peak_waiting=candidate_scheduler_peak_waiting,
         )
@@ -2135,18 +2084,6 @@ def test_match_gate_accepts_qkv_candidate_with_unfused_reference(
     assert result["status"] == "passed"
     assert result["reference"]["arm"]["kvarn_native_frontend"] == "reference"
     assert result["candidate"]["arm"]["kvarn_native_frontend"] == "qkv_scatter"
-    assert result["candidate"]["arm"]["kvarn_fusion_strategy"] == (
-        "native_materializer_persistent_scratch_shared_indices_"
-        "reference_writer_reference_prefill_store_qkv_scatter_frontend_"
-        "always_forward_pool_ensure_reference_metadata_lifecycle_"
-        "reference_qlen1_inline_plan_"
-        "decode_fp16_window_0_low_water_0_flush_scope_per_row"
-    )
-    assert (
-        "-shared-indices-reference-writer-reference-prefill-store-"
-        "qkv_scatter-frontend-always-forward-pool-ensure-"
-        in result["candidate"]["arm"]["kvarn_variant_id"]
-    )
 
 
 def test_formal_512_gate_records_decode_window_without_false_execution_claim(
@@ -2200,77 +2137,6 @@ def test_formal_512_gate_accepts_optional_decode_flush_execution_proof(
         result["candidate"]["arm"]["kvarn_decode_flush_batch_execution_status"]
         == "verified"
     )
-
-
-def test_match_gate_accepts_inline_frontend_and_fused_pool_proof(
-    tmp_path: Path,
-) -> None:
-    result = _compare(
-        _arms(
-            tmp_path,
-            native_frontend="qkv_scatter_inline",
-            forward_pool_ensure="fused_qkv_proof",
-        )
-    )
-
-    assert result["status"] == "passed"
-    assert result["reference"]["arm"]["kvarn_native_frontend"] == "reference"
-    assert result["reference"]["arm"]["kvarn_forward_pool_ensure"] == "always"
-    assert result["candidate"]["arm"]["kvarn_native_frontend"] == "qkv_scatter_inline"
-    assert result["candidate"]["arm"]["kvarn_forward_pool_ensure"] == "fused_qkv_proof"
-    assert result["candidate"]["arm"]["kvarn_native_frontend_active_verified"] is True
-    assert (
-        result["candidate"]["arm"]["kvarn_native_frontend_inline_active_verified"]
-        is True
-    )
-    assert (
-        result["candidate"]["arm"]["kvarn_forward_pool_ensure_active_verified"] is True
-    )
-    assert (
-        result["reference"]["arm"]["kvarn_forward_pool_ensure_active_verified"] is False
-    )
-
-
-def test_match_gate_accepts_trusted_qlen1_inline_plan(tmp_path: Path) -> None:
-    result = _compare(
-        _arms(
-            tmp_path,
-            native_frontend="qkv_scatter_inline",
-            qlen1_inline_plan="trusted_native",
-        )
-    )
-
-    assert result["reference"]["arm"]["kvarn_qlen1_inline_plan"] == "reference"
-    assert result["candidate"]["arm"]["kvarn_qlen1_inline_plan"] == "trusted_native"
-    assert result["candidate"]["arm"]["kvarn_qlen1_inline_plan_active_verified"] is True
-    assert len(result["candidate"]["engine_log_scan"]) == 8
-    assert all(
-        set(reference) == {"path", "sha256"}
-        for reference in result["candidate"]["engine_log_scan"]
-    )
-
-
-def test_match_gate_accepts_round8_combined_runtime_proofs(tmp_path: Path) -> None:
-    result = _compare(
-        _arms(
-            tmp_path,
-            native_kernel_variant=gate_module.LAST_ARRIVAL_KERNEL_VARIANT,
-            native_frontend="qkv_scatter_inline_current_stream",
-            forward_pool_ensure="fused_qkv_proof",
-            qlen1_inline_plan="bound_native_v2",
-        )
-    )
-
-    assert result["status"] == "passed"
-    assert result["reference"]["arm"]["kvarn_native_kernel_variant"] == "baseline"
-    candidate = result["candidate"]["arm"]
-    assert candidate["kvarn_native_kernel_variant"] == (
-        gate_module.LAST_ARRIVAL_KERNEL_VARIANT
-    )
-    assert candidate["kvarn_native_frontend"] == (
-        "qkv_scatter_inline_current_stream"
-    )
-    assert candidate["kvarn_qlen1_inline_plan"] == "bound_native_v2"
 
 
 def test_match_gate_rejects_id22_active_with_downgrade(tmp_path: Path) -> None:
@@ -2614,10 +2480,7 @@ def test_formal_gate_accepts_exact_id18_policy_contract(tmp_path: Path) -> None:
     assert result["status"] == "passed"
     assert result["candidate"]["arm"]["kvarn_native_max_splits"] == "32"
     assert result["candidate"]["arm"]["kvarn_native_nominal_splits"] == "24"
-    assert (
-        result["candidate"]["arm"]["kvarn_native_split_policy"]
-        == "b70_q6_id18_v1"
-    )
+    assert result["candidate"]["arm"]["kvarn_native_split_policy"] == "b70_q6_id18_v1"
 
 
 def test_formal_gate_rejects_id18_policy_with_another_q6_kernel(

@@ -158,6 +158,10 @@ def test_run_checkpoints_each_response_and_reports_divergence(monkeypatch, tmp_p
     checkpoints = []
 
     def fake_completion(*_args, **_kwargs):
+        if len(responses) == 1:
+            assert any(item["first"] for item in checkpoints), (
+                "the completed response must be durable before starting replay"
+            )
         return responses.pop(0)
 
     def capture_checkpoint(_path, document):
@@ -177,14 +181,7 @@ def test_run_checkpoints_each_response_and_reports_divergence(monkeypatch, tmp_p
 
     result = MODULE.run(args)
 
-    assert [
-        (item["phase"], len(item["first"]), len(item["replay"])) for item in checkpoints
-    ] == [
-        ("first", 0, 0),
-        ("first", 1, 0),
-        ("replay", 1, 0),
-        ("replay", 1, 1),
-        ("complete", 1, 1),
-    ]
+    assert checkpoints[-1] == result
+    assert len(result["first"]) == len(result["replay"]) == 1
     assert result["status"] == "diverged"
     assert result["divergences"][0]["first_logprob_divergence_index"] == 1

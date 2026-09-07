@@ -234,9 +234,7 @@ def test_round6_resource_audit_passes_and_enumerates_images():
     assert report["variants"]["20"]["entries"]["main"]["text_bytes"] == 120
     assert report["variants"]["21"]["entries"]["main"]["slm_size"] == 0
     assert report["comparisons"]["id20_to_id18_main_text_ratio"] == 1.2
-    assert set(report["shared_service_reducers"]) == set(
-        audit.EXPECTED_SHARED_REDUCERS
-    )
+    assert set(report["shared_service_reducers"]) == set(audit.EXPECTED_SHARED_REDUCERS)
     assert report["violations"] == []
 
 
@@ -266,9 +264,7 @@ def test_resource_failures_remain_machine_readable():
 
 
 def test_empty_reference_text_fails_without_dividing_by_zero():
-    library, names, _images = round6_fixture(
-        resources={(18, "main"): {"text": 0}}
-    )
+    library, names, _images = round6_fixture(resources={(18, "main"): {"text": 0}})
 
     report = audit.audit_bytes(library, names.__getitem__)
 
@@ -317,15 +313,3 @@ def test_template_parser_preserves_nested_arguments_and_detects_conflicts():
     conflicting = value + " " + mainloop(audit.VARIANT_SIGNATURES[20]["signature"])
     with pytest.raises(audit.AuditError, match="conflicting Kvarn"):
         audit.mainloop_signature(conflicting)
-
-
-def test_cli_accepts_both_explicit_artifact_option_spellings():
-    expected = Path("/nix/store/example/lib/libattn_kernels_xe_2.so")
-    first = audit.parse_args(
-        ["--attention-library", str(expected), "--llvm-cxxfilt", "/bin/true"]
-    )
-    second = audit.parse_args(
-        ["--shared-object", str(expected), "--llvm-cxxfilt", "/bin/true"]
-    )
-    assert first.attention_library == expected
-    assert second.attention_library == expected

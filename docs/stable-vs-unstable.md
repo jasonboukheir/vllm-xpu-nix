@@ -1,16 +1,13 @@
 # Stable vs unstable
 
 The `vllm-xpu` and `vllm-xpu-kernels` outputs both come in stable and
-`-unstable` variants. The unstable variants pin
-`jasonboukheir/{vllm,vllm-xpu-kernels}`. On this experimental release
-branch, both inputs follow the coordinated `releases/xpu-v1.6`
-branches so the validated Kvarn source pair cannot drift independently.
-They remain consumer-side opt-in.
+`-unstable` variants. The unstable variants use the project forks and remain
+consumer-side opt-in.
 
-Bumping a fork pin:
+See `flake.nix` for source URLs and release refs, and `flake.lock` for resolved
+revisions. Update the vLLM and kernel sources as a compatible pair. To change a
+tag-pinned release, change its input ref before updating the lock file.
 
 ```bash
-nix flake update vllm-xpu-unstable-src         # for vllm
-nix flake update vllm-xpu-kernels-unstable-src # for kernels
-git commit flake.lock -m "bump <input> pin to <short rev>"
+nix flake update vllm-xpu-unstable-src vllm-xpu-kernels-unstable-src
 ```

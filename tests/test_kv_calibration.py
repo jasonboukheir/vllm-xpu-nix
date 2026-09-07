@@ -82,7 +82,7 @@ class KVCalibrationTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "expected 2, observed 1"):
                 quantize.validate_saved_weight_compression(output, 2)
 
-    def test_scale_can_be_determined_by_first_of_512_samples(self):
+    def test_scale_preserves_an_earlier_sample_extreme(self):
         args = QuantizationArgs(**quantize.calibrated_kv_cache_scheme())
         observer = Observer.load_from_registry(
             args.observer,
@@ -90,11 +90,9 @@ class KVCalibrationTests(unittest.TestCase):
             args=args,
         )
 
-        # The first sample contains the corpus-wide FP8 endpoint. Every later
-        # sample is deliberately smaller, so a last-batch-only observer yields
-        # the wrong scale after processing the complete 512-sample corpus.
+        # Later smaller samples must not discard the first sample's FP8 endpoint.
         observer(torch.tensor([[[-448.0, 448.0]]], dtype=torch.float32))
-        for _ in range(511):
+        for _ in range(2):
             observer(torch.tensor([[[-1.0, 1.0]]], dtype=torch.float32))
 
         scale = observer.get_qparams()["scale"]

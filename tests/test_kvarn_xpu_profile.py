@@ -101,6 +101,158 @@ def _trace(
     }
 
 
+def _prefill_trace(*, steps: int = 4, native: bool = False) -> dict[str, object]:
+    events: list[dict[str, object]] = []
+    for index in range(steps):
+        timestamp = float(1_000 + index * 100)
+        events.append(
+            {
+                "ph": "X",
+                "cat": "user_annotation",
+                "name": (
+                    "execute_8_context_1(sq8sk8sqsq64sqsk64)"
+                    "_generation_0(sq0sk0sqsq0sqsk0)"
+                ),
+                "ts": timestamp,
+                "dur": 90.0,
+            }
+        )
+        if native:
+            events.append(
+                {
+                    "ph": "X",
+                    "cat": "user_annotation",
+                    "name": "kvarn_native_xpu_decode",
+                    "ts": timestamp + 10,
+                    "dur": 5.0,
+                }
+            )
+        events.append(
+            {
+                "ph": "X",
+                "cat": "kernel",
+                "name": "prefill_kernel",
+                "ts": timestamp + 20,
+                "dur": 12.0,
+            }
+        )
+    return {
+        "deviceProperties": [{"name": perf.EXPECTED_XPU_DEVICE_NAME}],
+        "traceEvents": events,
+    }
+
+
+def test_prefill_profiler_config_uses_absolute_window(tmp_path: Path) -> None:
+    config = profiler_config(
+        (tmp_path / "trace").resolve(),
+        delay_iterations=17,
+        profile_steps=4,
+        phase="prefill",
+    )
+    assert config["delay_iterations"] == 17
+    assert config["max_iterations"] == 4
+    assert "phase" not in config
+
+
+def test_focused_capture_can_request_stacks_and_shapes(tmp_path: Path) -> None:
+    config = profiler_config(
+        tmp_path.resolve(),
+        delay_iterations=17,
+        profile_steps=2,
+        phase="prefill",
+        with_stack=True,
+        record_shapes=True,
+    )
+    assert config["torch_profiler_with_stack"] is True
+    assert config["torch_profiler_record_shapes"] is True
+
+
+def test_prefill_parser_preserves_fields_and_rejects_mixed_or_short_trace() -> None:
+    parsed = profile._parse_prefill_steps(
+        _prefill_trace()["traceEvents"],
+        batch=1,
+        expected=4,  # type: ignore[arg-type]
+    )
+    assert len(parsed) == 4
+    assert parsed[0]["total"] == 8
+    assert parsed[0]["context_tokens"] == 8
+    assert parsed[0]["generation_requests"] == 0
+
+    mixed = _prefill_trace()
+    mixed["traceEvents"].append(  # type: ignore[union-attr]
+        _trace(steps=1)["traceEvents"][0]  # type: ignore[index]
+    )
+    with pytest.raises(perf.RunnerError, match="non-pure-prefill"):
+        profile._parse_prefill_steps(
+            mixed["traceEvents"],
+            batch=1,
+            expected=5,  # type: ignore[arg-type]
+        )
+    with pytest.raises(perf.RunnerError, match="exactly 4"):
+        profile._parse_prefill_steps(
+            _prefill_trace(steps=3)["traceEvents"],
+            batch=1,
+            expected=4,  # type: ignore[arg-type]
+        )
+
+
+def test_prefill_auto_rejects_native_decode_annotation() -> None:
+    with pytest.raises(perf.RunnerError, match="native Kvarn decode"):
+        analyze_trace(
+            _prefill_trace(native=True),
+            arm="reference",
+            context=8,
+            batch=1,
+            profile_steps=4,
+            hardware_preflight=HARDWARE,
+            phase="prefill",
+        )
+
+
+def test_queued_device_work_need_not_execute_in_each_cpu_timestamp_bucket() -> None:
+    document = _trace(arm="reference")
+    for event in document["traceEvents"]:
+        if "kernel" in event["cat"]:
+            event["ts"] += 5_000
+    summary = analyze_trace(
+        document,
+        arm="reference",
+        context=4096,
+        batch=1,
+        profile_steps=20,
+        hardware_preflight=HARDWARE,
+    )
+    assert summary["decode_steps"][0]["xpu_kernel_count"] == 0
+    assert summary["decode_steps"][-1]["xpu_kernel_count"] == 40
+    assert "not proof of device idle" in summary["legacy_timestamp_window_warning"]
+
+
+def test_bound_native_decode_uses_dispatcher_scope_without_legacy_wrapper():
+    document = _trace()
+    for event in document["traceEvents"]:
+        if event.get("name") == "kvarn_native_xpu_decode":
+            event["name"] = "_vllm_fa2_C::kvarn_decode_with_scratch"
+            event["cat"] = "cpu_op"
+    result = analyze_trace(
+        document,
+        arm="candidate",
+        context=4096,
+        batch=1,
+        profile_steps=20,
+        hardware_preflight=HARDWARE,
+    )
+    assert result["native_decode_annotation_count"] == 20
+    with pytest.raises(perf.RunnerError, match="auto profile unexpectedly"):
+        analyze_trace(
+            document,
+            arm="reference",
+            context=4096,
+            batch=1,
+            profile_steps=20,
+            hardware_preflight=HARDWARE,
+        )
+
+
 def test_delay_skips_conservative_chunked_prefill() -> None:
     assert (
         profile_delay_iterations(context=4096, batch=1, max_num_batched_tokens=2048)

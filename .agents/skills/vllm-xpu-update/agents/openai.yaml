@@ -1,0 +1,7 @@
+interface:
+  display_name: "vLLM XPU Update"
+  short_description: "Refresh paired main branches and minimize fork drift"
+  default_prompt: "Use $vllm-xpu-update to advance both main branches to a newer compatible stable upstream pair, audit every fork commit with its own agent, minimize the retained patches, and qualify the paired candidate."
+
+policy:
+  allow_implicit_invocation: false

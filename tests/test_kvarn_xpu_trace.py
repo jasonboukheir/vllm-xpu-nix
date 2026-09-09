@@ -2,7 +2,27 @@
 
 import pytest
 
+from scripts.kvarn_prefill_trace import validate_steps
 from scripts.kvarn_xpu_trace import analyze_attribution
+
+
+def test_full_prefill_qualification_rejects_missing_first_chunk_and_wrong_extent():
+    def annotation(q, k, prefill=True):
+        ctx = f"1(sq{q}sk{k}sqsq0sqsk0)" if prefill else "0(sq0sk0sqsq0sqsk0)"
+        gen = "0(sq0sk0sqsq0sqsk0)" if prefill else f"1(sq1sk{k}sqsq1sqsk{k})"
+        return {"annotation": f"execute_{q}_context_{ctx}_generation_{gen}"}
+
+    steps = [
+        annotation(2048, 2048),
+        annotation(2047, 4095),
+        annotation(1, 4096, False),
+        annotation(1, 4097, False),
+    ]
+    assert validate_steps(steps, 4095) == 2
+    with pytest.raises(ValueError, match="full prefill"):
+        validate_steps(steps[1:], 4095)
+    with pytest.raises(ValueError, match="chunk lengths"):
+        validate_steps(steps, 4096)
 
 
 def event(name, cat, start, duration, *, pid=1, tid=1, **args):

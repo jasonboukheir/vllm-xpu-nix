@@ -434,6 +434,60 @@ def performance_cases(base_url: str, source: dict, output: Path) -> list[dict]:
     return cases
 
 
+def prefill_cases(
+    base_url: str,
+    output: Path,
+    prompt_tokens: int,
+    output_tokens: int,
+    repeats: int,
+    *,
+    profiled: bool = False,
+) -> list[dict]:
+    """Exact text context, one warmup, then identical measured requests."""
+    case = {"messages": [{"role": "user", "content": ""}]}
+    padding = 0
+    for _ in range(6):
+        case["messages"][0]["content"] = (
+            "Ignore this unrelated padding:\n"
+            + " x" * padding
+            + "\nExplain how rainbows form in 600 words."
+        )
+        tokenized = tokenize_case(base_url, case)
+        delta = prompt_tokens - tokenized["count"]
+        if delta == 0:
+            if len(tokenized["tokens"]) != prompt_tokens:
+                raise ValueError("tokenizer count disagrees with token IDs")
+            break
+        padding += delta
+        if padding < 0:
+            raise ValueError("base prompt exceeds requested prefill length")
+    else:
+        raise ValueError("could not construct exact prefill length")
+    cases = []
+    for index in range(4 if profiled else repeats + 1):
+        current = copy.deepcopy(case)
+        current.update(
+            id=f"prefill-{prompt_tokens}-{index}",
+            expected_terms=[],
+            phase="warmup"
+            if index == 0
+            else ("profiled-diagnostic" if profiled and index == 2 else "performance"),
+            coverage={
+                "prompt_tokens": prompt_tokens,
+                "kind": "text-prefill",
+                "expected_chunk_count": (prompt_tokens + 2047) // 2048,
+            },
+            generation={
+                "max_tokens": output_tokens,
+                "ignore_eos": True,
+                "return_token_ids": True,
+            },
+        )
+        perf.write_json_atomic(output / f"{current['id']}-tokenize.json", tokenized)
+        cases.append(current)
+    return cases
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
@@ -456,13 +510,21 @@ def main() -> None:
     suite = parser.add_mutually_exclusive_group()
     suite.add_argument("--qualify", action="store_true")
     suite.add_argument(
+        "--prefill-suite",
+        action="store_true",
+        help="exact-length text-only profiler-off B1 trials",
+    )
+    parser.add_argument("--prefill-tokens", type=int, default=65023)
+    parser.add_argument("--prefill-output-tokens", type=int, default=512)
+    parser.add_argument("--prefill-repeats", type=int, default=3)
+    suite.add_argument(
         "--perf-suite",
         action="store_true",
         help="fixed 256-token short-image/4K-text/long-image timing suite",
     )
     suite.add_argument(
         "--profile-workload",
-        choices=("short-image", "text-4k", "long-image"),
+        choices=("short-image", "text-4k", "long-image", "text-prefill"),
         help="one warmed workload with an off/on/off diagnostic trace bracket",
     )
     parser.add_argument("--profile-stacks", action="store_true")
@@ -492,13 +554,24 @@ def main() -> None:
         help="retain target top-5 logprobs for numerical correctness diagnosis",
     )
     args = parser.parse_args()
+    prefill = args.prefill_suite or args.profile_workload == "text-prefill"
+    if prefill and (
+        args.prefill_tokens < 64
+        or args.prefill_output_tokens < 2
+        or args.prefill_tokens + args.prefill_output_tokens > args.max_model_len
+        or args.prefill_repeats < 1
+        or args.draft_tokens != 0
+    ):
+        parser.error(
+            "prefill requires valid context/output slots, repeats >=1 and MTP off"
+        )
     if args.long_prompt_tokens is not None and (
         not args.qualify
         or not 6143 <= args.long_prompt_tokens <= args.max_model_len - 128
         or args.max_model_len - args.long_prompt_tokens > 256
     ):
         parser.error("long prompt requires --qualify and 128..256 output slots")
-    if (args.perf_suite or args.profile_workload) and args.logprob_evidence:
+    if (args.perf_suite or args.profile_workload or prefill) and args.logprob_evidence:
         parser.error("timed performance suite must not collect logprobs")
     if args.profile_stacks and not args.profile_workload:
         parser.error("--profile-stacks requires --profile-workload")
@@ -522,10 +595,18 @@ def main() -> None:
             ROOT / "scripts/kvarn_xpu_profile.py", snapshot / "kvarn_xpu_profile.py"
         )
         profile_config = profiler_config(
-            output / "traces", delay_iterations=7, profile_steps=20
+            output / "traces",
+            delay_iterations=1 if prefill else 7,
+            profile_steps=(args.prefill_tokens + 2047) // 2048 + 2 if prefill else 20,
+            phase="prefill" if prefill else "decode",
+            record_shapes=prefill,
         )
         profile_config["torch_profiler_with_stack"] = args.profile_stacks
-    cases = fixtures(output / "images")
+    if prefill:
+        (output / "images").mkdir()
+        cases = []
+    else:
+        cases = fixtures(output / "images")
     perf.write_json_atomic(output / "workload.json", cases)
     selected_env = runtime_environment()
     if profile_config is not None:
@@ -576,7 +657,7 @@ def main() -> None:
         "--enforce-eager",
         "--no-enable-prefix-caching",
         "--limit-mm-per-prompt",
-        '{"image":2,"video":0}',
+        '{"image":0,"video":0}' if prefill else '{"image":2,"video":0}',
         "--mm-processor-kwargs",
         '{"min_pixels":200704,"max_pixels":200704}',
         "--reasoning-parser",
@@ -596,7 +677,13 @@ def main() -> None:
         "transport_environment": TRANSPORT_ENVIRONMENT,
         "kvarn_selection": "dtype-defaults-no-environment-overrides",
         "speculative_config": spec,
-        "suite": "mtp-profile-256-v1"
+        "suite": (
+            "text-prefill-profile-v1"
+            if args.profile_workload
+            else "text-prefill-performance-v1"
+        )
+        if prefill
+        else "mtp-profile-256-v1"
         if args.profile_workload
         else ("mtp-performance-256-v1" if args.perf_suite else "vision-correctness"),
         "profiler_config": profile_config,
@@ -655,7 +742,18 @@ def main() -> None:
                 == profile_config
             )
             assert actual_env["VLLM_CUSTOM_SCOPES_FOR_PROFILING"] == "1"
-        if args.perf_suite or args.profile_workload:
+        if prefill:
+            cases = prefill_cases(
+                args.base_url,
+                output,
+                args.prefill_tokens,
+                args.prefill_output_tokens,
+                args.prefill_repeats,
+                profiled=bool(args.profile_workload),
+            )
+            perf.write_json_atomic(output / "workload.json", cases)
+            manifest["workload_sha256"] = perf.sha256_file(output / "workload.json")
+        elif args.perf_suite or args.profile_workload:
             cases = performance_cases(args.base_url, cases[0], output)
             if args.profile_workload:
                 cases = [
@@ -727,7 +825,7 @@ def main() -> None:
         perf.write_json_atomic(output / "manifest.json", manifest)
         results = []
         for case in cases:
-            if args.perf_suite or args.profile_workload:
+            if args.perf_suite or args.profile_workload or prefill:
                 (output / f"{case['id']}-metrics-before.txt").write_text(
                     perf.http_text(args.base_url + "/metrics", timeout=10)
                 )
@@ -741,6 +839,14 @@ def main() -> None:
                 ) as response:
                     manifest["start_profile_status"] = response.status
             results.append(request_case(args.base_url, case, output))
+            if prefill and (
+                not results[-1]["coverage_valid"]
+                or results[-1]["usage"]["completion_tokens"]
+                != args.prefill_output_tokens
+            ):
+                raise ValueError(
+                    "prefill request did not match exact input/output lengths"
+                )
             if profiled:
                 with urllib.request.urlopen(
                     urllib.request.Request(
@@ -749,7 +855,7 @@ def main() -> None:
                     timeout=60,
                 ) as response:
                     manifest["stop_profile_status"] = response.status
-            if args.perf_suite or args.profile_workload:
+            if args.perf_suite or args.profile_workload or prefill:
                 (output / f"{case['id']}-metrics-after.txt").write_text(
                     perf.http_text(args.base_url + "/metrics", timeout=10)
                 )

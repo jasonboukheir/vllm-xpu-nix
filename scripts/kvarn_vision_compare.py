@@ -97,8 +97,12 @@ def audit(directory: Path) -> tuple[dict, list[dict]]:
                 or tokenized["count"] != target
                 or len(tokenized["tokens"]) != target
                 or result["usage"]["prompt_tokens"] != target
-                or min(positions) <= 128
-                or max(positions) >= 2048
+                or (
+                    case["coverage"].get("kind") != "text-prefill"
+                    and (
+                        not positions or min(positions) <= 128 or max(positions) >= 2048
+                    )
+                )
             ):
                 raise ValueError(f"invalid compression/page coverage: {case['id']}")
         if result["phase"] == "performance" and result["usage"][

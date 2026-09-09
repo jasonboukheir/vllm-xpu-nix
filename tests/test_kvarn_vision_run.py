@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from scripts import kvarn_mtp_compare as mtp
+from scripts import kvarn_prefill_compare as prefill
 from scripts import kvarn_vision_compare as comparison
 from scripts import kvarn_vision_run as vision
 
@@ -60,6 +61,80 @@ def test_performance_suite_fixes_context_caps_repetitions_and_input_identity(
         assert any(case["messages"] == warmup["messages"] for case in measured)
     for case in measured:
         assert any(case["messages"] == warmup["messages"] for warmup in warmups)
+
+
+@pytest.mark.parametrize("profiled", [False, True])
+def test_prefill_exact_lengths_and_warmup_bracket(tmp_path, monkeypatch, profiled):
+    def tokenize(_url, case):
+        count = 64 + case["messages"][0]["content"].count(" x")
+        return {"count": count, "tokens": [42] * count}
+
+    monkeypatch.setattr(vision, "tokenize_case", tokenize)
+    cases = vision.prefill_cases("unused", tmp_path, 65023, 512, 3, profiled=profiled)
+    assert len(cases) == 4
+    assert [c["phase"] for c in cases] == [
+        "warmup",
+        "performance",
+        "profiled-diagnostic" if profiled else "performance",
+        "performance",
+    ]
+    for case in cases:
+        assert case["messages"] == cases[0]["messages"]
+        assert case["generation"]["max_tokens"] == 512
+        assert case["generation"]["ignore_eos"]
+        evidence = json.loads((tmp_path / f"{case['id']}-tokenize.json").read_text())
+        assert evidence["count"] == len(evidence["tokens"]) == 65023
+
+
+def test_prefill_rejects_tokenizer_count_disagreement(tmp_path, monkeypatch):
+    monkeypatch.setattr(vision, "tokenize_case", lambda *a: {"count": 64, "tokens": []})
+    with pytest.raises(ValueError, match="disagrees"):
+        vision.prefill_cases("unused", tmp_path, 64, 512, 3)
+
+
+@pytest.mark.parametrize("wrong_dtype", [True, False])
+def test_prefill_service_comparison_rejects_wrong_arm_or_profiled_run(
+    monkeypatch, wrong_dtype
+):
+    def audit(path):
+        dtype = (
+            "auto" if wrong_dtype or path.name == "auto" else vision.perf.COMPACT_DTYPE
+        )
+        return {
+            "actual_argv": ["vllm", "--kv-cache-dtype", dtype],
+            "suite": "text-prefill-profile-v1",
+            "profiler_config": {},
+        }, []
+
+    monkeypatch.setattr(prefill.vision, "audit", audit)
+    with pytest.raises(ValueError, match="auto then|profiler-off"):
+        prefill.compare([(Path("auto"), Path("kvarn"))])
+
+
+@pytest.mark.parametrize("bundled", [False, True])
+def test_prefill_tail_latency_requires_individual_token_arrivals(tmp_path, bundled):
+    arrivals = (
+        [(1.0, [1]), (1.1, [2, 3])] if bundled else [(1.0, [1]), (1.1, [2]), (1.3, [3])]
+    )
+    (tmp_path / "case-sse.jsonl").write_text(
+        "\n".join(
+            json.dumps(
+                {
+                    "seconds": ts,
+                    "line": "data: " + json.dumps({"choices": [{"token_ids": ids}]}),
+                }
+            )
+            for ts, ids in arrivals
+        )
+    )
+    result = {"id": "case", "usage": {"completion_tokens": 3}}
+    if bundled:
+        with pytest.raises(ValueError, match="bundled"):
+            prefill.token_timing(tmp_path, result)
+    else:
+        timing = prefill.token_timing(tmp_path, result)
+        assert timing["inter_token_seconds"]["p99"] == pytest.approx(0.2)
+        assert timing["decode_tokens_per_second"] == pytest.approx(2 / 0.3)
 
 
 def test_mtp_comparison_normalizes_only_one_token_speculation():

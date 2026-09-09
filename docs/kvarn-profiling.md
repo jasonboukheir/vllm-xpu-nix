@@ -93,6 +93,101 @@ boundary slices, device-busy unions, family duration sums and unresolved
 out-of-scope work. Worker traces do not cover frontend or scheduler work outside
 the worker. Neither uncovered time nor CPU wait totals prove removable overhead.
 
+### Chunk-budget experiment workflow
+
+For a scheduler experiment, pass `--max-num-batched-tokens 2048`, `4096`, or
+`8192` to the same service runner. The default remains 2048. The runner records
+the actual service argument and each workload's expected chunk extents and
+profile step count. Attribution reads that recorded budget and rejects missing
+chunks, unexpected scheduler alignment, or incomplete decode boundary steps.
+Expected extents in an unprofiled workload are a plan, not an observed schedule.
+Full traces also retain the packing operation sequence and input shapes;
+these do not substitute for checking committed page bytes and tail state.
+
+1. Freeze the paired runtime and checkpoint revision. Record the service
+   environment store path, source identities, commands, and acceptance thresholds
+   in a fresh artifact directory before timing. Use B1, context 65536, 512 output
+   tokens, no EOS stopping, eager mode, no prefix caching, MTP off, and the same
+   0.90 memory-utilization limit. Run serially on an idle GPU.
+2. Screen 2K/4K/8K with both 16383 and 65023 input tokens, separately for `auto`
+   and `kvarn_k4v4_g128_compact`. Each service invocation warms the exact request
+   and collects three measured repetitions. Repeat eligible arms with fresh
+   service starts in reversed budget order. Retain 2K controls even when larger
+   arms fail. Stop an arm on OOM, preemption, incorrect output/state, unacceptable
+   memory growth, or absence of repeatable TTFT gain. A change in freely
+   generated wording is a diagnostic, not proof of incorrect output.
+3. Compare each candidate against 2K **within its cache dtype**:
+
+   ```bash
+   python -m scripts.kvarn_chunk_compare \
+     --pair benchmark-results/chunks-new/auto-16k-2k-r1 \
+            benchmark-results/chunks-new/auto-16k-4k-r1 \
+     --pair benchmark-results/chunks-new/auto-16k-2k-r2 \
+            benchmark-results/chunks-new/auto-16k-4k-r2 \
+     --output benchmark-results/chunks-new/auto-16k-4k-comparison.json
+   ```
+
+   The audit preserves dtype and all non-budget service settings, checks raw
+   requests/prompt IDs, and reports output equality including warmups, TTFT,
+   total time, decode throughput, client p95/p99 inter-token latency, sampled DRM
+   allocation/residency peaks, preemptions, and fatal engine-log findings. It
+   never marks a candidate qualified. Compare measured gain against the
+   predeclared threshold and control variation, including each separate start.
+   DRM sampling is not an instantaneous Torch allocator high-water mark.
+4. Assess numerical accuracy against the model with **unquantized KV at each
+   budget**. Keep the same model weights, pinned runtime, prompt IDs, and one
+   frozen reference continuation for every arm. Use persistent teacher forcing
+   to compare scores before selecting the next token, so earlier word choices
+   cannot confound later errors. Compare KVarN versus `auto` at 2K and at 8K,
+   report the change in compression error, and separately compare `auto` across
+   budgets to measure ordinary numerical sensitivity. The 2K KVarN output is
+   not an accuracy oracle, and exact free-generation equality is not a gate.
+   Apply the retained numerical thresholds unchanged; candidates still require
+   replay, ordinary-attention, GDN-continuation, and committed packed-history/tail
+   gates. Exact state invariants remain exact. Do not relax a gate because
+   changing chunks changes the compression schedule.
+5. Only carry a correctness-passing, repeatable service winner into a matched
+   full trace using `--profile-workload text-prefill` and the same budget.
+   Attribute GEMM, attention, reconstruction, and host work separately, then
+   qualify supported MTP2 and representative images before recommendation.
+   Record rejected arms and unperformed gates explicitly. This workflow does
+   not authorize a deployment or release.
+
+### Start the model-reference replay stage
+
+`scripts.kvarn_chunk_accuracy` freezes prompts and a 512-token continuation from
+retained unquantized-KV service captures, snapshots its source, and runs every
+arm serially in an owned process group. It prioritizes 2K/8K at both lengths
+before 4K, then reverses budget/dtype order on the second start. It records a
+plan before submitting GPU work and updates `status.json` and
+`comparison-summary.json` after each completed arm.
+
+```bash
+/tmp/kvarn-profile-env/bin/python -m scripts.kvarn_chunk_accuracy \
+  --service-env /tmp/kvarn-profile-env \
+  --reference-run benchmark-results/<auto-16k-control> \
+  --reference-run benchmark-results/<auto-65k-control> \
+  --threshold-report benchmark-results/<retained-thresholded-comparison.json> \
+  --budgets 2048 8192 4096 --starts 2 \
+  --output benchmark-results/chunk-accuracy-new
+```
+
+Use actual retained paths and the same immutable environment that produced the
+references. `--plan-only` prepares a separate reviewed plan without GPU work;
+normal execution requires a fresh output directory. The threshold report must
+contain the complete existing numerical profile, not newly loosened cutoffs.
+All arms receive identical forced tokens for a given prompt, including after
+any position where free generation would have diverged.
+
+This bounded stage captures the top 50 raw logits plus the forced token. It
+reports top-1/top-5 agreement, matched/selected score errors, and coverage;
+it does not estimate full-vocabulary KL. The same W4A16 weights are used for
+both cache dtypes: `auto` is an unquantized **KV** reference, not unquantized
+model weights. A numerical-screen pass does not qualify deployment or replace
+the full six-fixture model gate, state checks, profiler-off performance trials,
+MTP2, or images. Preserve numerical failures for diagnosis; stop execution on
+invalid logits, engine failure, or changed artifact identity.
+
 ## Trace analysis
 
 ```bash

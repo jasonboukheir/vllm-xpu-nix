@@ -1,0 +1,23 @@
+{
+  "experiment": "dense-e1-int4-policy-specialization",
+  "baseline_issue": 10,
+  "scope": "User-authorized follow-up beyond issue10 unchanged-policy experiment",
+  "kernel_base": "23d8103a97982c169986f65bba593885c91ad444",
+  "runtime": "/nix/store/88fvzjx1ar98dlm9mdw715c22zz1r2i0-vllm-xpu-profile-env",
+  "original_library": "/nix/store/sarb8z4rv156bby4siy0klkfygbhiirw-vllm-xpu-grouped-gemm-xe-2-0.1.14.1+src.hjz8vbk9hx2zyyy901r7gq3var8knv0l/lib/libgrouped_gemm_xe_2.so",
+  "capture": "benchmark-results/issue10-grouped-int4-20260909/capture",
+  "reference_screen": "benchmark-results/issue10-grouped-int4-20260909/screen-final",
+  "policies": ["original-128x256", "128x128-sg4x4", "256x128-sg4x4"],
+  "arms": ["onednn", "original-native-full-adapter", "original-native-cached-rows", "128x128-cached-rows", "256x128-cached-rows"],
+  "M": [2048, 1535, 2047],
+  "projections": ["gate_up_proj", "down_proj"],
+  "format": "Retain exact signed-int4 prepack and BF16 transposed G128 scales for this first screen",
+  "rounding_amendment": "Before candidate execution, arbitrary-scale synthetic testing exposed original BF16 dequantization truncation, confirmed by an identity-matrix probe. Only the new policies explicitly round FP32 scale products to nearest-even BF16. Keep candidate reference thresholds unchanged; retain the original truncating path as a control. Tile and rounding changes are evaluated jointly.",
+  "numerical_gates": "Original frozen reference atol=rtol=0.01, compatibility/batch separation atol=rtol=0.015625, exact same-input repeatability and canary/noninterference invariants unchanged",
+  "warmup": "Balanced blocks for minimum 1 second; require three consecutive >=100ms windows with each arm median max/min <=1.01; cap at 10 seconds, otherwise unstable",
+  "measurement": "At least 30 balanced blocks, two reversed shape-order process starts; retain raw timing, block-relative paired effects and bootstrap intervals; no CPU references or disk writes inside timed stage",
+  "selection": "Require repeatable >=3% whole-adapter improvement beyond measured drift before further candidate gates; original native and oneDNN both retained as controls",
+  "later_gates": "Additional middle/late-layer operands and immutable integrated memory budget, model-output/replay/state gates, paired16K/65K auto and KVarN service trials, then MTP2/images before recommendation",
+  "deployment": false,
+  "release": false
+}

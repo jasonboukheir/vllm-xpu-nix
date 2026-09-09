@@ -1,0 +1,39 @@
+{
+  "schema": "single-group-int4-experiment-v1",
+  "hypothesis": "Existing Xe2 E=1 INT4 GEMM is a compatible faster prefill backend without changing policy or determinism",
+  "runtime": "/nix/store/88fvzjx1ar98dlm9mdw715c22zz1r2i0-vllm-xpu-profile-env",
+  "vllm_revision": "9bfcf123f675c6b668391cb536ba06949174afd4",
+  "kernels_revision": "23d8103a97982c169986f65bba593885c91ad444",
+  "checkpoint_revision": "6b0622f4354481d5d04577d48ba0db844efc1330",
+  "M": [
+    2048,
+    1535,
+    2047
+  ],
+  "projections": [
+    "language_model.model.layers.0.mlp.gate_up_proj",
+    "language_model.model.layers.0.mlp.down_proj"
+  ],
+  "format_gate": "exact exhaustive integer and dequantized weight equality; scalar int8 zero point 8; no g_idx; BF16 G128 contiguous scales; NT int32 packed weights",
+  "gates": {
+    "native_reference": {
+      "atol": 0.01,
+      "rtol": 0.01,
+      "reference": "FP32 matmul of captured BF16 A and BF16 dequantized original weights, BF16 output; same as frozen grouped INT4 test"
+    },
+    "onednn_compatibility": {
+      "atol": 0.015625,
+      "rtol": 0.015625,
+      "reference": "captured and replayed deterministic oneDNN output; existing two BF16-quanta batch-separability tolerance"
+    },
+    "repeatability": "bit exact fixed inputs/shapes under intervening changed operands, allocations and calls",
+    "batch_separability": {
+      "atol": 0.015625,
+      "rtol": 0.015625,
+      "shapes": "M=4 vs 4xM=1, plus prefill vs independent rows"
+    },
+    "ownership": "finite complete output after NaN prefill; intact outer canaries; unchanged input operands"
+  },
+  "performance_if_correct": "Include rows metadata, output/scratch allocation, launch and synchronization in paired reversed-order operator timings. Require weighted operator win and paired service TTFT gain > max(3%, twice measured control relative range), consistently across starts. Full service/memory/MTP2/image gates precede recommendation.",
+  "stop": "Stop candidate GPU execution at first failed format/reference/repeatability/ownership gate; record unrun gates. No policy rewrite, deployment or release."
+}

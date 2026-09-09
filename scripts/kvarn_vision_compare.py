@@ -100,7 +100,10 @@ def audit(directory: Path) -> tuple[dict, list[dict]]:
                 or (
                     case["coverage"].get("kind") != "text-prefill"
                     and (
-                        not positions or min(positions) <= 128 or max(positions) >= 2048
+                        not positions
+                        or min(positions) <= 128
+                        or max(positions)
+                        >= case["coverage"].get("max_num_batched_tokens", 2048)
                     )
                 )
             ):

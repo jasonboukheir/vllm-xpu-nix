@@ -2,19 +2,19 @@
 
 import argparse
 import json
-import math
 from collections import defaultdict
 from pathlib import Path
 
 from scripts import kvarn_vision_compare as vision
 from scripts.kvarn_perf_run import write_json_atomic
+from scripts.kvarn_prefill_chunks import chunk_plan, recorded_budget
 from scripts.kvarn_xpu_profile import STEP_PATTERN, load_trace
 from scripts.kvarn_xpu_profile_compare import family
 from scripts.kvarn_xpu_trace import analyze_attribution
 
 
-def validate_steps(steps, prompt_tokens, chunk_size=2048):
-    count = math.ceil(prompt_tokens / chunk_size)
+def validate_steps(steps, prompt_tokens, chunk_size):
+    count = chunk_plan(prompt_tokens, chunk_size)["expected_chunk_count"]
     if len(steps) != count + 2:
         raise ValueError("trace lacks the full prefill plus two boundary guard steps")
     for index, step in enumerate(steps[:count]):
@@ -24,27 +24,81 @@ def validate_steps(steps, prompt_tokens, chunk_size=2048):
         values = {k: int(v) for k, v in match.groupdict().items()}
         expected_query = min(chunk_size, prompt_tokens - index * chunk_size)
         if (
-            values["context_requests"] != 1
+            values["total"] != expected_query
+            or values["context_requests"] != 1
             or values["generation_requests"] != 0
             or values["context_tokens"] != expected_query
             or values["context_sk"] != min((index + 1) * chunk_size, prompt_tokens)
+            or values["context_sqsq"] != expected_query**2
+            or values["context_sqsk"] != expected_query * values["context_sk"]
         ):
             raise ValueError("prefill chunk lengths do not cover the exact request")
-    for step in steps[count:]:
+    for index, step in enumerate(steps[count:], start=1):
         match = STEP_PATTERN.fullmatch(step["annotation"])
         if (
             match is None
+            or int(match["total"]) != 1
             or int(match["generation_requests"]) != 1
             or int(match["context_requests"]) != 0
+            or int(match["generation_tokens"]) != 1
+            or int(match["generation_sk"]) != prompt_tokens + index
         ):
             raise ValueError("missing prefill-to-decode boundary")
     return count
+
+
+def packed_flush_sequence(document):
+    """Retain host packing operations and shapes in their executing step."""
+    scopes = [
+        e
+        for e in document["traceEvents"]
+        if STEP_PATTERN.fullmatch(e.get("name", "")) and "dur" in e
+    ]
+    scopes.sort(key=lambda e: e["ts"])
+    sequence = []
+    for event in sorted(
+        (
+            e
+            for e in document["traceEvents"]
+            if e.get("name") == "_vllm_fa2_C::kvarn_pack_balanced_kv"
+        ),
+        key=lambda e: e["ts"],
+    ):
+        owners = [
+            index
+            for index, scope in enumerate(scopes, start=1)
+            if (scope.get("pid"), scope.get("tid"))
+            == (event.get("pid"), event.get("tid"))
+            and scope["ts"] <= event["ts"]
+            and event["ts"] + event.get("dur", 0) <= scope["ts"] + scope["dur"]
+        ]
+        if len(owners) != 1:
+            raise ValueError("packed flush lacks a unique execution owner")
+        sequence.append(
+            {
+                "step": owners[0],
+                "timestamp_us": event["ts"],
+                "inputs": {
+                    k: v
+                    for k, v in event.get("args", {}).items()
+                    if k.startswith("Input") or k == "Concrete Inputs"
+                },
+            }
+        )
+    return sequence
 
 
 def analyze(directory):
     manifest, requests = vision.audit(directory)
     if manifest.get("suite") != "text-prefill-profile-v1":
         raise ValueError("expected a full text-prefill diagnostic capture")
+    if len(requests) != 4 or [r["phase"] for r in requests] != [
+        "warmup",
+        "performance",
+        "profiled-diagnostic",
+        "performance",
+    ]:
+        raise ValueError("expected warmup and off/on/off prefill bracket")
     traces = manifest.get("trace_sha256", {})
     if len(traces) != 1:
         raise ValueError("expected exactly one hashed worker trace")
@@ -101,7 +155,13 @@ def analyze(directory):
             s["step"] for s in full["steps"] if s["annotation"] == owners[0]["name"]
         )
     tokens = requests[0]["usage"]["prompt_tokens"]
-    count = validate_steps(full["steps"], tokens)
+    budget = recorded_budget(manifest)
+    plan = chunk_plan(tokens, budget)
+    if manifest["profiler_config"]["max_iterations"] != plan[
+        "expected_profile_steps"
+    ] or any(r["usage"] != requests[0]["usage"] for r in requests):
+        raise ValueError("profile configuration or bracket token coverage disagrees")
+    count = validate_steps(full["steps"], tokens, budget)
     if full["coverage"]["unresolved_host_origins"]:
         raise ValueError("trace has unresolved submitting CPU origins")
     result = {
@@ -110,10 +170,14 @@ def analyze(directory):
         "trace_sha256": digest,
         "runtime_identity": manifest["runtime_identity"],
         "prompt_tokens": tokens,
+        **chunk_plan(tokens, budget),
+        "actual_chunk_extents": chunk_plan(tokens, budget)["expected_chunk_extents"],
+        "scheduler_alignment_verified": True,
         "output_tokens": requests[0]["usage"]["completion_tokens"],
         "coverage": full["coverage"],
         "operator_inputs": list(inputs.values()),
         "first_sinkhorn_step": first_flush,
+        "packed_flush_sequence": packed_flush_sequence(document),
         "slices": {},
         "profiler_bracket": {
             "before": requests[1]["ttft_seconds"],
@@ -123,6 +187,7 @@ def analyze(directory):
             / ((requests[1]["ttft_seconds"] + requests[3]["ttft_seconds"]) / 2),
         },
         "limitations": [
+            "Packing operation shapes/order do not expose page IDs or certify committed packed bytes and tail state.",
             "Device family sums, GPU unions and CPU waits are overlapping diagnostics, not additive savings.",
             "The trace covers the worker, not frontend or scheduler time outside worker execution.",
             "Uncovered time and CPU self time do not establish removable host overhead.",

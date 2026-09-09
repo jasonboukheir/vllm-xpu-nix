@@ -19,6 +19,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from scripts import kvarn_perf_run as perf
+from scripts.kvarn_prefill_chunks import chunk_plan, recorded_budget
 
 MODEL = "jasonboukheir/Qwen3.8-27B-AEON-Ultimate-Uncensored-BF16-W4A16-AutoRound"
 REVISION = "6b0622f4354481d5d04577d48ba0db844efc1330"
@@ -183,7 +184,12 @@ def tokenize_case(base_url: str, case: dict) -> dict:
 
 
 def long_case(
-    base_url: str, source: dict, output: Path, target_tokens: int = 6143
+    base_url: str,
+    source: dict,
+    output: Path,
+    target_tokens: int = 6143,
+    *,
+    chunk_budget: int = 2048,
 ) -> dict:
     """Put image beyond sink, then age it; cross a 128-token page in decode."""
     case = copy.deepcopy(source)
@@ -206,7 +212,7 @@ def long_case(
             if (
                 not image_positions
                 or min(image_positions) <= 128
-                or max(image_positions) >= 2048
+                or max(image_positions) >= chunk_budget
             ):
                 raise ValueError(
                     "long image must be beyond sink and in first prefill chunk"
@@ -216,7 +222,10 @@ def long_case(
                 "page_size": 128,
                 "image_token_start": min(image_positions),
                 "image_token_end_inclusive": max(image_positions),
-                "expected_chunk_count": (target_tokens + 2047) // 2048,
+                "max_num_batched_tokens": chunk_budget,
+                "expected_chunk_count": chunk_plan(target_tokens, chunk_budget)[
+                    "expected_chunk_count"
+                ],
                 "decode_crosses_page_after_tokens": 128 - target_tokens % 128,
             }
             perf.write_json_atomic(output / f"{case['id']}-tokenize.json", tokenized)
@@ -382,13 +391,15 @@ def request_case(base_url: str, case: dict, output: Path) -> dict:
     return result
 
 
-def performance_cases(base_url: str, source: dict, output: Path) -> list[dict]:
+def performance_cases(
+    base_url: str, source: dict, output: Path, *, chunk_budget: int = 2048
+) -> list[dict]:
     """Fixed B1 screen: short image, exact 4K text and aged 6143-token image."""
     short = copy.deepcopy(source)
     short["messages"][0]["content"][-1]["text"] = (
         "Describe this image in detail in 300 words."
     )
-    long = long_case(base_url, short, output)
+    long = long_case(base_url, short, output, chunk_budget=chunk_budget)
     text_case = {"id": "text-4k", "messages": [{"role": "user", "content": ""}]}
     padding = 0
     for _ in range(6):
@@ -442,6 +453,7 @@ def prefill_cases(
     repeats: int,
     *,
     profiled: bool = False,
+    chunk_budget: int = 2048,
 ) -> list[dict]:
     """Exact text context, one warmup, then identical measured requests."""
     case = {"messages": [{"role": "user", "content": ""}]}
@@ -475,7 +487,7 @@ def prefill_cases(
             coverage={
                 "prompt_tokens": prompt_tokens,
                 "kind": "text-prefill",
-                "expected_chunk_count": (prompt_tokens + 2047) // 2048,
+                **chunk_plan(prompt_tokens, chunk_budget),
             },
             generation={
                 "max_tokens": output_tokens,
@@ -514,6 +526,7 @@ def main() -> None:
         action="store_true",
         help="exact-length text-only profiler-off B1 trials",
     )
+    parser.add_argument("--max-num-batched-tokens", type=int, default=2048)
     parser.add_argument("--prefill-tokens", type=int, default=65023)
     parser.add_argument("--prefill-output-tokens", type=int, default=512)
     parser.add_argument("--prefill-repeats", type=int, default=3)
@@ -554,6 +567,8 @@ def main() -> None:
         help="retain target top-5 logprobs for numerical correctness diagnosis",
     )
     args = parser.parse_args()
+    if args.max_num_batched_tokens <= 0:
+        parser.error("--max-num-batched-tokens must be positive")
     prefill = args.prefill_suite or args.profile_workload == "text-prefill"
     if prefill and (
         args.prefill_tokens < 64
@@ -581,6 +596,7 @@ def main() -> None:
     snapshot.mkdir()
     for name in (
         "kvarn_vision_run.py",
+        "kvarn_prefill_chunks.py",
         "kvarn_perf_run.py",
         "kvarn_perf_gate.py",
         "kvarn_split_policy.py",
@@ -597,7 +613,11 @@ def main() -> None:
         profile_config = profiler_config(
             output / "traces",
             delay_iterations=1 if prefill else 7,
-            profile_steps=(args.prefill_tokens + 2047) // 2048 + 2 if prefill else 20,
+            profile_steps=chunk_plan(args.prefill_tokens, args.max_num_batched_tokens)[
+                "expected_profile_steps"
+            ]
+            if prefill
+            else 20,
             phase="prefill" if prefill else "decode",
             record_shapes=prefill,
         )
@@ -653,7 +673,7 @@ def main() -> None:
         "--max-num-seqs",
         "1",
         "--max-num-batched-tokens",
-        "2048",
+        str(args.max_num_batched_tokens),
         "--enforce-eager",
         "--no-enable-prefix-caching",
         "--limit-mm-per-prompt",
@@ -672,6 +692,7 @@ def main() -> None:
     manifest = {
         "schema": "kvarn-vision-experiment-v1",
         "argv": argv,
+        "max_num_batched_tokens": args.max_num_batched_tokens,
         "selected_environment": selected_env,
         "service_env": str(service_env),
         "transport_environment": TRANSPORT_ENVIRONMENT,
@@ -736,6 +757,7 @@ def main() -> None:
                 ),
             }
         )
+        recorded_budget(manifest)
         if profile_config is not None:
             assert (
                 json.loads(actual_argv[actual_argv.index("--profiler-config") + 1])
@@ -750,11 +772,14 @@ def main() -> None:
                 args.prefill_output_tokens,
                 args.prefill_repeats,
                 profiled=bool(args.profile_workload),
+                chunk_budget=recorded_budget(manifest),
             )
             perf.write_json_atomic(output / "workload.json", cases)
             manifest["workload_sha256"] = perf.sha256_file(output / "workload.json")
         elif args.perf_suite or args.profile_workload:
-            cases = performance_cases(args.base_url, cases[0], output)
+            cases = performance_cases(
+                args.base_url, cases[0], output, chunk_budget=recorded_budget(manifest)
+            )
             if args.profile_workload:
                 cases = [
                     case
@@ -767,7 +792,11 @@ def main() -> None:
         elif args.qualify:
             cases.extend(
                 long_case(
-                    args.base_url, source, output, args.long_prompt_tokens or 6143
+                    args.base_url,
+                    source,
+                    output,
+                    args.long_prompt_tokens or 6143,
+                    chunk_budget=recorded_budget(manifest),
                 )
                 for source in cases[:2]
             )

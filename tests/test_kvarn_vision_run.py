@@ -45,7 +45,7 @@ def test_performance_suite_fixes_context_caps_repetitions_and_input_identity(
     image = vision.fixtures(tmp_path / "images")[0]
     long = {**image, "id": "long-image-a", "coverage": {"prompt_tokens": 6143}}
     (tmp_path / "long-image-a-tokenize.json").write_text('{"count":6143}')
-    monkeypatch.setattr(vision, "long_case", lambda *args: long)
+    monkeypatch.setattr(vision, "long_case", lambda *args, **kwargs: long)
     monkeypatch.setattr(vision, "tokenize_case", lambda *args: {"count": 4096})
     cases = vision.performance_cases("http://unused", image, tmp_path)
     warmups = [case for case in cases if case["phase"] == "warmup"]
@@ -64,13 +64,18 @@ def test_performance_suite_fixes_context_caps_repetitions_and_input_identity(
 
 
 @pytest.mark.parametrize("profiled", [False, True])
-def test_prefill_exact_lengths_and_warmup_bracket(tmp_path, monkeypatch, profiled):
+@pytest.mark.parametrize("budget", [2048, 4096, 8192])
+def test_prefill_exact_lengths_and_warmup_bracket(
+    tmp_path, monkeypatch, profiled, budget
+):
     def tokenize(_url, case):
         count = 64 + case["messages"][0]["content"].count(" x")
         return {"count": count, "tokens": [42] * count}
 
     monkeypatch.setattr(vision, "tokenize_case", tokenize)
-    cases = vision.prefill_cases("unused", tmp_path, 65023, 512, 3, profiled=profiled)
+    cases = vision.prefill_cases(
+        "unused", tmp_path, 65023, 512, 3, profiled=profiled, chunk_budget=budget
+    )
     assert len(cases) == 4
     assert [c["phase"] for c in cases] == [
         "warmup",
@@ -80,6 +85,10 @@ def test_prefill_exact_lengths_and_warmup_bracket(tmp_path, monkeypatch, profile
     ]
     for case in cases:
         assert case["messages"] == cases[0]["messages"]
+        assert case["coverage"]["max_num_batched_tokens"] == budget
+        assert (
+            case["coverage"]["expected_chunk_count"] == (65023 + budget - 1) // budget
+        )
         assert case["generation"]["max_tokens"] == 512
         assert case["generation"]["ignore_eos"]
         evidence = json.loads((tmp_path / f"{case['id']}-tokenize.json").read_text())
@@ -314,16 +323,21 @@ def test_long_context_rejects_image_inside_uncompressed_sink(tmp_path, monkeypat
         vision.long_case("http://127.0.0.1:8017", cases[0], tmp_path, context)
 
 
-def test_long_context_coverage_tracks_actual_128k_target(tmp_path, monkeypatch):
+@pytest.mark.parametrize("budget", [2048, 4096, 8192])
+def test_long_context_coverage_tracks_actual_128k_target(tmp_path, monkeypatch, budget):
     cases = vision.fixtures(tmp_path / "images")
     tokens = [0] * 130943
     tokens[266:462] = [248056] * 196
     monkeypatch.setattr(
         vision, "tokenize_case", lambda *a: {"count": len(tokens), "tokens": tokens}
     )
-    case = vision.long_case("http://localhost", cases[0], tmp_path, len(tokens))
+    case = vision.long_case(
+        "http://localhost", cases[0], tmp_path, len(tokens), chunk_budget=budget
+    )
     assert case["coverage"]["prompt_tokens"] == 130943
-    assert case["coverage"]["expected_chunk_count"] == 64
+    assert (
+        case["coverage"]["expected_chunk_count"] == (len(tokens) + budget - 1) // budget
+    )
     assert case["coverage"]["decode_crosses_page_after_tokens"] == 1
 
 

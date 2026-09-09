@@ -39,6 +39,60 @@ is not the launch path for current releases. Its shared trace/config helpers
 and the offline analyzers remain usable. The retired experiment-plan generator
 and Sinkhorn trial selectors are not part of this workflow.
 
+### Matched text-only prefill
+
+Use the same immutable service environment for both cache dtypes. The bounded
+prefill suite disables image inputs and requires MTP off. It constructs an exact
+token length through the pinned model's tokenizer, warms the identical request,
+then records three profiler-off requests with 512 generated tokens and EOS
+stopping disabled. Raw token IDs and streaming arrival times are retained.
+
+```bash
+/tmp/kvarn-profile-env/bin/python -m scripts.kvarn_vision_run \
+  --service-env /tmp/kvarn-profile-env --cache-dtype auto --draft-tokens 0 \
+  --max-model-len 65536 --prefill-suite --prefill-tokens 65023 \
+  --output benchmark-results/prefill-new/auto
+
+/tmp/kvarn-profile-env/bin/python -m scripts.kvarn_vision_run \
+  --service-env /tmp/kvarn-profile-env \
+  --cache-dtype kvarn_k4v4_g128_compact --draft-tokens 0 \
+  --max-model-len 65536 --prefill-suite --prefill-tokens 65023 \
+  --output benchmark-results/prefill-new/kvarn
+
+python -m scripts.kvarn_prefill_compare \
+  --pair benchmark-results/prefill-new/auto benchmark-results/prefill-new/kvarn \
+  --output benchmark-results/prefill-new/service-comparison.json
+```
+
+Repeat in reversed arm order with fresh directories, and include another
+representative length such as `--prefill-tokens 16383`. Pass each matched pair
+with another `--pair`. The comparator validates manifests, runtime identity,
+exact requests and processed prompt IDs. It reports individual request timings,
+run variation, token-based decode throughput and client inter-token latency.
+It rejects bundled token events as insufficient evidence for individual token
+latency. Cross-dtype output equality is reported separately from performance.
+
+For separate diagnostic captures, replace `--prefill-suite` with
+`--profile-workload text-prefill` and choose fresh directories. This records an
+off/on/off request bracket after warmup. Profiling begins at the first worker
+step and covers every prefill chunk plus two decode boundary steps. The capture
+includes operator shapes for checking attention and materializer inputs. The
+shared profiler helper limits captures to 50 worker steps; longer workloads need an
+explicitly qualified extension. Profiled request time includes trace-export
+overhead and cannot establish service performance.
+
+```bash
+python -m scripts.kvarn_prefill_trace \
+  --run benchmark-results/prefill-new/kvarn-profile \
+  --output benchmark-results/prefill-new/kvarn-attribution.json
+```
+
+The analyzer checks exact chunk extents, the prefill-to-decode boundary, trace
+hashes and correlated CPU origins. It retains initial, early, middle, late and
+boundary slices, device-busy unions, family duration sums and unresolved
+out-of-scope work. Worker traces do not cover frontend or scheduler work outside
+the worker. Neither uncovered time nor CPU wait totals prove removable overhead.
+
 ## Trace analysis
 
 ```bash

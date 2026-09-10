@@ -348,6 +348,191 @@ oneDNN remains below the predeclared 3% threshold. Preserve the current serving
 dispatch. Reports and immutable evidence identities are in
 [workflow PR #15](https://git.sunnycareboo.com/jasonbk/vllm-xpu-nix/pulls/15).
 
+## D256 attention policy experiments
+
+The [loop-barrier and pure-prefill follow-up](d256-barriers-dispatch-experiment.md)
+adds an explicit head-size check, a same-process flag comparison, LSE and
+metadata integrity checks, native trace attestation and queued-window timing.
+Its evidence is separate from the original tile experiment. Small host
+submission savings must not be presented as whole-service speedups.
+
+The [reviewed September 9 results](d256-attention-experiment.md) cover the
+original query-tile experiment, restored prefetch packets and the adjacent
+K64 test. None produced a qualified win.
+
+Issue #11 tests one bounded Xe2 change: QK/PV tiles 128x32x32, output
+128x256 and 16 subgroups, retaining eight query rows per subgroup. The frozen
+control uses 256 query rows and 32 subgroups. Keep arithmetic, key tiling,
+precision, pipeline stages, prefetch strategy, scheduler and decode policies
+fixed. The reproducible candidate patch is
+`fixtures/xpu-attention-d256-q128.patch`; it applies to kernels `23d8103`, whose
+attention headers are architecture-local. Current fork main has different
+shared attention headers and does not inherit this experiment's qualification.
+The prefetch selector depends on subgroup count: this tuple also changes
+generated K/V packet heights. An unchanged prefetch algorithm does not imply
+identical memory requests; inspect generated packets before attributing a
+result exclusively to workgroup size.
+
+Read `fixtures/xpu-attention-d256-plan.json` before testing. Use the immutable
+runtime and pinned checkpoint recorded there, with competing GPU services
+stopped. Create a fresh artifact directory for every invocation. The builder
+uses this checkout's flake lock, so retain the workflow commit as well as the
+fork revision when reproducing a historical experiment.
+
+```bash
+EXPERIMENT=benchmark-results/d256-prefill-new
+RUNTIME=/nix/store/88fvzjx1ar98dlm9mdw715c22zz1r2i0-vllm-xpu-profile-env
+
+git -C ../vllm-xpu-kernels worktree add --detach /tmp/d256-q128 \
+  23d8103a97982c169986f65bba593885c91ad444
+git -C /tmp/d256-q128 apply "$PWD/fixtures/xpu-attention-d256-q128.patch"
+
+nix build --impure --file nix/xpu-attention-policy-experiment.nix \
+  --out-link /tmp/d256-control
+nix build --impure --file nix/xpu-attention-policy-experiment.nix \
+  --argstr kernelsSrc /tmp/d256-q128 --out-link /tmp/d256-candidate
+```
+
+Both builds have identical reduced coverage: causal D256 dense/paged prefill
+and the matching Qwen decode variants. Narrowing coverage avoids compiling
+hundreds of unrelated specializations; it is applied to both arms. The default
+builder retains all dtypes emitted for those configurations and the unchanged
+b16 policy. `--arg screenOnly false` restores the package's full coverage.
+These libraries are experimental artifacts, not replacements for the serving
+package. The Python binding stays frozen; each worker overrides only the
+attention DSO through `LD_LIBRARY_PATH` before process startup and verifies its
+actual mapped path/hash.
+
+Capture actual service calls separately under auto and compact KVarN:
+
+```bash
+"$RUNTIME/bin/python" -m scripts.xpu_attention_capture \
+  --cache-dtype auto --output "$EXPERIMENT/capture-auto" \
+  --tokenize /path/to/retained-16383-tokenize.json \
+  --tokenize /path/to/retained-65023-tokenize.json
+"$RUNTIME/bin/python" -m scripts.xpu_attention_capture \
+  --cache-dtype kvarn_k4v4_g128_compact --output "$EXPERIMENT/capture-kvarn" \
+  --tokenize /path/to/retained-16383-tokenize.json \
+  --tokenize /path/to/retained-65023-tokenize.json
+```
+
+The capture inventories every ordinary prefill attention call and retains six
+representative Q/K/V/output snapshots, physical page mappings, strides and K/V
+storage aliasing. It preserves exact prompt and output IDs, eager execution,
+2048 scheduler budget, no prefix caching, MTP off and 512 output tokens with
+EOS stopping disabled. Capture timings are diagnostic, never service results.
+On Brutus, auto actually uses BF16 pages of 832 tokens with interleaved K/V
+storage; compact KVarN supplies contiguous dense FP16 at all six extents.
+Do not substitute an assumed page size or independently allocate aliased K/V.
+
+```bash
+ORIGINAL=/nix/store/jvpyrf6d1igpp6dq7n75xa5vmfpiwila-vllm-xpu-attn-kernels-xe-2-0.1.14.1+src.dqw1a0l8w7c2xazw03bip6yfyqq25bhc/lib/libattn_kernels_xe_2.so
+CONTROL=/tmp/d256-control/lib/libattn_kernels_xe_2.so
+CANDIDATE=/tmp/d256-candidate/lib/libattn_kernels_xe_2.so
+
+"$RUNTIME/bin/python" -m scripts.xpu_attention_screen \
+  --python "$RUNTIME/bin/python" --original "$ORIGINAL" \
+  --control "$CONTROL" --candidate "$CANDIDATE" \
+  --capture "$EXPERIMENT/capture-auto/manifest.json" \
+  --capture "$EXPERIMENT/capture-kvarn/manifest.json" \
+  --output "$EXPERIMENT/screen"
+
+"$RUNTIME/bin/python" -m scripts.xpu_attention_weight \
+  --report "$EXPERIMENT/screen/report.json" \
+  --output "$EXPERIMENT/full-prefill-prediction.json"
+
+"$RUNTIME/bin/python" -m scripts.xpu_attention_codegen \
+  --library "original=$ORIGINAL" --library "control=$CONTROL" \
+  --library "candidate=$CANDIDATE" > "$EXPERIMENT/codegen.json"
+"$RUNTIME/bin/python" -m scripts.xpu_attention_dispatch \
+  --codegen "$EXPERIMENT/codegen.json" --gates "$EXPERIMENT/screen" \
+  --output "$EXPERIMENT/dispatch.json"
+```
+
+The screen first runs the original immutable DSO, rebuilt control and candidate
+serially. It requires the original/control replay to match captured output
+exactly. Every arm must pass independent blocked FP32 bottom-right causal GQA
+at the frozen ordinary-attention tolerance (`atol=0.02`, `rtol=0.01`), exact
+same-input repeats after changed operands and dirty allocation conditioning,
+input noninterference, output ownership and canaries. Native device traces are
+outside timing. The dispatch analyzer joins their exact kernel names to
+embedded ELF resource metadata from the same mapped libraries. It distinguishes
+reported registers/SLM/spills from measurements of occupancy or memory traffic.
+
+Timing uses two persistent processes with serial GPU requests, two fresh starts
+and reversed case/arm order. Each arm receives at least one second of warmup
+and must stabilize over three consecutive windows of at least 100 ms, with
+window medians spanning at most 1%; a ten-second cap records instability.
+Thirty ABBA/BAAB blocks preserve raw samples, block bootstrap intervals and
+first/last-third drift. Speedup is the ratio of aggregate costs; paired block
+resampling retains the relationship between arms. Every measured wrapper call includes scratch allocation,
+launch and completion synchronization; the service-shaped output is preallocated.
+Conditioning and IPC are excluded. Conditions are immediate same-buffer reuse,
+a 512 MiB streaming read/write conditioner, and a preceding call on different
+captured operands. The conditioner is not proof of complete cache eviction.
+
+Use `--gates-only` followed by `--gates-from /path/to/report.json` to separate
+validation from timing. Library and binding identities must remain unchanged.
+An additional build calibration can compare original versus rebuilt control
+using `--control "$ORIGINAL" --candidate "$CONTROL"`,
+`--control-gate-arm original --candidate-gate-arm control` and
+`--conditions warm`. This checks whether narrowing the build changes baseline
+timing, even when numerical results and resource metadata agree.
+
+Full-prefill weighting counts every captured layer call for each request.
+It interpolates complete-call latency in K between the measured full-query
+anchors, normalizes the 2047-row anchor to 2048 for interpolation, and uses
+ragged final chunks exactly. Unmeasured ragged tails and extrapolation are
+rejected. Stability and variation use only anchors that actually contribute
+to that request. This is explicitly an operator prediction; it is not measured TTFT
+and must not be added to overlapping profiler sums. Require a stable,
+meaningful improvement across starts and cache conditions before the paired
+profiler-off service, replay/state/model, MTP2 and image gates. A weighted
+regression stops this candidate without changing production dispatch.
+
+### Qualify a Python dispatch change
+
+For an intervention that changes only vLLM Python routing, build both source
+revisions against the same native package and dependencies:
+
+```bash
+nix build --impure --file nix/xpu-python-dispatch-experiment.nix \
+  --argstr vllmSrc /path/to/control-source --out-link /tmp/dispatch-control
+nix build --impure --file nix/xpu-python-dispatch-experiment.nix \
+  --argstr vllmSrc /path/to/candidate-source --out-link /tmp/dispatch-candidate
+```
+
+Record the actual source revisions and hashes: the builder deliberately keeps
+the baseline package version label unless an explicit version is supplied.
+Its default is the narrow KVarN validation package. It reuses every native
+dependency; it does not qualify an arbitrary newer source against those APIs.
+Run source tests and real native correctness gates before serving trials.
+
+Follow the [pure-prefill integration plan](../fixtures/xpu-pure-prefill-serving-plan.md)
+for the bounded D256 dispatch change. First capture a separate diagnostic
+service trace to prove the intended route and retained decode behavior. Then
+use the matched prefill commands above with each arm's own environment, fresh
+starts and reversed order. Collect MTP2 image/text qualification separately
+with `--qualify --token-evidence --logprob-evidence` for each cache dtype.
+
+```bash
+python -m scripts.xpu_prefill_service_compare \
+  --control-env /tmp/dispatch-control \
+  --candidate-env /tmp/dispatch-candidate \
+  --allow-env-path-pair /nix/store/<control-python-env> /nix/store/<candidate-python-env> \
+  --pair benchmark-results/dispatch-new/control benchmark-results/dispatch-new/candidate \
+  --output benchmark-results/dispatch-new/comparison.json
+```
+
+Pass each matched pair, including qualification, with another `--pair`. The
+comparator permits only the named vLLM packages and declared outer environment
+wrappers to differ. Process dependencies remain identical. It checks exact
+requests and outputs including warmups, target logprobs for qualification,
+speculative counters, preemptions and engine failures. It reports per-start
+TTFT, total time, decode rate, client latency and sampled memory without
+declaring a speedup or waiving correctness gates. The closure audit does not
+replace recording the actual loaded native library in the diagnostic.
+
 ## Trace analysis
 
 ```bash

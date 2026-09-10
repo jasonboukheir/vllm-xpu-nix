@@ -1,0 +1,204 @@
+diff --git a/csrc/xpu/attn/xe_2/chunk_prefill.hpp b/csrc/xpu/attn/xe_2/chunk_prefill.hpp
+index cb313c2..e3042eb 100644
+--- a/csrc/xpu/attn/xe_2/chunk_prefill.hpp
++++ b/csrc/xpu/attn/xe_2/chunk_prefill.hpp
+@@ -269,7 +269,7 @@ struct FMHAConfig {
+       decltype(cutlass::fmha::collective::get_sg_layout_pv(SubgroupLayoutQK{})),
+       SubgroupLayoutPV_>;
+
+-  template <class Scheduler>
++  template <class Scheduler, bool EnableD256LoopBarrierExperiment = false>
+   static void run(sycl::queue& queue, const chunk_prefill_args_t& args) {
+     constexpr bool VarLen = true;
+     // constexpr bool Paged = true;
+@@ -332,17 +332,32 @@ struct FMHAConfig {
+         CollectiveMainloop,
+         CollectiveEpilogue,
+         Scheduler,
+-        SoftmaxLSE>;
++        SoftmaxLSE,
++        EnableD256LoopBarrierExperiment>;
+
+     KernelLauncher<FMHAKernel, VarLen> launcher;
+
+     launcher.run(queue, args, hw_info);
+   }
+
++  template <bool IsD256Policy = false>
+   static void
+   kernel_dispatch(sycl::queue& queue, const chunk_prefill_args_t& args) {
+-    return run<cutlass::fmha::kernel::XeFHMAIndividualTileScheduler>(
+-        queue, args);
++    using Scheduler = cutlass::fmha::kernel::XeFHMAIndividualTileScheduler;
++    // D512 has the same tile geometry, and the D256 policy also serves
++    // smaller logical heads. Select the experiment only for exact D256;
++    // this host branch leaves the device key loop free of runtime checks.
++    constexpr bool ordinary_d256 =
++        IsD256Policy && Causal && !Local && !Sink && !SoftmaxLSE &&
++        is_any_of_v<ElementQ, half_t, bfloat16_t> &&
++        is_same_v<ElementQ, ElementK> && is_same_v<ElementQ, ElementV> &&
++        is_same_v<ElementQ, ElementO>;
++    if constexpr (ordinary_d256) {
++      if (args.head_size == 256) {
++        return run<Scheduler, true>(queue, args);
++      }
++    }
++    return run<Scheduler>(queue, args);
+   }
+ };
+
+@@ -375,7 +390,9 @@ void policy_dispatch_impl(
+           half_t,
+           half_t,
+           half_t,
+-          half_t>::kernel_dispatch(queue, args);
++          half_t>::
++          template kernel_dispatch<
++              is_same_v<chunk_policy, chunk_policy_head256>>(queue, args);
+     } else if (cuQKType.k_type == CutlassDType::float8_e4m3) {
+       return FMHAConfig<
+           typename chunk_policy::ShapeQK,
+@@ -392,7 +409,9 @@ void policy_dispatch_impl(
+           half_t,
+           float_e4m3_t,
+           float_e4m3_t,
+-          half_t>::kernel_dispatch(queue, args);
++          half_t>::
++          template kernel_dispatch<
++              is_same_v<chunk_policy, chunk_policy_head256>>(queue, args);
+     } else if (cuQKType.k_type == CutlassDType::float8_e5m2) {
+       return FMHAConfig<
+           typename chunk_policy::ShapeQK,
+@@ -409,7 +428,9 @@ void policy_dispatch_impl(
+           half_t,
+           float_e5m2_t,
+           float_e5m2_t,
+-          half_t>::kernel_dispatch(queue, args);
++          half_t>::
++          template kernel_dispatch<
++              is_same_v<chunk_policy, chunk_policy_head256>>(queue, args);
+     }
+   } else {
+     if (cuQKType.k_type == CutlassDType::bfloat16) {
+@@ -428,7 +449,9 @@ void policy_dispatch_impl(
+           bfloat16_t,
+           bfloat16_t,
+           bfloat16_t,
+-          bfloat16_t>::kernel_dispatch(queue, args);
++          bfloat16_t>::
++          template kernel_dispatch<
++              is_same_v<chunk_policy, chunk_policy_head256>>(queue, args);
+     } else if (cuQKType.k_type == CutlassDType::float8_e4m3) {
+       return FMHAConfig<
+           typename chunk_policy::ShapeQK,
+@@ -445,7 +468,9 @@ void policy_dispatch_impl(
+           bfloat16_t,
+           float_e4m3_t,
+           float_e4m3_t,
+-          bfloat16_t>::kernel_dispatch(queue, args);
++          bfloat16_t>::
++          template kernel_dispatch<
++              is_same_v<chunk_policy, chunk_policy_head256>>(queue, args);
+     } else if (cuQKType.k_type == CutlassDType::float8_e5m2) {
+       return FMHAConfig<
+           typename chunk_policy::ShapeQK,
+@@ -462,7 +487,9 @@ void policy_dispatch_impl(
+           bfloat16_t,
+           float_e5m2_t,
+           float_e5m2_t,
+-          bfloat16_t>::kernel_dispatch(queue, args);
++          bfloat16_t>::
++          template kernel_dispatch<
++              is_same_v<chunk_policy, chunk_policy_head256>>(queue, args);
+     }
+   }
+ }
+diff --git a/csrc/xpu/attn/xe_2/collective/chunk_prefill_mainloop.hpp b/csrc/xpu/attn/xe_2/collective/chunk_prefill_mainloop.hpp
+index cb9c639..a2b2ee6 100644
+--- a/csrc/xpu/attn/xe_2/collective/chunk_prefill_mainloop.hpp
++++ b/csrc/xpu/attn/xe_2/collective/chunk_prefill_mainloop.hpp
+@@ -254,7 +254,10 @@ struct FMHAFwdMainloop<
+     return block_idx * page_stride_tiles + K % tiles_per_page;
+   }
+
+-  template <bool has_large_surface, typename QVCoord>
++  template <
++      bool has_large_surface,
++      bool SkipLoopBarriers = false,
++      typename QVCoord>
+   CUTLASS_DEVICE void operator()(
+       TensorQ2D const& Q_2D,  // (q,d)
+       TensorK2D const& K_2D,  // (k,d)
+@@ -541,7 +544,9 @@ struct FMHAFwdMainloop<
+
+     /* Main loop, blocked in k. */
+     for (int K = blk_k0; K < blk_k1; K++) {
+-      barrier_arrive(ScopeWorkgroup);
++      if constexpr (!SkipLoopBarriers) {
++        barrier_arrive(ScopeWorkgroup);
++      }
+
+       bool need_causal = false;
+       if constexpr (CausalMask) {
+@@ -668,7 +673,9 @@ struct FMHAFwdMainloop<
+         }
+       }
+
+-      barrier_wait(ScopeWorkgroup);
++      if constexpr (!SkipLoopBarriers) {
++        barrier_wait(ScopeWorkgroup);
++      }
+     }
+
+     // Apply the per-tensor V scale once after the K loop.
+diff --git a/csrc/xpu/attn/xe_2/kernel/chunk_prefill_kernel.hpp b/csrc/xpu/attn/xe_2/kernel/chunk_prefill_kernel.hpp
+index 8809d83..5e1cf6f 100644
+--- a/csrc/xpu/attn/xe_2/kernel/chunk_prefill_kernel.hpp
++++ b/csrc/xpu/attn/xe_2/kernel/chunk_prefill_kernel.hpp
+@@ -66,7 +66,8 @@ template <
+     class CollectiveMainloop_,
+     class CollectiveEpilogue_,
+     class TileScheduler_,
+-    bool SoftmaxLSE_ = false>
++    bool SoftmaxLSE_ = false,
++    bool EnableD256LoopBarrierExperiment_ = false>
+ class XeFMHAFwdKernel {
+  public:
+   //
+@@ -394,9 +395,26 @@ class XeFMHAFwdKernel {
+       int l_coord_qo = is_var_len ? 0 : idx_b;
+       int l_coord_kv = (PagedKV || is_var_len) ? 0 : idx_b;
+       CollectiveMainloop mainloop(params.mainloop, shared_storage.mainloop);
++      // Bounded D256 experiment: this mainloop has no shared arithmetic
++      // storage and ReduceK=1 keeps the output reduction within a subgroup.
++      // Preserve initial workgroup reductions and barriers for every other
++      // shape, precision, scheduler, or attention feature.
++      constexpr bool skip_loop_barriers =
++          EnableD256LoopBarrierExperiment_ && is_var_len && CausalMask &&
++          !LocalMask && !Sink && !SoftmaxLSE &&
++          is_same_v<TileScheduler, XeFHMAIndividualTileScheduler> &&
++          is_any_of_v<ElementQ, half_t, bfloat16_t> &&
++          is_same_v<ElementQ, ElementK> && is_same_v<ElementQ, ElementV> &&
++          is_same_v<ElementQ, ElementO> && size<0>(TileShapeQK{}) == 256 &&
++          size<1>(TileShapeQK{}) == 32 && size<2>(TileShapeQK{}) == 32 &&
++          size<0>(TileShapePV{}) == 256 && size<1>(TileShapePV{}) == 32 &&
++          size<2>(TileShapePV{}) == 32 && size<0>(TileShapeO{}) == 256 &&
++          size<1>(TileShapeO{}) == 256 && SGPerWG::value == 32 &&
++          size<0>(SubgroupLayoutQK{}) == 32 &&
++          size<3>(typename TiledMMAPV::ThrLayoutVMNK{}) == 1;
+       bool has_large_surface = kXeMaxSurfaceRows < total_seqlen_kv;
+       if (has_large_surface) {
+-        mainloop.template operator()<true>(
++        mainloop.template operator()<true, skip_loop_barriers>(
+             Q(_, _, head_q, l_coord_qo),
+             K(_, _, head, l_coord_kv),
+             V(_, _, head, l_coord_kv),
+@@ -414,7 +432,7 @@ class XeFMHAFwdKernel {
+             k_block_local_l_safe,
+             k_block_local_r_safe);
+       } else {
+-        mainloop.template operator()<false>(
++        mainloop.template operator()<false, skip_loop_barriers>(
+             Q(_, _, head_q, l_coord_qo),
+             K(_, _, head, l_coord_kv),
+             V(_, _, head, l_coord_kv),

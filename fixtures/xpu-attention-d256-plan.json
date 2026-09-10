@@ -1,0 +1,22 @@
+{
+  "issue": 11,
+  "hypothesis": "Halving Xe2 D256 query ownership from256 to128 rows and from32 to16 subgroups improves weighted prefill cost on B70",
+  "runtime": "/nix/store/88fvzjx1ar98dlm9mdw715c22zz1r2i0-vllm-xpu-profile-env",
+  "vllm_revision": "9bfcf123f675c6b668391cb536ba06949174afd4",
+  "kernels_revision": "23d8103a97982c169986f65bba593885c91ad444",
+  "checkpoint_revision": "6b0622f4354481d5d04577d48ba0db844efc1330",
+  "control_library": "/nix/store/jvpyrf6d1igpp6dq7n75xa5vmfpiwila-vllm-xpu-attn-kernels-xe-2-0.1.14.1+src.dqw1a0l8w7c2xazw03bip6yfyqq25bhc/lib/libattn_kernels_xe_2.so",
+  "intervention": "Only chunk_policy_head256 QK/PV128x32x32, output128x256, subgroup16x1x1; key tile32, arithmetic, precision, GRF setting, scheduler, prefetch strategy, decode and b16 policies unchanged",
+  "geometry": {"query_heads": 24, "kv_heads": 4, "head_dim": 256, "causal": "bottom-right"},
+  "screen_q_k": [[2048,2048],[2048,8192],[2047,16383],[2048,32768],[2048,63488],[1535,65023]],
+  "capture": "Unchanged diagnostic model calls under auto and compact KVarN; capture actual dtype, shape, stride, page mapping, Q/K/V and output for selected extents; inventory every prefill attention call for both exact retained prompts",
+  "numerical_gates": {"atol": 0.02, "rtol": 0.01, "source": "Frozen tests/flash_attn/test_flash_attn_varlen_func.py::test_varlen ordinary attention profile", "reference": "FP32 attention on exact captured operands with bottom-right causal mask; grouped heads and query blocks bound temporary memory", "repeatability": "Exact same-input output after changed operands, allocator pressure and dirty output/scratch conditioning", "ownership": "Finite complete output after NaN prefill, intact surrounding canaries, unchanged inputs"},
+  "measurement": "Serial GPU commands in two persistent workers with separately mapped immutable DSOs; balanced reversed ABBA blocks, at least1s warmup and three100ms windows within1%, capped10s;30 blocks and two fresh starts; raw samples, block bootstrap and drift reporting",
+  "cache_conditions": ["same-buffer warm reuse", "512MiB streaming read/write conditioner immediately before each measured call, excluded from elapsed time", "interleaved captured operands"],
+  "weighting": "Use full observed prefill call extents for16383/65023 tokens. Any interpolation or generated-prefix replay must be identified as a prediction; never weight only the final chunk.",
+  "selection": "Require correctness plus weighted whole-call improvement greater than max(3%, twice control relative variation), consistently across starts and cache conditions, before service qualification",
+  "later_gates": "Paired profiler-off model trials at16K/65K within auto and KVarN, unchanged scheduler2048 and512 outputs; model/replay/state gates then MTP2/images before recommendation",
+  "stop": "Stop on illegal tuple, numerical/determinism/ownership failure, weighted regression or absent service gain. At most one nearest legal reduced-Q tuple if128/16 is illegal. No broad sweep or tolerance relaxation.",
+  "deployment": false,
+  "release": false
+}

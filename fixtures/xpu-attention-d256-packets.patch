@@ -1,0 +1,86 @@
+diff --git a/csrc/xpu/attn/xe_2/collective/chunk_prefill_mainloop.hpp b/csrc/xpu/attn/xe_2/collective/chunk_prefill_mainloop.hpp
+index cb9c639..535ce9f 100644
+--- a/csrc/xpu/attn/xe_2/collective/chunk_prefill_mainloop.hpp
++++ b/csrc/xpu/attn/xe_2/collective/chunk_prefill_mainloop.hpp
+@@ -440,10 +440,47 @@ struct FMHAFwdMainloop<
+     auto tArV = thr_mma_pv.partition_sg_fragment_B(gV_split(_, _, 0, 0));
+
+     /* Create TiledCopy objects for prefetches */
++    // Diagnostic: retain the D256/SG32 packet dimensions at Q128/SG16.
++    // Each of the 16 subgroups owns two K/V packets, so the complete tile
++    // remains covered. The default selector instead doubles packet height.
++    constexpr bool original_d256_packets =
++        get<0>(TileShapeQK{}) == 128 && get<1>(TileShapeQK{}) == 32 &&
++        get<2>(TileShapeQK{}) == 32 && get<1>(TileShapePV{}) == 32 &&
++        get<2>(TileShapePV{}) == 32 && VTiles == 8 && SGPerWG::value == 16 &&
++        sizeof_bits_v<ElementK> == 16 &&
++        sizeof_bits_v<typename TensorV::value_type> == 16 &&
++        is_void_v<TiledCopyK_> && is_void_v<TiledCopyV_>;
++    auto make_prefetch_k = [&](TensorK2D const& surface) {
++      if constexpr (original_d256_packets) {
++        return make_block_2d_prefetch<ElementK, SGPerWG::value>(
++                   XE_PREFETCH_2D<16, 1, 32>{},
++                   select<1, 2>(TileShapeQK{}),
++                   surface.stride(),
++                   find_x_mode(surface.stride()),
++                   find_y_mode(surface.stride()))
++            .with(surface);
++      } else {
++        return make_block_2d_prefetch(TiledCopyK{surface});
++      }
++    };
++    auto make_prefetch_v = [&](TensorV2D const& surface) {
++      if constexpr (original_d256_packets) {
++        return make_block_2d_prefetch<
++                   typename TensorV::value_type,
++                   SGPerWG::value>(
++                   XE_PREFETCH_2D<16, 8, 32>{},
++                   tile_shape_v,
++                   surface.stride(),
++                   find_x_mode(surface.stride()),
++                   find_y_mode(surface.stride()))
++            .with(surface);
++      } else {
++        return make_block_2d_prefetch<SGPerWG::value>(tile_shape_v, surface);
++      }
++    };
+     auto prefetch_q = make_block_2d_prefetch(copy_q);
+-    auto prefetch_k = make_block_2d_prefetch(copy_k);
+-    auto prefetch_v =
+-        make_block_2d_prefetch<SGPerWG::value>(tile_shape_v, V_2D_0);
++    auto prefetch_k = make_prefetch_k(K_2D_0);
++    auto prefetch_v = make_prefetch_v(V_2D_0);
+     /* Partition global tensors for prefetch */
+     auto pQgQ = prefetch_q.get_slice(thr_id).partition_S(gQ);
+     auto pKgK = prefetch_k.get_slice(thr_id).partition_S(gK);
+@@ -503,9 +540,8 @@ struct FMHAFwdMainloop<
+         auto thr_copy_k_n = copy_k.get_slice(thr_id);
+         auto thr_copy_v_n = copy_v.get_slice(thr_id);
+
+-        prefetch_k = make_block_2d_prefetch(copy_k);
+-        prefetch_v =
+-            make_block_2d_prefetch<SGPerWG::value>(tile_shape_v, V_2D_n);
++        prefetch_k = make_prefetch_k(K_2D_n);
++        prefetch_v = make_prefetch_v(V_2D_n);
+
+         Tensor cK_n = make_identity_tensor(K_2D_n.shape());  // (k,d)
+         Tensor cV_n = make_identity_tensor(V_2D_n.shape());  // (v,k)
+diff --git a/csrc/xpu/attn/xe_2/fmha_utils.hpp b/csrc/xpu/attn/xe_2/fmha_utils.hpp
+index 4b5b47e..4ebefd7 100644
+--- a/csrc/xpu/attn/xe_2/fmha_utils.hpp
++++ b/csrc/xpu/attn/xe_2/fmha_utils.hpp
+@@ -80,10 +80,10 @@ struct chunk_policy_head192 {
+ };
+
+ struct chunk_policy_head256 {
+-  using ShapeQK = Shape<_256, _32, _32>;
+-  using ShapePV = Shape<_256, _32, _32>;
+-  using ShapeOut = Shape<_256, _256>;
+-  using SubgroupLayoutQK = Layout<Shape<_32, _1, _1>>;
++  using ShapeQK = Shape<_128, _32, _32>;
++  using ShapePV = Shape<_128, _32, _32>;
++  using ShapeOut = Shape<_128, _256>;
++  using SubgroupLayoutQK = Layout<Shape<_16, _1, _1>>;
+ };
+
+ struct chunk_policy_head512 {

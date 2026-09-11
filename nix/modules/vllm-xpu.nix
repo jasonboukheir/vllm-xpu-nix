@@ -172,8 +172,9 @@ let
         default = null;
         example = "fp8";
         description = ''
-          Pass `--kv-cache-dtype <type>`, or null to fall back to
-          model-precision KV. Options:
+          Pass `--kv-cache-dtype <type>`, or null to use the vLLM/model
+          default. Automatic selection can follow checkpoint KV metadata.
+          Options:
           - `fp8` — universal, ~2x KV headroom for ~2-3% per-stream
             throughput cost.
           - `turboquant_k3v4_nc` (and siblings) — only on builds that
@@ -182,12 +183,13 @@ let
             measured at 0.0179 — functionally identical for greedy
             decoding.
           - `kvarn_k4v4_g128_compact` — calibration-free K/V compression in
-            one 128-token record. On the xpu-v1.7 package this selects the
+            one 128-token record. This selects the
             fixed B70 profile; no `KVARN_*` tuning variables are required.
-            The qualified vision envelope is Qwen3.5 images with video off,
-            V1 eager mode, batch 1, and no prefix cache. Bundled MTP supports
-            one or two draft tokens within the documented 8192-token envelope;
-            two is recommended. Speculation remains opt-in.
+            The serving profile uses Qwen3.5 images with video off, V1 eager
+            mode, and no prefix cache. Bundled MTP supports one or two draft
+            tokens; two is recommended. maxNumSeqs controls concurrency.
+            See docs/kvarn-beta.md and the release notes for qualification
+            evidence and context limits. Speculation remains opt-in.
           Tighter KV is the headroom that lets concurrent agentic
           sessions accumulate context without evicting.
         '';
@@ -246,10 +248,12 @@ let
             drafter, model-aware fast path. Use this for
             Qwen3.6-35B-A3B (the model card's recommendation).
           - `eagle` / `eagle3` — separate draft model.
-          For KVarN on xpu-v1.7 use `method = "mtp"` and
-          `num_speculative_tokens = 2` in the bounded Qwen3.5 B1/BF16
-          image envelope, with eager execution and no prefix cache.
-          One draft token is also qualified. KVarN does not support graphs.
+          For KVarN use `method = "mtp"` and `num_speculative_tokens = 2`
+          with BF16 compute, eager execution and no prefix cache. The B70
+          serving profile uses up to four active requests and two bounded
+          images; see docs/kvarn-beta.md for the full configuration and
+          release qualification. One draft token is also supported.
+          KVarN does not support graphs.
           For graph-enabled configurations outside KVarN, the K value
           (`num_speculative_tokens`) must match
           `cudagraphCaptureSizes` because vLLM rounds capture sizes up

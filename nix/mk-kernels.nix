@@ -81,12 +81,14 @@ let
     (factory {
       inherit
         libName
-        featureFlags
         aotDevices
         useCcache
         buildDependencies
         compileJobs
         ;
+      # The split factory composes Xe2/default libraries. Upstream's Xe3p
+      # default also changes the common SYCL target and adds CRI AOT devices.
+      featureFlags = featureFlags ++ [ "-DVLLM_XPU_ENABLE_XE3P=OFF" ];
       # These selectors mutate/reference attention config files.  Keeping them
       # out of sibling derivations avoids both false invalidation and missing
       # paths in their filtered sources.
@@ -348,6 +350,7 @@ let
           featureOptions = {
             BUILD_SYCL_TLA_KERNELS = true;
             VLLM_XPU_ENABLE_XE2 = true;
+            VLLM_XPU_ENABLE_XE3P = false;
             VLLM_XPU_ENABLE_XE_DEFAULT = true;
             BASIC_KERNELS_ENABLED = true;
             FA2_KERNELS_ENABLED = false;
@@ -373,6 +376,7 @@ let
             featureOptions = {
               BUILD_SYCL_TLA_KERNELS = true;
               VLLM_XPU_ENABLE_XE2 = true;
+              VLLM_XPU_ENABLE_XE3P = false;
               VLLM_XPU_ENABLE_XE_DEFAULT = false;
               BASIC_KERNELS_ENABLED = false;
               FA2_KERNELS_ENABLED = true;

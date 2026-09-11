@@ -37,7 +37,10 @@ rebuilding, inspecting services, or testing `127.0.0.1:8000`/`:8001`.
 | Brutus configuration | `~/.config/nix`               | Update only the `vllm-xpu-release` input, then rebuild and test |
 
 The `origin` remote is the Sunnycareboo fork and `upstream` is the corresponding
-GitHub project. Stop if that is not true.
+GitHub project. Stop if that is not true. Before publication, verify the actual
+push URL against the fork input in the packaging manifest and record the remote
+tip. Commit locally, inspect its result, then run remote publication as a
+separate operation with an explicit refspec.
 
 `main` is the rolling integration branch in the two source forks. Its history
 may be rebased and published with `--force-with-lease`, so it is not a durable
@@ -48,8 +51,10 @@ release](#7-publish-a-coordinated-stack-release).
 The upstream baseline is a **specific published release**, resolved to its exact
 commit. Upstream `main`, nightly builds, release-candidate tags, and moving
 release branches are not automatic update targets. Our fork's branch name
-`main` does not change this policy. An explicit request for an experimental
-snapshot is a separate workflow and must be recorded as such.
+`main` does not change this policy. An explicit request to retain an existing
+snapshot uses the same-base release path below; record that choice and both
+actual upstream bases. Adopting a different experimental snapshot requires an
+explicit request.
 
 The Nix packaging declares an exact nixpkgs revision in `flake.nix`. Do not add
 a downstream `nixpkgs.follows`: the PyTorch/XPU closure must remain on the
@@ -57,12 +62,22 @@ package set tested by `vllm-xpu-nix`.
 
 ## Workflow stages
 
+Use fail-fast shell blocks (`set -euo pipefail`) for dependent operations and
+check each command's exit status. A failed check or commit must not be followed
+by a push or lock update as though it succeeded. Check required tools before a
+long sequence. On NixOS, prefer this repository's pinned Nix lint tools and
+Python runtime; generic downloaded hook binaries may not execute. If a hook's
+environment fails, run the applicable checks through working Nix tools and
+record that substitution rather than claiming the hook passed.
+
 1. **Resolve the operation and eligible pair.** Bare invocation runs the
    conditional refresh defined in SKILL.md. Run section 0 first; resume an
    existing matching candidate without replaying completed work. With no newer
    pair or unfinished candidate, stop without mutations. Explicit check-only
-   stops after discovery; an explicit same-base cleanup or patch uses its
-   recorded bases instead of requiring a newer release.
+   stops after discovery; an explicit same-base cleanup, patch or release uses
+   its recorded bases instead of requiring a newer release. A targeted patch or
+   release skips the full audit/rebase stages and proceeds to paired integration
+   after focused source review and tests.
 1. **Preserve the working baseline.** Record the current source tips and bases,
    validate their relationship to the deployed stack, preserve its immutable
    release, and back up both integration tips before rewriting either fork.
@@ -87,6 +102,13 @@ package set tested by `vllm-xpu-nix`.
    host pins preserved.
 
 ## 0. Discover a newer eligible upstream release pair
+
+Resolve what "current" means from the conversation: deployed stable inputs and
+integration main are separate pairs. For a release of current main without a
+rebase, freeze the integration pair and proceed with targeted fix review and
+qualification. Do not run the full per-commit rebase audit or rewrite history
+merely to publish it. Still inspect all source/build changes since the preceding
+stable release when choosing the version and qualification scope.
 
 For an explicit same-base cleanup or stable patch, recover and verify the
 selected line's existing bases instead of requiring a newer upstream release.
@@ -168,6 +190,14 @@ Establish whether the selected release is a forward update or a deliberate
 migration from the snapshot before proceeding; never silently downgrade. Release
 branches need not descend from the old upstream-main snapshot, so inspect the
 actual source delta and release lineage rather than relying on ancestry alone.
+
+Record the release's merge-base with the current upstream snapshot, the cut
+date, and changes unique to each side. Check XPU-relevant files and dependency
+requirements in that delta. A release published after the snapshot can still
+omit a week of upstream development. When the user says "only if newer," do
+not interpret the publication date as permission for that migration. Keep the
+current bases unless the user explicitly chooses the older release lineage.
+Keeping an existing snapshot does not authorize fetching a newer snapshot.
 
 ## 1. Establish and preserve a safe starting point
 
@@ -458,10 +488,18 @@ standalone CMake configure/parser test, or derivation evaluation are preferred
 here. Defer native compilation to Brutus.
 
 Confirm that the unstable source locks point to the fork commits just pushed.
-Set each `base` used by `mkInputVersion` in `flake.nix` to that component's
-selected upstream release version. Verify that the recorded release commit is
-an ancestor of the corresponding fork tip. Do not infer a base version from
-moving upstream `main` or conflate the kernel wheel label with its source label.
+Check architecture and AOT defaults as part of this review. New upstream
+architectures must not silently enter an existing split library composition or
+expand a consumer's explicit AOT device selection. Verify the generated CMake
+options and that the source projections contain everything each enabled target
+needs; successful patch application alone does not establish this.
+For a release-based refresh, set each `base` used by `mkInputVersion` in
+`flake.nix` to that component's selected upstream release version and verify
+that the release commit is an ancestor of the corresponding fork tip. When
+explicitly retaining an integration snapshot, preserve its version label and
+verify the recorded snapshot base instead; document its exact SHA separately.
+Do not infer ancestry from a version label or conflate the kernel wheel label
+with its source label.
 
 Evaluate representative leaves without starting the long builds:
 
@@ -527,7 +565,18 @@ references until the foreground stack passes.
 
 ### Qualification of the minimized patch stack
 
-Use the reconciled audit matrix from [commit-audit.md](commit-audit.md) to
+For a targeted fix without a rebase, use the affected behavior and the delta
+from the preceding stable release to select checks; a full patch-stack audit
+is not a prerequisite. Configuration acceptance tests establish only that a
+configuration is admitted. Validate changed concurrency with overlapping live
+requests and scheduler metrics, including the requested MTP and image settings,
+on the newly built package. Record the exact model revision and launch command.
+Do not turn an untested combination into a runtime prohibition without evidence
+of an actual incompatibility; keep qualification limits distinct from runtime
+requirements in source checks and documentation.
+
+For a source refresh or full-stack cleanup, use the reconciled audit matrix
+from [commit-audit.md](commit-audit.md) to
 validate both correctness and the benefits of retained performance patches.
 Run the paired rebuilt sources, representative inference, and focused
 regressions for every DROP/ADAPT decision. Compare applicable throughput,
@@ -539,7 +588,7 @@ exists, report measurements and justify equivalence or retain the known fix.
 Startup and a short successful response alone do not qualify attention,
 determinism, long-context, or throughput changes.
 
-If integration reveals a missing behavior or performance loss, return the
+For an audited replay, if integration reveals a missing behavior or performance loss, return the
 evidence to the owning commit's audit agent, revise the disposition, and fold
 the repair into that patch. Recheck dependent patches and the pair, update the
 commit map/locks, and rerun affected checks. Do not leave temporary repair or
@@ -565,6 +614,11 @@ report maintenance as pending; do not leave services silently stopped. A release
 without deployment has the same restoration handoff. Verify HTTP readiness of
 the restored workers and report any outstanding failure.
 
+Also record which model instances are enabled in the selected NixOS profile.
+Validate those instances and their configured ports; an intentionally disabled
+embedding service is not a failed health check. Do not start it merely because
+an example below names both possible workers.
+
 Before the expensive build, ask the operator to enter vLLM maintenance mode on
 Brutus if the live services need to be stopped and maintenance is not already
 authorized. If the user has stopped them or authorized maintenance, verify their
@@ -572,22 +626,26 @@ state and continue without asking again. Otherwise wait for confirmation:
 
 ```bash
 sudo systemctl stop vllm-xpu-chat.service vllm-xpu-embedding.service
-systemctl is-active vllm-xpu-chat.service vllm-xpu-embedding.service
+for unit in vllm-xpu-chat.service vllm-xpu-embedding.service; do
+  test "$(systemctl show "$unit" -p ActiveState --value)" = inactive
+done
 ```
 
-Both units should report `inactive`. This releases their GPU allocations and
-most of their RAM before C++/SYCL compilation. If maintenance must be aborted,
-restore the last deployed services with:
-
-```bash
-sudo systemctl start vllm-xpu-embedding.service vllm-xpu-chat.service
-```
+Both units should report `inactive`. This releases their GPU allocations and most
+of their RAM before C++/SYCL compilation. If maintenance must be aborted,
+restore only the previously active workers from the maintenance record,
+unless the operator has chosen to leave them stopped.
 
 Build the local candidate with Brutus's downstream package overrides. This
 keeps the generic packaging checkout free of Brutus-specific settings while
 still producing the exact package that the host will use after its input is
 updated. Use bounded parallelism so compiler memory pressure does not starve
-unrelated services; increase the values only when Brutus has enough headroom:
+unrelated services; increase the values only when Brutus has enough headroom.
+
+Verify that per-library compile caps honor a lower `--cores` setting instead
+of replacing it with a larger fixed count. Check actual compiler concurrency
+and memory use during the first build on a new pair. Preserve completed
+artifacts when restarting after a build-configuration correction.
 
 ```bash
 git -C ~/Projects/vllm-xpu-nix status --short --branch
@@ -595,7 +653,7 @@ git -C ~/Projects/vllm-xpu-nix status --short --branch
 candidate_package=$(nix build --impure --no-link --print-out-paths \
   --max-jobs 1 --cores 4 --expr '
     let
-      candidate = builtins.getFlake "path:/home/jasonbk/Projects/vllm-xpu-nix";
+      candidate = builtins.getFlake "git+file:///home/jasonbk/Projects/vllm-xpu-nix";
     in import /home/jasonbk/.config/nix/hosts/brutus/services/vllm-xpu/package.nix {
       vllm-xpu-unstable = candidate.packages.x86_64-linux.vllm-xpu-unstable;
     }
@@ -608,6 +666,13 @@ translation units from this checkout and later `nixos-rebuild` builds therefore
 share compiler intermediates automatically. Do not put mutable ccache contents
 in the Nix store and do not change `CCACHE_DIR` between the prebuild and
 deployment.
+
+Use the Git flake URL above for the local candidate: it includes tracked working
+changes while excluding ignored benchmark logs, model data and private incident
+artifacts. A raw `path:` flake can copy those into the world-readable Nix store.
+Add intended new source files to Git's index before evaluating; never add private
+artifacts. Keep raw qualification output in an ignored directory with private
+permissions, and publish only reviewed release metadata and synthetic results.
 
 Run that package with the chat environment and serve arguments derived from the
 Brutus NixOS configuration:
@@ -626,11 +691,29 @@ under the invoking user's cache. Leave it running while testing
 the final NixOS rebuild. Any other enabled model workers should be started
 separately so the foreground test reproduces their GPU residency.
 
+When the production port has other callers, append an unused local test port,
+for example `--port 18000`, to the foreground command and point every probe and
+test at it. Record the override with the exact launch command. This isolates
+qualification traffic while preserving model, cache, scheduler and execution
+settings; it does not replace the deployed service's final readiness check.
+
 On a fresh runtime compilation cache, chat can retain enough non-Torch compiler
 or driver memory to fail its first KV-cache profile even after compilation has
 finished. A second foreground start should compile quickly and recover the
 expected KV capacity. Do not work around this by lowering `maxModelLen` or
 hard-coding `--kv-cache-memory` unless repeated cached starts still fail.
+
+If the cached start still fails, inspect the actual pool reservations. Hybrid
+models reserve recurrent state for each active request in addition to the
+shared attention cache. Verify that context estimates include that concurrency
+cost. A logged "maximum concurrency" at full model context describes cache
+capacity; it is not the scheduler's `maxNumSeqs` limit. Record both capacities
+and any justified GPU-memory-budget change, including co-resident workers.
+
+Do not silently change context, concurrency, speculation or image settings to
+make qualification pass. Capture the failure first. If an adjustment is needed,
+explain its effect and use existing user authorization or obtain the missing
+choice before changing the requested profile.
 
 Failures in this foreground app do not require a host rebuild. Fix the relevant
 source fork, commit and publish that source commit, update the local packaging
@@ -643,7 +726,7 @@ After updating the host lock, compare derivations before rebuilding:
 candidate_drv=$(nix eval --raw \
   --impure --expr '
     let
-      candidate = builtins.getFlake "path:/home/jasonbk/Projects/vllm-xpu-nix";
+      candidate = builtins.getFlake "git+file:///home/jasonbk/Projects/vllm-xpu-nix";
     in (import /home/jasonbk/.config/nix/hosts/brutus/services/vllm-xpu/package.nix {
       vllm-xpu-unstable = candidate.packages.x86_64-linux.vllm-xpu-unstable;
     }).drvPath
@@ -705,18 +788,21 @@ compiling, and capturing graphs, so wait for the HTTP endpoint rather than
 treating systemd state alone as readiness:
 
 ```bash
-systemctl is-active vllm-xpu-chat.service vllm-xpu-embedding.service
+systemctl show vllm-xpu-chat.service -p ActiveState -p SubState
 journalctl -u vllm-xpu-chat.service -n 200 --no-pager
 
+api_deadline=$((SECONDS + 600))
 until curl --fail --silent --show-error \
   http://127.0.0.1:8000/v1/models >/dev/null; do
+  if (( SECONDS >= api_deadline )); then
+    journalctl -u vllm-xpu-chat.service -n 200 --no-pager
+    exit 1
+  fi
   sleep 2
 done
-
-curl --fail-with-body --silent --show-error \
-  http://127.0.0.1:8001/v1/models
 ```
 
+Repeat the API checks for any other enabled instances using their actual ports.
 Use a bounded wait during unattended automation and inspect the journal if the
 API does not become ready; first-time torch compilation can take several
 minutes.
@@ -777,7 +863,9 @@ Applying only that removal to the preserved `1.7.2` baseline would be
 `xpu-v1.8.1`. These are selection examples, not claims of published releases;
 always check existing refs before choosing the next unused version. Historical
 rolling candidates based on untagged upstream snapshots are not automatically
-eligible under the release-tag policy; migrate and qualify them first.
+eligible under the release-tag policy. Either migrate and qualify them, or
+retain and qualify their existing bases when explicitly requested. Record the
+exception and exact snapshot commits; a nearest-release label is insufficient.
 
 ### Keep stack and package versions separate
 
@@ -824,15 +912,27 @@ Choose the next unused version. Check **both local and remote** references in
 all three repositories before creating anything; stop on lookup failures or any
 existing branch/tag instead of reusing a partially published version silently.
 
+For an explicit resume after partial publication, recover the recorded release
+version, qualification evidence and exact intended commits first. Existing refs
+may be retained only when every branch and peeled tag matches that record;
+publish only the missing refs. A mismatch requires investigation and must never
+be repaired by moving the ref. This is distinct from allocating a fresh version.
+
 ```bash
+set -euo pipefail
 : "${version:?Set version to the unused xpu-vMAJOR.MINOR.PATCH selected above}"
 for repo in vllm vllm-xpu-kernels vllm-xpu-nix; do
-  git -C "$HOME/Projects/$repo" show-ref \
-    --verify --quiet "refs/heads/releases/$version" && exit 1
-  git -C "$HOME/Projects/$repo" show-ref \
-    --verify --quiet "refs/tags/$version" && exit 1
-  git -C "$HOME/Projects/$repo" ls-remote origin \
-    "refs/heads/releases/$version" "refs/tags/$version" || exit 1
+  for release_ref in "refs/heads/releases/$version" "refs/tags/$version"; do
+    if git -C "$HOME/Projects/$repo" show-ref --verify --quiet "$release_ref"; then
+      exit 1
+    else
+      release_lookup_status=$?
+      test "$release_lookup_status" -eq 1
+    fi
+  done
+  release_remote_refs=$(git -C "$HOME/Projects/$repo" ls-remote origin \
+    "refs/heads/releases/$version" "refs/tags/$version")
+  test -z "$release_remote_refs"
 done
 ```
 

@@ -210,7 +210,9 @@ stdenv.mkDerivation (
     # Run after configure has captured the daemon-wide value for device linking,
     # but before cmakeBuildHook constructs `-j$NIX_BUILD_CORES`.
     preBuild = lib.optionalString (compileJobs != null) ''
-      export NIX_BUILD_CORES=${toString compileJobs}
+      if (( NIX_BUILD_CORES > ${toString compileJobs} )); then
+        export NIX_BUILD_CORES=${toString compileJobs}
+      fi
     '';
 
     cmakeFlags = [

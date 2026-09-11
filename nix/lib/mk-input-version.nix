@@ -1,6 +1,7 @@
 # Stamp a derivation's version from a flake input's lock metadata rather
-# than a hand-bumped literal. `base` is the upstream release the pin
-# descends from; if omitted, it's parsed from the input's `original.ref`
+# than a hand-bumped literal. `base` is the upstream version label; snapshot
+# pins record their exact ancestry separately in release notes. If omitted,
+# it is parsed from the input's `original.ref`
 # in flake.lock (e.g. "release/v0.1.9.1", "refs/heads/releases/v0.22.0"),
 # so release-tracking pins need zero ceremony. `unstable=true` is for
 # main-tracking pins where every lock bump moves the source — the lock

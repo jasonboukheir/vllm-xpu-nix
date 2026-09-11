@@ -21,7 +21,7 @@
     vllm-xpu-kernels-unstable-src = {
       type = "git";
       url = "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm-xpu-kernels.git";
-      ref = "refs/tags/xpu-v1.7.2";
+      ref = "refs/tags/xpu-v1.8.0";
       submodules = true;
       flake = false;
     };
@@ -36,7 +36,7 @@
     vllm-xpu-unstable-src = {
       type = "git";
       url = "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm.git";
-      ref = "refs/tags/xpu-v1.7.2";
+      ref = "refs/tags/xpu-v1.8.0";
       flake = false;
     };
 
@@ -100,9 +100,9 @@
           vllmUnstableVersion = mkInputVersion {
             name = "vllm-xpu-unstable-src";
             input = vllm-xpu-unstable-src;
-            # vLLM cuts final releases on release branches, so the tag is not
-            # an ancestor of main. Track the latest final release line rather
-            # than leaving post-v0.28 main snapshots labelled as v0.26.
+            # Retain this integration snapshot's version label. Release notes
+            # record its exact upstream base; a newer release publication does
+            # not advance this source pin or establish release-tag ancestry.
             base = "0.28.0";
             unstable = true;
           };
@@ -392,6 +392,11 @@
           };
 
           checks = {
+            kernel-build-parallelism = import ./nix/tests/kernel-build-parallelism.nix {
+              inherit pkgs;
+              library = vllm-xpu-kernels-unstable.kernelLibraries.attn-kernels-xe-2;
+            };
+
             kernel-glue-cache-identity = import ./nix/tests/kernel-glue-cache-identity.nix {
               inherit pkgs;
               kernelSource = vllm-xpu-kernels-unstable-src';
@@ -416,6 +421,7 @@
                     nix/devshells.nix \
                     nix/lib/kernel-glue-src.nix \
                     nix/mk-kernels.nix \
+                    nix/tests/kernel-build-parallelism.nix \
                     nix/tests/kernel-glue-cache-identity.nix \
                     nix/vllm-xpu-kernels-compose.nix \
                     nix/vllm-xpu-kernels.nix

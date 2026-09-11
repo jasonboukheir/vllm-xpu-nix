@@ -27,6 +27,12 @@ install it globally or add it to another repository's default instructions.
 - **Patch a release**: keep its upstream bases and unrelated dependency pins;
   apply the requested fix and qualify a new patch release. Apply a relevant fix
   to integration main too without including its newer baseline in the patch.
+- **Release current main / keep the current base**: freeze both integration
+  tips and their actual upstream bases, including an existing snapshot when the
+  user chooses it. Apply the requested fix without a rebase or full-stack
+  cleanup. Compare with the preceding stable release to choose the version;
+  unchanged integration bases can still require a minor bump relative to that
+  release. Qualify the rebuilt pair before creating stable references.
 - **Validate a candidate or model**: use the packaging and foreground-testing
   stages for the requested configuration.
 - **Release / deploy / resume**: inspect completed stages and actual remote refs,
@@ -74,6 +80,10 @@ only the stages needed for the current operation:
 - Select published stable upstream releases, pin their tags and exact commits,
   and verify the vLLM/kernel dependency pair. Do not target upstream `main`,
   prereleases or nightlies unless the user explicitly requests that exception.
+- Compare release lineage before proposing an update. A later publication date
+  or version label does not make an older release-branch cut a forward update
+  from an integration snapshot. Retain that snapshot when requested; treat a
+  move to an older release base as a separate, explicit migration.
 - Query both repositories. Prefer the newest eligible vLLM release and a
   compatible released kernel version; respect exact upstream dependency pins.
   Distinguish no update available from failed discovery or an incompatible pair.
@@ -82,9 +92,11 @@ only the stages needed for the current operation:
   in either fork or compatible features, patch for compatible fixes on the same
   pair of upstream bases. Keep package versions tied to their upstream source.
 - Minimize the effective upstream delta while preserving our correctness fixes,
-  supported features, and measured performance improvements. Audit every commit,
-  including follow-ups/reverts and commits in an unchanged companion fork;
-  reconcile dependencies across both repos before dropping anything.
+  supported features, and measured performance improvements. For an upstream
+  refresh or full-stack cleanup, audit every commit, including follow-ups/reverts
+  and commits in an unchanged companion fork; reconcile dependencies across both
+  repos before dropping anything. A targeted release on retained bases uses
+  focused review and qualification of the changes since the preceding release.
 - Preserve immutable releases and unrelated locks. Build and test the paired
   candidate before publishing stable packaging or repinning Brutus. Source-only
   checks and old binary tests are not qualification of a newly built stack.

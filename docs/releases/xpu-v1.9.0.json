@@ -1,0 +1,201 @@
+{
+  "schema": "vllm-xpu-stack-release-v1",
+  "release": "xpu-v1.9.0",
+  "qualification_status": "passed",
+  "prepared_utc": "2026-09-14T17:34:10.275255+00:00",
+  "new_cache_dtype": "kvarn_k4v2_g128_compact",
+  "sources": {
+    "vllm": {
+      "repository": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm.git",
+      "revision": "32289022a4e362b506a4de1f89e1abe2957660c1",
+      "retained_upstream_base": "51da0ca66c8065619c79e35dff97aa99aeaf5644",
+      "previous_release_revision": "3b6c822e8a4f56dc3904c7fce388a76dff4c7bdd",
+      "feature_commits": 6,
+      "annotated_tag_object": "65a6997bd30d3bfd57f46afcb3eb665e6053c4f1"
+    },
+    "vllm-xpu-kernels": {
+      "repository": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm-xpu-kernels.git",
+      "revision": "2c39287deec5e59cc2656e6d4a6dce51a567c411",
+      "retained_upstream_base": "e7f20cbc18d741419a84aa57178e1f1cc0b453da",
+      "previous_release_revision": "9bb1e2d428b8a25b262c0cd6704614bdf6ee3ad8",
+      "feature_commits": 3,
+      "annotated_tag_object": "ebbc6863bfec20f92b4cdb311e347caa6db621e1"
+    }
+  },
+  "qualified_package": {
+    "version": "0.28.0+unstable.2026.09.14.g3228902",
+    "out_path": "/nix/store/4b0a6fkyjb2cv67iff1i6g0s8hi4smxl-python3.12-vllm-xpu-0.28.0+unstable.2026.09.14.g3228902",
+    "drv_path": "/nix/store/y0d7lgpsjar0dfkhnvfglzsbxcg6hxi7-python3.12-vllm-xpu-0.28.0+unstable.2026.09.14.g3228902.drv",
+    "qualification_runtime": "/nix/store/jf93zgz7qxhk800agqrmfcprax2dfgnk-k4v2-release-qualification-env",
+    "qualification_runtime_drv": "/nix/store/4awxbxjcii6cmqxrwimvhkqz2lbbvn7r-k4v2-release-qualification-env.drv",
+    "native_libraries": {
+      "bindings": {
+        "path": "/nix/store/ahp7d486n09lgjxi32kwnsqs2s1528yz-vllm-xpu-kernels-0.1.14.1+unstable.2026.09.14.g2c39287/lib/python3.12/site-packages/vllm_xpu_kernels/_vllm_fa2_C.abi3.so",
+        "sha256": "387042ba754251a5442bc6e6f0742233db1cb302bb1354b802a14f15c803de42"
+      },
+      "attention_xe2": {
+        "path": "/nix/store/jsl4x23ms0hh023msy6sq9aqfmwr61b8-vllm-xpu-attn-kernels-xe-2-0.1.14.1+src.hrjcmy7c19408zac5g2m6iz414dii81n/lib/libattn_kernels_xe_2.so",
+        "sha256": "0c24aeb325b8bb6fa3ef96966f0cdc78a5867dcf6602cba5a6b1a4c8c38e8f81"
+      }
+    },
+    "installed_tests": {
+      "passed": 603,
+      "failed": 0,
+      "skipped": 0
+    },
+    "release_evaluated_drv_path": "/nix/store/rx01iq232wrfia81lzc3aarfzzwgxar6-python3.12-vllm-xpu-0.28.0+unstable.2026.09.14.g3228902.drv",
+    "release_evaluated_runtime_drv_path": "/nix/store/1cz2g6zhwsx1hz4y8nfalxjh1fr39dfg-k4v2-release-qualification-env.drv",
+    "runtime_closure_paths": 453
+  },
+  "profile": {
+    "host": "Brutus",
+    "device": "Intel Arc Pro B70",
+    "model": "RedHatAI/Qwen3.8-27B-INT4",
+    "model_revision": "bf08f3dbd9a324e53956920aad378a1f1b6dd24a",
+    "weight_format": "compressed-tensors W4A16",
+    "compute_dtype": "bfloat16",
+    "max_request_tokens": 262144,
+    "scheduler_slots": 4,
+    "max_batched_prefill_tokens": 2048,
+    "gpu_memory_utilization": 0.96,
+    "prefix_caching": false,
+    "eager": true,
+    "TP": 1,
+    "PP": 1,
+    "image_limit": 2,
+    "performance_MTP": 0,
+    "functional_MTP": 2,
+    "MTP_draft_cache_dtype": "kvarn_k4v4_g128_compact"
+  },
+  "occupied_capacity": {
+    "old_usable_attention_tokens": 265856,
+    "new_usable_attention_tokens": 340608,
+    "additional_shared_attention_tokens": 74752,
+    "capacity_ratio": 1.2811747713047665,
+    "minimum_occupied_attention_tokens": 302976,
+    "preemptions": 0.0
+  },
+  "dependency_policy": {
+    "only_refreshed_inputs": [
+      "vllm-xpu-unstable-src",
+      "vllm-xpu-kernels-unstable-src"
+    ],
+    "unrelated_lock_sha256": "09695872b8023411bc2815076f1adeea022f9cc8a657b9f77b58eaf81f122b02",
+    "hash_encoding": "UTF-8 canonical JSON with sorted keys and compact separators; full lock except the two named source nodes",
+    "release_lock_sha256": "7bee0f724c15bb1693cf05d7848476a5e3c014c2520a100ec22c6eb359c8761a"
+  },
+  "checks": {
+    "profiling": {
+      "artifact": "profiling-tool-readiness.json",
+      "sha256": "4bc20b12337fb64128e1a7587c60e16c87731173ce4fd523fbd187bd9ccf3229",
+      "status": "profiling-milestone-complete-before-tuning",
+      "scope": "Validated tool readiness, evidence-backed diagnosis and selected experiment completed before tuning.",
+      "diagnosis_sha256": "155558f903626228f1aa05cc45b8d3702777739845ccb564c45e11d46094e0c3",
+      "selected_experiment_sha256": "455e7323bd4bd4075f6e1080de8a9dc77c35ed09b82575bc5f634659b7270d1d"
+    },
+    "installed_execution_equivalence": {
+      "artifact": "capacity-scratch-runtime-review.json",
+      "sha256": "664181b2a5a54cd87f3bbe4d5d5351de37fbcb70de72c882732e6f08c91310cb",
+      "status": "capacity-scratch-installed-delta-and-successful-path-reviewed",
+      "scope": "The final installed exception-path change was reviewed. Successful earlier captures retain their original runtime identities; this does not claim new measurements."
+    },
+    "core_MTP0": {
+      "artifact": "fp16-block-load-candidate-selection.json",
+      "sha256": "6dc5d633968ea548d749ab76314b237d4e8e300d691bb14d0f7b324b94e08969",
+      "status": "selected-for-clean-package-qualification",
+      "scope": "All six 4K/16K/65K B1/B4 anchors pass the retained floors and 3% targets across 96 waves and 240 streams. The separate released K4V4 control also passes."
+    },
+    "quality": {
+      "artifact": "block-load-clean-quality-review.json",
+      "sha256": "1e89af4d4e445487ad63d3543894bd725475040b2ab00655340577b81c62e115",
+      "status": "complete-clean146-quality-reviewed-passed",
+      "scope": "Frozen teacher-forced screen: eight cases and 8,448 positions per format and start, across two independent starts. Lossy; no broad task accuracy, full-distribution KL or BF16 control above 65K is established.",
+      "measured_runtime": "/nix/store/472wc669941655prraq6j2fa7lhvzsja-k4v2-release-qualification-env"
+    },
+    "fixed_memory": {
+      "artifact": "pool-override-memory-results-review.json",
+      "sha256": "9d20b46f5f1923bb2fe18f7b980948dfbbf6c3d217f234883abff037d9a55da5",
+      "status": "fixed-allocation-memory-results-reviewed-and-accepted",
+      "scope": "262,144 allocated tokens, a 4K/B1 workload, 256 output tokens, MTP2 and a K4V4 draft. Approximately 1 GiB saved; whole-run residency includes startup.",
+      "measured_runtime": "/nix/store/bpml60vzpqkgmpz6jgj9159irxbbapmy-k4v2-release-qualification-env"
+    },
+    "occupied_capacity": {
+      "artifact": "capacity-scratch-capacity-results-review.json",
+      "sha256": "6ec2fc282200885dcb24f9f5632debbf18fd68ca5f5657f294c9b6bc4a8b6397",
+      "status": "live-occupied-capacity-above-matched-K4V4-reviewed-and-accepted",
+      "scope": "Final package: two 151,039-token prompts, 512 output tokens each, overlapping completed prefills, correct labels and arithmetic, and zero preemptions.",
+      "measured_runtime": "/nix/store/jf93zgz7qxhk800agqrmfcprax2dfgnk-k4v2-release-qualification-env"
+    },
+    "API_K4V4": {
+      "artifact": "api-pool-override-k4v4-results-review.json",
+      "sha256": "e277708ee7b97acb564a727bec1907767090701f483a4985124c58ef3d9542cd",
+      "status": "full-MTP2-API-lifecycle-and-long-retrieval-reviewed-and-accepted",
+      "scope": "Full retained MTP2 API and lifecycle suite, including 128K/near-262K retrieval with 12 output tokens. The original measured package is retained through the installed scope review.",
+      "measured_runtime": "/nix/store/bpml60vzpqkgmpz6jgj9159irxbbapmy-k4v2-release-qualification-env"
+    },
+    "API_K4V2": {
+      "artifact": "api-pool-override-k4v2-results-review.json",
+      "sha256": "99a3b7e0d870331e7f83a0cc62183cab50dfbb044302587bb1eb8e2eec5c1417",
+      "status": "full-MTP2-API-lifecycle-and-long-retrieval-reviewed-and-accepted",
+      "scope": "Full retained MTP2 API and lifecycle suite, including 128K/near-262K retrieval with 12 output tokens. The original measured package is retained through the installed scope review.",
+      "measured_runtime": "/nix/store/bpml60vzpqkgmpz6jgj9159irxbbapmy-k4v2-release-qualification-env"
+    },
+    "packaging_unit": {
+      "artifact": "block-load-packaging-unit-tests-review.json",
+      "sha256": "d4e42ea5a4c32f68023b5fdc88976534ee5e3e5491633c04737a6b3af6c57399",
+      "status": "full-packaging-unit-suite-passed-and-reviewed",
+      "scope": "563 tests across 45 files using the entire retained per-file Nix test loop, with no failures or skips."
+    },
+    "packaging_Nix": {
+      "artifact": "block-load-packaging-nix-checks.json",
+      "sha256": "cec656c281153eaff7652650cb03b0606a88a10f422b0e76b59a77924ac00ba9",
+      "status": "retained-Nix-cache-identity-parallelism-and-formatting-checks-passed",
+      "scope": "Retained kernel and binding cache identity, build parallelism and format checks. The final source locks and actual paired package are verified separately."
+    },
+    "packaging_service_config": {
+      "artifact": "block-load-packaging-service-config-review.json",
+      "sha256": "ef6e0986a0a71d8f56eb3c5bf71d17eed181ee9eb58a7e7a055405f6670a7e0b",
+      "status": "NixOS-service-option-command-evaluation-passed",
+      "scope": "Command evaluation covers defaults, K4V4 with MTP off, K4V2 with MTP off, and K4V2 with MTP2 and an explicit K4V4 draft."
+    },
+    "long_MTP0": {
+      "artifact": "capacity-scratch-long-mtp0-acceptance.json",
+      "sha256": "e564671a6fd631b27d7f5d9a43f6ccc8a905aa0c85a1023d0f7c0c5553da2f80",
+      "status": "MTP0-long-performance-and-quality-reviewed-and-accepted",
+      "scope": "Full MTP0 131071/261887-prompt B1 ABBA matrix with warmups, three repetitions per arm and 256 output tokens. Together with the accepted core MTP0 matrix this completes all required performance anchors.",
+      "measured_runtime": "/nix/store/jf93zgz7qxhk800agqrmfcprax2dfgnk-k4v2-release-qualification-env"
+    },
+    "long_MTP2": {
+      "artifact": "capacity-scratch-long-mtp2-acceptance.json",
+      "sha256": "d5c72f0a43a7dfceec04606adc706e3c86c710c3e87bdc216c9c98fbca8fe13f",
+      "status": "MTP2-long-functionality-and-quality-reviewed-and-accepted",
+      "scope": "Complete 131071/261887-prompt B1 MTP2 ABBA matrix: warmup plus three measured repetitions per arm, two fresh starts per format, explicit K4V4 draft in both formats. All 32 streams complete 256 tokens with positive accepted-token counters; both formats repeat exactly. Timing is descriptive. Long semantic retrieval and API lifecycle have separate accepted reports; no BF16 control above 65K or broad accuracy claim.",
+      "measured_runtime": "/nix/store/jf93zgz7qxhk800agqrmfcprax2dfgnk-k4v2-release-qualification-env"
+    },
+    "locked_package": {
+      "artifact": "release-locked-package-acceptance.json",
+      "sha256": "68e9898db61ba1b02f8910afcf85b989c11cf0b924ba42ec9937f3294f40f264",
+      "status": "actual-released-source-locks-resolve-to-exact-qualified-package-and-runtime",
+      "scope": "Actual released source tags and only two refreshed source locks, using Brutus overrides without source substitutions. Realization gives the exact qualified package, runtime, native paths and bytes, with 453 runtime closure paths. Unrelated locks and both upstream bases are unchanged."
+    },
+    "final_loaded_ISA": {
+      "artifact": "capacity-scratch-final-ISA-identity-review.json",
+      "sha256": "0c5beb217d91cb3b6fdccbdc914c388c7de175a27db4ac28db33bd7059fa7acf",
+      "status": "final-loaded-attention-library-matches-inspected-candidate-ISA",
+      "scope": "Exact path and bytes join the earlier AOT inspection to the final installed library and final live K4V2 capacity / K4V4 long-context mappings. No new profiling run. Static GRFs and absent per-thread declarations do not establish dynamic peak register liveness, spill traffic or stall-PC sampling."
+    }
+  },
+  "evidence_location": "Private ignored benchmark-results/kvarn-k4v2/20260913T051252Z; raw evidence is not included in the release.",
+  "host_deployment_included": false,
+  "updated_utc": "2026-09-14T22:40:47.079005+00:00",
+  "release_refs": {
+    "tag": "refs/tags/xpu-v1.9.0",
+    "branch": "refs/heads/releases/xpu-v1.9.0",
+    "tag_type": "annotated",
+    "repositories": [
+      "vllm",
+      "vllm-xpu-kernels",
+      "vllm-xpu-nix"
+    ]
+  }
+}

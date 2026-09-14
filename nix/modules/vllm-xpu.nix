@@ -190,6 +190,12 @@ let
             tokens; two is recommended. maxNumSeqs controls concurrency.
             See docs/kvarn-beta.md and the release notes for qualification
             evidence and context limits. Speculation remains opt-in.
+          - `kvarn_k4v2_g128_compact` — the same compact G128 profile with
+            4-bit keys and 2-bit values. At head dimension 256, attention
+            records are 26,880 bytes instead of 35,072 bytes: 23.36% smaller.
+            Other model allocations remain separate. Reducing value precision
+            is lossy; consult the paired release measurements before selecting
+            this option for its additional context capacity.
           Tighter KV is the headroom that lets concurrent agentic
           sessions accumulate context without evicting.
         '';
@@ -253,6 +259,10 @@ let
           serving profile uses up to four active requests and two bounded
           images; see docs/kvarn-beta.md for the full configuration and
           release qualification. One draft token is also supported.
+          With a compact K4V2 target, an explicit
+          `kv_cache_dtype = "kvarn_k4v4_g128_compact"` keeps the bundled
+          draft cache in K4V4. Otherwise it follows the target format.
+          Consult the release measurements for the exact tested pairing.
           KVarN does not support graphs.
           For graph-enabled configurations outside KVarN, the K value
           (`num_speculative_tokens`) must match

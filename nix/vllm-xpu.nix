@@ -170,6 +170,8 @@ python3Packages.buildPythonPackage {
         intel-graphics-compiler
         intel-compute-runtime
         intel-compute-runtime.drivers
+        # Kineto's libpti_view dynamically loads this companion library.
+        intel-pti
       ]
     }"
     "--prefix PYTHONPATH : ${placeholder "out"}/${python3Packages.python.sitePackages}:${python3Packages.makePythonPath pythonDeps}"

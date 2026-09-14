@@ -510,8 +510,14 @@ def main() -> None:
         help="built vLLM environment containing bin/vllm",
     )
     parser.add_argument(
-        "--cache-dtype", choices=["auto", perf.COMPACT_DTYPE], default="auto"
+        "--cache-dtype",
+        choices=["auto", "bfloat16", perf.COMPACT_DTYPE, "kvarn_k4v2_g128_compact"],
+        default="auto",
     )
+    parser.add_argument("--model", default=MODEL)
+    parser.add_argument("--revision", default=REVISION)
+    parser.add_argument("--gpu-memory-utilization", type=float, default=0.90)
+    parser.add_argument("--max-num-seqs", type=int, default=1)
     parser.add_argument("--max-model-len", type=int, default=8192)
     parser.add_argument(
         "--long-prompt-tokens",
@@ -567,6 +573,10 @@ def main() -> None:
         help="retain target top-5 logprobs for numerical correctness diagnosis",
     )
     args = parser.parse_args()
+    if not 0 < args.gpu_memory_utilization < 1 or args.max_num_seqs < 1:
+        parser.error("requires 0 < GPU utilization < 1 and positive scheduler slots")
+    if args.model != MODEL and args.revision == REVISION:
+        parser.error("a different model requires its explicit immutable revision")
     if args.max_num_batched_tokens <= 0:
         parser.error("--max-num-batched-tokens must be positive")
     prefill = args.prefill_suite or args.profile_workload == "text-prefill"
@@ -651,9 +661,9 @@ def main() -> None:
     argv = [
         str(service_env / "bin/vllm"),
         "serve",
-        MODEL,
+        args.model,
         "--revision",
-        REVISION,
+        args.revision,
         "--host",
         "127.0.0.1",
         "--port",
@@ -667,11 +677,11 @@ def main() -> None:
         "--kv-cache-dtype",
         args.cache_dtype,
         "--gpu-memory-utilization",
-        "0.90",
+        str(args.gpu_memory_utilization),
         "--max-model-len",
         str(args.max_model_len),
         "--max-num-seqs",
-        "1",
+        str(args.max_num_seqs),
         "--max-num-batched-tokens",
         str(args.max_num_batched_tokens),
         "--enforce-eager",

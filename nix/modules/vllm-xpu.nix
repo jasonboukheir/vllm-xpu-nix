@@ -260,8 +260,10 @@ let
           images; see docs/kvarn-beta.md for the full configuration and
           release qualification. One draft token is also supported.
           With a compact K4V2 target, an explicit
-          `kv_cache_dtype = "kvarn_k4v4_g128_compact"` keeps the bundled
-          draft cache in K4V4. Otherwise it follows the target format.
+          `kv_cache_dtype = "kvarn_k4v2_g128_compact"` selects compact K4V2
+          for the bundled draft layer too. Without an explicit setting the
+          draft follows the target format. The earlier xpu-v1.9.0 profile
+          used `kv_cache_dtype = "kvarn_k4v4_g128_compact"` instead.
           Consult the release measurements for the exact tested pairing.
           KVarN does not support graphs.
           For graph-enabled configurations outside KVarN, the K value

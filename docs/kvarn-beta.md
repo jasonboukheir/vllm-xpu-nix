@@ -16,22 +16,24 @@ No `KVARN_*` tuning overrides are needed; historical experiment selectors are
 rejected at startup. Cache layout is fixed for the engine lifetime.
 MTP is optional; eligible verification selects the native reader automatically.
 
-The qualified K4V2 MTP2 profile uses a K4V4 draft cache:
+To use compact K4V2 for both the target and the MTP draft cache:
 
 ```nix
 kvCacheDtype = "kvarn_k4v2_g128_compact";
 speculativeConfig = {
   method = "mtp";
   num_speculative_tokens = 2;
-  kv_cache_dtype = "kvarn_k4v4_g128_compact";
+  kv_cache_dtype = "kvarn_k4v2_g128_compact";
 };
 ```
 
-The explicit draft setting keeps the bundled draft layer at four-bit values.
-Omitting it makes the draft cache follow the target format. Those configurations
-have different memory use and MTP acceptance; their performance results are
-not interchangeable. See the [release qualification](releases/xpu-v1.9.0.md)
-for the measured profile and results.
+Omitting the explicit draft setting also makes it follow the target format.
+The earlier xpu-v1.9.0 profile instead set
+`kv_cache_dtype = "kvarn_k4v4_g128_compact"`. See the
+[draft-cache comparison](releases/xpu-v1.10.0.md) for measured acceptance,
+performance and memory with the K4V2 target held fixed. The MTP layer has its
+own attention weights and KV contents; choosing the same format does not make
+the target's cache reusable by the drafter.
 
 ## Choose the cache format
 
@@ -57,8 +59,15 @@ its shared attention capacity increases from 265,856 to 340,608 tokens (+28.12%)
 Two concurrent 151,039-token prompts each complete 512 output tokens, with
 302,976 cache tokens occupied concurrently and no preemptions. The per-request
 limit remains 262,144 combined tokens. See the
-[qualification notes](releases/xpu-v1.9.0.md) for the exact profile and completed
+[xpu-v1.9.0 qualification](releases/xpu-v1.9.0.md) for the exact profile and completed
 long-context checks.
+
+Changing only that draft cache from K4V4 to K4V2 saves a further 64.03125 MiB
+of measured attention tensor storage at 262,144 usable tokens, including the
+null page. In the follow-up's same-budget capacity checks, shared attention
+capacity increases from 340,608 to 346,880 tokens (+1.84%). These are separate
+storage and capacity measurements; they do not imply lower total VRAM use at
+the same memory-utilization budget.
 
 With the same `gpuMemoryUtilization`, vLLM uses the available budget for more
 cache pages. Realizing the storage saving as lower VRAM use also requires a
@@ -99,8 +108,9 @@ single-request limit. The bounded recent-FP16 cache window consumes additional
 fixed memory.
 
 See [xpu-v1.8.0 qualification](releases/xpu-v1.8.0.md) for the released K4V4
-profile and [xpu-v1.9.0 qualification](releases/xpu-v1.9.0.md) for the K4V2
-release and measured comparisons. Configuration acceptance alone does not establish GPU
+profile, [xpu-v1.9.0 qualification](releases/xpu-v1.9.0.md) for the K4V2
+target release, and [xpu-v1.10.0 qualification](releases/xpu-v1.10.0.md) for the
+MTP draft-cache comparison and CPU draft-metadata fix. Configuration acceptance alone does not establish GPU
 correctness, quality or performance. Higher concurrency, larger images and
 other models need their own qualification. DFlash, video/audio, prefix caching
 and graph/V2 serving remain outside this combination.

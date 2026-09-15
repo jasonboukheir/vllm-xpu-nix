@@ -1844,7 +1844,13 @@ def _process_group_members(process_group: int) -> list[int]:
             fields = stat.rsplit(")", 1)[1].split()
             if fields[0] != "Z" and int(fields[2]) == process_group:
                 members.append(int(entry.name))
-        except (FileNotFoundError, PermissionError, ValueError, IndexError):
+        except (
+            FileNotFoundError,
+            ProcessLookupError,
+            PermissionError,
+            ValueError,
+            IndexError,
+        ):
             continue
     return members
 

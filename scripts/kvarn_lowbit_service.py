@@ -184,6 +184,7 @@ def run(args):
         shutil.copy2(source, snapshot / source.name)
     manifest = {
         "schema": "kvarn-lowbit-serving-v1",
+        "memory_sampling_schema": "owned-drm-timestamped-v1",
         "plan_sha256": perf.sha256_file(args.plan),
         "plan": plan,
         "argv": argv,
@@ -241,6 +242,7 @@ def run(args):
                 name = f"{trial['id']}-r{repeat}"
                 phase = "warmup" if repeat == 0 else "performance"
                 perf.wait_for_scheduler_idle(control)
+                memory.check()
                 before = perf.http_text(base + "/metrics", timeout=10)
                 (output / f"{name}-metrics-before.txt").write_text(before)
                 release, stop = threading.Event(), threading.Event()
@@ -293,6 +295,7 @@ def run(args):
                     sampler.join(timeout=5)
                 if sampler.is_alive() or errors:
                     raise RuntimeError(f"scheduler sampling failed: {errors}")
+                memory.check()
                 peak = max((s["running"] for s in samples), default=0)
                 if peak < b:
                     raise RuntimeError(f"missing live B{b} overlap: {name}")
@@ -353,13 +356,20 @@ def run(args):
             perf.stop_service(service, 30)
         else:
             log.close()
-        if memory is not None:
-            memory.finish()
-        supervisor.restore_signal_handlers()
-        manifest["finished_unix"] = time.time()
-        manifest["service_log_sha256"] = perf.sha256_file(output / "service.log")
-        manifest["memory_sha256"] = perf.sha256_file(output / "memory-fdinfo.jsonl")
-        perf.write_json_atomic(output / "manifest.json", manifest)
+        try:
+            if memory is not None:
+                memory.finish()
+        except BaseException as error:
+            manifest.update(status="failed", error=str(error))
+            raise
+        finally:
+            supervisor.restore_signal_handlers()
+            manifest["finished_unix"] = time.time()
+            manifest["service_log_sha256"] = perf.sha256_file(output / "service.log")
+            memory_path = output / "memory-fdinfo.jsonl"
+            if memory_path.exists():
+                manifest["memory_sha256"] = perf.sha256_file(memory_path)
+            perf.write_json_atomic(output / "manifest.json", manifest)
 
 
 def main():

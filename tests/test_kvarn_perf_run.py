@@ -50,6 +50,36 @@ from scripts.kvarn_perf_run import (
 )
 from tests.test_kvarn_perf_gate import _correctness as _valid_correctness
 
+
+@pytest.mark.parametrize("vanished", [FileNotFoundError, ProcessLookupError])
+def test_process_group_scan_survives_disappearing_process(
+    tmp_path, monkeypatch, vanished
+):
+    proc = tmp_path / "proc"
+    proc.mkdir()
+    for pid, state, group in [
+        (10, "S", 7777),
+        (20, "S", 7777),
+        (30, "S", 8888),
+        (40, "Z", 7777),
+    ]:
+        entry = proc / str(pid)
+        entry.mkdir()
+        (entry / "stat").write_text(f"{pid} (worker with spaces) {state} 1 {group} 0")
+    read_text = Path.read_text
+
+    def read_stat(path, *args, **kwargs):
+        if path == proc / "10/stat":
+            raise vanished("process exited after directory enumeration")
+        return read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", read_stat)
+    monkeypatch.setattr(
+        runner, "Path", lambda path: proc if path == "/proc" else Path(path)
+    )
+    assert runner._process_group_members(7777) == [20]
+
+
 MODEL = "jasonboukheir/Qwen3.8-27B-AEON-Ultimate-Uncensored-BF16-W4A16-AutoRound"
 REVISION = "6b0622f4354481d5d04577d48ba0db844efc1330"
 IDENTITY = {

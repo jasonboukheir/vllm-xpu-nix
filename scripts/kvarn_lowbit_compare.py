@@ -30,14 +30,21 @@ def audit_mtp_activity(counters, server_args):
         index = server_args.index("--speculative-config")
         config = json.loads(server_args[index + 1])
         matching = {"method": "mtp", "num_speculative_tokens": 2}
-        k4v4_draft = {**matching, "kv_cache_dtype": "kvarn_k4v4_g128_compact"}
+        configurations = [matching] + [
+            {**matching, "kv_cache_dtype": dtype}
+            for dtype in (
+                "kvarn_k4v4_g128_compact",
+                "kvarn_k4v2_g128_compact",
+                "bfloat16",
+            )
+        ]
         prefix = "vllm:spec_decode_"
         drafts = counters.get(prefix + "num_drafts_total", 0)
         tokens = counters.get(prefix + "num_draft_tokens_total", 0)
         # Scheduler budgets can trim the last draft. Require actual two-token
         # activity while permitting those bounded one-token verification steps.
         if (
-            config not in (matching, k4v4_draft)
+            config not in configurations
             or drafts <= 0
             or not drafts < tokens <= 2 * drafts
         ):

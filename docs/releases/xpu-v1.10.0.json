@@ -1,0 +1,4118 @@
+{
+  "schema": "vllm-xpu-stack-release-v1",
+  "release": "xpu-v1.10.0",
+  "qualification_status": "qualified-compact-K4V2-MTP-profile",
+  "prepared_utc": "2026-09-15T12:42:24.942593+00:00",
+  "publication_authorized_condition": "Met: both fresh-start compact comparisons have no metric/anchor regression above3%; proceed with final package checks and coordinated release.",
+  "sources": {
+    "vllm": {
+      "repository": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm.git",
+      "revision": "2fdd9d71f6895379b0940a8f755b4c9095840558",
+      "retained_upstream_base": "51da0ca66c8065619c79e35dff97aa99aeaf5644",
+      "previous_release_revision": "32289022a4e362b506a4de1f89e1abe2957660c1",
+      "new_commits": 2
+    },
+    "vllm-xpu-kernels": {
+      "repository": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm-xpu-kernels.git",
+      "revision": "2c39287deec5e59cc2656e6d4a6dce51a567c411",
+      "retained_upstream_base": "e7f20cbc18d741419a84aa57178e1f1cc0b453da",
+      "previous_release_revision": "2c39287deec5e59cc2656e6d4a6dce51a567c411",
+      "new_commits": 0
+    }
+  },
+  "measured_candidate": {
+    "runtime": "/nix/store/a7jkfx4zc58nsicqvkif0pdqbgh5v162-mtp-draft-cache-comparison-env",
+    "native_libraries": {
+      "bindings": {
+        "path": "/nix/store/ahp7d486n09lgjxi32kwnsqs2s1528yz-vllm-xpu-kernels-0.1.14.1+unstable.2026.09.14.g2c39287/lib/python3.12/site-packages/vllm_xpu_kernels/_vllm_fa2_C.abi3.so",
+        "sha256": "387042ba754251a5442bc6e6f0742233db1cb302bb1354b802a14f15c803de42"
+      },
+      "attention_xe2": {
+        "path": "/nix/store/jsl4x23ms0hh023msy6sq9aqfmwr61b8-vllm-xpu-attn-kernels-xe-2-0.1.14.1+src.hrjcmy7c19408zac5g2m6iz414dii81n/lib/libattn_kernels_xe_2.so",
+        "sha256": "0c24aeb325b8bb6fa3ef96966f0cdc78a5867dcf6602cba5a6b1a4c8c38e8f81"
+      }
+    }
+  },
+  "qualified_package": {
+    "package": {
+      "drvPath": "/nix/store/f8sjn4src1vbk2sn6ln9yc3bhkz7mypl-python3.12-vllm-xpu-0.28.0+unstable.2026.09.15.g2fdd9d7.drv",
+      "outputs": {
+        "out": "/nix/store/v8jzs75kb7w0wy0542a99kl6njxsd1kp-python3.12-vllm-xpu-0.28.0+unstable.2026.09.15.g2fdd9d7"
+      }
+    },
+    "runtime": {
+      "drvPath": "/nix/store/gv4dbq0gqyixb3r9m96r5ppr8ixrrsg7-mtp-draft-cache-comparison-env.drv",
+      "outputs": {
+        "out": "/nix/store/a7jkfx4zc58nsicqvkif0pdqbgh5v162-mtp-draft-cache-comparison-env"
+      }
+    },
+    "exact_measured_outputs": true,
+    "source_overrides": false,
+    "native_library_hashes_verified": true
+  },
+  "profile": {
+    "host": "Brutus",
+    "device": "Intel Arc Pro B70",
+    "model": "RedHatAI/Qwen3.8-27B-INT4",
+    "model_revision": "bf08f3dbd9a324e53956920aad378a1f1b6dd24a",
+    "weight_format": "compressed-tensors W4A16",
+    "compute_dtype": "bfloat16",
+    "target_cache": "kvarn_k4v2_g128_compact",
+    "MTP_draft_cache_dtype": "kvarn_k4v2_g128_compact",
+    "MTP_tokens": 2,
+    "image_limit": 2,
+    "eager": true,
+    "prefix_caching": false,
+    "TP": 1,
+    "PP": 1,
+    "max_request_tokens": 262144,
+    "scheduler_slots": 4,
+    "max_batched_prefill_tokens": 2048,
+    "gpu_memory_utilization": 0.96
+  },
+  "matched_history": {
+    "bf16": {
+      "accepted_tokens_per_pair": 1.5142045454545454,
+      "both_agreements": 5627,
+      "both_rate": 0.6660748106060606,
+      "conditional_second_rate": 0.7853454291695743,
+      "first_agreements": 7165,
+      "first_rate": 0.8481297348484849,
+      "unique_prefixes": 8448
+    },
+    "k4v2": {
+      "accepted_tokens_per_pair": 1.5097064393939394,
+      "both_agreements": 5603,
+      "both_rate": 0.6632339015151515,
+      "conditional_second_rate": 0.7835267794714026,
+      "first_agreements": 7151,
+      "first_rate": 0.8464725378787878,
+      "unique_prefixes": 8448
+    },
+    "k4v4": {
+      "accepted_tokens_per_pair": 1.5132575757575757,
+      "both_agreements": 5626,
+      "both_rate": 0.6659564393939394,
+      "conditional_second_rate": 0.7859737356803577,
+      "first_agreements": 7158,
+      "first_rate": 0.8473011363636364,
+      "unique_prefixes": 8448
+    }
+  },
+  "matched_history_limits": "8448 unique committed prefixes per format on eight fixtures; two exact fresh-start repeats are not independent additional accuracy samples or serving verification rounds.",
+  "fixed_capacity_attention_storage": {
+    "bf16": {
+      "logical_draft_KV_MiB_including_null_page": 1024.5,
+      "observed_attention_storage_delta_vs_K4V2_MiB": 758.2626905441284
+    },
+    "k4v2": {
+      "logical_draft_KV_MiB_including_null_page": 210.1025390625,
+      "observed_attention_storage_delta_vs_K4V2_MiB": 0.0
+    },
+    "k4v4": {
+      "logical_draft_KV_MiB_including_null_page": 274.1337890625,
+      "observed_attention_storage_delta_vs_K4V2_MiB": 64.03125
+    }
+  },
+  "same_budget_occupied_capacity": {
+    "bf16": {
+      "full_original_functional_suite_pass": false,
+      "minimum_occupied_tokens": 285312,
+      "prompt_tokens_each": 142207,
+      "usable_tokens": 286464
+    },
+    "k4v2": {
+      "full_original_functional_suite_pass": true,
+      "minimum_occupied_tokens": 345728,
+      "prompt_tokens_each": 172415,
+      "usable_tokens": 346880
+    },
+    "k4v4": {
+      "full_original_functional_suite_pass": true,
+      "minimum_occupied_tokens": 339456,
+      "prompt_tokens_each": 169215,
+      "usable_tokens": 340608
+    }
+  },
+  "compact_serving_performance": {
+    "order": [
+      "k4v2",
+      "k4v4",
+      "k4v4",
+      "k4v2"
+    ],
+    "rows": [
+      {
+        "aggregate_acceptance": {
+          "accepted_first": 510,
+          "accepted_fraction_of_proposals": 0.6531531531531531,
+          "accepted_second": 360,
+          "accepted_tokens": 870,
+          "accepted_tokens_per_round": 1.3063063063063063,
+          "both_acceptance_per_two_token_round": 0.5405405405405406,
+          "conditional_second_acceptance_bounds": [
+            0.7058823529411765,
+            0.7058823529411765
+          ],
+          "conditional_second_denominator_bounds": [
+            510,
+            510
+          ],
+          "first_acceptance": 0.7657657657657657,
+          "note": "Conditional-second bounds account for first acceptances on budget-trimmed one-token rounds; equal bounds identify the exact rate.",
+          "one_token_rounds": 0,
+          "output_budget_clipped_tokens": 6,
+          "proposed_tokens": 1332,
+          "rounds": 666,
+          "two_token_rounds": 666
+        },
+        "concurrency": 1,
+        "format": "k4v4",
+        "fresh_starts": 2,
+        "measured_waves": 6,
+        "output_tokens": 1536,
+        "quality_findings": [],
+        "requests": 6,
+        "timing": {
+          "decode": {
+            "fresh_start_medians": [
+              43.56026963139395,
+              42.85919305368533
+            ],
+            "max": 43.588494395732994,
+            "median": 43.2311913370464,
+            "min": 42.653909452168946,
+            "values": [
+              43.56026963139395,
+              43.588494395732994,
+              43.3425211976808,
+              42.653909452168946,
+              42.85919305368533,
+              43.119861476411984
+            ]
+          },
+          "latency": {
+            "fresh_start_medians": [
+              8.521001988905482,
+              8.616103525040671
+            ],
+            "max": 8.637900474946946,
+            "median": 8.581118906964548,
+            "min": 8.51209424296394,
+            "values": [
+              8.51209424296394,
+              8.521001988905482,
+              8.56787639693357,
+              8.637900474946946,
+              8.616103525040671,
+              8.594361416995525
+            ]
+          },
+          "throughput": {
+            "fresh_start_medians": [
+              30.040650623221126,
+              29.70609033479788
+            ],
+            "max": 30.071338418317957,
+            "median": 29.828483983047963,
+            "min": 29.63360511497004,
+            "values": [
+              30.071338418317957,
+              30.040650623221126,
+              29.87586664709976,
+              29.63360511497004,
+              29.70609033479788,
+              29.781101318996168
+            ]
+          },
+          "ttft": {
+            "fresh_start_medians": [
+              2.6707231069449335,
+              2.666233408031985
+            ],
+            "max": 2.684288637014106,
+            "median": 2.6684782574884593,
+            "min": 2.6578846180345863,
+            "values": [
+              2.6578846180345863,
+              2.6707231069449335,
+              2.684288637014106,
+              2.659309353912249,
+              2.666233408031985,
+              2.6804159519961104
+            ]
+          },
+          "wave_seconds": {
+            "fresh_start_medians": [
+              8.52178613608703,
+              8.617761446046643
+            ],
+            "max": 8.638840903993696,
+            "median": 8.582422295527067,
+            "min": 8.513089654967189,
+            "values": [
+              8.513089654967189,
+              8.52178613608703,
+              8.568789083976299,
+              8.638840903993696,
+              8.617761446046643,
+              8.596055507077836
+            ]
+          }
+        },
+        "trial": "ctx4095-b1",
+        "unique_output_trajectories": 1
+      },
+      {
+        "aggregate_acceptance": {
+          "accepted_first": 2070,
+          "accepted_fraction_of_proposals": 0.6828703703703703,
+          "accepted_second": 1470,
+          "accepted_tokens": 3540,
+          "accepted_tokens_per_round": 1.3657407407407407,
+          "both_acceptance_per_two_token_round": 0.5671296296296297,
+          "conditional_second_acceptance_bounds": [
+            0.7101449275362319,
+            0.7101449275362319
+          ],
+          "conditional_second_denominator_bounds": [
+            2070,
+            2070
+          ],
+          "first_acceptance": 0.7986111111111112,
+          "note": "Conditional-second bounds account for first acceptances on budget-trimmed one-token rounds; equal bounds identify the exact rate.",
+          "one_token_rounds": 0,
+          "output_budget_clipped_tokens": 12,
+          "proposed_tokens": 5184,
+          "rounds": 2592,
+          "two_token_rounds": 2592
+        },
+        "concurrency": 4,
+        "format": "k4v4",
+        "fresh_starts": 2,
+        "measured_waves": 6,
+        "output_tokens": 6144,
+        "quality_findings": [],
+        "requests": 24,
+        "timing": {
+          "decode": {
+            "fresh_start_medians": [
+              21.90978221504188,
+              21.8642003338782
+            ],
+            "max": 21.918769825217325,
+            "median": 21.882013555851152,
+            "min": 21.791361053342246,
+            "values": [
+              21.918769825217325,
+              21.90978221504188,
+              21.895827767345857,
+              21.8642003338782,
+              21.868199344356448,
+              21.791361053342246
+            ]
+          },
+          "latency": {
+            "fresh_start_medians": [
+              21.211723554006312,
+              21.24531836702954
+            ],
+            "max": 21.272087368473876,
+            "median": 21.229504736023955,
+            "min": 21.206205916008912,
+            "values": [
+              21.206205916008912,
+              21.211723554006312,
+              21.226912105514202,
+              21.232097366533708,
+              21.24531836702954,
+              21.272087368473876
+            ]
+          },
+          "throughput": {
+            "fresh_start_medians": [
+              48.258683597371295,
+              48.18827417581389
+            ],
+            "max": 48.27792653720543,
+            "median": 48.2227875918991,
+            "min": 48.127824639405716,
+            "values": [
+              48.27792653720543,
+              48.258683597371295,
+              48.22961356538762,
+              48.215961618410574,
+              48.18827417581389,
+              48.127824639405716
+            ]
+          },
+          "ttft": {
+            "fresh_start_medians": [
+              9.414421957044397,
+              9.411144625453744
+            ],
+            "max": 9.424865085515194,
+            "median": 9.413679333025357,
+            "min": 9.410488677967805,
+            "values": [
+              9.412936709006317,
+              9.414421957044397,
+              9.421854438027367,
+              9.410488677967805,
+              9.424865085515194,
+              9.411144625453744
+            ]
+          },
+          "wave_seconds": {
+            "fresh_start_medians": [
+              21.218979128054343,
+              21.249982854002155
+            ],
+            "max": 21.276673268992454,
+            "median": 21.23477450502105,
+            "min": 21.21052152500488,
+            "values": [
+              21.21052152500488,
+              21.218979128054343,
+              21.231768705998547,
+              21.237780304043554,
+              21.249982854002155,
+              21.276673268992454
+            ]
+          }
+        },
+        "trial": "ctx4095-b4",
+        "unique_output_trajectories": 4
+      },
+      {
+        "aggregate_acceptance": {
+          "accepted_first": 516,
+          "accepted_fraction_of_proposals": 0.8563829787234043,
+          "accepted_second": 450,
+          "accepted_tokens": 966,
+          "accepted_tokens_per_round": 1.7127659574468086,
+          "both_acceptance_per_two_token_round": 0.7978723404255319,
+          "conditional_second_acceptance_bounds": [
+            0.872093023255814,
+            0.872093023255814
+          ],
+          "conditional_second_denominator_bounds": [
+            516,
+            516
+          ],
+          "first_acceptance": 0.9148936170212766,
+          "note": "Conditional-second bounds account for first acceptances on budget-trimmed one-token rounds; equal bounds identify the exact rate.",
+          "one_token_rounds": 0,
+          "output_budget_clipped_tokens": 0,
+          "proposed_tokens": 1128,
+          "rounds": 564,
+          "two_token_rounds": 564
+        },
+        "concurrency": 1,
+        "format": "k4v4",
+        "fresh_starts": 2,
+        "measured_waves": 6,
+        "output_tokens": 1536,
+        "quality_findings": [],
+        "requests": 6,
+        "timing": {
+          "decode": {
+            "fresh_start_medians": [
+              50.76748598999178,
+              50.46260603669423
+            ],
+            "max": 50.769296498452,
+            "median": 50.66716130570154,
+            "min": 49.1227794380279,
+            "values": [
+              50.76748598999178,
+              50.769296498452,
+              50.73963875818862,
+              50.46260603669423,
+              50.594683853214455,
+              49.1227794380279
+            ]
+          },
+          "latency": {
+            "fresh_start_medians": [
+              16.40753363398835,
+              16.433622683980502
+            ],
+            "max": 16.574834809987806,
+            "median": 16.41577064996818,
+            "min": 16.407051683054306,
+            "values": [
+              16.40753363398835,
+              16.407051683054306,
+              16.411862162989564,
+              16.433622683980502,
+              16.419679136946797,
+              16.574834809987806
+            ]
+          },
+          "throughput": {
+            "fresh_start_medians": [
+              15.60157842268902,
+              15.572926578206665
+            ],
+            "max": 15.601977124931206,
+            "median": 15.59249448433201,
+            "min": 15.441648871570065,
+            "values": [
+              15.60157842268902,
+              15.601977124931206,
+              15.597446188843714,
+              15.572926578206665,
+              15.587542779820305,
+              15.441648871570065
+            ]
+          },
+          "ttft": {
+            "fresh_start_medians": [
+              11.384469121927395,
+              11.380188032053411
+            ],
+            "max": 11.386046353029087,
+            "median": 11.383889958495274,
+            "min": 11.379466873011552,
+            "values": [
+              11.384469121927395,
+              11.38416837900877,
+              11.386046353029087,
+              11.380188032053411,
+              11.379466873011552,
+              11.383611537981778
+            ]
+          },
+          "wave_seconds": {
+            "fresh_start_medians": [
+              16.408596173045225,
+              16.4387855239911
+            ],
+            "max": 16.578540422022343,
+            "median": 16.418157214997336,
+            "min": 16.408176857978106,
+            "values": [
+              16.408596173045225,
+              16.408176857978106,
+              16.412943304982036,
+              16.4387855239911,
+              16.423371125012636,
+              16.578540422022343
+            ]
+          }
+        },
+        "trial": "ctx16383-b1",
+        "unique_output_trajectories": 1
+      },
+      {
+        "aggregate_acceptance": {
+          "accepted_first": 2082,
+          "accepted_fraction_of_proposals": 0.8015267175572519,
+          "accepted_second": 1698,
+          "accepted_tokens": 3780,
+          "accepted_tokens_per_round": 1.6030534351145038,
+          "both_acceptance_per_two_token_round": 0.7201017811704835,
+          "conditional_second_acceptance_bounds": [
+            0.8155619596541787,
+            0.8155619596541787
+          ],
+          "conditional_second_denominator_bounds": [
+            2082,
+            2082
+          ],
+          "first_acceptance": 0.8829516539440203,
+          "note": "Conditional-second bounds account for first acceptances on budget-trimmed one-token rounds; equal bounds identify the exact rate.",
+          "one_token_rounds": 0,
+          "output_budget_clipped_tokens": 18,
+          "proposed_tokens": 4716,
+          "rounds": 2358,
+          "two_token_rounds": 2358
+        },
+        "concurrency": 4,
+        "format": "k4v4",
+        "fresh_starts": 2,
+        "measured_waves": 6,
+        "output_tokens": 6144,
+        "quality_findings": [],
+        "requests": 24,
+        "timing": {
+          "decode": {
+            "fresh_start_medians": [
+              7.693731346009699,
+              7.672428461577919
+            ],
+            "max": 7.694091700521339,
+            "median": 7.684991833588743,
+            "min": 7.668667180169379,
+            "values": [
+              7.694091700521339,
+              7.693289767341699,
+              7.693731346009699,
+              7.668667180169379,
+              7.672428461577919,
+              7.676693899835788
+            ]
+          },
+          "latency": {
+            "fresh_start_medians": [
+              66.08979692246066,
+              66.18604131700704
+            ],
+            "max": 66.19038841495058,
+            "median": 66.12770528299734,
+            "min": 66.08804067200981,
+            "values": [
+              66.08804067200981,
+              66.09077047399478,
+              66.08979692246066,
+              66.19038841495058,
+              66.18604131700704,
+              66.1646400919999
+            ]
+          },
+          "throughput": {
+            "fresh_start_medians": [
+              15.198963316975679,
+              15.171979854246754
+            ],
+            "max": 15.199273769175846,
+            "median": 15.187901655543712,
+            "min": 15.169260563224583,
+            "values": [
+              15.198963316975679,
+              15.197834705288539,
+              15.199273769175846,
+              15.169260563224583,
+              15.171979854246754,
+              15.177968605798885
+            ]
+          },
+          "ttft": {
+            "fresh_start_medians": [
+              32.017568264505826,
+              32.022089954058174
+            ],
+            "max": 32.026103664014954,
+            "median": 32.01792849099729,
+            "min": 32.01474365044851,
+            "values": [
+              32.017568264505826,
+              32.01751624251483,
+              32.01828871748876,
+              32.01474365044851,
+              32.026103664014954,
+              32.022089954058174
+            ]
+          },
+          "wave_seconds": {
+            "fresh_start_medians": [
+              67.37301608303096,
+              67.49283942091279
+            ],
+            "max": 67.50493840698618,
+            "median": 67.42211407603463,
+            "min": 67.37163995800074,
+            "values": [
+              67.37301608303096,
+              67.37801929400302,
+              67.37163995800074,
+              67.50493840698618,
+              67.49283942091279,
+              67.46620885806624
+            ]
+          }
+        },
+        "trial": "ctx16383-b4",
+        "unique_output_trajectories": 3
+      },
+      {
+        "aggregate_acceptance": {
+          "accepted_first": 504,
+          "accepted_fraction_of_proposals": 0.6473214285714286,
+          "accepted_second": 366,
+          "accepted_tokens": 870,
+          "accepted_tokens_per_round": 1.2946428571428572,
+          "both_acceptance_per_two_token_round": 0.5446428571428571,
+          "conditional_second_acceptance_bounds": [
+            0.7261904761904762,
+            0.7261904761904762
+          ],
+          "conditional_second_denominator_bounds": [
+            504,
+            504
+          ],
+          "first_acceptance": 0.75,
+          "note": "Conditional-second bounds account for first acceptances on budget-trimmed one-token rounds; equal bounds identify the exact rate.",
+          "one_token_rounds": 0,
+          "output_budget_clipped_tokens": 12,
+          "proposed_tokens": 1344,
+          "rounds": 672,
+          "two_token_rounds": 672
+        },
+        "concurrency": 1,
+        "format": "k4v4",
+        "fresh_starts": 2,
+        "measured_waves": 6,
+        "output_tokens": 1536,
+        "quality_findings": [],
+        "requests": 6,
+        "timing": {
+          "decode": {
+            "fresh_start_medians": [
+              31.7351012605774,
+              31.37544027131669
+            ],
+            "max": 31.74494487733408,
+            "median": 31.573301240666666,
+            "min": 31.31305048496024,
+            "values": [
+              31.711919771955024,
+              31.74494487733408,
+              31.7351012605774,
+              31.434682709378304,
+              31.31305048496024,
+              31.37544027131669
+            ]
+          },
+          "latency": {
+            "fresh_start_medians": [
+              62.73781055700965,
+              62.808576814015396
+            ],
+            "max": 62.82346742297523,
+            "median": 62.76725037599681,
+            "min": 62.734774257056415,
+            "values": [
+              62.734774257056415,
+              62.74306416604668,
+              62.73781055700965,
+              62.79143658594694,
+              62.82346742297523,
+              62.808576814015396
+            ]
+          },
+          "throughput": {
+            "fresh_start_medians": [
+              4.0801826779170405,
+              4.075086667672741
+            ],
+            "max": 4.080390952487541,
+            "median": 4.077932054439376,
+            "min": 4.074647017017143,
+            "values": [
+              4.0801826779170405,
+              4.079531067870732,
+              4.080390952487541,
+              4.076333041008019,
+              4.074647017017143,
+              4.075086667672741
+            ]
+          },
+          "ttft": {
+            "fresh_start_medians": [
+              54.70241409901064,
+              54.679752061958425
+            ],
+            "max": 54.71016481996048,
+            "median": 54.687270988477394,
+            "min": 54.67922962398734,
+            "values": [
+              54.69347151904367,
+              54.71016481996048,
+              54.70241409901064,
+              54.67922962398734,
+              54.679752061958425,
+              54.68107045791112
+            ]
+          },
+          "wave_seconds": {
+            "fresh_start_medians": [
+              62.742288816021755,
+              62.82074980903417
+            ],
+            "max": 62.827528110006824,
+            "median": 62.776926133956295,
+            "min": 62.73908627405763,
+            "values": [
+              62.742288816021755,
+              62.75231043493841,
+              62.73908627405763,
+              62.80154183297418,
+              62.827528110006824,
+              62.82074980903417
+            ]
+          }
+        },
+        "trial": "ctx65023-b1",
+        "unique_output_trajectories": 1
+      },
+      {
+        "aggregate_acceptance": {
+          "accepted_first": 2058,
+          "accepted_fraction_of_proposals": 0.6758620689655173,
+          "accepted_second": 1470,
+          "accepted_tokens": 3528,
+          "accepted_tokens_per_round": 1.3517241379310345,
+          "both_acceptance_per_two_token_round": 0.5632183908045977,
+          "conditional_second_acceptance_bounds": [
+            0.7142857142857143,
+            0.7142857142857143
+          ],
+          "conditional_second_denominator_bounds": [
+            2058,
+            2058
+          ],
+          "first_acceptance": 0.7885057471264367,
+          "note": "Conditional-second bounds account for first acceptances on budget-trimmed one-token rounds; equal bounds identify the exact rate.",
+          "one_token_rounds": 0,
+          "output_budget_clipped_tokens": 18,
+          "proposed_tokens": 5220,
+          "rounds": 2610,
+          "two_token_rounds": 2610
+        },
+        "concurrency": 4,
+        "format": "k4v4",
+        "fresh_starts": 2,
+        "measured_waves": 6,
+        "output_tokens": 6144,
+        "quality_findings": [],
+        "requests": 24,
+        "timing": {
+          "decode": {
+            "fresh_start_medians": [
+              1.9043895361368939,
+              1.9033447129191186
+            ],
+            "max": 1.9044361278394852,
+            "median": 1.9035317307583393,
+            "min": 1.9025503092940959,
+            "values": [
+              1.9044361278394852,
+              1.9036801634310954,
+              1.9043895361368939,
+              1.9025503092940959,
+              1.9033447129191186,
+              1.9033832980855832
+            ]
+          },
+          "latency": {
+            "fresh_start_medians": [
+              290.488109531987,
+              290.5324101150036
+            ],
+            "max": 290.58326435799245,
+            "median": 290.50140254726284,
+            "min": 290.43817878101254,
+            "values": [
+              290.488109531987,
+              290.4949715505354,
+              290.43817878101254,
+              290.58326435799245,
+              290.5324101150036,
+              290.5078335439903
+            ]
+          },
+          "throughput": {
+            "fresh_start_medians": [
+              3.417082237219145,
+              3.4163953454433487
+            ],
+            "max": 3.417444849087392,
+            "median": 3.416565763577818,
+            "min": 3.415776679792796,
+            "values": [
+              3.417082237219145,
+              3.4166926222509675,
+              3.417444849087392,
+              3.415776679792796,
+              3.4163953454433487,
+              3.4164389049046693
+            ]
+          },
+          "ttft": {
+            "fresh_start_medians": [
+              151.37065443757456,
+              151.37627372099087
+            ],
+            "max": 151.408312592539,
+            "median": 151.3734640792827,
+            "min": 151.36077376647154,
+            "values": [
+              151.408312592539,
+              151.37065443757456,
+              151.36084966355702,
+              151.37627372099087,
+              151.38317688147072,
+              151.36077376647154
+            ]
+          },
+          "wave_seconds": {
+            "fresh_start_medians": [
+              299.6708679839503,
+              299.7311190479668
+            ],
+            "max": 299.78540636389516,
+            "median": 299.7161688875058,
+            "min": 299.6390710660489,
+            "values": [
+              299.6708679839503,
+              299.7050402869936,
+              299.6390710660489,
+              299.78540636389516,
+              299.7311190479668,
+              299.72729748801794
+            ]
+          }
+        },
+        "trial": "ctx65023-b4",
+        "unique_output_trajectories": 4
+      },
+      {
+        "aggregate_acceptance": {
+          "accepted_first": 516,
+          "accepted_fraction_of_proposals": 0.8473684210526315,
+          "accepted_second": 450,
+          "accepted_tokens": 966,
+          "accepted_tokens_per_round": 1.694736842105263,
+          "both_acceptance_per_two_token_round": 0.7894736842105263,
+          "conditional_second_acceptance_bounds": [
+            0.872093023255814,
+            0.872093023255814
+          ],
+          "conditional_second_denominator_bounds": [
+            516,
+            516
+          ],
+          "first_acceptance": 0.9052631578947369,
+          "note": "Conditional-second bounds account for first acceptances on budget-trimmed one-token rounds; equal bounds identify the exact rate.",
+          "one_token_rounds": 0,
+          "output_budget_clipped_tokens": 6,
+          "proposed_tokens": 1140,
+          "rounds": 570,
+          "two_token_rounds": 570
+        },
+        "concurrency": 1,
+        "format": "k4v4",
+        "fresh_starts": 2,
+        "measured_waves": 6,
+        "output_tokens": 1536,
+        "quality_findings": [],
+        "requests": 6,
+        "timing": {
+          "decode": {
+            "fresh_start_medians": [
+              27.28871645817905,
+              27.201020208197818
+            ],
+            "max": 27.294405125660663,
+            "median": 27.244356576893722,
+            "min": 27.16551169200561,
+            "values": [
+              27.28871645817905,
+              27.244825948425134,
+              27.294405125660663,
+              27.201020208197818,
+              27.24388720536231,
+              27.16551169200561
+            ]
+          },
+          "latency": {
+            "fresh_start_medians": [
+              146.64057539694477,
+              146.6943507459946
+            ],
+            "max": 146.75013892003335,
+            "median": 146.69103524798993,
+            "min": 146.59489273000509,
+            "values": [
+              146.59489273000509,
+              146.75013892003335,
+              146.64057539694477,
+              146.7231530720601,
+              146.6943507459946,
+              146.68771974998526
+            ]
+          },
+          "throughput": {
+            "fresh_start_medians": [
+              1.745480536301904,
+              1.7448384985822436
+            ],
+            "max": 1.7460067435914572,
+            "median": 1.7448668612363363,
+            "min": 1.7442432623250084,
+            "values": [
+              1.7460067435914572,
+              1.7442432623250084,
+              1.745480536301904,
+              1.7444954428771537,
+              1.7448384985822436,
+              1.744895223890429
+            ]
+          },
+          "ttft": {
+            "fresh_start_medians": [
+              137.29780174198095,
+              137.33428457798436
+            ],
+            "max": 137.3903838840779,
+            "median": 137.31745121948188,
+            "min": 137.2501775919227,
+            "values": [
+              137.2501775919227,
+              137.3903838840779,
+              137.29780174198095,
+              137.34829639305826,
+              137.33428457798436,
+              137.3006178609794
+            ]
+          },
+          "wave_seconds": {
+            "fresh_start_medians": [
+              146.66448274604045,
+              146.71844999294262
+            ],
+            "max": 146.76851877802983,
+            "median": 146.71606513648294,
+            "min": 146.62028135894798,
+            "values": [
+              146.62028135894798,
+              146.76851877802983,
+              146.66448274604045,
+              146.74730223300867,
+              146.71844999294262,
+              146.71368028002325
+            ]
+          }
+        },
+        "trial": "ctx131071-b1",
+        "unique_output_trajectories": 1
+      },
+      {
+        "aggregate_acceptance": {
+          "accepted_first": 534,
+          "accepted_fraction_of_proposals": 0.8465608465608465,
+          "accepted_second": 426,
+          "accepted_tokens": 960,
+          "accepted_tokens_per_round": 1.6842105263157894,
+          "both_acceptance_per_two_token_round": 0.7553191489361702,
+          "conditional_second_acceptance_bounds": [
+            0.797752808988764,
+            0.8068181818181818
+          ],
+          "conditional_second_denominator_bounds": [
+            528,
+            534
+          ],
+          "first_acceptance": 0.9368421052631579,
+          "note": "Conditional-second bounds account for first acceptances on budget-trimmed one-token rounds; equal bounds identify the exact rate.",
+          "one_token_rounds": 6,
+          "output_budget_clipped_tokens": 0,
+          "proposed_tokens": 1134,
+          "rounds": 570,
+          "two_token_rounds": 564
+        },
+        "concurrency": 1,
+        "format": "k4v4",
+        "fresh_starts": 2,
+        "measured_waves": 6,
+        "output_tokens": 1536,
+        "quality_findings": [],
+        "requests": 6,
+        "timing": {
+          "decode": {
+            "fresh_start_medians": [
+              18.21598306785278,
+              18.20492030489197
+            ],
+            "max": 18.216579100900507,
+            "median": 18.207707327741645,
+            "min": 18.186613466018397,
+            "values": [
+              18.216579100900507,
+              18.186613466018397,
+              18.21598306785278,
+              18.198826240431,
+              18.20492030489197,
+              18.210494350591315
+            ]
+          },
+          "latency": {
+            "fresh_start_medians": [
+              397.56409833591897,
+              397.6435177120147
+            ],
+            "max": 397.6836995079648,
+            "median": 397.60380802396685,
+            "min": 397.3472302259179,
+            "values": [
+              397.5272313510068,
+              397.56409833591897,
+              397.6836995079648,
+              397.6486085669603,
+              397.3472302259179,
+              397.6435177120147
+            ]
+          },
+          "throughput": {
+            "fresh_start_medians": [
+              0.6438485662738561,
+              0.6437189839755083
+            ],
+            "max": 0.6441897906977871,
+            "median": 0.6437837751246822,
+            "min": 0.6436847998540509,
+            "values": [
+              0.6439014441679957,
+              0.6438485662738561,
+              0.6436847998540509,
+              0.6437035202541671,
+              0.6441897906977871,
+              0.6437189839755083
+            ]
+          },
+          "ttft": {
+            "fresh_start_medians": [
+              383.5426152739674,
+              383.6365080580581
+            ],
+            "max": 383.68475439201575,
+            "median": 383.58956166601274,
+            "min": 383.33983340801205,
+            "values": [
+              383.52879012795165,
+              383.5426152739674,
+              383.68475439201575,
+              383.6365080580581,
+              383.33983340801205,
+              383.6404061410576
+            ]
+          },
+          "wave_seconds": {
+            "fresh_start_medians": [
+              397.6090239379555,
+              397.6890636640601
+            ],
+            "max": 397.7101837079972,
+            "median": 397.6490438010078,
+            "min": 397.3984122329857,
+            "values": [
+              397.57637184800114,
+              397.6090239379555,
+              397.7101837079972,
+              397.6986173680052,
+              397.3984122329857,
+              397.6890636640601
+            ]
+          }
+        },
+        "trial": "ctx261887-b1",
+        "unique_output_trajectories": 1
+      },
+      {
+        "aggregate_acceptance": {
+          "accepted_first": 504,
+          "accepted_fraction_of_proposals": 0.6228070175438597,
+          "accepted_second": 348,
+          "accepted_tokens": 852,
+          "accepted_tokens_per_round": 1.2456140350877194,
+          "both_acceptance_per_two_token_round": 0.5087719298245614,
+          "conditional_second_acceptance_bounds": [
+            0.6904761904761905,
+            0.6904761904761905
+          ],
+          "conditional_second_denominator_bounds": [
+            504,
+            504
+          ],
+          "first_acceptance": 0.7368421052631579,
+          "note": "Conditional-second bounds account for first acceptances on budget-trimmed one-token rounds; equal bounds identify the exact rate.",
+          "one_token_rounds": 0,
+          "output_budget_clipped_tokens": 6,
+          "proposed_tokens": 1368,
+          "rounds": 684,
+          "two_token_rounds": 684
+        },
+        "concurrency": 1,
+        "format": "k4v2",
+        "fresh_starts": 2,
+        "measured_waves": 6,
+        "output_tokens": 1536,
+        "quality_findings": [],
+        "requests": 6,
+        "timing": {
+          "decode": {
+            "fresh_start_medians": [
+              42.91404941856129,
+              43.444886137445955
+            ],
+            "max": 43.499497398011385,
+            "median": 43.13812194011002,
+            "min": 42.29134480331239,
+            "values": [
+              42.95431585746913,
+              42.91404941856129,
+              42.29134480331239,
+              43.499497398011385,
+              43.444886137445955,
+              43.3219280227509
+            ]
+          },
+          "latency": {
+            "fresh_start_medians": [
+              8.598828404909,
+              8.537443539011292
+            ],
+            "max": 8.685940322000533,
+            "median": 8.580642005021218,
+            "min": 8.519590287934989,
+            "values": [
+              8.59033045603428,
+              8.598828404909,
+              8.685940322000533,
+              8.519590287934989,
+              8.537443539011292,
+              8.570953554008156
+            ]
+          },
+          "throughput": {
+            "fresh_start_medians": [
+              29.765410596148158,
+              29.982079481381643
+            ],
+            "max": 30.042119766381607,
+            "median": 29.831426094773022,
+            "min": 29.467293440545554,
+            "values": [
+              29.797777082109587,
+              29.765410596148158,
+              29.467293440545554,
+              30.042119766381607,
+              29.982079481381643,
+              29.865075107436454
+            ]
+          },
+          "ttft": {
+            "fresh_start_medians": [
+              2.656096972990781,
+              2.6677810930414125
+            ],
+            "max": 2.6846311879344285,
+            "median": 2.6569000104791485,
+            "min": 2.653592898044735,
+            "values": [
+              2.653592898044735,
+              2.656533189001493,
+              2.656096972990781,
+              2.657266831956804,
+              2.6677810930414125,
+              2.6846311879344285
+            ]
+          },
+          "wave_seconds": {
+            "fresh_start_medians": [
+              8.600586885004304,
+              8.538433772046119
+            ],
+            "max": 8.68759801494889,
+            "median": 8.581565122003667,
+            "min": 8.521369397058152,
+            "values": [
+              8.59124488697853,
+              8.600586885004304,
+              8.68759801494889,
+              8.521369397058152,
+              8.538433772046119,
+              8.571885357028805
+            ]
+          }
+        },
+        "trial": "ctx4095-b1",
+        "unique_output_trajectories": 1
+      },
+      {
+        "aggregate_acceptance": {
+          "accepted_first": 2082,
+          "accepted_fraction_of_proposals": 0.6708715596330275,
+          "accepted_second": 1428,
+          "accepted_tokens": 3510,
+          "accepted_tokens_per_round": 1.341743119266055,
+          "both_acceptance_per_two_token_round": 0.5458715596330275,
+          "conditional_second_acceptance_bounds": [
+            0.6858789625360231,
+            0.6858789625360231
+          ],
+          "conditional_second_denominator_bounds": [
+            2082,
+            2082
+          ],
+          "first_acceptance": 0.7958715596330275,
+          "note": "Conditional-second bounds account for first acceptances on budget-trimmed one-token rounds; equal bounds identify the exact rate.",
+          "one_token_rounds": 0,
+          "output_budget_clipped_tokens": 6,
+          "proposed_tokens": 5232,
+          "rounds": 2616,
+          "two_token_rounds": 2616
+        },
+        "concurrency": 4,
+        "format": "k4v2",
+        "fresh_starts": 2,
+        "measured_waves": 6,
+        "output_tokens": 6144,
+        "quality_findings": [],
+        "requests": 24,
+        "timing": {
+          "decode": {
+            "fresh_start_medians": [
+              22.05758967986491,
+              22.09772124734616
+            ],
+            "max": 22.11384675646223,
+            "median": 22.075284252444405,
+            "min": 22.049388272167434,
+            "values": [
+              22.05758967986491,
+              22.049388272167434,
+              22.064932593613708,
+              22.11384675646223,
+              22.09772124734616,
+              22.085635911275098
+            ]
+          },
+          "latency": {
+            "fresh_start_medians": [
+              21.100761564506683,
+              21.086529342457652
+            ],
+            "max": 21.104210532444995,
+            "median": 21.09749475272838,
+            "min": 21.07199239503825,
+            "values": [
+              21.100761564506683,
+              21.104210532444995,
+              21.09449551149737,
+              21.07199239503825,
+              21.086529342457652,
+              21.10049399395939
+            ]
+          },
+          "throughput": {
+            "fresh_start_medians": [
+              48.305478097236296,
+              48.34026549525327
+            ],
+            "max": 48.376004371674405,
+            "median": 48.31591034284629,
+            "min": 48.29820320009914,
+            "values": [
+              48.305478097236296,
+              48.29820320009914,
+              48.321527558245606,
+              48.376004371674405,
+              48.34026549525327,
+              48.31029312744697
+            ]
+          },
+          "ttft": {
+            "fresh_start_medians": [
+              9.367631270957645,
+              9.374583899509162
+            ],
+            "max": 9.382356435526162,
+            "median": 9.368503104749834,
+            "min": 9.36574797751382,
+            "values": [
+              9.368623698013835,
+              9.367631270957645,
+              9.36574797751382,
+              9.368382511485834,
+              9.374583899509162,
+              9.382356435526162
+            ]
+          },
+          "wave_seconds": {
+            "fresh_start_medians": [
+              21.19842387107201,
+              21.18316872091964
+            ],
+            "max": 21.201616875012405,
+            "median": 21.19384704902768,
+            "min": 21.167519171955064,
+            "values": [
+              21.19842387107201,
+              21.201616875012405,
+              21.191383049008437,
+              21.167519171955064,
+              21.18316872091964,
+              21.196311049046926
+            ]
+          }
+        },
+        "trial": "ctx4095-b4",
+        "unique_output_trajectories": 4
+      },
+      {
+        "aggregate_acceptance": {
+          "accepted_first": 516,
+          "accepted_fraction_of_proposals": 0.8526315789473684,
+          "accepted_second": 456,
+          "accepted_tokens": 972,
+          "accepted_tokens_per_round": 1.7052631578947368,
+          "both_acceptance_per_two_token_round": 0.8,
+          "conditional_second_acceptance_bounds": [
+            0.8837209302325582,
+            0.8837209302325582
+          ],
+          "conditional_second_denominator_bounds": [
+            516,
+            516
+          ],
+          "first_acceptance": 0.9052631578947369,
+          "note": "Conditional-second bounds account for first acceptances on budget-trimmed one-token rounds; equal bounds identify the exact rate.",
+          "one_token_rounds": 0,
+          "output_budget_clipped_tokens": 12,
+          "proposed_tokens": 1140,
+          "rounds": 570,
+          "two_token_rounds": 570
+        },
+        "concurrency": 1,
+        "format": "k4v2",
+        "fresh_starts": 2,
+        "measured_waves": 6,
+        "output_tokens": 1536,
+        "quality_findings": [],
+        "requests": 6,
+        "timing": {
+          "decode": {
+            "fresh_start_medians": [
+              51.27707191424965,
+              51.339610382766146
+            ],
+            "max": 51.37900787728589,
+            "median": 51.288277133170865,
+            "min": 51.10010185941616,
+            "values": [
+              51.283076675513776,
+              51.10010185941616,
+              51.27707191424965,
+              51.339610382766146,
+              51.29347759082796,
+              51.37900787728589
+            ]
+          },
+          "latency": {
+            "fresh_start_medians": [
+              16.34628551499918,
+              16.346363891032524
+            ],
+            "max": 16.363059818046167,
+            "median": 16.346324703015853,
+            "min": 16.340322798932903,
+            "values": [
+              16.340322798932903,
+              16.363059818046167,
+              16.34628551499918,
+              16.346363891032524,
+              16.347359895007685,
+              16.341731445048936
+            ]
+          },
+          "throughput": {
+            "fresh_start_medians": [
+              15.66010244266702,
+              15.658941938862263
+            ],
+            "max": 15.66575553868202,
+            "median": 15.65952219076464,
+            "min": 15.641183862384311,
+            "values": [
+              15.66575553868202,
+              15.641183862384311,
+              15.66010244266702,
+              15.657388145517572,
+              15.658941938862263,
+              15.66111376744266
+            ]
+          },
+          "ttft": {
+            "fresh_start_medians": [
+              11.372691235970706,
+              11.378415356040932
+            ],
+            "max": 11.379275445011444,
+            "median": 11.37449288694188,
+            "min": 11.367782432003878,
+            "values": [
+              11.367782432003878,
+              11.372691235970706,
+              11.373183697927743,
+              11.379275445011444,
+              11.375802075956017,
+              11.378415356040932
+            ]
+          },
+          "wave_seconds": {
+            "fresh_start_medians": [
+              16.34727492602542,
+              16.348486443050206
+            ],
+            "max": 16.367047549108975,
+            "median": 16.347880684537813,
+            "min": 16.341375899035484,
+            "values": [
+              16.341375899035484,
+              16.367047549108975,
+              16.34727492602542,
+              16.350108818965964,
+              16.348486443050206,
+              16.346219292026944
+            ]
+          }
+        },
+        "trial": "ctx16383-b1",
+        "unique_output_trajectories": 1
+      },
+      {
+        "aggregate_acceptance": {
+          "accepted_first": 2070,
+          "accepted_fraction_of_proposals": 0.8107416879795396,
+          "accepted_second": 1734,
+          "accepted_tokens": 3804,
+          "accepted_tokens_per_round": 1.6214833759590792,
+          "both_acceptance_per_two_token_round": 0.7391304347826086,
+          "conditional_second_acceptance_bounds": [
+            0.8376811594202899,
+            0.8376811594202899
+          ],
+          "conditional_second_denominator_bounds": [
+            2070,
+            2070
+          ],
+          "first_acceptance": 0.8823529411764706,
+          "note": "Conditional-second bounds account for first acceptances on budget-trimmed one-token rounds; equal bounds identify the exact rate.",
+          "one_token_rounds": 0,
+          "output_budget_clipped_tokens": 30,
+          "proposed_tokens": 4692,
+          "rounds": 2346,
+          "two_token_rounds": 2346
+        },
+        "concurrency": 4,
+        "format": "k4v2",
+        "fresh_starts": 2,
+        "measured_waves": 6,
+        "output_tokens": 6144,
+        "quality_findings": [],
+        "requests": 24,
+        "timing": {
+          "decode": {
+            "fresh_start_medians": [
+              7.729322256017525,
+              7.733269435347198
+            ],
+            "max": 7.734481356351669,
+            "median": 7.730895846493512,
+            "min": 7.7277953726705295,
+            "values": [
+              7.729496141031774,
+              7.729322256017525,
+              7.7277953726705295,
+              7.734481356351669,
+              7.73229555195525,
+              7.733269435347198
+            ]
+          },
+          "latency": {
+            "fresh_start_medians": [
+              65.97474901896203,
+              65.95527905755443
+            ],
+            "max": 65.9776075319387,
+            "median": 65.95846155431354,
+            "min": 65.9439439959242,
+            "values": [
+              65.94963179796468,
+              65.97474901896203,
+              65.9776075319387,
+              65.9439439959242,
+              65.96164405107265,
+              65.95527905755443
+            ]
+          },
+          "throughput": {
+            "fresh_start_medians": [
+              15.236446704433282,
+              15.243297735689097
+            ],
+            "max": 15.245511931460792,
+            "median": 15.24162659599373,
+            "min": 15.236432297354082,
+            "values": [
+              15.241531331777171,
+              15.236432297354082,
+              15.236446704433282,
+              15.245511931460792,
+              15.241721860210287,
+              15.243297735689097
+            ]
+          },
+          "ttft": {
+            "fresh_start_medians": [
+              32.0073918409762,
+              32.0085622605402
+            ],
+            "max": 32.010641946457326,
+            "median": 32.0079770507582,
+            "min": 31.988438441010658,
+            "values": [
+              31.988438441010658,
+              32.010641946457326,
+              32.0073918409762,
+              32.00229486997705,
+              32.010092629061546,
+              32.0085622605402
+            ]
+          },
+          "wave_seconds": {
+            "fresh_start_medians": [
+              67.20727082004305,
+              67.1770648160018
+            ],
+            "max": 67.20733436907176,
+            "median": 67.18443032249343,
+            "min": 67.16730829398148,
+            "values": [
+              67.18485024303664,
+              67.20733436907176,
+              67.20727082004305,
+              67.16730829398148,
+              67.18401040195022,
+              67.1770648160018
+            ]
+          }
+        },
+        "trial": "ctx16383-b4",
+        "unique_output_trajectories": 4
+      },
+      {
+        "aggregate_acceptance": {
+          "accepted_first": 504,
+          "accepted_fraction_of_proposals": 0.6576576576576577,
+          "accepted_second": 372,
+          "accepted_tokens": 876,
+          "accepted_tokens_per_round": 1.3153153153153154,
+          "both_acceptance_per_two_token_round": 0.5585585585585585,
+          "conditional_second_acceptance_bounds": [
+            0.7380952380952381,
+            0.7380952380952381
+          ],
+          "conditional_second_denominator_bounds": [
+            504,
+            504
+          ],
+          "first_acceptance": 0.7567567567567568,
+          "note": "Conditional-second bounds account for first acceptances on budget-trimmed one-token rounds; equal bounds identify the exact rate.",
+          "one_token_rounds": 0,
+          "output_budget_clipped_tokens": 12,
+          "proposed_tokens": 1332,
+          "rounds": 666,
+          "two_token_rounds": 666
+        },
+        "concurrency": 1,
+        "format": "k4v2",
+        "fresh_starts": 2,
+        "measured_waves": 6,
+        "output_tokens": 1536,
+        "quality_findings": [],
+        "requests": 6,
+        "timing": {
+          "decode": {
+            "fresh_start_medians": [
+              32.30962283449995,
+              32.35478223910181
+            ],
+            "max": 32.41704254005344,
+            "median": 32.349979333573046,
+            "min": 32.303952802134134,
+            "values": [
+              32.303952802134134,
+              32.35231138717239,
+              32.30962283449995,
+              32.35478223910181,
+              32.3476472799737,
+              32.41704254005344
+            ]
+          },
+          "latency": {
+            "fresh_start_medians": [
+              62.60434975498356,
+              62.5717253270559
+            ],
+            "max": 62.61320644489024,
+            "median": 62.58919007296208,
+            "min": 62.56678733904846,
+            "values": [
+              62.60434975498356,
+              62.589245365932584,
+              62.61320644489024,
+              62.5717253270559,
+              62.58913477999158,
+              62.56678733904846
+            ]
+          },
+          "throughput": {
+            "fresh_start_medians": [
+              4.089008803715284,
+              4.090532912572889
+            ],
+            "max": 4.091211776065754,
+            "median": 4.089318457957031,
+            "min": 4.087735094876046,
+            "values": [
+              4.089008803715284,
+              4.0892081812011165,
+              4.087735094876046,
+              4.090532912572889,
+              4.0894287347129445,
+              4.091211776065754
+            ]
+          },
+          "ttft": {
+            "fresh_start_medians": [
+              54.71045808901545,
+              54.70041226502508
+            ],
+            "max": 54.720709387911484,
+            "median": 54.70652963494649,
+            "min": 54.69023222802207,
+            "values": [
+              54.71045808901545,
+              54.7071356739616,
+              54.720709387911484,
+              54.69023222802207,
+              54.70592359593138,
+              54.70041226502508
+            ]
+          },
+          "wave_seconds": {
+            "fresh_start_medians": [
+              62.606859581079334,
+              62.5835326280212
+            ],
+            "max": 62.62636742799077,
+            "median": 62.60211886605248,
+            "min": 62.57314800901804,
+            "values": [
+              62.606859581079334,
+              62.603807059000246,
+              62.62636742799077,
+              62.5835326280212,
+              62.60043067310471,
+              62.57314800901804
+            ]
+          }
+        },
+        "trial": "ctx65023-b1",
+        "unique_output_trajectories": 1
+      },
+      {
+        "aggregate_acceptance": {
+          "accepted_first": 2016,
+          "accepted_fraction_of_proposals": 0.6476510067114094,
+          "accepted_second": 1458,
+          "accepted_tokens": 3474,
+          "accepted_tokens_per_round": 1.2953020134228188,
+          "both_acceptance_per_two_token_round": 0.5436241610738255,
+          "conditional_second_acceptance_bounds": [
+            0.7232142857142857,
+            0.7232142857142857
+          ],
+          "conditional_second_denominator_bounds": [
+            2016,
+            2016
+          ],
+          "first_acceptance": 0.7516778523489933,
+          "note": "Conditional-second bounds account for first acceptances on budget-trimmed one-token rounds; equal bounds identify the exact rate.",
+          "one_token_rounds": 0,
+          "output_budget_clipped_tokens": 36,
+          "proposed_tokens": 5364,
+          "rounds": 2682,
+          "two_token_rounds": 2682
+        },
+        "concurrency": 4,
+        "format": "k4v2",
+        "fresh_starts": 2,
+        "measured_waves": 6,
+        "output_tokens": 6144,
+        "quality_findings": [],
+        "requests": 24,
+        "timing": {
+          "decode": {
+            "fresh_start_medians": [
+              1.8796813975406508,
+              1.8797624410110065
+            ],
+            "max": 1.8800196656174237,
+            "median": 1.879741043731023,
+            "min": 1.879473027777872,
+            "values": [
+              1.8799071272427075,
+              1.8796813975406508,
+              1.879473027777872,
+              1.8797624410110065,
+              1.8797196464510395,
+              1.8800196656174237
+            ]
+          },
+          "latency": {
+            "fresh_start_medians": [
+              292.1801678415504,
+              292.06859426299343
+            ],
+            "max": 292.1886517085368,
+            "median": 292.1113820744504,
+            "min": 292.03890085895546,
+            "values": [
+              292.1801678415504,
+              292.1886517085368,
+              292.12916359695373,
+              292.093600551947,
+              292.06859426299343,
+              292.03890085895546
+            ]
+          },
+          "throughput": {
+            "fresh_start_medians": [
+              3.397972368863617,
+              3.399346188067987
+            ],
+            "max": 3.3998508726087353,
+            "median": 3.3989312715634936,
+            "min": 3.397917090427305,
+            "values": [
+              3.397917090427305,
+              3.397972368863617,
+              3.3989115160900076,
+              3.3989510270369796,
+              3.399346188067987,
+              3.3998508726087353
+            ]
+          },
+          "ttft": {
+            "fresh_start_medians": [
+              151.42388827801915,
+              151.31048493098933
+            ],
+            "max": 151.4447368135443,
+            "median": 151.33969035398331,
+            "min": 151.30076326295966,
+            "values": [
+              151.4447368135443,
+              151.42388827801915,
+              151.347381255473,
+              151.33199945249362,
+              151.31048493098933,
+              151.30076326295966
+            ]
+          },
+          "wave_seconds": {
+            "fresh_start_medians": [
+              301.3561879970366,
+              301.23439724801574
+            ],
+            "max": 301.3610905589303,
+            "median": 301.2711697355262,
+            "min": 301.1896810680628,
+            "values": [
+              301.3610905589303,
+              301.3561879970366,
+              301.2729208020028,
+              301.2694186690496,
+              301.23439724801574,
+              301.1896810680628
+            ]
+          }
+        },
+        "trial": "ctx65023-b4",
+        "unique_output_trajectories": 4
+      },
+      {
+        "aggregate_acceptance": {
+          "accepted_first": 510,
+          "accepted_fraction_of_proposals": 0.828125,
+          "accepted_second": 444,
+          "accepted_tokens": 954,
+          "accepted_tokens_per_round": 1.65625,
+          "both_acceptance_per_two_token_round": 0.7708333333333334,
+          "conditional_second_acceptance_bounds": [
+            0.8705882352941177,
+            0.8705882352941177
+          ],
+          "conditional_second_denominator_bounds": [
+            510,
+            510
+          ],
+          "first_acceptance": 0.8854166666666666,
+          "note": "Conditional-second bounds account for first acceptances on budget-trimmed one-token rounds; equal bounds identify the exact rate.",
+          "one_token_rounds": 0,
+          "output_budget_clipped_tokens": 0,
+          "proposed_tokens": 1152,
+          "rounds": 576,
+          "two_token_rounds": 576
+        },
+        "concurrency": 1,
+        "format": "k4v2",
+        "fresh_starts": 2,
+        "measured_waves": 6,
+        "output_tokens": 1536,
+        "quality_findings": [],
+        "requests": 6,
+        "timing": {
+          "decode": {
+            "fresh_start_medians": [
+              27.315150693058598,
+              27.33379910405961
+            ],
+            "max": 27.453266302827164,
+            "median": 27.324474898559103,
+            "min": 27.294602641583616,
+            "values": [
+              27.294602641583616,
+              27.315150693058598,
+              27.34881234444767,
+              27.296662896198242,
+              27.453266302827164,
+              27.33379910405961
+            ]
+          },
+          "latency": {
+            "fresh_start_medians": [
+              146.62816746288445,
+              146.66290595592
+            ],
+            "max": 146.6910944840638,
+            "median": 146.64553670940222,
+            "min": 146.48981288599316,
+            "values": [
+              146.68732541194186,
+              146.62816746288445,
+              146.5706799600739,
+              146.66290595592,
+              146.48981288599316,
+              146.6910944840638
+            ]
+          },
+          "throughput": {
+            "fresh_start_medians": [
+              1.7457646348506752,
+              1.7451767785654657
+            ],
+            "max": 1.7473960745560793,
+            "median": 1.7454707067080704,
+            "min": 1.7449218797313644,
+            "values": [
+              1.7449494567986554,
+              1.7457646348506752,
+              1.746497312565496,
+              1.7451767785654657,
+              1.7473960745560793,
+              1.7449218797313644
+            ]
+          },
+          "ttft": {
+            "fresh_start_medians": [
+              137.29252052190714,
+              137.3208630779991
+            ],
+            "max": 137.36183331906796,
+            "median": 137.30669179995311,
+            "min": 137.20112036098726,
+            "values": [
+              137.34462907200214,
+              137.29252052190714,
+              137.2464944210369,
+              137.3208630779991,
+              137.20112036098726,
+              137.36183331906796
+            ]
+          },
+          "wave_seconds": {
+            "fresh_start_medians": [
+              146.6406151719857,
+              146.69001051597297
+            ],
+            "max": 146.71143904700875,
+            "median": 146.66531284397934,
+            "min": 146.50370555801783,
+            "values": [
+              146.70912042900454,
+              146.6406151719857,
+              146.57909757900052,
+              146.69001051597297,
+              146.50370555801783,
+              146.71143904700875
+            ]
+          }
+        },
+        "trial": "ctx131071-b1",
+        "unique_output_trajectories": 1
+      },
+      {
+        "aggregate_acceptance": {
+          "accepted_first": 522,
+          "accepted_fraction_of_proposals": 0.8421052631578947,
+          "accepted_second": 438,
+          "accepted_tokens": 960,
+          "accepted_tokens_per_round": 1.6842105263157894,
+          "both_acceptance_per_two_token_round": 0.7684210526315789,
+          "conditional_second_acceptance_bounds": [
+            0.8390804597701149,
+            0.8390804597701149
+          ],
+          "conditional_second_denominator_bounds": [
+            522,
+            522
+          ],
+          "first_acceptance": 0.9157894736842105,
+          "note": "Conditional-second bounds account for first acceptances on budget-trimmed one-token rounds; equal bounds identify the exact rate.",
+          "one_token_rounds": 0,
+          "output_budget_clipped_tokens": 0,
+          "proposed_tokens": 1140,
+          "rounds": 570,
+          "two_token_rounds": 570
+        },
+        "concurrency": 1,
+        "format": "k4v2",
+        "fresh_starts": 2,
+        "measured_waves": 6,
+        "output_tokens": 1536,
+        "quality_findings": [],
+        "requests": 6,
+        "timing": {
+          "decode": {
+            "fresh_start_medians": [
+              18.32214724637569,
+              18.352202646980334
+            ],
+            "max": 18.3762764686495,
+            "median": 18.339319420337333,
+            "min": 18.311023936746462,
+            "values": [
+              18.311023936746462,
+              18.336438231501106,
+              18.32214724637569,
+              18.342200609173556,
+              18.3762764686495,
+              18.352202646980334
+            ]
+          },
+          "latency": {
+            "fresh_start_medians": [
+              397.40661604201887,
+              397.4545499809319
+            ],
+            "max": 397.46691465505864,
+            "median": 397.4305830114754,
+            "min": 397.13619939796627,
+            "values": [
+              397.40661604201887,
+              397.13619939796627,
+              397.46691465505864,
+              397.4549060880672,
+              397.2942896699533,
+              397.4545499809319
+            ]
+          },
+          "throughput": {
+            "fresh_start_medians": [
+              0.6440991193095904,
+              0.6440376924583902
+            ],
+            "max": 0.6445526217288255,
+            "median": 0.6440684058839903,
+            "min": 0.6440030099285707,
+            "values": [
+              0.6440991193095904,
+              0.6445526217288255,
+              0.6440030099285707,
+              0.6440157446323089,
+              0.6442923643439302,
+              0.6440376924583902
+            ]
+          },
+          "ttft": {
+            "fresh_start_medians": [
+              383.48035606299527,
+              383.5523296180181
+            ],
+            "max": 383.5595755749382,
+            "median": 383.5147540885373,
+            "min": 383.22925464599393,
+            "values": [
+              383.48035606299527,
+              383.22925464599393,
+              383.54915211407933,
+              383.5523296180181,
+              383.41754824493546,
+              383.5595755749382
+            ]
+          },
+          "wave_seconds": {
+            "fresh_start_medians": [
+              397.45435496699065,
+              397.49226325994823
+            ],
+            "max": 397.5136700500734,
+            "median": 397.47330911346944,
+            "min": 397.1747090460267,
+            "values": [
+              397.45435496699065,
+              397.1747090460267,
+              397.5136700500734,
+              397.50580965401605,
+              397.3351449860493,
+              397.49226325994823
+            ]
+          }
+        },
+        "trial": "ctx261887-b1",
+        "unique_output_trajectories": 1
+      }
+    ],
+    "K2_relative_to_K4": [
+      {
+        "practical_changes": {
+          "decode": {
+            "classification": "both-starts-within-practical-regression-threshold",
+            "per_cycle_K2_over_K4_median_ratios": [
+              0.9851649170608685,
+              1.0136655182244563
+            ],
+            "per_cycle_regression_fractions": [
+              0.014835082939131494,
+              -0.013665518224456275
+            ]
+          },
+          "latency": {
+            "classification": "both-starts-within-practical-regression-threshold",
+            "per_cycle_K2_over_K4_median_ratios": [
+              1.009133481731943,
+              0.9908705848530287
+            ],
+            "per_cycle_regression_fractions": [
+              0.00913348173194306,
+              -0.009129415146971298
+            ]
+          },
+          "throughput": {
+            "classification": "both-starts-within-practical-regression-threshold",
+            "per_cycle_K2_over_K4_median_ratios": [
+              0.9908377474734116,
+              1.0092906586990502
+            ],
+            "per_cycle_regression_fractions": [
+              0.009162252526588421,
+              -0.009290658699050214
+            ]
+          },
+          "ttft": {
+            "classification": "both-starts-within-practical-regression-threshold",
+            "per_cycle_K2_over_K4_median_ratios": [
+              0.9945235303816713,
+              1.0005804761896557
+            ],
+            "per_cycle_regression_fractions": [
+              -0.005476469618328705,
+              0.000580476189655732
+            ]
+          }
+        },
+        "ratios": {
+          "decode": {
+            "paired_repeat_ratios": [
+              0.9860893015802614,
+              0.9845269953339401,
+              0.9757472254654014,
+              1.019824394919548,
+              1.0136655182244563,
+              1.004686159449966
+            ],
+            "per_cycle_median_ratios": [
+              0.9851649170608685,
+              1.0136655182244563
+            ]
+          },
+          "latency": {
+            "paired_repeat_ratios": [
+              1.0091911826675333,
+              1.009133481731943,
+              1.0137798352353937,
+              0.9863033630272657,
+              0.9908705848530287,
+              0.9972763697206077
+            ],
+            "per_cycle_median_ratios": [
+              1.009133481731943,
+              0.9908705848530287
+            ]
+          },
+          "throughput": {
+            "paired_repeat_ratios": [
+              0.9909029211668966,
+              0.9908377474734116,
+              0.9863243061237231,
+              1.0137855198456833,
+              1.0092906586990502,
+              1.002819700572548
+            ],
+            "per_cycle_median_ratios": [
+              0.9908377474734116,
+              1.0092906586990502
+            ]
+          },
+          "ttft": {
+            "paired_repeat_ratios": [
+              0.9983852873218308,
+              0.9946868629299155,
+              0.9894975288295806,
+              0.9992319351818018,
+              1.0005804761896557,
+              1.0015726051530096
+            ],
+            "per_cycle_median_ratios": [
+              0.9945235303816713,
+              1.0005804761896557
+            ]
+          }
+        },
+        "trial": "ctx4095-b1"
+      },
+      {
+        "practical_changes": {
+          "decode": {
+            "classification": "both-starts-within-practical-regression-threshold",
+            "per_cycle_K2_over_K4_median_ratios": [
+              1.0067461859443567,
+              1.0106805147182139
+            ],
+            "per_cycle_regression_fractions": [
+              -0.00674618594435672,
+              -0.010680514718213852
+            ]
+          },
+          "latency": {
+            "classification": "both-starts-within-practical-regression-threshold",
+            "per_cycle_K2_over_K4_median_ratios": [
+              0.9947688367134753,
+              0.99252592868562
+            ],
+            "per_cycle_regression_fractions": [
+              -0.0052311632865247315,
+              -0.007474071314380049
+            ]
+          },
+          "throughput": {
+            "classification": "both-starts-within-practical-regression-threshold",
+            "per_cycle_K2_over_K4_median_ratios": [
+              1.0009696596835382,
+              1.0031541141914493
+            ],
+            "per_cycle_regression_fractions": [
+              -0.0009696596835382376,
+              -0.0031541141914492865
+            ]
+          },
+          "ttft": {
+            "classification": "both-starts-within-practical-regression-threshold",
+            "per_cycle_K2_over_K4_median_ratios": [
+              0.9950298928282325,
+              0.9961151669218111
+            ],
+            "per_cycle_regression_fractions": [
+              -0.0049701071717674905,
+              -0.0038848330781888762
+            ]
+          }
+        },
+        "ratios": {
+          "decode": {
+            "paired_repeat_ratios": [
+              1.0063333780022579,
+              1.0063718596449447,
+              1.0077231529250539,
+              1.0114180449671972,
+              1.0104956928266224,
+              1.0135041981642408
+            ],
+            "per_cycle_median_ratios": [
+              1.0067461859443567,
+              1.0106805147182139
+            ]
+          },
+          "latency": {
+            "paired_repeat_ratios": [
+              0.9950276653956931,
+              0.9949314339644497,
+              0.9937618531909579,
+              0.9924592955311228,
+              0.99252592868562,
+              0.9919334021366989
+            ],
+            "per_cycle_median_ratios": [
+              0.9947688367134753,
+              0.99252592868562
+            ]
+          },
+          "throughput": {
+            "paired_repeat_ratios": [
+              1.0005706864815256,
+              1.000818911743585,
+              1.001905758434771,
+              1.0033192898760463,
+              1.0031541141914493,
+              1.0037913304706454
+            ],
+            "per_cycle_median_ratios": [
+              1.0009696596835382,
+              1.0031541141914493
+            ]
+          },
+          "ttft": {
+            "paired_repeat_ratios": [
+              0.9952923288063668,
+              0.9950298928282325,
+              0.9940450724554715,
+              0.9955256131830271,
+              0.9946650497858789,
+              0.9969410532859393
+            ],
+            "per_cycle_median_ratios": [
+              0.9950298928282325,
+              0.9961151669218111
+            ]
+          }
+        },
+        "trial": "ctx4095-b4"
+      },
+      {
+        "practical_changes": {
+          "decode": {
+            "classification": "both-starts-within-practical-regression-threshold",
+            "per_cycle_K2_over_K4_median_ratios": [
+              1.0100376434704355,
+              1.0173792916171271
+            ],
+            "per_cycle_regression_fractions": [
+              -0.010037643470435453,
+              -0.017379291617127146
+            ]
+          },
+          "latency": {
+            "classification": "both-starts-within-practical-regression-threshold",
+            "per_cycle_K2_over_K4_median_ratios": [
+              0.9962670733849789,
+              0.9946902277954186
+            ],
+            "per_cycle_regression_fractions": [
+              -0.003732926615021115,
+              -0.005309772204581398
+            ]
+          },
+          "throughput": {
+            "classification": "both-starts-within-practical-regression-threshold",
+            "per_cycle_K2_over_K4_median_ratios": [
+              1.0037511601962588,
+              1.0055233908811958
+            ],
+            "per_cycle_regression_fractions": [
+              -0.0037511601962587626,
+              -0.0055233908811958
+            ]
+          },
+          "ttft": {
+            "classification": "both-starts-within-practical-regression-threshold",
+            "per_cycle_K2_over_K4_median_ratios": [
+              0.9989654426718937,
+              0.999844231395168
+            ],
+            "per_cycle_regression_fractions": [
+              -0.0010345573281063114,
+              -0.00015576860483201838
+            ]
+          }
+        },
+        "ratios": {
+          "decode": {
+            "paired_repeat_ratios": [
+              1.0101559231359938,
+              1.0065158547346473,
+              1.0105919783667026,
+              1.0173792916171271,
+              1.0138116039946183,
+              1.0459303904434887
+            ],
+            "per_cycle_median_ratios": [
+              1.0100376434704355,
+              1.0173792916171271
+            ]
+          },
+          "latency": {
+            "paired_repeat_ratios": [
+              0.9959036600774525,
+              0.9973187221044977,
+              0.9960043139931881,
+              0.9946902277954186,
+              0.9955955752036358,
+              0.9859363084090343
+            ],
+            "per_cycle_median_ratios": [
+              0.9962670733849789,
+              0.9946902277954186
+            ]
+          },
+          "throughput": {
+            "paired_repeat_ratios": [
+              1.0041135014839055,
+              1.0025129339146674,
+              1.004017084147283,
+              1.0054236155861098,
+              1.004580526902187,
+              1.0142125298728077
+            ],
+            "per_cycle_median_ratios": [
+              1.0037511601962588,
+              1.0055233908811958
+            ]
+          },
+          "ttft": {
+            "paired_repeat_ratios": [
+              0.9985342584054818,
+              0.9989918329863052,
+              0.9988703141808375,
+              0.9999198091420461,
+              0.999677946506947,
+              0.9995435383644717
+            ],
+            "per_cycle_median_ratios": [
+              0.9989654426718937,
+              0.999844231395168
+            ]
+          }
+        },
+        "trial": "ctx16383-b1"
+      },
+      {
+        "practical_changes": {
+          "decode": {
+            "classification": "both-starts-within-practical-regression-threshold",
+            "per_cycle_K2_over_K4_median_ratios": [
+              1.004625962151159,
+              1.0079298196228168
+            ],
+            "per_cycle_regression_fractions": [
+              -0.004625962151159069,
+              -0.007929819622816803
+            ]
+          },
+          "latency": {
+            "classification": "both-starts-within-practical-regression-threshold",
+            "per_cycle_K2_over_K4_median_ratios": [
+              0.9982592183838359,
+              0.9965134301000518
+            ],
+            "per_cycle_regression_fractions": [
+              -0.0017407816161640888,
+              -0.003486569899948222
+            ]
+          },
+          "throughput": {
+            "classification": "both-starts-within-practical-regression-threshold",
+            "per_cycle_K2_over_K4_median_ratios": [
+              1.00246618053323,
+              1.0047006311719022
+            ],
+            "per_cycle_regression_fractions": [
+              -0.00246618053323,
+              -0.004700631171902225
+            ]
+          },
+          "ttft": {
+            "classification": "both-starts-within-practical-regression-threshold",
+            "per_cycle_K2_over_K4_median_ratios": [
+              0.9996821612607941,
+              0.9995775511986451
+            ],
+            "per_cycle_regression_fractions": [
+              -0.0003178387392058779,
+              -0.00042244880135489105
+            ]
+          }
+        },
+        "ratios": {
+          "decode": {
+            "paired_repeat_ratios": [
+              1.0046015100792256,
+              1.0046836255705311,
+              1.0044275040456798,
+              1.0085822183485131,
+              1.007802886749239,
+              1.0073697787419427
+            ],
+            "per_cycle_median_ratios": [
+              1.004625962151159,
+              1.0079298196228168
+            ]
+          },
+          "latency": {
+            "paired_repeat_ratios": [
+              0.9979056895523346,
+              0.9982445135046746,
+              0.9983024703396564,
+              0.9962767340556848,
+              0.9966095983160618,
+              0.9968357564681928
+            ],
+            "per_cycle_median_ratios": [
+              0.9982592183838359,
+              0.9965134301000518
+            ]
+          },
+          "throughput": {
+            "paired_repeat_ratios": [
+              1.002800718306488,
+              1.0025396770536077,
+              1.0024457046976036,
+              1.005026703043197,
+              1.004596763681044,
+              1.0043042077360242
+            ],
+            "per_cycle_median_ratios": [
+              1.00246618053323,
+              1.0047006311719022
+            ]
+          },
+          "ttft": {
+            "paired_repeat_ratios": [
+              0.9990901925076096,
+              0.9997852957735561,
+              0.9996596671168559,
+              0.9996111547664607,
+              0.9995000629760842,
+              0.9995775511986451
+            ],
+            "per_cycle_median_ratios": [
+              0.9996821612607941,
+              0.9995775511986451
+            ]
+          }
+        },
+        "trial": "ctx16383-b4"
+      },
+      {
+        "practical_changes": {
+          "decode": {
+            "classification": "both-starts-within-practical-regression-threshold",
+            "per_cycle_K2_over_K4_median_ratios": [
+              1.018103662856001,
+              1.0312136486154881
+            ],
+            "per_cycle_regression_fractions": [
+              -0.018103662856000957,
+              -0.031213648615488143
+            ]
+          },
+          "latency": {
+            "classification": "both-starts-within-practical-regression-threshold",
+            "per_cycle_K2_over_K4_median_ratios": [
+              0.9978727213965362,
+              0.9962289945263233
+            ],
+            "per_cycle_regression_fractions": [
+              -0.0021272786034638447,
+              -0.003771005473676703
+            ]
+          },
+          "throughput": {
+            "classification": "both-starts-within-practical-regression-threshold",
+            "per_cycle_K2_over_K4_median_ratios": [
+              1.002163169273281,
+              1.0037904089310987
+            ],
+            "per_cycle_regression_fractions": [
+              -0.0021631692732810848,
+              -0.003790408931098721
+            ]
+          },
+          "ttft": {
+            "classification": "both-starts-within-practical-regression-threshold",
+            "per_cycle_K2_over_K4_median_ratios": [
+              1.0001470500002112,
+              1.0003778401014556
+            ],
+            "per_cycle_regression_fractions": [
+              0.00014705000021120185,
+              0.00037784010145558433
+            ]
+          }
+        },
+        "ratios": {
+          "decode": {
+            "paired_repeat_ratios": [
+              1.0186691009070565,
+              1.0191327000939912,
+              1.018103662856001,
+              1.0292702025412523,
+              1.0330404345469433,
+              1.0331980128319975
+            ],
+            "per_cycle_median_ratios": [
+              1.018103662856001,
+              1.0312136486154881
+            ]
+          },
+          "latency": {
+            "paired_repeat_ratios": [
+              0.9979210174322388,
+              0.9975484334060093,
+              0.9980138912879947,
+              0.9965009359422713,
+              0.9962699823394665,
+              0.996150374881397
+            ],
+            "per_cycle_median_ratios": [
+              0.9978727213965362,
+              0.9962289945263233
+            ]
+          },
+          "throughput": {
+            "paired_repeat_ratios": [
+              1.002163169273281,
+              1.002372114139931,
+              1.0017998624332867,
+              1.0034834915160313,
+              1.0036277296251843,
+              1.0039569976562541
+            ],
+            "per_cycle_median_ratios": [
+              1.002163169273281,
+              1.0037904089310987
+            ]
+          },
+          "ttft": {
+            "paired_repeat_ratios": [
+              1.0003105776521402,
+              0.9999446328482312,
+              1.0003344512157677,
+              1.0002012209043616,
+              1.000478633003736,
+              1.000353720345121
+            ],
+            "per_cycle_median_ratios": [
+              1.0001470500002112,
+              1.0003778401014556
+            ]
+          }
+        },
+        "trial": "ctx65023-b1"
+      },
+      {
+        "practical_changes": {
+          "decode": {
+            "classification": "both-starts-within-practical-regression-threshold",
+            "per_cycle_K2_over_K4_median_ratios": [
+              0.9870256908435003,
+              0.9876100888356979
+            ],
+            "per_cycle_regression_fractions": [
+              0.012974309156499664,
+              0.012389911164302103
+            ]
+          },
+          "latency": {
+            "classification": "both-starts-within-practical-regression-threshold",
+            "per_cycle_K2_over_K4_median_ratios": [
+              1.0058248797594145,
+              1.0052874794498203
+            ],
+            "per_cycle_regression_fractions": [
+              0.005824879759414481,
+              0.0052874794498203315
+            ]
+          },
+          "throughput": {
+            "classification": "both-starts-within-practical-regression-threshold",
+            "per_cycle_K2_over_K4_median_ratios": [
+              0.994407548010586,
+              0.9950096064268144
+            ],
+            "per_cycle_regression_fractions": [
+              0.005592451989414049,
+              0.0049903935731856475
+            ]
+          },
+          "ttft": {
+            "classification": "both-starts-within-practical-regression-threshold",
+            "per_cycle_K2_over_K4_median_ratios": [
+              1.0003516787361617,
+              0.9995653956304751
+            ],
+            "per_cycle_regression_fractions": [
+              0.0003516787361617091,
+              -0.00043460436952491577
+            ]
+          }
+        },
+        "ratios": {
+          "decode": {
+            "paired_repeat_ratios": [
+              0.9871200717954216,
+              0.9873934884906347,
+              0.9869162753280163,
+              0.9880224621804906,
+              0.9875876049631358,
+              0.9877252088469735
+            ],
+            "per_cycle_median_ratios": [
+              0.9870256908435003,
+              0.9876100888356979
+            ]
+          },
+          "latency": {
+            "paired_repeat_ratios": [
+              1.0058248797594145,
+              1.0058303252168574,
+              1.0058221850275963,
+              1.005197602130637,
+              1.0052874794498203,
+              1.0052703133553655
+            ],
+            "per_cycle_median_ratios": [
+              1.0058248797594145,
+              1.0052874794498203
+            ]
+          },
+          "throughput": {
+            "paired_repeat_ratios": [
+              0.9943913709236811,
+              0.9945209430706655,
+              0.9945768450360409,
+              0.9950741355969334,
+              0.9950096064268144,
+              0.9951446424895466
+            ],
+            "per_cycle_median_ratios": [
+              0.994407548010586,
+              0.9950096064268144
+            ]
+          },
+          "ttft": {
+            "paired_repeat_ratios": [
+              1.000240569493059,
+              1.0003516787361617,
+              0.9999110178879549,
+              0.9997075217442672,
+              0.999519814869929,
+              0.9996035267129088
+            ],
+            "per_cycle_median_ratios": [
+              1.0003516787361617,
+              0.9995653956304751
+            ]
+          }
+        },
+        "trial": "ctx65023-b4"
+      },
+      {
+        "practical_changes": {
+          "decode": {
+            "classification": "both-starts-within-practical-regression-threshold",
+            "per_cycle_K2_over_K4_median_ratios": [
+              1.0009686873664454,
+              1.004881393964105
+            ],
+            "per_cycle_regression_fractions": [
+              -0.0009686873664453977,
+              -0.00488139396410503
+            ]
+          },
+          "latency": {
+            "classification": "both-starts-within-practical-regression-threshold",
+            "per_cycle_K2_over_K4_median_ratios": [
+              0.9999153853970721,
+              0.999785644164791
+            ],
+            "per_cycle_regression_fractions": [
+              -8.461460292785716e-05,
+              -0.00021435583520901247
+            ]
+          },
+          "throughput": {
+            "classification": "both-starts-within-practical-regression-threshold",
+            "per_cycle_K2_over_K4_median_ratios": [
+              1.0001627623699392,
+              1.0001938746671952
+            ],
+            "per_cycle_regression_fractions": [
+              -0.00016276236993917337,
+              -0.00019387466719522628
+            ]
+          },
+          "ttft": {
+            "classification": "both-starts-within-practical-regression-threshold",
+            "per_cycle_K2_over_K4_median_ratios": [
+              0.9999615345620483,
+              0.9999022713080968
+            ],
+            "per_cycle_regression_fractions": [
+              -3.8465437951717973e-05,
+              -9.772869190316502e-05
+            ]
+          }
+        },
+        "ratios": {
+          "decode": {
+            "paired_repeat_ratios": [
+              1.0002157002662102,
+              1.002581214677847,
+              1.0019933469345281,
+              1.0035161434118416,
+              1.007685360605356,
+              1.0061948920367116
+            ],
+            "per_cycle_median_ratios": [
+              1.0009686873664454,
+              1.004881393964105
+            ]
+          },
+          "latency": {
+            "paired_repeat_ratios": [
+              1.0006305313931163,
+              0.9991688494604059,
+              0.999523355410454,
+              0.9995893823511924,
+              0.9986056868655044,
+              1.0000230062481323
+            ],
+            "per_cycle_median_ratios": [
+              0.9999153853970721,
+              0.999785644164791
+            ]
+          },
+          "throughput": {
+            "paired_repeat_ratios": [
+              0.999394454347509,
+              1.0008722249691473,
+              1.0005825193936257,
+              1.0003905631803705,
+              1.0014657952446109,
+              1.0000152764707992
+            ],
+            "per_cycle_median_ratios": [
+              1.0001627623699392,
+              1.0001938746671952
+            ]
+          },
+          "ttft": {
+            "paired_repeat_ratios": [
+              1.0006881701848158,
+              0.9992876986044865,
+              0.9996263063188698,
+              0.9998002646135438,
+              0.9990303643594438,
+              1.0004458498369653
+            ],
+            "per_cycle_median_ratios": [
+              0.9999615345620483,
+              0.9999022713080968
+            ]
+          }
+        },
+        "trial": "ctx131071-b1"
+      },
+      {
+        "practical_changes": {
+          "decode": {
+            "classification": "both-starts-within-practical-regression-threshold",
+            "per_cycle_K2_over_K4_median_ratios": [
+              1.0058280784587612,
+              1.0080902492085497
+            ],
+            "per_cycle_regression_fractions": [
+              -0.00582807845876121,
+              -0.008090249208549727
+            ]
+          },
+          "latency": {
+            "classification": "both-starts-within-practical-regression-threshold",
+            "per_cycle_K2_over_K4_median_ratios": [
+              0.9996038820040359,
+              0.999524781059754
+            ],
+            "per_cycle_regression_fractions": [
+              -0.0003961179959640626,
+              -0.00047521894024604716
+            ]
+          },
+          "throughput": {
+            "classification": "both-starts-within-practical-regression-threshold",
+            "per_cycle_K2_over_K4_median_ratios": [
+              1.0003891490155585,
+              1.0004951049927309
+            ],
+            "per_cycle_regression_fractions": [
+              -0.000389149015558532,
+              -0.0004951049927308659
+            ]
+          },
+          "ttft": {
+            "classification": "both-starts-within-practical-regression-threshold",
+            "per_cycle_K2_over_K4_median_ratios": [
+              0.9998376732897656,
+              0.9997805776085648
+            ],
+            "per_cycle_regression_fractions": [
+              -0.00016232671023441725,
+              -0.00021942239143524223
+            ]
+          }
+        },
+        "ratios": {
+          "decode": {
+            "paired_repeat_ratios": [
+              1.0051845538793442,
+              1.0082381893562897,
+              1.0058280784587612,
+              1.0078782206527162,
+              1.0094126291622096,
+              1.0077816831141884
+            ],
+            "per_cycle_median_ratios": [
+              1.0058280784587612,
+              1.0080902492085497
+            ]
+          },
+          "latency": {
+            "paired_repeat_ratios": [
+              0.999696586046249,
+              0.9989236982420099,
+              0.9994548812204916,
+              0.9995128802799256,
+              0.9998667650056741,
+              0.999524781059754
+            ],
+            "per_cycle_median_ratios": [
+              0.9996038820040359,
+              0.999524781059754
+            ]
+          },
+          "throughput": {
+            "paired_repeat_ratios": [
+              1.0003069959593742,
+              1.0010935109462835,
+              1.0004943569812306,
+              1.0004850437636545,
+              1.0001592289223211,
+              1.0004951049927309
+            ],
+            "per_cycle_median_ratios": [
+              1.0003891490155585,
+              1.0004951049927309
+            ]
+          },
+          "ttft": {
+            "paired_repeat_ratios": [
+              0.9998737146566227,
+              0.999182983544737,
+              0.9996465789260996,
+              0.9997805776085648,
+              1.0002027309195407,
+              0.9997893064316857
+            ],
+            "per_cycle_median_ratios": [
+              0.9998376732897656,
+              0.9997805776085648
+            ]
+          }
+        },
+        "trial": "ctx261887-b1"
+      }
+    ],
+    "practical_regression_threshold_fraction": 0.03,
+    "above_threshold_or_mixed_start_findings": [],
+    "all_metrics_both_starts_within_practical_threshold": true,
+    "limits": [
+      "The user narrowed the original three-format goal to compact performance and conditional release. This report does not claim completed BF16 serving performance.",
+      "Three deterministic repeats on each of two starts are not six independent starts or independent accuracy samples.",
+      "The 3% cutoff is a practical release criterion, not a statistical equivalence test. Inspect variation and any mixed-start findings.",
+      "Output trajectories can differ; matched-history agreement is reported separately. Preserve verification work and divergence when interpreting speed.",
+      "Decode excludes the entire first SSE chunk. At B4, the subsequent interval can include other requests prefill; it is not isolated steady-state decode.",
+      "Memory is sampled residency of owned unique DRM clients at equal capacity, not instantaneous allocator peak. Same-budget capacity is a separate experiment.",
+      "Existing shared long-context arithmetic failure and unused-NaN-padding stress failures remain retained; no lossless or all-tests-passed claim."
+    ],
+    "trajectory_comparisons": {
+      "ctx131071-b1": {
+        "first_difference_distribution": null,
+        "identical_requests": 6,
+        "paired_requests": 6,
+        "scope": "Same fixture/start-cycle/repeat/request index. After the first differing token these are different output histories, not a matched-state accuracy comparison."
+      },
+      "ctx16383-b1": {
+        "first_difference_distribution": null,
+        "identical_requests": 6,
+        "paired_requests": 6,
+        "scope": "Same fixture/start-cycle/repeat/request index. After the first differing token these are different output histories, not a matched-state accuracy comparison."
+      },
+      "ctx16383-b4": {
+        "first_difference_distribution": {
+          "max": 245,
+          "median": 81,
+          "min": 2,
+          "values": [
+            2,
+            2,
+            185,
+            2,
+            2,
+            185,
+            2,
+            245,
+            2,
+            185,
+            81,
+            245,
+            114,
+            245,
+            81,
+            185,
+            2,
+            2,
+            81
+          ]
+        },
+        "identical_requests": 5,
+        "paired_requests": 24,
+        "scope": "Same fixture/start-cycle/repeat/request index. After the first differing token these are different output histories, not a matched-state accuracy comparison."
+      },
+      "ctx261887-b1": {
+        "first_difference_distribution": null,
+        "identical_requests": 6,
+        "paired_requests": 6,
+        "scope": "Same fixture/start-cycle/repeat/request index. After the first differing token these are different output histories, not a matched-state accuracy comparison."
+      },
+      "ctx4095-b1": {
+        "first_difference_distribution": null,
+        "identical_requests": 6,
+        "paired_requests": 6,
+        "scope": "Same fixture/start-cycle/repeat/request index. After the first differing token these are different output histories, not a matched-state accuracy comparison."
+      },
+      "ctx4095-b4": {
+        "first_difference_distribution": {
+          "max": 133,
+          "median": 81.0,
+          "min": 72,
+          "values": [
+            72,
+            72,
+            72,
+            72,
+            123,
+            123,
+            72,
+            72,
+            72,
+            90,
+            123,
+            133,
+            72,
+            133,
+            72,
+            123,
+            90,
+            72,
+            133,
+            123
+          ]
+        },
+        "identical_requests": 4,
+        "paired_requests": 24,
+        "scope": "Same fixture/start-cycle/repeat/request index. After the first differing token these are different output histories, not a matched-state accuracy comparison."
+      },
+      "ctx65023-b1": {
+        "first_difference_distribution": null,
+        "identical_requests": 6,
+        "paired_requests": 6,
+        "scope": "Same fixture/start-cycle/repeat/request index. After the first differing token these are different output histories, not a matched-state accuracy comparison."
+      },
+      "ctx65023-b4": {
+        "first_difference_distribution": {
+          "max": 248,
+          "median": 109.0,
+          "min": 5,
+          "values": [
+            248,
+            5,
+            193,
+            5,
+            109,
+            180,
+            193,
+            109,
+            5,
+            109,
+            180,
+            5,
+            5,
+            180,
+            5,
+            193,
+            109,
+            180
+          ]
+        },
+        "identical_requests": 6,
+        "paired_requests": 24,
+        "scope": "Same fixture/start-cycle/repeat/request index. After the first differing token these are different output histories, not a matched-state accuracy comparison."
+      }
+    },
+    "memory_by_fresh_start": [
+      {
+        "allocation": {
+          "paged_allocated_bytes": 3745244160,
+          "pools": [
+            {
+              "allocated": 2026831872,
+              "block_sizes": [
+                262144
+              ],
+              "id": 0,
+              "layers": 48,
+              "max_request_blocks": 3,
+              "null_blocks": 1,
+              "page_sizes": [
+                3248128
+              ],
+              "physical_blocks": 13,
+              "types": [
+                "MambaSpec"
+              ],
+              "usable_blocks": 12
+            },
+            {
+              "allocated": 3745244160,
+              "block_sizes": [
+                128
+              ],
+              "id": 1,
+              "layers": 17,
+              "max_request_blocks": 2048,
+              "null_blocks": 1,
+              "page_sizes": [
+                107520
+              ],
+              "physical_blocks": 2049,
+              "types": [
+                "FullAttentionSpec"
+              ],
+              "usable_blocks": 2048
+            }
+          ],
+          "recurrent_allocated_bytes": 2026831872,
+          "usable_tokens": 262144
+        },
+        "capture": "compact-arm1-k4v2",
+        "memory": {
+          "errors": [],
+          "limitation": "sampled peak of owned unique DRM clients, not an instantaneous allocator high-water mark",
+          "peak_bytes_by_device_and_field": {
+            "0000:03:00.0/drm-resident-vram0": 30557466624,
+            "0000:03:00.0/drm-shared-vram0": 0,
+            "0000:03:00.0/drm-total-vram0": 30557466624
+          },
+          "poll_interval_seconds": 0.5,
+          "sample_count": 8028,
+          "temporal_coverage": {
+            "first_sample_unix": 1789458245.2192645,
+            "largest_sample_gap_seconds": 0.7069592475891113,
+            "last_sample_unix": 1789462430.1812263,
+            "maximum_gap_and_final_sample_tolerance_seconds": 5.0,
+            "median_sample_gap_seconds": 0.5208871364593506,
+            "note": "Configured sleep is0.5seconds; actual timestamps include collection and scheduling overhead. Coverage does not establish an instantaneous peak.",
+            "required_window_unix": [
+              1789458331.6721706,
+              1789462423.7124548
+            ]
+          }
+        }
+      },
+      {
+        "allocation": {
+          "paged_allocated_bytes": 3812385792,
+          "pools": [
+            {
+              "allocated": 2026831872,
+              "block_sizes": [
+                262144
+              ],
+              "id": 0,
+              "layers": 48,
+              "max_request_blocks": 3,
+              "null_blocks": 1,
+              "page_sizes": [
+                3248128
+              ],
+              "physical_blocks": 13,
+              "types": [
+                "MambaSpec"
+              ],
+              "usable_blocks": 12
+            },
+            {
+              "allocated": 3524935680,
+              "block_sizes": [
+                128
+              ],
+              "id": 1,
+              "layers": 16,
+              "max_request_blocks": 2048,
+              "null_blocks": 1,
+              "page_sizes": [
+                107520
+              ],
+              "physical_blocks": 2049,
+              "types": [
+                "FullAttentionSpec"
+              ],
+              "usable_blocks": 2048
+            },
+            {
+              "allocated": 287450112,
+              "block_sizes": [
+                128
+              ],
+              "id": 2,
+              "layers": 1,
+              "max_request_blocks": 2048,
+              "null_blocks": 1,
+              "page_sizes": [
+                140288
+              ],
+              "physical_blocks": 2049,
+              "types": [
+                "FullAttentionSpec"
+              ],
+              "usable_blocks": 2048
+            }
+          ],
+          "recurrent_allocated_bytes": 2026831872,
+          "usable_tokens": 262144
+        },
+        "capture": "compact-arm2-k4v4",
+        "memory": {
+          "errors": [],
+          "limitation": "sampled peak of owned unique DRM clients, not an instantaneous allocator high-water mark",
+          "peak_bytes_by_device_and_field": {
+            "0000:03:00.0/drm-resident-vram0": 30626807808,
+            "0000:03:00.0/drm-shared-vram0": 0,
+            "0000:03:00.0/drm-total-vram0": 30626807808
+          },
+          "poll_interval_seconds": 0.5,
+          "sample_count": 8024,
+          "temporal_coverage": {
+            "first_sample_unix": 1789462433.2807488,
+            "largest_sample_gap_seconds": 0.6910996437072754,
+            "last_sample_unix": 1789466612.5366037,
+            "maximum_gap_and_final_sample_tolerance_seconds": 5.0,
+            "median_sample_gap_seconds": 0.5204980373382568,
+            "note": "Configured sleep is0.5seconds; actual timestamps include collection and scheduling overhead. Coverage does not establish an instantaneous peak.",
+            "required_window_unix": [
+              1789462519.6516843,
+              1789466608.5684836
+            ]
+          }
+        }
+      },
+      {
+        "allocation": {
+          "paged_allocated_bytes": 3812385792,
+          "pools": [
+            {
+              "allocated": 2026831872,
+              "block_sizes": [
+                262144
+              ],
+              "id": 0,
+              "layers": 48,
+              "max_request_blocks": 3,
+              "null_blocks": 1,
+              "page_sizes": [
+                3248128
+              ],
+              "physical_blocks": 13,
+              "types": [
+                "MambaSpec"
+              ],
+              "usable_blocks": 12
+            },
+            {
+              "allocated": 3524935680,
+              "block_sizes": [
+                128
+              ],
+              "id": 1,
+              "layers": 16,
+              "max_request_blocks": 2048,
+              "null_blocks": 1,
+              "page_sizes": [
+                107520
+              ],
+              "physical_blocks": 2049,
+              "types": [
+                "FullAttentionSpec"
+              ],
+              "usable_blocks": 2048
+            },
+            {
+              "allocated": 287450112,
+              "block_sizes": [
+                128
+              ],
+              "id": 2,
+              "layers": 1,
+              "max_request_blocks": 2048,
+              "null_blocks": 1,
+              "page_sizes": [
+                140288
+              ],
+              "physical_blocks": 2049,
+              "types": [
+                "FullAttentionSpec"
+              ],
+              "usable_blocks": 2048
+            }
+          ],
+          "recurrent_allocated_bytes": 2026831872,
+          "usable_tokens": 262144
+        },
+        "capture": "compact-arm3-k4v4",
+        "memory": {
+          "errors": [],
+          "limitation": "sampled peak of owned unique DRM clients, not an instantaneous allocator high-water mark",
+          "peak_bytes_by_device_and_field": {
+            "0000:03:00.0/drm-resident-vram0": 30626836480,
+            "0000:03:00.0/drm-shared-vram0": 0,
+            "0000:03:00.0/drm-total-vram0": 30626836480
+          },
+          "poll_interval_seconds": 0.5,
+          "sample_count": 7984,
+          "temporal_coverage": {
+            "first_sample_unix": 1789466615.68257,
+            "largest_sample_gap_seconds": 0.659146785736084,
+            "last_sample_unix": 1789470774.5576134,
+            "maximum_gap_and_final_sample_tolerance_seconds": 5.0,
+            "median_sample_gap_seconds": 0.5206127166748047,
+            "note": "Configured sleep is0.5seconds; actual timestamps include collection and scheduling overhead. Coverage does not establish an instantaneous peak.",
+            "required_window_unix": [
+              1789466684.0992687,
+              1789470773.6845212
+            ]
+          }
+        }
+      },
+      {
+        "allocation": {
+          "paged_allocated_bytes": 3745244160,
+          "pools": [
+            {
+              "allocated": 2026831872,
+              "block_sizes": [
+                262144
+              ],
+              "id": 0,
+              "layers": 48,
+              "max_request_blocks": 3,
+              "null_blocks": 1,
+              "page_sizes": [
+                3248128
+              ],
+              "physical_blocks": 13,
+              "types": [
+                "MambaSpec"
+              ],
+              "usable_blocks": 12
+            },
+            {
+              "allocated": 3745244160,
+              "block_sizes": [
+                128
+              ],
+              "id": 1,
+              "layers": 17,
+              "max_request_blocks": 2048,
+              "null_blocks": 1,
+              "page_sizes": [
+                107520
+              ],
+              "physical_blocks": 2049,
+              "types": [
+                "FullAttentionSpec"
+              ],
+              "usable_blocks": 2048
+            }
+          ],
+          "recurrent_allocated_bytes": 2026831872,
+          "usable_tokens": 262144
+        },
+        "capture": "compact-arm4-k4v2",
+        "memory": {
+          "errors": [],
+          "limitation": "sampled peak of owned unique DRM clients, not an instantaneous allocator high-water mark",
+          "peak_bytes_by_device_and_field": {
+            "0000:03:00.0/drm-resident-vram0": 30557458432,
+            "0000:03:00.0/drm-shared-vram0": 0,
+            "0000:03:00.0/drm-total-vram0": 30557458432
+          },
+          "poll_interval_seconds": 0.5,
+          "sample_count": 8006,
+          "temporal_coverage": {
+            "first_sample_unix": 1789470777.5920794,
+            "largest_sample_gap_seconds": 0.6878385543823242,
+            "last_sample_unix": 1789474947.6349342,
+            "maximum_gap_and_final_sample_tolerance_seconds": 5.0,
+            "median_sample_gap_seconds": 0.5204777717590332,
+            "note": "Configured sleep is0.5seconds; actual timestamps include collection and scheduling overhead. Coverage does not establish an instantaneous peak.",
+            "required_window_unix": [
+              1789470856.0189586,
+              1789474946.7527037
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "performance_gate": {
+    "fraction": 0.03,
+    "direction": "K4V2 regression versus K4V4 draft",
+    "assessment": "Every anchor and both fresh-start medians, with variation and trajectories retained; no automatic equivalence claim.",
+    "status": "passed-no-material-regression-in-tested-profile",
+    "fresh_start_order": [
+      "k4v2",
+      "k4v4",
+      "k4v4",
+      "k4v2"
+    ],
+    "per_metric": {
+      "decode": {
+        "comparisons": 16,
+        "change_percent_min": -1.4835082939131494,
+        "change_percent_max": 3.1213648615488143,
+        "worst_regression_percent": 1.4835082939131494
+      },
+      "throughput": {
+        "comparisons": 16,
+        "change_percent_min": -0.9162252526588421,
+        "change_percent_max": 0.9290658699050214,
+        "worst_regression_percent": 0.9162252526588421
+      },
+      "ttft": {
+        "comparisons": 16,
+        "change_percent_min": -0.5476469618328705,
+        "change_percent_max": 0.0580476189655732,
+        "worst_regression_percent": 0.0580476189655732
+      },
+      "latency": {
+        "comparisons": 16,
+        "change_percent_min": -0.9129415146971298,
+        "change_percent_max": 0.9133481731943061,
+        "worst_regression_percent": 0.9133481731943061
+      }
+    }
+  },
+  "selected_checks": {
+    "installed_CPU": {
+      "passed": 133,
+      "failed": 0,
+      "skipped": 0
+    },
+    "installed_GPU": {
+      "passed": 62,
+      "failed": 0,
+      "skipped": 0
+    },
+    "packaging_harness": {
+      "passed": 175,
+      "failed": 0,
+      "skipped": 0,
+      "scope": "Affected perf runner, vision runner/coverage and lowbit service suites after collector repair; includes existing affected tests."
+    },
+    "compact_functional_suites": "both passed and independently reviewed",
+    "BF16_original_functional_suite": "sixth semantic gate failed; first five independently reviewed",
+    "BF16_serving_performance": "not completed; deferred under user steering",
+    "final_packaging": {
+      "passed": 597,
+      "failed": 0,
+      "skipped": 0,
+      "test_files": 45,
+      "checks": [
+        "kernel-lib-cache-identity",
+        "kernel-glue-cache-identity",
+        "kernel-build-parallelism",
+        "formatting",
+        "unit-tests"
+      ],
+      "scope": "Full existing per-file unit loop with qualified forced-decode interpreter and unchanged original quantization nativeBuildInputs; four other release checks passed. Overlaps earlier affected tests."
+    }
+  },
+  "quality_limits": {
+    "shared_long_context_arithmetic_failure": {
+      "controls": [
+        {
+          "format": "bf16",
+          "outcomes": [
+            {
+              "all_512_token_ids_identical_to_failed_BF16": true,
+              "contains_expected_899": false,
+              "expected_label": "COPPER-318",
+              "first_divergent_token_from_failed_BF16": null,
+              "first_line": "COPPER-318, 901",
+              "label_present": true,
+              "request": "q0",
+              "semantic_gate_pass": false
+            },
+            {
+              "all_512_token_ids_identical_to_failed_BF16": true,
+              "contains_expected_899": true,
+              "expected_label": "SILVER-926",
+              "first_divergent_token_from_failed_BF16": null,
+              "first_line": "SILVER-926 899",
+              "label_present": true,
+              "request": "q1",
+              "semantic_gate_pass": true
+            }
+          ],
+          "prefill_order": [
+            1,
+            0
+          ]
+        },
+        {
+          "format": "mtp0",
+          "outcomes": [
+            {
+              "all_512_token_ids_identical_to_failed_BF16": false,
+              "contains_expected_899": false,
+              "expected_label": "COPPER-318",
+              "first_divergent_token_from_failed_BF16": 7,
+              "first_line": "COPPER-318 901",
+              "label_present": true,
+              "request": "q0",
+              "semantic_gate_pass": false
+            },
+            {
+              "all_512_token_ids_identical_to_failed_BF16": false,
+              "contains_expected_899": true,
+              "expected_label": "SILVER-926",
+              "first_divergent_token_from_failed_BF16": 98,
+              "first_line": "SILVER-926 899",
+              "label_present": true,
+              "request": "q1",
+              "semantic_gate_pass": true
+            }
+          ],
+          "prefill_order": [
+            0,
+            1
+          ]
+        },
+        {
+          "format": "k4v4",
+          "outcomes": [
+            {
+              "all_512_token_ids_identical_to_failed_BF16": false,
+              "contains_expected_899": false,
+              "expected_label": "COPPER-318",
+              "first_divergent_token_from_failed_BF16": 7,
+              "first_line": "COPPER-318 901",
+              "label_present": true,
+              "request": "q0",
+              "semantic_gate_pass": false
+            },
+            {
+              "all_512_token_ids_identical_to_failed_BF16": false,
+              "contains_expected_899": true,
+              "expected_label": "SILVER-926",
+              "first_divergent_token_from_failed_BF16": 98,
+              "first_line": "SILVER-926 899",
+              "label_present": true,
+              "request": "q1",
+              "semantic_gate_pass": true
+            }
+          ],
+          "prefill_order": [
+            0,
+            1
+          ]
+        },
+        {
+          "format": "k4v2",
+          "outcomes": [
+            {
+              "all_512_token_ids_identical_to_failed_BF16": false,
+              "contains_expected_899": false,
+              "expected_label": "COPPER-318",
+              "first_divergent_token_from_failed_BF16": 7,
+              "first_line": "COPPER-318 901",
+              "label_present": true,
+              "request": "q0",
+              "semantic_gate_pass": false
+            },
+            {
+              "all_512_token_ids_identical_to_failed_BF16": false,
+              "contains_expected_899": true,
+              "expected_label": "SILVER-926",
+              "first_divergent_token_from_failed_BF16": 98,
+              "first_line": "SILVER-926 899",
+              "label_present": true,
+              "request": "q1",
+              "semantic_gate_pass": true
+            }
+          ],
+          "prefill_order": [
+            0,
+            1
+          ]
+        }
+      ],
+      "expected_arithmetic": 899,
+      "observed_COPPER_arithmetic": 901,
+      "observed_SILVER_arithmetic": 899,
+      "original_BF16_full_API_suite_pass": false,
+      "scope": "Shared semantic symptom across all3drafts andMTPoff; exacttargetnumericalcause unisolated. Counterfactual acceptance and free-running trajectories are distinct."
+    },
+    "GPU_qualification_boundary": {
+      "current_finite_BF16_causal_reference_cases": 12,
+      "current_selected_passed": 62,
+      "earlier_NaN_unused_padding_failed_cases": 6,
+      "padding_values": [
+        0.0,
+        123.0
+      ],
+      "same_native_library": "/nix/store/ahp7d486n09lgjxi32kwnsqs2s1528yz-vllm-xpu-kernels-0.1.14.1+unstable.2026.09.14.g2c39287/lib/python3.12/site-packages/vllm_xpu_kernels/_vllm_fa2_C.abi3.so",
+      "scope": "No NaN-poisoned unused-cache robustness claim. Earlier failed adversarial results retained; source/metadata repair did not change this native attention library."
+    }
+  },
+  "dependency_policy": {
+    "retained_bases": true,
+    "allowed_source_lock_updates": [
+      "vllm-xpu-unstable-src",
+      "vllm-xpu-kernels-unstable-src"
+    ],
+    "unrelated_dependencies_change": false,
+    "final_lock_verified": true
+  },
+  "evidence_location": "private benchmark-results/kvarn-mtp-draft-cache/20260914T232612Z/metadata-repair-v1",
+  "evidence_sha256": {
+    "history-results-reviewed.json": "aab158b0b03cf68d6cc16b4a6148bb8136520fa406d0ce6e44bd1e4977afa672",
+    "history-comparison.json": "6137f9304b1f4beaafb320c3f951b1a1a72bd48cd1d24d4bf097e9530e67ead5",
+    "diagnostic-memory-repaired.json": "8125e84bf86b07ea60deb22d70069cbe42a9fae2047d2e7cdb602064a60d0ec2",
+    "api-k4v4-results-review.json": "04090114b84d17ee7c5870a9b6938b6942dc637edaf8f16ed95f0b7653799693",
+    "api-k4v2-results-review.json": "d91c1c1564a7038170f2594dd1484c9f41918310dfd85708c36920ad711068b8",
+    "capacity-failure-controls-v1/comparison.json": "10ea1efd60d2f503f69f4f1e1a69a1b44740750d52715ef2078b6ba645d758e0",
+    "installed-qualification.json": "fbb9f347a92bc8c1fd824da92a9065d8c5887dd6f9a3d109f145423a74e0de55",
+    "packaging-harness-installed-qualification.json": "185a7a986eb890ecfc2a4696f14efe277027b8c92ae5052b55baea8657303748",
+    "compact-serving-followup-plan.json": "8826df0ab11537125f449a0565d046d34a4b540d1fbf6b4ff944c638dd4c08cc",
+    "compact-serving-review-preparation.json": "4d03ecc791c1aaeeedfbc5291d55d49ef7b8431f304ae3c72b8e3475078d1e3d",
+    "collector-repair-v1/compact-serving-followup-plan.json": "b9df9143ef4a614dcf06dff2d81316ee541623702122f6c371e9d0041e4f19e9",
+    "collector-repair-v1/affected-CPU-tests.json": "c04f222ce4be14fd67b557ab75f0c658d2e4ac0363019417f2a50bc13d9a9919",
+    "collector-repair-v1/prior-memory-coverage-review.json": "926956fb099076f618de413b8d4a088309bb28f1aa786b1b86715b32dd6c6ccc",
+    "collector-repair-v1/prelaunch-qualification.json": "b1dd09f26be59c1dc97f349173081ea485ac0c71af3f7bdaef5f5be4c62b1301",
+    "collector-repair-v1/compact-serving-results-reviewed.json": "57d073d90c9fcb60ad54de8d13b9928d6a4dec33ef1c16ee71a76bbead9e9df7",
+    "collector-repair-v1/compact-release-decision.json": "cc31ad0360746f4679fc869be83668ad71d7da6259131039e53d323f0948135e",
+    "collector-repair-v1/all-four-starts-owned-worker-cleanup.json": "eb84ef36a51434040ed841086eb0c98e99d12161822dea3b169fcb99b38136db",
+    "collector-repair-v1/first-corrected-K4V2-serving-review.json": "9e40fe779017812858534ae612ed945255234df6c46228ded5dcf011039ccecd",
+    "collector-repair-v1/K4V4-two-start-repeatability-review.json": "c0e023f5b000e6c2e25c097cb7ac08ad5960e4d016dfc6e4fb9abe62c13e28cb",
+    "collector-repair-v1/release-locked-package-acceptance.json": "09119d5a96c18bc2d503c301ec7c54f84d2a6ac3d9473d7b425ec6d2d2270df4",
+    "collector-repair-v1/release-packaging-checks-acceptance.json": "4632b2f076351d98e6fdf8df63064ff7966024169694ba5be80aa674b321532c",
+    "collector-repair-v1/release-publish-vllm.json": "a50ed013438fb8d21cfaecd91f546ca58e2464bef143f9d5aee820a255902454",
+    "collector-repair-v1/release-publish-vllm-xpu-kernels.json": "92c4fbb4b22d5819a5d91a1b5b93ed1d03690785409b5711e8b401a98b40c71c"
+  },
+  "release_refs": {
+    "tag": "refs/tags/xpu-v1.10.0",
+    "permanent_branch": "refs/heads/releases/xpu-v1.10.0",
+    "source_repositories": {
+      "vllm": {
+        "refs/heads/releases/xpu-v1.10.0": "2fdd9d71f6895379b0940a8f755b4c9095840558",
+        "refs/tags/xpu-v1.10.0": "7fc91e743b2f32da03a14ab22581b1281cdddbc6",
+        "refs/tags/xpu-v1.10.0^{}": "2fdd9d71f6895379b0940a8f755b4c9095840558"
+      },
+      "vllm-xpu-kernels": {
+        "refs/heads/releases/xpu-v1.10.0": "2c39287deec5e59cc2656e6d4a6dce51a567c411",
+        "refs/tags/xpu-v1.10.0": "4a44f090d452d8d726ef890d8d5e208d99b20995",
+        "refs/tags/xpu-v1.10.0^{}": "2c39287deec5e59cc2656e6d4a6dce51a567c411"
+      }
+    }
+  },
+  "host_deployment_included": false,
+  "packaging_commits": [
+    "24555feacbfcfab2b85240688ddc2ac92a60de07",
+    "282114f7b5b44ef62e75a0c656c94742c4db9c69"
+  ],
+  "collector_repair": {
+    "incomplete_previous_K4V4_timing_excluded": true,
+    "all_corrected_starts_fresh": true,
+    "memory_sampling_schema": "owned-drm-timestamped-v1",
+    "temporal_coverage_required": true,
+    "timed_request_code_AST_unchanged": true,
+    "previous_capacity_and_baseline_memory_coverage_review": "passed retrospectively without fabricating legacy timestamps"
+  },
+  "deferred_scope": [
+    "BF16 serving performance",
+    "Deeper dynamic GPU profiling"
+  ],
+  "single_start_MTP_off_descriptive_controls": [
+    {
+      "trial": "ctx261887-b1",
+      "MTP_off_medians": {
+        "decode": 18.185603574002418,
+        "throughput": 0.6722061753868367,
+        "ttft": 366.7793429660378,
+        "latency": 380.7890840899199
+      },
+      "K4V2_MTP2_over_MTP_off_ratios": {
+        "decode": 1.0075083387701507,
+        "throughput": 0.9581868523283479,
+        "ttft": 1.0455342249154524,
+        "latency": 1.043639727729629
+      },
+      "trajectory_comparison": {
+        "paired_requests": 3,
+        "identical_requests": 0,
+        "first_difference_distribution": {
+          "median": 139,
+          "min": 139,
+          "max": 139,
+          "values": [
+            139,
+            139,
+            139
+          ]
+        },
+        "pairs": [
+          {
+            "cycle": 1,
+            "repeat": 1,
+            "request_index": 0,
+            "first_different_output_index": 139,
+            "left_sha256": "ed85c76179aa9edacad35470cee21e904edef0cea27daa4ed2305d427e295a0a",
+            "right_sha256": "7d2096dfd17d30a46a03b4ad7f27e4b3eee8debfeca6b97b9ba7115c3c0f39e6"
+          },
+          {
+            "cycle": 1,
+            "repeat": 2,
+            "request_index": 0,
+            "first_different_output_index": 139,
+            "left_sha256": "ed85c76179aa9edacad35470cee21e904edef0cea27daa4ed2305d427e295a0a",
+            "right_sha256": "7d2096dfd17d30a46a03b4ad7f27e4b3eee8debfeca6b97b9ba7115c3c0f39e6"
+          },
+          {
+            "cycle": 1,
+            "repeat": 3,
+            "request_index": 0,
+            "first_different_output_index": 139,
+            "left_sha256": "ed85c76179aa9edacad35470cee21e904edef0cea27daa4ed2305d427e295a0a",
+            "right_sha256": "7d2096dfd17d30a46a03b4ad7f27e4b3eee8debfeca6b97b9ba7115c3c0f39e6"
+          }
+        ],
+        "scope": "Same fixture/start-cycle/repeat/request index. After the first differing token these are different output histories, not a matched-state accuracy comparison."
+      }
+    },
+    {
+      "trial": "ctx4095-b1",
+      "MTP_off_medians": {
+        "decode": 31.693843717960043,
+        "throughput": 24.203186549811445,
+        "ttft": 2.531820964999497,
+        "latency": 10.575314752059057
+      },
+      "K4V2_MTP2_over_MTP_off_ratios": {
+        "decode": 1.3540184586145056,
+        "throughput": 1.2298137079962326,
+        "ttft": 1.0490856224469682,
+        "latency": 0.81310378050306
+      },
+      "trajectory_comparison": {
+        "paired_requests": 3,
+        "identical_requests": 0,
+        "first_difference_distribution": {
+          "median": 68,
+          "min": 68,
+          "max": 68,
+          "values": [
+            68,
+            68,
+            68
+          ]
+        },
+        "pairs": [
+          {
+            "cycle": 1,
+            "repeat": 1,
+            "request_index": 0,
+            "first_different_output_index": 68,
+            "left_sha256": "0c367913c02e1705257540aff589f331b499e067f7c7fff173efe6e0e20e6a35",
+            "right_sha256": "170c9736974082e216812acb72d3f6ec3025088f5ed071fe67c9fd8c97359590"
+          },
+          {
+            "cycle": 1,
+            "repeat": 2,
+            "request_index": 0,
+            "first_different_output_index": 68,
+            "left_sha256": "0c367913c02e1705257540aff589f331b499e067f7c7fff173efe6e0e20e6a35",
+            "right_sha256": "170c9736974082e216812acb72d3f6ec3025088f5ed071fe67c9fd8c97359590"
+          },
+          {
+            "cycle": 1,
+            "repeat": 3,
+            "request_index": 0,
+            "first_different_output_index": 68,
+            "left_sha256": "0c367913c02e1705257540aff589f331b499e067f7c7fff173efe6e0e20e6a35",
+            "right_sha256": "170c9736974082e216812acb72d3f6ec3025088f5ed071fe67c9fd8c97359590"
+          }
+        ],
+        "scope": "Same fixture/start-cycle/repeat/request index. After the first differing token these are different output histories, not a matched-state accuracy comparison."
+      }
+    },
+    {
+      "trial": "ctx4095-b4",
+      "MTP_off_medians": {
+        "decode": 21.351918970585295,
+        "throughput": 52.61422206286041,
+        "ttft": 7.110456888971385,
+        "latency": 19.341593249468133
+      },
+      "K4V2_MTP2_over_MTP_off_ratios": {
+        "decode": 1.0330495216964695,
+        "throughput": 0.9181068578667518,
+        "ttft": 1.3174443523435508,
+        "latency": 1.0909526062485533
+      },
+      "trajectory_comparison": {
+        "paired_requests": 12,
+        "identical_requests": 1,
+        "first_difference_distribution": {
+          "median": 72,
+          "min": 72,
+          "max": 219,
+          "values": [
+            72,
+            219,
+            72,
+            123,
+            72,
+            123,
+            72,
+            72,
+            123,
+            72,
+            90
+          ]
+        },
+        "pairs": [
+          {
+            "cycle": 1,
+            "repeat": 1,
+            "request_index": 0,
+            "first_different_output_index": 72,
+            "left_sha256": "5f007f0ce16abb7e563d9185e6626390f5d52a99ce9bd7eb3ed63b41461036a0",
+            "right_sha256": "ecbfd07edb64b087f6660148255535efd32018d6b81d545fb399a93891eaac16"
+          },
+          {
+            "cycle": 1,
+            "repeat": 1,
+            "request_index": 1,
+            "first_different_output_index": 219,
+            "left_sha256": "170c9736974082e216812acb72d3f6ec3025088f5ed071fe67c9fd8c97359590",
+            "right_sha256": "63512d1725e2fcb8babb26349e056b4b179ccfef65fc15df364b2c3810914573"
+          },
+          {
+            "cycle": 1,
+            "repeat": 1,
+            "request_index": 2,
+            "first_different_output_index": 72,
+            "left_sha256": "ecbfd07edb64b087f6660148255535efd32018d6b81d545fb399a93891eaac16",
+            "right_sha256": "9f9bb508ecd2e7306e6512f7641762ff37b6f38a83c765ee472be9feefac1cde"
+          },
+          {
+            "cycle": 1,
+            "repeat": 1,
+            "request_index": 3,
+            "first_different_output_index": 123,
+            "left_sha256": "3db6b408ad0a812303bc88bb60ca2ec4d44ee32434255e35dace945097d99aa2",
+            "right_sha256": "00637a86faa4a4bd05ea4589dc1f0d0787a95358c3de210a23d5c39bf2a9a09c"
+          },
+          {
+            "cycle": 1,
+            "repeat": 2,
+            "request_index": 0,
+            "first_different_output_index": 72,
+            "left_sha256": "170c9736974082e216812acb72d3f6ec3025088f5ed071fe67c9fd8c97359590",
+            "right_sha256": "9f9bb508ecd2e7306e6512f7641762ff37b6f38a83c765ee472be9feefac1cde"
+          },
+          {
+            "cycle": 1,
+            "repeat": 2,
+            "request_index": 1,
+            "first_different_output_index": 123,
+            "left_sha256": "5f007f0ce16abb7e563d9185e6626390f5d52a99ce9bd7eb3ed63b41461036a0",
+            "right_sha256": "00637a86faa4a4bd05ea4589dc1f0d0787a95358c3de210a23d5c39bf2a9a09c"
+          },
+          {
+            "cycle": 1,
+            "repeat": 2,
+            "request_index": 2,
+            "first_different_output_index": null,
+            "left_sha256": "ecbfd07edb64b087f6660148255535efd32018d6b81d545fb399a93891eaac16",
+            "right_sha256": "ecbfd07edb64b087f6660148255535efd32018d6b81d545fb399a93891eaac16"
+          },
+          {
+            "cycle": 1,
+            "repeat": 2,
+            "request_index": 3,
+            "first_different_output_index": 72,
+            "left_sha256": "3db6b408ad0a812303bc88bb60ca2ec4d44ee32434255e35dace945097d99aa2",
+            "right_sha256": "63512d1725e2fcb8babb26349e056b4b179ccfef65fc15df364b2c3810914573"
+          },
+          {
+            "cycle": 1,
+            "repeat": 3,
+            "request_index": 0,
+            "first_different_output_index": 72,
+            "left_sha256": "5f007f0ce16abb7e563d9185e6626390f5d52a99ce9bd7eb3ed63b41461036a0",
+            "right_sha256": "63512d1725e2fcb8babb26349e056b4b179ccfef65fc15df364b2c3810914573"
+          },
+          {
+            "cycle": 1,
+            "repeat": 3,
+            "request_index": 1,
+            "first_different_output_index": 123,
+            "left_sha256": "3db6b408ad0a812303bc88bb60ca2ec4d44ee32434255e35dace945097d99aa2",
+            "right_sha256": "00637a86faa4a4bd05ea4589dc1f0d0787a95358c3de210a23d5c39bf2a9a09c"
+          },
+          {
+            "cycle": 1,
+            "repeat": 3,
+            "request_index": 2,
+            "first_different_output_index": 72,
+            "left_sha256": "ecbfd07edb64b087f6660148255535efd32018d6b81d545fb399a93891eaac16",
+            "right_sha256": "9f9bb508ecd2e7306e6512f7641762ff37b6f38a83c765ee472be9feefac1cde"
+          },
+          {
+            "cycle": 1,
+            "repeat": 3,
+            "request_index": 3,
+            "first_different_output_index": 90,
+            "left_sha256": "170c9736974082e216812acb72d3f6ec3025088f5ed071fe67c9fd8c97359590",
+            "right_sha256": "ecbfd07edb64b087f6660148255535efd32018d6b81d545fb399a93891eaac16"
+          }
+        ],
+        "scope": "Same fixture/start-cycle/repeat/request index. After the first differing token these are different output histories, not a matched-state accuracy comparison."
+      }
+    },
+    {
+      "trial": "ctx65023-b1",
+      "MTP_off_medians": {
+        "decode": 26.901267743164123,
+        "throughput": 4.098654485644352,
+        "ttft": 52.967461258987896,
+        "latency": 62.45137593592517
+      },
+      "K4V2_MTP2_over_MTP_off_ratios": {
+        "decode": 1.2010446177842358,
+        "throughput": 0.9976466223335361,
+        "ttft": 1.0329069354769536,
+        "latency": 1.00244948676896
+      },
+      "trajectory_comparison": {
+        "paired_requests": 3,
+        "identical_requests": 0,
+        "first_difference_distribution": {
+          "median": 5,
+          "min": 5,
+          "max": 5,
+          "values": [
+            5,
+            5,
+            5
+          ]
+        },
+        "pairs": [
+          {
+            "cycle": 1,
+            "repeat": 1,
+            "request_index": 0,
+            "first_different_output_index": 5,
+            "left_sha256": "3ee506afd0792ac72442ffc1f27128d5b3955f52bf4dafe3b51b7afafc0bdf86",
+            "right_sha256": "4677153d68bf9733fd016376280582f5e6ce9d2afd33815a6b55474baaee60b2"
+          },
+          {
+            "cycle": 1,
+            "repeat": 2,
+            "request_index": 0,
+            "first_different_output_index": 5,
+            "left_sha256": "3ee506afd0792ac72442ffc1f27128d5b3955f52bf4dafe3b51b7afafc0bdf86",
+            "right_sha256": "4677153d68bf9733fd016376280582f5e6ce9d2afd33815a6b55474baaee60b2"
+          },
+          {
+            "cycle": 1,
+            "repeat": 3,
+            "request_index": 0,
+            "first_different_output_index": 5,
+            "left_sha256": "3ee506afd0792ac72442ffc1f27128d5b3955f52bf4dafe3b51b7afafc0bdf86",
+            "right_sha256": "4677153d68bf9733fd016376280582f5e6ce9d2afd33815a6b55474baaee60b2"
+          }
+        ],
+        "scope": "Same fixture/start-cycle/repeat/request index. After the first differing token these are different output histories, not a matched-state accuracy comparison."
+      }
+    },
+    {
+      "trial": "ctx65023-b4",
+      "MTP_off_medians": {
+        "decode": 3.0881979478030157,
+        "throughput": 4.530705053722774,
+        "ttft": 133.9065641919733,
+        "latency": 224.0970277489978
+      },
+      "K4V2_MTP2_over_MTP_off_ratios": {
+        "decode": 0.6086660989066068,
+        "throughput": 0.7499875468767456,
+        "ttft": 1.1308175158682465,
+        "latency": 1.3038109910534372
+      },
+      "trajectory_comparison": {
+        "paired_requests": 12,
+        "identical_requests": 0,
+        "first_difference_distribution": {
+          "median": 5.0,
+          "min": 5,
+          "max": 160,
+          "values": [
+            5,
+            109,
+            5,
+            160,
+            109,
+            6,
+            5,
+            5,
+            5,
+            5,
+            5,
+            5
+          ]
+        },
+        "pairs": [
+          {
+            "cycle": 1,
+            "repeat": 1,
+            "request_index": 0,
+            "first_different_output_index": 5,
+            "left_sha256": "2edf89f8a59d9873dc3c4ee1e2d719b534152680e727fdc17b9056776d5c0817",
+            "right_sha256": "fa2e521de62867a0ebdd18c499c7a2873585365eb1331a21a466ca217502257e"
+          },
+          {
+            "cycle": 1,
+            "repeat": 1,
+            "request_index": 1,
+            "first_different_output_index": 109,
+            "left_sha256": "3ee506afd0792ac72442ffc1f27128d5b3955f52bf4dafe3b51b7afafc0bdf86",
+            "right_sha256": "b645f257bf77b8d3a755b02b017fa7bc36f853afd4ce2c9e31d325d72931b0c8"
+          },
+          {
+            "cycle": 1,
+            "repeat": 1,
+            "request_index": 2,
+            "first_different_output_index": 5,
+            "left_sha256": "382335e23ff2816fe216c02b1f91bc2c3edc4148e50d5c61027fad94ac9644d7",
+            "right_sha256": "416862631744b40972cb3f30e09245e5046947b4bf01e78bc6c3fcd41efa186a"
+          },
+          {
+            "cycle": 1,
+            "repeat": 1,
+            "request_index": 3,
+            "first_different_output_index": 160,
+            "left_sha256": "ee6990579c3ae309387c8d8284a847ac31d0bd7a572dc4826c08615b1641e472",
+            "right_sha256": "416862631744b40972cb3f30e09245e5046947b4bf01e78bc6c3fcd41efa186a"
+          },
+          {
+            "cycle": 1,
+            "repeat": 2,
+            "request_index": 0,
+            "first_different_output_index": 109,
+            "left_sha256": "382335e23ff2816fe216c02b1f91bc2c3edc4148e50d5c61027fad94ac9644d7",
+            "right_sha256": "b645f257bf77b8d3a755b02b017fa7bc36f853afd4ce2c9e31d325d72931b0c8"
+          },
+          {
+            "cycle": 1,
+            "repeat": 2,
+            "request_index": 1,
+            "first_different_output_index": 6,
+            "left_sha256": "ee6990579c3ae309387c8d8284a847ac31d0bd7a572dc4826c08615b1641e472",
+            "right_sha256": "fa2e521de62867a0ebdd18c499c7a2873585365eb1331a21a466ca217502257e"
+          },
+          {
+            "cycle": 1,
+            "repeat": 2,
+            "request_index": 2,
+            "first_different_output_index": 5,
+            "left_sha256": "2edf89f8a59d9873dc3c4ee1e2d719b534152680e727fdc17b9056776d5c0817",
+            "right_sha256": "416862631744b40972cb3f30e09245e5046947b4bf01e78bc6c3fcd41efa186a"
+          },
+          {
+            "cycle": 1,
+            "repeat": 2,
+            "request_index": 3,
+            "first_different_output_index": 5,
+            "left_sha256": "3ee506afd0792ac72442ffc1f27128d5b3955f52bf4dafe3b51b7afafc0bdf86",
+            "right_sha256": "416862631744b40972cb3f30e09245e5046947b4bf01e78bc6c3fcd41efa186a"
+          },
+          {
+            "cycle": 1,
+            "repeat": 3,
+            "request_index": 0,
+            "first_different_output_index": 5,
+            "left_sha256": "ee6990579c3ae309387c8d8284a847ac31d0bd7a572dc4826c08615b1641e472",
+            "right_sha256": "b645f257bf77b8d3a755b02b017fa7bc36f853afd4ce2c9e31d325d72931b0c8"
+          },
+          {
+            "cycle": 1,
+            "repeat": 3,
+            "request_index": 1,
+            "first_different_output_index": 5,
+            "left_sha256": "382335e23ff2816fe216c02b1f91bc2c3edc4148e50d5c61027fad94ac9644d7",
+            "right_sha256": "416862631744b40972cb3f30e09245e5046947b4bf01e78bc6c3fcd41efa186a"
+          },
+          {
+            "cycle": 1,
+            "repeat": 3,
+            "request_index": 2,
+            "first_different_output_index": 5,
+            "left_sha256": "2edf89f8a59d9873dc3c4ee1e2d719b534152680e727fdc17b9056776d5c0817",
+            "right_sha256": "fa2e521de62867a0ebdd18c499c7a2873585365eb1331a21a466ca217502257e"
+          },
+          {
+            "cycle": 1,
+            "repeat": 3,
+            "request_index": 3,
+            "first_different_output_index": 5,
+            "left_sha256": "3ee506afd0792ac72442ffc1f27128d5b3955f52bf4dafe3b51b7afafc0bdf86",
+            "right_sha256": "416862631744b40972cb3f30e09245e5046947b4bf01e78bc6c3fcd41efa186a"
+          }
+        ],
+        "scope": "Same fixture/start-cycle/repeat/request index. After the first differing token these are different output histories, not a matched-state accuracy comparison."
+      }
+    }
+  ],
+  "historical_excluded_evidence": [
+    "compact-serving-followup-plan.json",
+    "compact-serving-review-preparation.json"
+  ]
+}

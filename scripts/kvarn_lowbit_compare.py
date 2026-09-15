@@ -249,7 +249,15 @@ def audit(directory, plan, plan_hash):
                     },
                 }
             )
-    memory = memory_summary(directory)
+    memory_window = None
+    if manifest.get("memory_sampling_schema") is not None:
+        if manifest["memory_sampling_schema"] != "owned-drm-timestamped-v1":
+            raise ValueError("unknown memory sampling schema")
+        memory_window = (
+            min(wave["started_unix"] for wave in manifest["waves"]),
+            max(wave["started_unix"] + wave["seconds"] for wave in manifest["waves"]),
+        )
+    memory = memory_summary(directory, required_window=memory_window)
     if memory["errors"]:
         raise ValueError(f"memory sampling errors: {memory['errors']}")
     return manifest, groups, memory

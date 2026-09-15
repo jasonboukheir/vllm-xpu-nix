@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import argparse
+import itertools
 import json
+import math
 import re
 import statistics
 import sys
@@ -116,7 +118,7 @@ def audit(directory: Path) -> tuple[dict, list[dict]]:
     return manifest, results
 
 
-def memory_summary(directory: Path) -> dict:
+def memory_summary(directory: Path, *, required_window=None) -> dict:
     samples = [
         json.loads(line)
         for line in (directory / "memory-fdinfo.jsonl").read_text().splitlines()
@@ -154,13 +156,44 @@ def memory_summary(directory: Path) -> dict:
         raise ValueError("no actual DRM memory samples")
     if shared:
         raise ValueError("shared GPU buffers require de-duplicated memory accounting")
-    return {
+    result = {
         "peak_bytes_by_device_and_field": peaks,
         "sample_count": len(samples),
         "poll_interval_seconds": 0.5,
         "errors": sorted(set(errors)),
         "limitation": "sampled peak of owned unique DRM clients, not an instantaneous allocator high-water mark",
     }
+    if required_window is not None:
+        timestamps = [sample.get("sampled_unix") for sample in samples]
+        if any(
+            not isinstance(value, (int, float)) or not math.isfinite(value)
+            for value in timestamps
+        ):
+            raise ValueError("memory samples lack finite absolute timestamps")
+        gaps = [right - left for left, right in itertools.pairwise(timestamps)]
+        if any(gap <= 0 for gap in gaps):
+            raise ValueError("non-monotonic memory sample timestamps")
+        start, end = required_window
+        if not (math.isfinite(start) and math.isfinite(end) and start < end):
+            raise ValueError("invalid required memory sampling window")
+        tolerance = 5.0
+        largest_gap = max(gaps, default=0)
+        if (
+            timestamps[0] > start
+            or timestamps[-1] < end - tolerance
+            or largest_gap > tolerance
+        ):
+            raise ValueError("memory sampling does not cover the complete workload")
+        result["temporal_coverage"] = {
+            "required_window_unix": [start, end],
+            "first_sample_unix": timestamps[0],
+            "last_sample_unix": timestamps[-1],
+            "largest_sample_gap_seconds": largest_gap,
+            "median_sample_gap_seconds": statistics.median(gaps) if gaps else None,
+            "maximum_gap_and_final_sample_tolerance_seconds": tolerance,
+            "note": "Configured sleep is0.5seconds; actual timestamps include collection and scheduling overhead. Coverage does not establish an instantaneous peak.",
+        }
+    return result
 
 
 def canonical_argv(argv: list[str]) -> list[str]:

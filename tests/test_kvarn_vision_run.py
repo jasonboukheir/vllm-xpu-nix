@@ -2,6 +2,8 @@
 
 import io
 import json
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -10,6 +12,96 @@ from scripts import kvarn_mtp_compare as mtp
 from scripts import kvarn_prefill_compare as prefill
 from scripts import kvarn_vision_compare as comparison
 from scripts import kvarn_vision_run as vision
+
+
+@pytest.mark.parametrize("operation", ["check", "finish"])
+def test_memory_sampler_finish_reports_worker_failure(tmp_path, monkeypatch, operation):
+    failure = OSError("unexpected proc read failure")
+
+    def failed_scan(_group):
+        raise failure
+
+    monkeypatch.setattr(vision.perf, "_process_group_members", failed_scan)
+    monkeypatch.setattr(threading, "excepthook", lambda _args: None)
+    sampler = vision.MemorySampler(77, tmp_path / "memory.jsonl")
+    sampler.start()
+    sampler.thread.join(timeout=2)
+    assert not sampler.thread.is_alive()
+    with pytest.raises(RuntimeError, match="memory sampler failed") as error:
+        getattr(sampler, operation)()
+    assert error.value.__cause__ is failure
+
+
+def test_memory_sampler_normal_stop_preserves_collected_sample(tmp_path, monkeypatch):
+    sampled = threading.Event()
+
+    def empty_group(_group):
+        sampled.set()
+        return []
+
+    monkeypatch.setattr(vision.perf, "_process_group_members", empty_group)
+    output = tmp_path / "memory.jsonl"
+    sampler = vision.MemorySampler(77, output)
+    started = time.time()
+    sampler.start()
+    assert sampled.wait(timeout=2)
+    sampler.check()
+    sampler.finish()
+    finished = time.time()
+    rows = [json.loads(line) for line in output.read_text().splitlines()]
+    assert rows and rows[0]["clients"] == {} and rows[0]["errors"] == []
+    assert all(started <= row["sampled_unix"] <= finished for row in rows)
+    assert not sampler.thread.is_alive()
+
+
+@pytest.mark.parametrize(
+    "timestamps,window,error",
+    [
+        ([99, 100, 101, 102], (100, 102), None),
+        ([99, 100, 101], (100, 120), "does not cover"),
+        ([101, 102], (100, 102), "does not cover"),
+        ([99, 100, 110, 111], (100, 111), "does not cover"),
+        ([99, None, 101], (100, 101), "lack finite"),
+        ([99, float("nan"), 101], (100, 101), "lack finite"),
+        ([99, 101, 100], (100, 101), "non-monotonic"),
+    ],
+)
+def test_memory_review_requires_complete_time_coverage(
+    tmp_path, timestamps, window, error
+):
+    samples = [
+        {
+            "sampled_unix": timestamp,
+            "seconds": index * 0.5,
+            "errors": [],
+            "clients": {
+                "device:1": {
+                    "pid": 77,
+                    "fields": {
+                        "drm-pdev": "device",
+                        "drm-resident-vram0": "1024 KiB",
+                        "drm-total-vram0": "1024 KiB",
+                        "drm-shared-vram0": "0",
+                    },
+                },
+            },
+        }
+        for index, timestamp in enumerate(timestamps)
+    ]
+    (tmp_path / "memory-fdinfo.jsonl").write_text(
+        "".join(json.dumps(sample) + "\n" for sample in samples)
+    )
+    if error is not None:
+        with pytest.raises(ValueError, match=error):
+            comparison.memory_summary(tmp_path, required_window=window)
+    else:
+        result = comparison.memory_summary(tmp_path, required_window=window)
+        assert (
+            result["peak_bytes_by_device_and_field"]["device/drm-resident-vram0"]
+            == 1024**2
+        )
+        assert result["temporal_coverage"]["required_window_unix"] == list(window)
+        assert result["temporal_coverage"]["largest_sample_gap_seconds"] == 1
 
 
 def test_profile_scope_environment_is_captured_without_unrelated_values(monkeypatch):

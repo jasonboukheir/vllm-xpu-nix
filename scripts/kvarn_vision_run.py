@@ -243,9 +243,17 @@ class MemorySampler:
         self.group = process_group
         self.output = output
         self.stop = threading.Event()
+        self.error: BaseException | None = None
         self.thread = threading.Thread(target=self.run, daemon=True)
 
     def run(self):
+        try:
+            self._run()
+        except BaseException as error:  # noqa: BLE001 - forwarded by check/finish
+            self.error = error
+            self.stop.set()
+
+    def _run(self):
         started = time.monotonic()
         with self.output.open("w") as stream:
             while not self.stop.is_set():
@@ -254,7 +262,11 @@ class MemorySampler:
                 for pid in perf._process_group_members(self.group):
                     try:
                         paths = list(Path(f"/proc/{pid}/fdinfo").iterdir())
-                    except (FileNotFoundError, PermissionError) as error:
+                    except (
+                        FileNotFoundError,
+                        ProcessLookupError,
+                        PermissionError,
+                    ) as error:
                         errors.append(str(error))
                         continue
                     for path in paths:
@@ -264,7 +276,7 @@ class MemorySampler:
                                 for line in path.read_text().splitlines()
                                 if line.startswith("drm-")
                             )
-                        except (FileNotFoundError, PermissionError):
+                        except (FileNotFoundError, ProcessLookupError, PermissionError):
                             continue
                         fields = {key: value.strip() for key, value in fields.items()}
                         if "drm-client-id" in fields:
@@ -278,6 +290,7 @@ class MemorySampler:
                     json.dumps(
                         {
                             "seconds": time.monotonic() - started,
+                            "sampled_unix": time.time(),
                             "clients": clients,
                             "errors": errors,
                         }
@@ -290,11 +303,19 @@ class MemorySampler:
     def start(self):
         self.thread.start()
 
+    def check(self):
+        if self.error is not None:
+            raise RuntimeError("memory sampler failed") from self.error
+        if not self.thread.is_alive():
+            raise RuntimeError("memory sampler stopped unexpectedly")
+
     def finish(self):
         self.stop.set()
         self.thread.join(timeout=5)
         if self.thread.is_alive():
             raise RuntimeError("memory sampler failed to stop")
+        if self.error is not None:
+            raise RuntimeError("memory sampler failed") from self.error
 
 
 def request_case(base_url: str, case: dict, output: Path) -> dict:

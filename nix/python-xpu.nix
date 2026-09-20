@@ -66,21 +66,24 @@ pkgs.python312Packages.overrideScope (
       ];
     };
 
-    # vLLM's structural tool parser imports normalize_tool_choice, which was
-    # added in xgrammar 0.2.1. The pinned nixpkgs still packages 0.1.33.
+    # The selected vLLM snapshot pins xgrammar 0.2.7 for its structural
+    # tool parser. Keep the rest of the pinned nixpkgs substrate unchanged.
     xgrammar = pyPrev.xgrammar.overridePythonAttrs (oldAttrs: rec {
-      version = "0.2.1";
+      version = "0.2.7";
       src = pkgs.fetchFromGitHub {
         owner = "mlc-ai";
         repo = "xgrammar";
         tag = "v${version}";
         fetchSubmodules = true;
-        hash = "sha256-h9ovM/HbbkrxHGlJNn8eEisD5fnfRGCwoSOwc6HgpVQ=";
+        hash = "sha256-1+xL0S/AbrKi+6/pJQvh2b03R5HM04mzazVe7k4jxVg=";
       };
       patches = [ ];
       build-system = (oldAttrs.build-system or [ ]) ++ [ pyPrev.apache-tvm-ffi ];
-      dependencies = (oldAttrs.dependencies or [ ]) ++ [ pyPrev.apache-tvm-ffi ];
-      # nixpkgs 0.1.33's disabled test paths no longer exist in 0.2.1.
+      dependencies = (oldAttrs.dependencies or [ ]) ++ [
+        pyPrev.apache-tvm-ffi
+        pyPrev.typing-extensions
+      ];
+      # nixpkgs 0.1.33's disabled test paths no longer exist in 0.2.7.
       # Keep the import check while upstream's renamed suite is repackaged.
       doCheck = false;
     });

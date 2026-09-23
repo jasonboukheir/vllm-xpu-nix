@@ -1,49 +1,46 @@
-# xpu-v1.11.0 published and verified
+# xpu-v1.11.0 checkpoint
 
-The user selected Brutus's real settings and reasonable output as release
-acceptance. Those checks passed; see `release-acceptance.json`. Extra experimental
-comparisons are closed for this release, with findings and unmeasured claims
-preserved. Issue #17 remains paused; checkpoint draft PR #18 is unrelated.
+The ordinary v0.30 release is complete. Brutus's eager V1, K4V2 target/draft
+MTP2 and vision profile passed the actual foreground checks. See the
+[release notes](../../releases/xpu-v1.11.0.md),
+[manifest](../../releases/xpu-v1.11.0.json),
+[publication verification](publication-verification.json), and
+[current fork delta](../../fork-delta.md).
 
-All 27 source commit audits and four packaging patch audits were reconciled.
-The clean source stacks have five vLLM and eight kernel commits. Published mains:
-- vLLM `466b9d5abe84f13c29b38c686e4d77fc09e09aa4` on v0.30.0
-  `ced6857afa0ea7b2e3f0846a62e1394e90f15607`.
-- Kernels `193cee080d654ff67c4f8bfaf924201bc88b9cf5` on v0.1.15
-  `1c7cbeee1cd0c1481d48f5031f679a47f3f0ef45`.
+| Repository | Released commit |
+| --- | --- |
+| Packaging | `93c021f9433e132e4f594d6c64353777f391dcf2` |
+| vLLM | `466b9d5abe84f13c29b38c686e4d77fc09e09aa4` |
+| XPU kernels | `193cee080d654ff67c4f8bfaf924201bc88b9cf5` |
 
-The exact Brutus native build passed, as did 608 packaging tests, 705 installed
-native/backend cases and 14 supplemental GDN reference cases. Actual eager V1
-K4V2 target/draft MTP2 with vision passed text, reasoning, two images, tools,
-four-way concurrent requests, mixed prefill, cancellation/reuse and retrieval
-at 131071/262015 input tokens. Two concurrent 172415-token prompts plus 512 outputs
-each completed correctly without preemption. Both candidate and published
-baseline provided 346880 usable attention tokens under the normal 0.96 budget.
+All three annotated tags and release branches remain immutable. Full reports,
+27 individual commit audits, four packaging audits, original commit maps,
+qualification results and historical resume records are in the
+[published archive at 8c72895](https://git.sunnycareboo.com/jasonbk/vllm-xpu-nix/src/commit/8c72895340deafef77998a579335d078800626ab/docs/updates/release-v030-20260922).
+The release manifest's hashed evidence uses its original xpu-v1.11.0 snapshot.
+To read an archived file locally, use:
 
-Optional AEON exact concurrent output invariance fails on both released and
-candidate stacks for the retained duplicate fixture. Candidate-only mixed-long
-diagnostics also diverge; they have no matched baseline attribution. Historical
-unused-BF16-NaN diagnostics retain six failures and two writer passes. None of
-these are represented as passes. No controlled performance comparison was run;
-no new speedup, performance non-regression or DFlash ceiling is claimed.
+```sh
+git show 8c72895340deafef77998a579335d078800626ab:docs/updates/release-v030-20260922/commit-map.json
+```
 
-All qualification workers exited. Chat is failed with MainPID/ControlPID 0,
-empty cgroup and no tasks. Preserve the user-stopped state; no host repin or
-activation was requested. xpu-v1.10.0 remains the host's operational baseline.
+The user requested the host follow packaging main. Host-config commit
+`0f0d46f83078404a3285325dc279b3b5fed277e1` locks packaging `8c72895` and the
+same source pair over HTTPS. Its Brutus package exactly matches the qualified
+release and full system evaluation passed. Activation remains an operator
+handoff; no service restart was performed. Rollback is xpu-v1.10.0, packaging
+`4ac4375aa3d0f649fb4b6b43d9447f413a8b1cc7`.
 
-All three xpu-v1.11.0 annotated tags and release branches are published and
-verified. Packaging release commit is `93c021f9433e132e4f594d6c64353777f391dcf2`.
-The remotely fetched release manifest and locks match, and its Brutus derivation
-is exactly the qualified package. See `publication-verification.json`.
-Final flake evaluation and four lightweight checks passed. Release work is complete.
+Issue #17 remains paused. Its complete reports and exact resume instructions
+are preserved on [checkpoint PR #18](https://git.sunnycareboo.com/jasonbk/vllm-xpu-nix/pulls/18),
+commit `78a30c20abacc2455d8f36991a9783e251d60ace`. Resume only on explicit user
+request, then reassess upstream and audit applicability. No DFlash2 speedup or
+performance ceiling has been established. Identical untracked report copies
+were removed from this worktree; the checkpoint and private artifacts remain.
 
-The user subsequently requested that `~/.config/nix` follow packaging `main`,
-with the same frozen source pair. That configuration-only handoff is separate;
-activation remains unrequested. The host's deployed baseline remains xpu-v1.10.0
-until an operator activates the updated configuration. Preserve the existing
-HTTPS transport overrides, advancing their source tags together with packaging.
-
-Private raw artifacts: `benchmark-results/release-v030-20260922/`. Pre-decision
-status documents are retained under `before-user-scope-decision/` there. Original
-audit report hashes remain verified. Two untracked issue17 report directories and
-pre-existing host lock changes remain outside this release.
+Raw release evidence stays in `benchmark-results/release-v030-20260922/`.
+Repository cleanup inventory and a complete stash bundle are in
+`benchmark-results/repository-cleanup-20260923/`. The old stash is also retained
+as `refs/archive/stashes/20260923-pre-v1.10.0` (including index/untracked parents).
+Recover it with `git stash store -m recovered-pre-v1.10.0 refs/archive/stashes/20260923-pre-v1.10.0`.
+No stashed source changes were applied or silently declared redundant.

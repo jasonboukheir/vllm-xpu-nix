@@ -138,7 +138,11 @@
   },
   "evidence_location": {
     "public": "docs/updates/release-v030-20260922/",
-    "private": "/home/jasonbk/Projects/vllm-xpu-nix/benchmark-results/release-v030-20260922"
+    "private": "/home/jasonbk/Projects/vllm-xpu-nix/benchmark-results/release-v030-20260922",
+    "public_ref": "refs/tags/xpu-v1.11.0",
+    "public_commit": "93c021f9433e132e4f594d6c64353777f391dcf2",
+    "archive_url": "https://git.sunnycareboo.com/jasonbk/vllm-xpu-nix/src/tag/xpu-v1.11.0/docs/updates/release-v030-20260922",
+    "interpretation": "Public evidence paths and hashes refer to the immutable release snapshot. Verbose work records are archived there, not duplicated on current main."
   },
   "evidence_sha256": {
     "docs/updates/release-v030-20260922/release-acceptance.json": "0b107d0eb6d7e75c09089d2840250c5caf5eaebb0c3a0f13cfcbe00d97a7dfac",

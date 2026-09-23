@@ -20,6 +20,7 @@ container, no host-managed `~/.local/lib/python*/site-packages`, no
 - [Iterating against a local checkout](docs/iterate.md)
 - [Quantize / eval](docs/quantize.md)
 - [Stable vs unstable](docs/stable-vs-unstable.md)
+- [Current fork commits and removal tradeoffs](docs/fork-delta.md)
 - [KVarN XPU beta](docs/kvarn-beta.md)
 - [CPU/XPU profiling](docs/kvarn-profiling.md)
 

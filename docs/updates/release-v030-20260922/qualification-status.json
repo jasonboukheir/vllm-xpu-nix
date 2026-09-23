@@ -24,22 +24,22 @@
     {
       "id": "lint",
       "requirement": "both source hooks with recorded Nix adapters; Python compile checks and packaging checks",
-      "status": "source hooks, Python compile checks and packaging formatting passed; full packaging unit-tests pending native closure"
+      "status": "source hooks, Python compilation, formatting and all 608 packaging unit tests passed"
     },
     {
       "id": "packaging",
       "requirement": "four independent patch audits; final-source patch/projection/AOT checks; exact source locks and generic/Brutus evaluations",
-      "status": "source locks, four patch audits, final-source patch/projection/AOT checks, generic/Brutus evaluation and four lightweight checks passed; native composition/import checks pending"
+      "status": "source locks, patch/projection/AOT checks, generic/Brutus evaluations, lightweight checks and all 608 unit tests passed; native imports/eleven schemas verified"
     },
     {
       "id": "maintenance",
       "requirement": "record enabled/active services and operator confirmation before expensive build/GPU work",
-      "status": "initial user confirmation retained; unexpected chat restart 22:15:57 PDT; clarification pending before GPU tests"
+      "status": "initial confirmation retained; chat restarted 22:15:57 PDT (NRestarts=0); user clarification pending before GPU qualification"
     },
     {
       "id": "build",
       "requirement": "exact Brutus override with bounded jobs, observed compiler memory/concurrency, actual native schema/import identity",
-      "status": "running; GDN built; dependency builds in progress; resource monitor active"
+      "status": "passed in 1857.1 seconds; exact Brutus override, max-jobs=1/cores=4; four native extensions/six split libraries load; eleven schemas match and have XPU dispatch registration"
     },
     {
       "id": "gpu-correctness",
@@ -82,5 +82,6 @@
     "six unused-BF16-NaN failures",
     "free-running concurrent output divergence; not matched-history accuracy samples"
   ],
-  "notes": "Audit reports define precise applicable checks. Historical passes are evidence for requirements, not new-pair qualification."
+  "notes": "Audit reports define precise applicable checks. Historical passes are evidence for requirements, not new-pair qualification.",
+  "updated_utc": "2026-09-23T05:46:15.658418+00:00"
 }

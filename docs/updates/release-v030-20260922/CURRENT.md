@@ -1,62 +1,59 @@
-# Separate v0.30 release: native build authorized
+# Separate v0.30 release: native build passed, GPU qualification pending
 
 The user authorized the ordinary release workflow on latest main, preserving
 existing eager V1 K4V2 target/draft bundled MTP2 and vision. Issue #17 remains
 paused and unrelated. Its preservation-only [draft PR #18](https://git.sunnycareboo.com/jasonbk/vllm-xpu-nix/pulls/18)
-will not be merged as part of this release. No V2/DFlash feature or performance
-investigation belongs to this run.
+will not be merged into this release. No V2/DFlash investigation belongs here.
 
-## Completed and preserved
+## Verified checkpoint
 
 - All 27 independent source commit audits (16 vLLM, 11 kernels), parent
   reconciliation and four independent packaging patch audits are complete.
-- Minimal source replay, CPU regression tests, applicable hooks, paired schema,
+- Minimal replay, applicable source/CPU checks, hooks, paired interfaces,
   ancestry, effective-diff and range-diff review passed. Five vLLM and eight
-  kernel commits remain. See `source-review.md` and `commit-map.json`.
-- Both rolling source mains are published and verified, with both remote
-  recovery branches intact. vLLM: `466b9d5abe84f13c29b38c686e4d77fc09e09aa4` on upstream
-  v0.30.0 `ced6857afa0ea7b2e3f0846a62e1394e90f15607`; kernels:
+  kernel commits remain; see `source-review.md` and `commit-map.json`.
+- Rolling source mains are published and verified, with recovery branches:
+  vLLM `466b9d5abe84f13c29b38c686e4d77fc09e09aa4` on v0.30.0
+  `ced6857afa0ea7b2e3f0846a62e1394e90f15607`; kernels
   `193cee080d654ff67c4f8bfaf924201bc88b9cf5` on v0.1.15
   `1c7cbeee1cd0c1481d48f5031f679a47f3f0ef45`.
-- Local packaging branch `release-v030-20260922` pins that exact pair. Hub
-  advances to 1.31.0; all unrelated lock nodes, Torch/Triton/oneAPI and XGrammar
-  remain unchanged. Generic and actual Brutus evaluation, final patch/projection/
-  AOT checks, flake evaluation and four lightweight packaging checks pass.
+- Packaging branch `release-v030-20260922` pins that pair. Required Hub change
+  is 1.31.0; unrelated locks, Torch/Triton/oneAPI and XGrammar are unchanged.
+- Exact Brutus native build passed in 1857.1 seconds with max-jobs=1/cores=4.
+  All four extension modules and six split libraries load. Eleven KVarN/GDN
+  schemas match the source and have XPU dispatch registered.
+- All **608 packaging unit tests across 45 files passed**, with no skips or
+  failures. The forced-decode tests used the new Brutus Python closure.
+  Generic/Brutus evaluation and four lightweight packaging checks also passed.
 
-## Next handoff
+`native-build-review.json` records the tested packaging commit, exact outputs,
+resource observations and evidence hashes. The package is
+`/nix/store/h3phd3ijav9zp34kzbvhyicxqsbanr94-python3.12-vllm-xpu-0.30.0+unstable.2026.09.23.g466b9d5`;
+its test runtime is
+`/nix/store/zhv84h5afvyx99fkw0l56rpj8rldhivl-v030-brutus-qualification-env`.
+Source clones under `build-dev/release-v030-20260922/` remain clean.
 
-The candidate is entering native build; it has not been qualified natively. No new stable release
-has been published. Operational baseline remains **xpu-v1.10.0**, packaging
-`4ac4375aa3d0f649fb4b6b43d9447f413a8b1cc7`. No service changes or host
-activation were performed. Chat is enabled but now inactive after a clean stop
-at 2026-09-22 21:01:56 PDT; embedding is absent/inactive. This run did not stop
-chat. The user confirmed stopping it and authorized use of the downtime.
-The subsequent check found failed state with MainPID=0; leave it stopped and
-preserve that pre-existing state. Native build/GPU qualification is authorized.
+## Maintenance and remaining work
 
-Read `resume.md` for exact build/qualification instructions and
-`qualification-status.json` for open gates. Provisional kernel performance
-changes still require controlled evidence. No DFlash speedup or ceiling is
-established by this work. Source-only tests are not native qualification.
+The user initially stopped chat and confirmed use of the downtime. The build
+started with no service process. Chat then started again at **2026-09-22
+22:15:57 PDT**, MainPID 2761986, NRestarts=0. It remains active. This run neither
+started nor stopped it, and requested clarification before stopping the new
+instance. Embedding is absent/inactive. No host repin or activation occurred.
 
-Source clones: `build-dev/release-v030-20260922/{vllm,vllm-xpu-kernels}`, both
-clean on `release-v030-20260922-replay`. Raw artifacts are private and ignored
-under `benchmark-results/release-v030-20260922/`; reviewed evidence is here.
-Host `~/.config/nix` has pre-existing changes to root and server `flake.lock`;
-preserve them. Host repinning/activation was not requested.
+No release-owned background build or GPU test remains running. GPU correctness,
+serving/MTP/vision, lifecycle, capacity and performance checks have **not run**.
+The controlled k02/k04/k10/k11 and patch0005 comparisons are prepared but
+unmeasured. Native import and CPU test passes do not satisfy those gates.
+See `qualification-status.json` and `resume.md` for the remaining sequence.
 
-## Live update: service restarted during native build
+No new stable release is published. **xpu-v1.10.0 remains the operational
+baseline**, packaging `4ac4375aa3d0f649fb4b6b43d9447f413a8b1cc7`.
+No DFlash speedup or performance ceiling is established. The remaining handoff
+is maintenance clarification, not a measured performance limit.
 
-Chat started again at 2026-09-22 22:15:57 PDT, MainPID 2761986. This run
-neither started nor stopped it. User clarification is pending before stopping
-that new instance or beginning GPU tests. The already authorized, bounded
-native build continues; no GPU measurement has begun. Read
-`benchmark-results/release-v030-20260922/native-build-status.json` and verify
-`owned-build-processes.json` before resuming; do not start a duplicate build.
-GDN compiled successfully; dependency builds are progressing.
-
-The serving preflight now accepts a failed unit only when MainPID/ControlPID
-are zero, its cgroup is absent and task count is zero/unset. This preserves a
-user-stopped failed unit without resetting it. All 45 affected harness tests
-pass, including active/lingering/unknown-state rejection. Formatting passes;
-ruff passes with the file's pre-existing path-bootstrap E402 excluded.
+Private artifacts are preserved under
+`benchmark-results/release-v030-20260922/`. The packaging checkout also retains
+two untracked issue17 report directories; do not add them to this release.
+Host `~/.config/nix` has pre-existing root/server `flake.lock` changes; preserve
+them. Host repinning and activation were not requested.

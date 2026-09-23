@@ -1,0 +1,89 @@
+{
+  "checked_utc": "2026-09-23T05:46:15.658418+00:00",
+  "scope": "Separate v0.30 eager V1 K4V2 target/draft MTP2 and vision release; issue17 remains paused",
+  "packaging_tested_commit": "a14bd453c900146669d8dac330ae8417e1389e9c",
+  "sources": {
+    "vllm": "466b9d5abe84f13c29b38c686e4d77fc09e09aa4",
+    "kernels": "193cee080d654ff67c4f8bfaf924201bc88b9cf5"
+  },
+  "candidate_derivation": "/nix/store/cjr2ccv93h5cqhvh49nkxqrkp8y4dp90-python3.12-vllm-xpu-0.30.0+unstable.2026.09.23.g466b9d5.drv",
+  "candidate_package": "/nix/store/h3phd3ijav9zp34kzbvhyicxqsbanr94-python3.12-vllm-xpu-0.30.0+unstable.2026.09.23.g466b9d5",
+  "candidate_runtime": "/nix/store/zhv84h5afvyx99fkw0l56rpj8rldhivl-v030-brutus-qualification-env",
+  "build": {
+    "status": "passed",
+    "started_utc": "2026-09-23T05:10:41.233751+00:00",
+    "finished_utc": "2026-09-23T05:41:38.320885+00:00",
+    "elapsed_s": 1857.0871614469215,
+    "max_jobs": 1,
+    "cores": 4,
+    "ccache": "enabled; this build is not a cold controlled measurement",
+    "owned_processes": "monitor/client exited; no background build or GPU test remains"
+  },
+  "resource_observation": {
+    "sample_interval_s": 5,
+    "sampled_peak_aggregate_compiler_rss_kib": 34864172,
+    "peak_utc": "2026-09-23T05:31:36.140626+00:00",
+    "minimum_system_mem_available_kib": 22506544,
+    "limits": "RSS sum double-counts shared pages; compiler-name sampling excludes other dependency-build processes and may miss transient peaks; chat restarted during the build; not causal optimization evidence",
+    "maximum_sampled_compiler_drivers": 4,
+    "maximum_sampled_ocloc_processes": 16,
+    "configured_link_jobs": {
+      "split_libraries": 4,
+      "base_glue": 16,
+      "fa2_binding": 16
+    },
+    "link_scope": "Patch0005 covers split libraries. Extension glue retains upstream link jobs=16; captured CMake log confirms this. --cores=4 bounds Ninja/frontend jobs, not every internal device-link worker. Up to 16 ocloc process entries were sampled; some had zero RSS."
+  },
+  "installed_imports": {
+    "status": "passed",
+    "extension_modules": 4,
+    "split_libraries": 6,
+    "source_schema_matches": 11,
+    "all_native_xpu_registrations": true,
+    "limits": "No GPU operations or model inference executed"
+  },
+  "repository_unit_tests": {
+    "status": "passed",
+    "files": 45,
+    "passed": 608,
+    "failed": 0,
+    "skipped": 0,
+    "output": "/nix/store/dmghdwyc4c23rymafi4b77bbmjrag4m6-vllm-xpu-nix-unit-tests-v030-release",
+    "command_normalizes_to_original": true,
+    "adaptation": "Only forced-decode interpreter replaced by the exact new Brutus runtime; original quantization environment and complete per-file loop retained"
+  },
+  "maintenance": {
+    "initial_confirmation": "yes I stopped it",
+    "chat_started_pdt": "2026-09-22 22:15:57 PDT",
+    "MainPID": 2761986,
+    "NRestarts": 0,
+    "current_state": "active/running",
+    "stopped_by_this_run": [],
+    "pending": "User clarification requested before stopping the new instance or starting GPU tests"
+  },
+  "unresolved": [
+    "GPU correctness and lifecycle",
+    "matched serving/vision/MTP and capacity",
+    "k02/patch0005 controlled build measurements",
+    "k04 five-form barrier comparisons and supplemental reference",
+    "k10/k11 native correctness and controlled ABBA measurements",
+    "stable publication and final package verification"
+  ],
+  "baseline": "xpu-v1.10.0 remains published and operational; no release refs or host configuration changed",
+  "evidence_sha256": {
+    "native-build-status.json": "581c6cf8e9aee298270c886350a69c5035341f70f3484d9f33c77066e3349588",
+    "native-build.log": "f6d8d97eb83afc3b931c0774cf64e2dc6fa707c672bb9005c1e0096f94276819",
+    "native-build-resources.jsonl": "25ee3947ca4a6ded8c14813d91bc211448d860c9b27f835c763b4215bcb42794",
+    "native-build-output.txt": "31bf4cc7bf41a2896536ee61b82dcb465c79920fc4b38eb1114631bf7b2c6b19",
+    "candidate-runtime-build.log": "3a9b1af51b2dcf9d58333e939f5a274165a118393592a89aad12dfd4e8fcdbf9",
+    "candidate-runtime-output.txt": "bde4ee63487a4e03e1a582a68e8dd69e41b75f8aa3008b4fe2815eb2cf645be2",
+    "installed-identity.json": "ffa95609492e0286ea6e6eb3ad9269be7a863cc3e7171c8acb5f336577cbcb6d",
+    "inspect-installed.py": "3be4df13059ed7278cb25fd90bd1ebb3f6280e70e58abcb474afe6d48e2246e9",
+    "release-unit-check.log": "7214ffca84082711c8dc9e46b942e470d162a99bf466162b55055cc4915fedea",
+    "release-unit-check-output.txt": "81901f7959372346feefe3a10dcaee0306d8bf1bbad3aff28bd3c6fcd9fb2299",
+    "release-unit-check-evaluation.json": "3362f11a615dec9b37e04ef5b1424032a60fcf4acee0d2ca68cf939363860d68",
+    "release-packaging-checks.nix": "cb62f86e47eac1c1abc172102c130433e12d7e33fc32b03e7f3cf2ca9ada8833",
+    "chat-state-after-build.txt": "f0bf5b01498f430f1dbd801f6b4a56f70a35ba9c5e799e73e4e000f519cb5e69",
+    "embedding-state-after-build.txt": "a7658421b514e1d2bc469d814b5a7fa7aa5de5954257ab2c004bdbd3dfb848e2"
+  }
+}

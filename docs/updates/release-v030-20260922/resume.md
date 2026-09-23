@@ -1,7 +1,8 @@
 # Resume the separate v0.30 release workflow
 
 Read `CURRENT.md`, `manifest.json`, `status.json`, `commit-map.json`,
-`source-review.md`, `packaging-checks.json` and `qualification-status.json`.
+`source-review.md`, `packaging-checks.json`, `native-build-review.json` and
+`qualification-status.json`.
 The ordinary v0.30 release is authorized. Issue #17 remains PAUSED; do not
 resume its V2/DFlash work, merge checkpoint PR #18, or change its goal status.
 
@@ -23,21 +24,24 @@ resume its V2/DFlash work, merge checkpoint PR #18, or change its goal status.
   `backup/origin-main-pre-v030-20260922`; original tips are in the manifest.
   Do not repeat the already completed audit/rebase or move old stable refs.
 
-## In-flight work (read before starting anything)
+## Completed native work and pending maintenance
 
-The native build is running. Inspect this run's private `native-build-status.json`,
-`native-build.log` and `native-build-resources.jsonl`; verify PID start ticks
-against `owned-build-processes.json`. Do not launch a duplicate. Read current
-user messages: chat unexpectedly restarted at 22:15:57 PDT, and clarification
-was requested before stopping the new instance or starting GPU qualification.
-Initial maintenance authorization persists, but do not override an intentional
-operator restart. The initial build itself continues with max-jobs=1/cores=4.
+The exact Brutus native build and test runtime are complete, and the owned build
+processes have exited. Do not rebuild unchanged sources. Read
+`native-build-review.json` for outputs and hashes; all 608 packaging unit tests
+passed and eleven installed KVarN/GDN schemas match source/native registration.
+No GPU correctness, serving or timed measurement has run.
+
+Chat unexpectedly started at 22:15:57 PDT, MainPID 2761986, NRestarts=0, after the
+user's maintenance confirmation. It is active. Clarification was requested before
+stopping that new instance or starting GPU qualification. Recheck state and the
+user's reply. Preserve an intentional operator restart; no host activation.
 
 `qualification-packages.nix` prepares the actual Brutus test runtime and isolated
 no-k02/no-k10/no-k11 controls; evaluations pass. Only the attention source projection
 changes in each arm, with FA2 relinked; other native sources/derivations match.
 `controlled-source-variants.json` and `controlled-component-equivalence.json`
-record the exact differences. They have not been built or measured.
+record the exact differences. The control arms have not been built or measured.
 `qualification-protocol.json` freezes native ABBA and matched release comparisons.
 The copied API/native harnesses and old serving workload inputs are retained here;
 check their provenance before execution. Use the current final source tests and
@@ -48,18 +52,20 @@ installed candidate modules; never count an old installed binary as a new-pair p
 1. Recheck actual refs, worktree/lock identities and `hostname -s` = `brutus`.
    The 27 source audits, four patch audits, parent reconciliation/replay, source
    publication, package evaluation and four lightweight checks are complete.
-   Native build and GPU qualification are not complete.
-2. Maintenance is confirmed: the user said "yes I stopped it" when asked to
-   use the downtime for the native build and GPU qualification. Chat has no
-   running main process (failed state, MainPID=0); embedding is absent/inactive.
-   This run stopped neither. Recheck current state, preserve any operator
-   changes, and leave user-stopped workers stopped. Do not ask again for the
-   same maintenance authorization or change host activation.
-3. With maintenance confirmed, build the exact Brutus
-   override below with bounded jobs. Record actual compile concurrency/peak
-   memory and perform the audit-required controlled build checks. Preserve
-   artifacts when fixing a failure. Full packaging unit-tests require this
-   native closure and are still pending.
+   Native build/imports and all 608 packaging unit tests are complete; GPU
+   qualification is not complete.
+2. Initial maintenance authorization persists, but chat has since started again.
+   Read the pending user reply and recheck actual state before stopping that new
+   instance. Once maintenance is available, verify MainPID/ControlPID=0 and no
+   remaining cgroup/tasks (the retained helper accepts inactive or failed only
+   under these conditions). Leave user-stopped workers stopped unless instructed
+   otherwise. Do not reset failed units or change host activation.
+3. Reuse the built package/runtime from `native-build-review.json`; imports and
+   all repository unit tests passed. For a source change, build the exact Brutus
+   override below with bounded jobs and repeat affected checks. The resource
+   controls still need execution: `build-controls.nix` and
+   `measure-native-build.py` preserve full library builds, repeated cold compiler
+   invocations and same-object link comparisons. Read the frozen protocol first.
 4. Run the built package in the foreground using Brutus's generated profile
    (`nix run ~/.config/nix#vllm-xpu-brutus -- "$candidate_package" --port 18000`).
    Retain eager V1 K4V2 target/draft MTP2, vision, 262144 context, four slots,
@@ -88,7 +94,7 @@ installed candidate modules; never count an old installed binary as a new-pair p
    stopped unless the operator directs otherwise. No host repin or activation
    has been requested.
 
-## Exact package build (after maintenance handoff)
+## Exact package build (only if rebuilding is necessary)
 
 ```bash
 cd /home/jasonbk/Projects/vllm-xpu-nix
@@ -110,6 +116,48 @@ flake. Raw evaluation command/data are in this run's
 `evaluate-candidate.nix`, `packaging-evaluation.json` and
 `packaging-final-checks.json`. Final patch preflight and remote-ref records are
 in the same private artifact directory.
+
+## Prepared qualification artifacts
+
+All paths below are under `benchmark-results/release-v030-20260922/`.
+
+- `run-installed-tests.py` plus `native-test-selection.json`: installed native
+  tests, source hash checks and loaded DSO hashes. Run each group in a fresh
+  process using the new runtime; set `qualification-environment.json` before
+  importing Torch. The pinned `OCL_ICD_VENDORS` is required for independent
+  oneDNN reference operations, as in the previous release.
+- `gdn-fresh-reference.py`: extends the frozen replay function only by removing
+  its <=64-token oracle skip and parameterizing BF16/FP32 recurrent state.
+  Includes 4095 tokens; preserves all original poison/replay assertions and
+  numerical tolerances. Run all five barrier arms. It has parsed, not run.
+- `qualification-packages.nix`: final candidate runtime and isolated native
+  controls. No-k10/no-k11 hold their companion optimization constant. The
+  controlled source differences and component identities are recorded.
+- `build-controls.nix`: Brutus/narrow with/without-k02, four cold compiler
+  invocations (backtrace depth 10/0/0/10), plus Brutus same-object link jobs
+  4/16/16/4. Compiler cache is disabled for measured commands; filesystem cache
+  and generated/PCH prerequisites remain. Experimental output retains build
+  inputs in measurement records, so its disallowedReferences check is relaxed;
+  the production derivation is unchanged. The completed build confirms split
+  library link jobs=4, but extension glue retains upstream jobs=16; do not claim
+  a global four-worker link cap. No controlled measurements collected yet.
+- `qualification-protocol.json`: frozen criteria and controlled comparison
+  order. `supplemental-harness-sha256.json` records prepared helper identities.
+- `serving-k4v2-plan.json`, `qualify-api.py`, `retained-service-harness/` and
+  `serving-preparation.json`: old matched token inputs and API/lifecycle probes.
+  Pass `--plan` explicitly. Override=1 is the preserved equal-capacity control;
+  measure actual-budget capacity separately without it. Preserve model/revision,
+  context, scheduler, MTP2, target/draft K4V2, vision and eager V1 settings.
+- `native-mtp-short-diagnostic.py`, `native-reducer16-broad-diagnostic.py` and
+  `native-fp16-block-load-workload.py`: retained native measurement code with
+  provenance. Populate current runtime/DSO identities before execution.
+- `release-packaging-checks.nix`: full 608-test pass using the exact new runtime
+  for forced-decode tests and the original quantization environment for others;
+  its command normalization audit proves the per-file loop was preserved.
+
+Prepared controls and scripts are not qualification results. Keep builds separate
+from GPU timings; enforce service/GPU preflights and record independent numerical
+references, native dispatch, actual library hashes, failure and repeatability data.
 
 ## Local tooling and artifacts
 

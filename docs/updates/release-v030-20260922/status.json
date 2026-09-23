@@ -1,14 +1,14 @@
 {
   "run_id": "release-v030-20260922",
-  "phase": "native Brutus build",
+  "phase": "native build/imports/unit checks passed; GPU qualification awaiting maintenance clarification",
   "audit_total": 27,
   "audit_done": 27,
   "source_replay": "complete: five vLLM and eight kernel commits, final source review passed",
-  "qualification": "source and lightweight packaging checks passed; native/GPU checks pending",
+  "qualification": "608 packaging tests passed; 11 native schemas matched; GPU/serving/performance checks pending",
   "publication": "both rolling source mains published and verified; stable publication pending",
   "issue17": "paused; checkpoint branches and draft PR #18 published and verified",
-  "maintenance": "initial user confirmation retained; unexpected chat restart 22:15:57 PDT; clarification pending before GPU tests",
-  "updated_utc": "2026-09-23T05:22:52.830726+00:00",
+  "maintenance": "chat active after new 22:15:57 PDT start; clarification pending before stopping it",
+  "updated_utc": "2026-09-23T05:46:15.658418+00:00",
   "lint_environment": "applicable hooks pass; recorded Nix tool adapters",
   "patch_audit_total": 4,
   "patch_audit_done": 4,
@@ -18,11 +18,7 @@
   "vllm_main_pushed": "466b9d5abe84f13c29b38c686e4d77fc09e09aa4",
   "kernel_main_pushed": "193cee080d654ff67c4f8bfaf924201bc88b9cf5",
   "packaging_branch": "release-v030-20260922",
-  "packaging_evaluation": "generic and exact Brutus passed; four lightweight checks passed; full packaging unit-tests require native closure",
-  "active_build": {
-    "status_file": "benchmark-results/release-v030-20260922/native-build-status.json",
-    "process_identity_file": "benchmark-results/release-v030-20260922/owned-build-processes.json",
-    "log": "benchmark-results/release-v030-20260922/native-build.log",
-    "resources": "benchmark-results/release-v030-20260922/native-build-resources.jsonl"
-  }
+  "packaging_evaluation": "generic/Brutus evaluation, four lightweight checks, native Brutus build and full unit checks passed",
+  "native_checkpoint": "native-build-review.json",
+  "background_work": "none owned by this release remains running"
 }

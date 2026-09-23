@@ -1,0 +1,54 @@
+{
+  "checked_utc": "2026-09-23T06:01:40.254794+00:00",
+  "runtime": "/nix/store/zhv84h5afvyx99fkw0l56rpj8rldhivl-v030-brutus-qualification-env",
+  "suites": [
+    {
+      "group": "kernel-attention",
+      "passed": 188,
+      "failed": 0,
+      "skipped": 0,
+      "artifact": "native-tests-01/kernel-attention.json",
+      "sha256": "f6c4add1a61caaa6b17bf6c3fd6aaf937fcbb408924cd36ae2976da1bbfaac60"
+    },
+    {
+      "group": "kernel-gdn-replays",
+      "passed": 54,
+      "failed": 0,
+      "skipped": 0,
+      "artifact": "native-tests-01/kernel-gdn-replays.json",
+      "sha256": "6383d031f8f208c1df0a96fd2db71a744b79d3413e28d94dba7af5cbb8421e05"
+    },
+    {
+      "group": "vllm-attention",
+      "passed": 80,
+      "failed": 0,
+      "skipped": 0,
+      "artifact": "native-tests-01/vllm-attention.json",
+      "sha256": "4580e98d096d8813be61fa9459c5825b98d1af8ac84900d3f4eeba81a246f52c"
+    },
+    {
+      "group": "vllm-rmsnorm",
+      "passed": 25,
+      "failed": 0,
+      "skipped": 0,
+      "artifact": "native-tests-02/vllm-rmsnorm.json",
+      "sha256": "c53483bae49794fa577e5096cd7efd00b6a3b5ca0ab9a4f86d69171b6fe3c701"
+    },
+    {
+      "group": "vllm-contracts",
+      "passed": 358,
+      "failed": 0,
+      "skipped": 0,
+      "artifact": "native-tests-02/vllm-contracts.json",
+      "sha256": "1280016baa056dd5739cca07476186ec5fcb60059246ffa566d77a222506992b"
+    }
+  ],
+  "passed": 705,
+  "earlier_collection_failure": {
+    "artifact": "native-tests-01/vllm-rmsnorm.log",
+    "cause": "Focused harness omitted normal vllm.config bootstrap; direct determinism test utils imported the architecture convertor before config and encountered a circular import",
+    "resolution": "Pre-import vllm.config, matching normal test bootstrap; unchanged test functions and installed candidate then passed",
+    "source_change": false
+  },
+  "limits": "Additional GDN barrier controls/oracles, optimization controls, scoped AEON path and serving/lifecycle/capacity/performance remain pending; these passes are not a release decision."
+}

@@ -24,18 +24,31 @@ resume its V2/DFlash work, merge checkpoint PR #18, or change its goal status.
   `backup/origin-main-pre-v030-20260922`; original tips are in the manifest.
   Do not repeat the already completed audit/rebase or move old stable refs.
 
-## Completed native work and pending maintenance
+## Completed native work and authorized maintenance
 
 The exact Brutus native build and test runtime are complete, and the owned build
 processes have exited. Do not rebuild unchanged sources. Read
 `native-build-review.json` for outputs and hashes; all 608 packaging unit tests
 passed and eleven installed KVarN/GDN schemas match source/native registration.
-No GPU correctness, serving or timed measurement has run.
+The 705 installed native/backend cases and 14 supplemental GDN reference cases
+passed. `brutus-api-02/03` passed all smoke, four-way overlap, mixed-prefill, cancellation/
+reuse, 131071/262015-token retrieval and near-capacity checks. Those processes
+have exited. Read `foreground-qualification-review.json` and the memory report.
+The NaN diagnostic reproduced historical six BF16-poison failures and two writer
+passes; see `nan-diagnostic-review.json`. No controlled performance comparison
+has run. `qualify-aeon.py --output aeon-api-02` is active (API/PGID2886023);
+inspect current manifests/process identities before launching more GPU work.
+The first AEON capture correctly stopped after detecting an ineligible selector:
+HF offline mode rewrites the model ID in both old and new upstream. The second
+uses the original canonical-ID profile with HF_HUB_OFFLINE=0 and the same pinned
+checkpoint. Never signal a PID without checking its current identity.
 
-Chat unexpectedly started at 22:15:57 PDT, MainPID 2761986, NRestarts=0, after the
-user's maintenance confirmation. It is active. Clarification was requested before
-stopping that new instance or starting GPU qualification. Recheck state and the
-user's reply. Preserve an intentional operator restart; no host activation.
+The user subsequently said "Stop it again for qualification". The attempted
+sudo stop required a password, but the state check already found chat inactive,
+MainPID/ControlPID=0, empty cgroup and no tasks. Embedding is also inactive.
+Maintenance is authorized and verified; do not ask again. This run did not
+successfully stop either service, so preserve the user-stopped state. Inspect
+`brutus-api-03/manifest.json` and current process ownership before starting more GPU work.
 
 `qualification-packages.nix` prepares the actual Brutus test runtime and isolated
 no-k02/no-k10/no-k11 controls; evaluations pass. Only the attention source projection
@@ -54,12 +67,11 @@ installed candidate modules; never count an old installed binary as a new-pair p
    publication, package evaluation and four lightweight checks are complete.
    Native build/imports and all 608 packaging unit tests are complete; GPU
    qualification is not complete.
-2. Initial maintenance authorization persists, but chat has since started again.
-   Read the pending user reply and recheck actual state before stopping that new
-   instance. Once maintenance is available, verify MainPID/ControlPID=0 and no
-   remaining cgroup/tasks (the retained helper accepts inactive or failed only
-   under these conditions). Leave user-stopped workers stopped unless instructed
-   otherwise. Do not reset failed units or change host activation.
+2. Maintenance was confirmed again and the service is stopped. Recheck current
+   service/GPU state and then continue without repeating permission questions.
+   Use the retained helper to require zero MainPID/ControlPID and absent cgroups/
+   tasks. Leave user-stopped workers stopped unless instructed otherwise. Do not
+   reset failed units or change host activation.
 3. Reuse the built package/runtime from `native-build-review.json`; imports and
    all repository unit tests passed. For a source change, build the exact Brutus
    override below with bounded jobs and repeat affected checks. The resource
@@ -129,7 +141,9 @@ All paths below are under `benchmark-results/release-v030-20260922/`.
 - `gdn-fresh-reference.py`: extends the frozen replay function only by removing
   its <=64-token oracle skip and parameterizing BF16/FP32 recurrent state.
   Includes 4095 tokens; preserves all original poison/replay assertions and
-  numerical tolerances. Run all five barrier arms. It has parsed, not run.
+  numerical tolerances. Candidate all 14 cases passed in
+  `gdn-candidate-fresh-reference.json`; four control arms remain unbuilt/untested.
+  `gdn-barrier-timing.py` prepares matched operator event/host timing (not run).
 - `qualification-packages.nix`: final candidate runtime and isolated native
   controls. No-k10/no-k11 hold their companion optimization constant. The
   controlled source differences and component identities are recorded.
@@ -187,3 +201,11 @@ must not be accidentally added to the unrelated release.
 `modules/flake/nixos/server/flake.lock`. Preserve them. The actual consumer is
 the server flake, and Brutus overrides are in
 `~/.config/nix/hosts/brutus/services/vllm-xpu/package.nix`.
+
+## Newly prepared serial control orchestration
+
+- `build-native-controls.py --output native-control-build-01 --kind runtime gdn-upstream-runtime gdn-u-only-runtime gdn-added-only-runtime gdn-released-runtime no-k10-runtime no-k11-runtime`: frozen bounded serial control builds; requires idle port and stopped services. Not run yet. Retains raw logs, output paths, client identities and resource samples; cancels only its own Nix client on low headroom or whole-build timeout.
+- `run-native-controls.py --build-record PATH/status.json --output NAME --stage gdn|attention-correctness|k10`: fresh-process installed control tests and frozen timing orders, requiring idle service/GPU. Missing-barrier controls may fail and retain those failures; released/candidate correctness must pass. Not run yet.
+- `run-native-workload.py` wraps native helpers with service/GPU preflights and exact loaded DSO attestations even on failure. `qualify-aeon.py --output NAME` owns/cleans its scoped foreground instance.
+- `gdn-component-equivalence.json`: only the intended barrier header changes in GDN and conservative base-glue source projections. Serial build dependencies propagate derivation changes through unchanged-source sibling libraries; verify actual output hashes after building.
+- The patch0005 owner is repairing the private build-measurement harness after a preflight review. Check `audits/patch-0005-measurement-preflight.md` and agent status. Re-evaluate and explicitly replace the not-yet-measured build-control derivation manifest after the harness repair, preserving original IDs. Do not modify the production package.

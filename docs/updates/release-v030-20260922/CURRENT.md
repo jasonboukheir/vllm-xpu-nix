@@ -1,4 +1,4 @@
-# Separate v0.30 release: native build passed, GPU qualification pending
+# Separate v0.30 release: Brutus foreground qualification passed; controls pending
 
 The user authorized the ordinary release workflow on latest main, preserving
 existing eager V1 K4V2 target/draft bundled MTP2 and vision. Issue #17 remains
@@ -35,22 +35,39 @@ Source clones under `build-dev/release-v030-20260922/` remain clean.
 
 ## Maintenance and remaining work
 
-The user initially stopped chat and confirmed use of the downtime. The build
-started with no service process. Chat then started again at **2026-09-22
-22:15:57 PDT**, MainPID 2761986, NRestarts=0. It remains active. This run neither
-started nor stopped it, and requested clarification before stopping the new
-instance. Embedding is absent/inactive. No host repin or activation occurred.
+The user explicitly authorized stopping the restarted chat instance for
+qualification. The stop command required a sudo password, but the subsequent
+check already found chat inactive/dead, MainPID/ControlPID=0, empty cgroup and no
+tasks. Embedding is also inactive with no process. This run did not successfully
+stop either service. Preserve the user-stopped state; no host repin/activation.
 
-No release-owned background build or GPU test remains running. GPU correctness,
-serving/MTP/vision, lifecycle, capacity and performance checks have **not run**.
-The controlled k02/k04/k10/k11 and patch0005 comparisons are prepared but
-unmeasured. Native import and CPU test passes do not satisfy those gates.
-See `qualification-status.json` and `resume.md` for the remaining sequence.
+All 705 installed native/backend tests passed with no skips. Fourteen additional
+GDN fresh-state independent-reference cases passed. The actual Brutus foreground
+app passed text, reasoning, two-image vision, tools and 12 concurrent requests
+with four running at once and active MTP draft/acceptance counters. Mixed-prefill,
+cancellation/reuse and 131071/262015-token retrieval passed. Near-capacity checks
+also passed: two 172415-token prompts, 512 generated tokens each, correct labels
+and arithmetic, active MTP, and no preemptions. Both foreground instances exited.
+The actual budget supplies 346880 usable attention tokens; processed prompts
+covered 99.409% of that capacity. Owned DRM sampling had no errors or gaps over
+0.55 seconds during these checks. Read `foreground-qualification-review.json`,
+`foreground-memory-review.json` and `native-correctness-review.json`.
+
+The retained NaN diagnostic reproduces six historical unused-BF16-NaN failures;
+both sparse-writer controls pass. Read `nan-diagnostic-review.json`. The scoped
+AEON check is running in `aeon-api-02/`; an earlier attempt stopped after readiness
+because the harness's offline setting rewrote the canonical model ID, making the
+existing narrow selector ineligible. Source was unchanged; the repeat restores
+the preserved canonical-ID launch. Do not launch concurrent GPU work.
+
+Controlled k02/k04/k10/k11 and patch0005 comparisons, metadata synchronization
+measurement, and matched released/candidate performance and memory checks remain
+pending. Prepared controls are not results. See
+`qualification-status.json` and `resume.md`.
 
 No new stable release is published. **xpu-v1.10.0 remains the operational
 baseline**, packaging `4ac4375aa3d0f649fb4b6b43d9447f413a8b1cc7`.
-No DFlash speedup or performance ceiling is established. The remaining handoff
-is maintenance clarification, not a measured performance limit.
+No DFlash speedup or performance ceiling is established. GPU qualification is authorized and proceeding; no performance limit is claimed.
 
 Private artifacts are preserved under
 `benchmark-results/release-v030-20260922/`. The packaging checkout also retains

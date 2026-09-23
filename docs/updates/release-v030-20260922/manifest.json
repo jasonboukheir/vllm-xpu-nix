@@ -84,7 +84,7 @@
     "status": "draft; issue17 remains paused"
   },
   "packaging_main_start_verified": "4ac4375aa3d0f649fb4b6b43d9447f413a8b1cc7",
-  "updated_utc": "2026-09-23T05:46:15.658418+00:00",
+  "updated_utc": "2026-09-23T05:51:54.005412+00:00",
   "proposed_release": "xpu-v1.11.0; not reserved; recheck all local/remote refs before publication",
   "source_worktrees": "clean at final replayed tips; both rolling mains published and verified",
   "upstream_patch_preflight": "all four patch audits reviewed; final-source sequences apply with fuzz=0; final projections and architecture/AOT checks pass",
@@ -136,13 +136,14 @@
   },
   "native_checkpoint": "native-build-review.json",
   "maintenance_current": {
-    "initial_confirmation": "yes I stopped it",
-    "chat_started_pdt": "2026-09-22 22:15:57 PDT",
-    "MainPID": 2761986,
-    "NRestarts": 0,
-    "current_state": "active/running",
+    "checked_utc": "2026-09-23T05:51:54.005412+00:00",
+    "user_instruction": "Stop it again for qualification",
+    "chat": "inactive/dead; MainPID=0; ControlPID=0; empty ControlGroup; TasksCurrent unset",
+    "embedding": "inactive; MainPID=0; ControlPID=0; empty ControlGroup; TasksCurrent unset",
+    "stop_attempt": "sudo -n systemctl stop vllm-xpu-chat.service required a password; subsequent observation was already inactive",
     "stopped_by_this_run": [],
-    "pending": "User clarification requested before stopping the new instance or starting GPU tests"
+    "authorization": "native/GPU/serving qualification; stopping restarted chat explicitly permitted",
+    "restoration": "preserve user-stopped workers; no host activation"
   },
   "packaging_tested_commit": "a14bd453c900146669d8dac330ae8417e1389e9c"
 }

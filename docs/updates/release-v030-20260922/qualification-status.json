@@ -34,7 +34,7 @@
     {
       "id": "maintenance",
       "requirement": "record enabled/active services and operator confirmation before expensive build/GPU work",
-      "status": "initial confirmation retained; chat restarted 22:15:57 PDT (NRestarts=0); user clarification pending before GPU qualification"
+      "status": "confirmed again; no service processes/cgroups/tasks remain; see maintenance-resumed.json"
     },
     {
       "id": "build",
@@ -44,22 +44,22 @@
     {
       "id": "gpu-correctness",
       "requirement": "retained relevant native tests incl numerical references, padding/ragged GDN, finite unused-storage controls, K4V2 bytes/materialization and native-only dispatch",
-      "status": "pending"
+      "status": "705 installed native/backend tests passed without skips; 14 supplemental GDN reference cases passed. Retained unused-BF16-NaN diagnostic reproduced historical 6 failures, sparse-writer 2 passes. GDN/optimization control arms pending."
     },
     {
       "id": "lifecycle",
       "requirement": "cold inspection/error propagation, startup/shutdown/restart, cancellation/reuse, state-slot reorder and committed-history boundaries",
-      "status": "pending"
+      "status": "foreground cold start/shutdown, mixed-prefill, cancellation beyond cache flush and clean reuse passed; near-capacity overlap and full-prefill overlap passed; scoped AEON gate underway"
     },
     {
       "id": "serving",
       "requirement": "existing V1 eager K4V2 target/draft MTP2, tools, two images, four-way overlap, mixed prefill, long-context retrieval and actual draft counters",
-      "status": "pending"
+      "status": "actual Brutus app passed text/reasoning/two-image/tools, 12 concurrent requests with peak four running, mixed prefill and 131071/262015-token retrieval; MTP generation/acceptance counters verified"
     },
     {
       "id": "capacity",
       "requirement": "unchanged context/scheduler limits, tensor storage and timestamped memory coverage, usable shared KV capacity including recurrent reservations",
-      "status": "pending"
+      "status": "native 346880 usable attention tokens; two 172415-token prompts plus 512 output tokens each completed, 99.409% processed prompt capacity, 345728-token minimum occupied extent, no preemption and correct labels/899; owned DRM sampling covers all checks with no errors and max gap0.55s. Baseline comparison pending."
     },
     {
       "id": "performance",
@@ -83,5 +83,5 @@
     "free-running concurrent output divergence; not matched-history accuracy samples"
   ],
   "notes": "Audit reports define precise applicable checks. Historical passes are evidence for requirements, not new-pair qualification.",
-  "updated_utc": "2026-09-23T05:46:15.658418+00:00"
+  "updated_utc": "2026-09-23T06:31:55.031182+00:00"
 }

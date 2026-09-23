@@ -1,14 +1,14 @@
 {
   "run_id": "release-v030-20260922",
-  "phase": "native build/imports/unit checks passed; GPU qualification awaiting maintenance clarification",
+  "phase": "scoped AEON qualification; controlled native/build comparisons next",
   "audit_total": 27,
   "audit_done": 27,
   "source_replay": "complete: five vLLM and eight kernel commits, final source review passed",
-  "qualification": "608 packaging tests passed; 11 native schemas matched; GPU/serving/performance checks pending",
+  "qualification": "608 packaging +705 installed native/backend cases passed; 14 supplemental GDN cases passed; all Brutus API/lifecycle/262k-context/near-capacity gates passed. Historical NaN diagnostic reproduced 6 failures/2 passes; controlled performance pending.",
   "publication": "both rolling source mains published and verified; stable publication pending",
   "issue17": "paused; checkpoint branches and draft PR #18 published and verified",
-  "maintenance": "chat active after new 22:15:57 PDT start; clarification pending before stopping it",
-  "updated_utc": "2026-09-23T05:46:15.658418+00:00",
+  "maintenance": "user explicitly authorized stop; chat/embedding observed inactive with no tasks",
+  "updated_utc": "2026-09-23T06:31:55.031182+00:00",
   "lint_environment": "applicable hooks pass; recorded Nix tool adapters",
   "patch_audit_total": 4,
   "patch_audit_done": 4,
@@ -20,5 +20,5 @@
   "packaging_branch": "release-v030-20260922",
   "packaging_evaluation": "generic/Brutus evaluation, four lightweight checks, native Brutus build and full unit checks passed",
   "native_checkpoint": "native-build-review.json",
-  "background_work": "none owned by this release remains running"
+  "background_work": "qualify-aeon.py --output aeon-api-02; owned API PGID2886023; read raw manifest/process identities; no native build active"
 }

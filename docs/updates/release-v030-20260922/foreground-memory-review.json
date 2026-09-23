@@ -1,0 +1,74 @@
+{
+  "checked_utc": "2026-09-23T06:29:37.724400+00:00",
+  "reports": [
+    {
+      "run": "brutus-api-02",
+      "samples": 210,
+      "memory_sha256": "922fa768a9afb881d085377da683aa0cb415542e68044d552171ae1b93bd91dd",
+      "collector_error_samples": 0,
+      "peak_kib": {
+        "drm-total-vram0": 30884780,
+        "drm-resident-vram0": 30884780,
+        "drm-total-system": 512592,
+        "drm-resident-system": 896
+      },
+      "check_coverage": [
+        {
+          "check": "smoke.py",
+          "samples": 13,
+          "max_gap_s": 0.528327465057373,
+          "collector_error_samples": 0
+        },
+        {
+          "check": "overlap_requests.py",
+          "samples": 98,
+          "max_gap_s": 0.526625394821167,
+          "collector_error_samples": 0
+        }
+      ],
+      "first_sample_unix": 1790143261.2939122,
+      "last_sample_unix": 1790143370.7611427
+    },
+    {
+      "run": "brutus-api-03",
+      "samples": 2468,
+      "memory_sha256": "26003643e5b093af33a7806a8d7b5e06f8b1e08b473e8842b51293e39e32acd0",
+      "collector_error_samples": 0,
+      "peak_kib": {
+        "drm-total-vram0": 31064888,
+        "drm-resident-vram0": 31064888,
+        "drm-total-system": 686804,
+        "drm-resident-system": 3264
+      },
+      "check_coverage": [
+        {
+          "check": "mixed_prefill.py",
+          "samples": 52,
+          "max_gap_s": 0.5259964466094971,
+          "collector_error_samples": 0
+        },
+        {
+          "check": "cancel_reuse.py",
+          "samples": 127,
+          "max_gap_s": 0.5268731117248535,
+          "collector_error_samples": 0
+        },
+        {
+          "check": "long-context.py",
+          "samples": 994,
+          "max_gap_s": 0.542412281036377,
+          "collector_error_samples": 0
+        },
+        {
+          "check": "draft_capacity.py",
+          "samples": 1132,
+          "max_gap_s": 0.5419905185699463,
+          "collector_error_samples": 0
+        }
+      ],
+      "first_sample_unix": 1790143466.1375127,
+      "last_sample_unix": 1790144754.7521617
+    }
+  ],
+  "scope": "Owned process-group DRM clients deduplicated by client ID; no collector gaps over two seconds during API checks. These observations are not matched baseline/candidate memory comparisons."
+}

@@ -1,0 +1,114 @@
+{
+  "checked_utc": "2026-09-23T06:27:55.972612+00:00",
+  "status": "foreground API/lifecycle/near-capacity checks passed; performance and other audits still pending",
+  "checks": [
+    {
+      "run": "brutus-api-02",
+      "manifest_sha256": "8f68a4e706e3df71b07ce74e5fba1f182cefe27d7d2e127fc0b0e40f1bb01249",
+      "checks": [
+        {
+          "finished_unix": 1790143318.5057814,
+          "log_sha256": "4840d9db58644646827747b0e77115533e551f330188594c0a35cedbecda6918",
+          "returncode": 0,
+          "script": "smoke.py",
+          "started_unix": 1790143311.5302072
+        },
+        {
+          "finished_unix": 1790143369.6143453,
+          "log_sha256": "784fd0d3fb25c66a8c01b7e9a6595fb0b587da2ae456e3aa66c138988d8555fe",
+          "returncode": 0,
+          "script": "overlap_requests.py",
+          "started_unix": 1790143318.513817
+        }
+      ],
+      "launch_profile": "actual Brutus foreground app; native capacity",
+      "runtime_package": "/nix/store/h3phd3ijav9zp34kzbvhyicxqsbanr94-python3.12-vllm-xpu-0.30.0+unstable.2026.09.23.g466b9d5"
+    },
+    {
+      "run": "brutus-api-03",
+      "manifest_sha256": "def56d072ed641123f9339d9f04a998c6d22363caaca5d26b2a055d1aac6b05b",
+      "checks": [
+        {
+          "finished_unix": 1790143573.9037778,
+          "log_sha256": "7e7d032e406f4e4698e30b9858bd53965c8a45ca678f0fc626f399d0c2527e40",
+          "returncode": 0,
+          "script": "mixed_prefill.py",
+          "started_unix": 1790143546.5903385
+        },
+        {
+          "finished_unix": 1790143640.2363489,
+          "log_sha256": "f62789a38a7c404485e4d903c24a4956910b0894c26f5c31f8aca7636ae7c227",
+          "returncode": 0,
+          "script": "cancel_reuse.py",
+          "started_unix": 1790143573.909579
+        },
+        {
+          "finished_unix": 1790144159.357894,
+          "log_sha256": "9873e9a4372497defc246b6a5bff179cce90fbe1f3a4c6bdc999a3fdef48492e",
+          "returncode": 0,
+          "script": "long-context.py",
+          "started_unix": 1790143640.241445
+        },
+        {
+          "finished_unix": 1790144750.2799475,
+          "log_sha256": "442019ca5cc10401fb09cb6f7f00eab81269a82e719fe683e9d915dbaf3d88d0",
+          "returncode": 0,
+          "script": "draft_capacity.py",
+          "started_unix": 1790144159.381365
+        }
+      ],
+      "launch_profile": "actual Brutus foreground app; native capacity",
+      "runtime_package": "/nix/store/h3phd3ijav9zp34kzbvhyicxqsbanr94-python3.12-vllm-xpu-0.30.0+unstable.2026.09.23.g466b9d5"
+    }
+  ],
+  "usable_attention_tokens": 346880,
+  "near_capacity": {
+    "passed": true,
+    "prompt_tokens_each": 172415,
+    "generated_tokens_each": 512,
+    "combined_processed_prompt_fraction": 0.9940901752767528,
+    "minimum_occupied_attention_tokens": 345728,
+    "peak_attention_usage": 0.9966789667896679,
+    "both_prefilled_before_either_last_token": true,
+    "acceptance": {
+      "accepted_first": 343,
+      "accepted_fraction_of_proposals": 0.674712643678161,
+      "accepted_second": 244,
+      "accepted_tokens": 587,
+      "accepted_tokens_per_round": 1.349425287356322,
+      "both_acceptance_per_two_token_round": 0.5609195402298851,
+      "conditional_second_acceptance_bounds": [
+        0.7113702623906706,
+        0.7113702623906706
+      ],
+      "conditional_second_denominator_bounds": [
+        343,
+        343
+      ],
+      "first_acceptance": 0.7885057471264367,
+      "note": "Conditional-second bounds account for first acceptances on budget-trimmed one-token rounds; equal bounds identify the exact rate.",
+      "one_token_rounds": 0,
+      "output_budget_clipped_tokens": 0,
+      "proposed_tokens": 870,
+      "rounds": 435,
+      "two_token_rounds": 435
+    }
+  },
+  "capacity_summary_sha256": "d52a1021f337fab2283a0826ee037e86633c3eb523ecd9401308ec88f3c39d5a",
+  "long_context_prompt_tokens": [
+    131071,
+    262015
+  ],
+  "redhat_request_stability_policy": "inactive: actual factory log selects both projection rows and RMSNorm false; brutus-api-02/service.log",
+  "preserved_failure": {
+    "run": "brutus-api-01",
+    "cause": "launcher compared numeric 0.96 with actual Nix formatting 0.960000 as a string after HTTP readiness; corrected harness to float comparison",
+    "source_changed": false
+  },
+  "limits": "Native-budget capacity captured without override; timings here are not controlled performance comparisons. Scoped AEON, control builds/native timing, metadata synchronization and matched release comparison remain open.",
+  "retained_helper_imports": {
+    "artifact": "retained-helper-import-identities.json",
+    "sha256": "bc76ccd5f1f9fc9539edb9bc0083e65122ddec1051e794744c8645f5c3091ede",
+    "review": "Retained cancel/capacity scripts explicitly import earlier packaging helpers. Every imported measurement/assertion function is AST-identical to current: old differences are only _process_group_members exception handling, top-level service run and complete performance audit; none is called by these two checks. Current launcher owns service guards/cleanup and current MemorySampler; current standalone memory audit confirms complete error-free coverage."
+  }
+}

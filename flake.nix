@@ -21,7 +21,7 @@
     vllm-xpu-kernels-unstable-src = {
       type = "git";
       url = "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm-xpu-kernels.git";
-      ref = "refs/tags/xpu-v1.10.0";
+      ref = "refs/heads/main";
       submodules = true;
       flake = false;
     };
@@ -36,7 +36,7 @@
     vllm-xpu-unstable-src = {
       type = "git";
       url = "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm.git";
-      ref = "refs/tags/xpu-v1.10.0";
+      ref = "refs/heads/main";
       flake = false;
     };
 
@@ -88,9 +88,7 @@
           kernelsUnstableVersion = mkInputVersion {
             name = "vllm-xpu-kernels-unstable-src";
             input = vllm-xpu-kernels-unstable-src;
-            # main descends from the 0.1.14.1/v0.1.14 tag commit; retain the
-            # most precise upstream release line before the snapshot suffix.
-            base = "0.1.14.1";
+            base = "0.1.15";
             unstable = true;
           };
           vllmStableVersion = mkInputVersion {
@@ -100,10 +98,7 @@
           vllmUnstableVersion = mkInputVersion {
             name = "vllm-xpu-unstable-src";
             input = vllm-xpu-unstable-src;
-            # Retain this integration snapshot's version label. Release notes
-            # record its exact upstream base; a newer release publication does
-            # not advance this source pin or establish release-tag ancestry.
-            base = "0.28.0";
+            base = "0.30.0";
             unstable = true;
           };
 

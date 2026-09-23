@@ -1,0 +1,63 @@
+{
+  "discovered_utc": "2026-09-20T06:43:31.880441+00:00",
+  "models": [
+    {
+      "role": "primary",
+      "model": "syvai/Qwen3.8-27B-DFlash2-W4A16",
+      "revision": "4d30ec736ffc6b8688dc2ae2b502d9b48bdec279",
+      "config_sha256": "61d6276fe8d76295232cb02d26cbb0d29c25565911f50441e779c88c9220c556",
+      "weight_remote_metadata": [
+        {
+          "rfilename": "model.safetensors",
+          "blobId": "e4cc08137c7783c9456552e4347bd508ee8a8c8e",
+          "size": 1280633960,
+          "lfs": {
+            "sha256": "ec26996e6a0745ab5edb857117220ce1e219ad524f71e6e149b703804947d8e7",
+            "size": 1280633960,
+            "pointerSize": 135
+          }
+        }
+      ],
+      "weights_downloaded_or_local_hash_verified": false
+    },
+    {
+      "role": "bounded comparison",
+      "model": "0xMiami305/Qwen3.8-27B-DFlash2-W4A16-MLP-only",
+      "revision": "6d2937789337b005a3a74a3f5991ac5896d85192",
+      "config_sha256": "6addc0fdecab16f83a2c48ebe0d3896f5777b88ae6ac81022ed18e23e4ee2c29",
+      "weight_remote_metadata": [
+        {
+          "rfilename": "model.safetensors",
+          "blobId": "23df173c499374f84203759612379883beba5648",
+          "size": 1864309248,
+          "lfs": {
+            "sha256": "43db10ad6c8364f168ac1dc635f15431a9031cd423b7e3df767d5a2b6a33cafc",
+            "size": 1864309248,
+            "pointerSize": 135
+          }
+        }
+      ],
+      "weights_downloaded_or_local_hash_verified": false
+    },
+    {
+      "role": "bounded comparison",
+      "model": "gratex/Qwen3.8-27B-DFlash2-W4A16-g128-sym-GPTQ",
+      "revision": "5564be8081de421f9d106087b82c33046ca22054",
+      "config_sha256": "61d6276fe8d76295232cb02d26cbb0d29c25565911f50441e779c88c9220c556",
+      "weight_remote_metadata": [
+        {
+          "rfilename": "model.safetensors",
+          "blobId": "3b06656bf8a4b3e718bc8112a8d5e692c2adc3a9",
+          "size": 1280633960,
+          "lfs": {
+            "sha256": "b1d89a2df850f53f276b9e114d08b57097c5846c8d2a26e0a243d2c9b898d817",
+            "size": 1280633960,
+            "pointerSize": 135
+          }
+        }
+      ],
+      "weights_downloaded_or_local_hash_verified": false
+    }
+  ],
+  "scope": "Read-only metadata discovery during source audit. No model load or measurement. Verify downloaded weight bytes before testing."
+}

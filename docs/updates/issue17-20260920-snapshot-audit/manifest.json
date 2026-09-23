@@ -1,0 +1,73 @@
+{
+  "run_id": "issue17-20260920-snapshot-audit",
+  "created_utc": "2026-09-20T06:33:33.121331+00:00",
+  "packaging_baseline": "4ac4375aa3d0f649fb4b6b43d9447f413a8b1cc7",
+  "packaging_lock_sha256": "1b5435120d13022907e0deb7e14c470519f0228662d211faab5af79afcb9f730",
+  "repos": {
+    "vllm": {
+      "repository": "/home/jasonbk/Projects/vllm-xpu-nix/build-dev/issue17/vllm",
+      "original_checkout": "/home/jasonbk/Projects/vllm",
+      "old_base": "51da0ca66c8065619c79e35dff97aa99aeaf5644",
+      "local_main": "3b6c822e8a4f56dc3904c7fce388a76dff4c7bdd",
+      "remote_main": "3b6c822e8a4f56dc3904c7fce388a76dff4c7bdd",
+      "released_tip": "2fdd9d71f6895379b0940a8f755b4c9095840558",
+      "target": "e378275a8f20eac9e92212e4a1fee84ec5a31dc7",
+      "target_date": "2026-09-19T23:23:29-07:00",
+      "upstream": "https://github.com/vllm-project/vllm.git",
+      "origin": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm.git",
+      "remote_recovery": {
+        "ref": "refs/heads/recovery/issue17-20260920-main",
+        "sha": "3b6c822e8a4f56dc3904c7fce388a76dff4c7bdd",
+        "verified": true
+      },
+      "candidate_branch": "issue17-20260920-replay",
+      "candidate_head": "e378275a8f20eac9e92212e4a1fee84ec5a31dc7"
+    },
+    "vllm-xpu-kernels": {
+      "repository": "/home/jasonbk/Projects/vllm-xpu-nix/build-dev/issue17/vllm-xpu-kernels",
+      "original_checkout": "/home/jasonbk/Projects/vllm-xpu-kernels",
+      "old_base": "e7f20cbc18d741419a84aa57178e1f1cc0b453da",
+      "local_main": "9bb1e2d428b8a25b262c0cd6704614bdf6ee3ad8",
+      "remote_main": "9bb1e2d428b8a25b262c0cd6704614bdf6ee3ad8",
+      "released_tip": "2c39287deec5e59cc2656e6d4a6dce51a567c411",
+      "target": "da16a5595c105605bcd44b558c7933b934a05f85",
+      "target_date": "2026-09-16T16:33:41+08:00",
+      "upstream": "https://github.com/vllm-project/vllm-xpu-kernels.git",
+      "origin": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm-xpu-kernels.git",
+      "remote_recovery": {
+        "ref": "refs/heads/recovery/issue17-20260920-main",
+        "sha": "9bb1e2d428b8a25b262c0cd6704614bdf6ee3ad8",
+        "verified": true
+      },
+      "candidate_branch": "issue17-20260920-replay",
+      "candidate_head": "c66a48486dcd6b76336ec8a8b984a4700f89e1d9"
+    }
+  },
+  "observed_kernel_head": "d7c35d281cf50564996fb0b9c41676b64f13f970",
+  "selection_status": "archived source-compatible September pair; one kernel replay; no runtime qualification; future applicability must be reassessed",
+  "release": "xpu-v1.10.0",
+  "issue_snapshot_sha256": "7e4fb8c8f79128842a2c09f403d8819e2d45b9e2e4313edbbb3006d514144aee",
+  "packaging_dependency_commit": "880e74ed488a795963e631b46be5295a9389c323",
+  "goal_status": "paused",
+  "pause_checkpoint": "pause-checkpoint.json",
+  "current_status": "status.json",
+  "resume_instructions": "RESUME.md",
+  "original_issue_snapshot": "issue17-before-pause.md",
+  "current_issue_body": "issue17.md",
+  "current_issue_body_sha256": "4e80324a899a4e9b8483108ba23c59b40eb618383f41fa2e48b66d2b9fd31f3e",
+  "planned_reassessment": "published upstream v0.32-series; no reserved patch version or readiness guarantee",
+  "updated_utc": "2026-09-20T07:43:57.969834+00:00",
+  "remote_issue_body_verification": {
+    "verified_utc": "2026-09-20T07:44:59.201285+00:00",
+    "issue_url": "https://git.sunnycareboo.com/jasonbk/vllm-xpu-nix/issues/17",
+    "issue_number": 17,
+    "issue_state": "open",
+    "body_updated_inline": true,
+    "comment_created": false,
+    "readback_exact_match": true,
+    "body_sha256": "4e80324a899a4e9b8483108ba23c59b40eb618383f41fa2e48b66d2b9fd31f3e",
+    "body_bytes": 64946,
+    "updated_at": "2026-09-20T00:44:59-07:00",
+    "original_body_sha256": "77eccd10379a7528350620aba73df2a68173c05fab8a5915da8ddf67cda52573"
+  }
+}

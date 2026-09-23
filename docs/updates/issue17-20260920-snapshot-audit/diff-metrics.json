@@ -1,0 +1,20 @@
+{
+  "vllm": {
+    "old_base": "51da0ca66c8065619c79e35dff97aa99aeaf5644",
+    "old_effective_tip": "2fdd9d71f6895379b0940a8f755b4c9095840558",
+    "files": 87,
+    "insertions": 21383,
+    "deletions": 411,
+    "binary_files": 0,
+    "final_effective_diff": null
+  },
+  "vllm-xpu-kernels": {
+    "old_base": "e7f20cbc18d741419a84aa57178e1f1cc0b453da",
+    "old_effective_tip": "2c39287deec5e59cc2656e6d4a6dce51a567c411",
+    "files": 44,
+    "insertions": 10265,
+    "deletions": 106,
+    "binary_files": 0,
+    "final_effective_diff": null
+  }
+}

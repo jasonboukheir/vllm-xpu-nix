@@ -1,0 +1,155 @@
+{
+  "nodes": {
+    "flake-utils": {
+      "inputs": {
+        "systems": "systems"
+      },
+      "locked": {
+        "lastModified": 1731533236,
+        "narHash": "sha256-l0KFg5HjrsfsO/JpG+r7fRrqm12kzFHyUHqHCVpMMbI=",
+        "owner": "numtide",
+        "repo": "flake-utils",
+        "rev": "11707dc2f618dd54ca8739b309ec4fc024de578b",
+        "type": "github"
+      },
+      "original": {
+        "owner": "numtide",
+        "repo": "flake-utils",
+        "type": "github"
+      }
+    },
+    "nixpkgs": {
+      "locked": {
+        "lastModified": 1786599213,
+        "narHash": "sha256-yNJd40f11EzXBjSByCB7IPpeFFAdeoSKKM67dGkfFoU=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "0e251e24a4f24e036a084b6b4b2d2491af4167f4",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "0e251e24a4f24e036a084b6b4b2d2491af4167f4",
+        "type": "github"
+      }
+    },
+    "root": {
+      "inputs": {
+        "flake-utils": "flake-utils",
+        "nixpkgs": "nixpkgs",
+        "sycl-tla-src": "sycl-tla-src",
+        "vllm-xpu-kernels-src": "vllm-xpu-kernels-src",
+        "vllm-xpu-kernels-unstable-src": "vllm-xpu-kernels-unstable-src",
+        "vllm-xpu-src": "vllm-xpu-src",
+        "vllm-xpu-unstable-src": "vllm-xpu-unstable-src"
+      }
+    },
+    "sycl-tla-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1786375367,
+        "narHash": "sha256-NAGK83CxSAK/FVZvyWRB6qOrmu4nYaemGr7wGxeIFcs=",
+        "owner": "intel",
+        "repo": "sycl-tla",
+        "rev": "87f6850680a580654b9ea2c80dbc01aeb36ad231",
+        "type": "github"
+      },
+      "original": {
+        "owner": "intel",
+        "repo": "sycl-tla",
+        "rev": "87f6850680a580654b9ea2c80dbc01aeb36ad231",
+        "type": "github"
+      }
+    },
+    "systems": {
+      "locked": {
+        "lastModified": 1681028828,
+        "narHash": "sha256-Vy1rq5AaRuLzOxct8nz4T6wlgyUR7zLU309k9mBC768=",
+        "owner": "nix-systems",
+        "repo": "default",
+        "rev": "da67096a3b9bf56a91d16901293e51ba5b49a27e",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nix-systems",
+        "repo": "default",
+        "type": "github"
+      }
+    },
+    "vllm-xpu-kernels-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1783478514,
+        "narHash": "sha256-LzkcNJWg6Wj2c9q9Qg1CG0C3lufSiAlPxdGDewlFAs4=",
+        "ref": "release/v0.1.11",
+        "rev": "dda91d171fbc3f51d1d65a7f8839714b1efffd42",
+        "revCount": 297,
+        "submodules": true,
+        "type": "git",
+        "url": "https://github.com/vllm-project/vllm-xpu-kernels.git"
+      },
+      "original": {
+        "ref": "release/v0.1.11",
+        "submodules": true,
+        "type": "git",
+        "url": "https://github.com/vllm-project/vllm-xpu-kernels.git"
+      }
+    },
+    "vllm-xpu-kernels-unstable-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1789399108,
+        "narHash": "sha256-ZoS2rZp0YCG7Vd7hi604LGMUnVr+dYR3SMv3CCFwl5s=",
+        "ref": "refs/tags/xpu-v1.10.0",
+        "rev": "2c39287deec5e59cc2656e6d4a6dce51a567c411",
+        "revCount": 376,
+        "submodules": true,
+        "type": "git",
+        "url": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm-xpu-kernels.git"
+      },
+      "original": {
+        "ref": "refs/tags/xpu-v1.10.0",
+        "submodules": true,
+        "type": "git",
+        "url": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm-xpu-kernels.git"
+      }
+    },
+    "vllm-xpu-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1783765504,
+        "narHash": "sha256-ynETIrqTCkB/oGVLLD9UeKuaV7oYl+neP26b/YJMcxg=",
+        "ref": "refs/heads/releases/v0.25.0",
+        "rev": "702f4814fe54fabff350d43cb753ae3e47c0c276",
+        "revCount": 18494,
+        "type": "git",
+        "url": "https://github.com/vllm-project/vllm.git"
+      },
+      "original": {
+        "ref": "refs/heads/releases/v0.25.0",
+        "type": "git",
+        "url": "https://github.com/vllm-project/vllm.git"
+      }
+    },
+    "vllm-xpu-unstable-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1789437348,
+        "narHash": "sha256-m033j4Yi6mUOce85m36O845hI8wEIHQepKfNqC6G0jw=",
+        "ref": "refs/tags/xpu-v1.10.0",
+        "rev": "2fdd9d71f6895379b0940a8f755b4c9095840558",
+        "revCount": 20975,
+        "type": "git",
+        "url": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm.git"
+      },
+      "original": {
+        "ref": "refs/tags/xpu-v1.10.0",
+        "type": "git",
+        "url": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm.git"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}

@@ -1,0 +1,78 @@
+{
+  "inputs": [
+    {
+      "path": "nix/patches/0001-split-kernel-libs.patch",
+      "sha256": "0d7b31cef2a1855a67910023d6c35e0a91345376dfd2e82a4f663d55d7809ead"
+    },
+    {
+      "path": "nix/patches/0004-skip-prebuilt-additional-libs.patch",
+      "sha256": "45c1e47d947d2f576054096278825f0d8fe0ad4787b9536afcc3af73061ad873"
+    },
+    {
+      "path": "nix/patches/0005-reduce-kernel-build-memory.patch",
+      "sha256": "79701051bd0b04bf09074ecce35e80a81a74b4e4b257de06eae3a630e972eb98"
+    },
+    {
+      "path": "nix/patches/0006-forward-mhc-feature-flag.patch",
+      "sha256": "8f2cba38bf161f7d557f3f1fce0b584c6beda21cb315a4b17ee39a4c5411de98"
+    },
+    {
+      "path": "nix/vllm-xpu.nix",
+      "sha256": "67a1595fd711a6df676eaffff4debc9946aae8ffae292e7a30c748ef20b4e04e"
+    },
+    {
+      "path": "nix/vllm-xpu-kernels.nix",
+      "sha256": "a04700b23e39b9531c97b2ea9c6d25b856801ee8299e861330bed2451b303647"
+    },
+    {
+      "path": "nix/vllm-xpu-lib.nix",
+      "sha256": "4e0975eaa17604e94e0cc61cf8aa4bbb5f2ad648f88268e886f946af2b9d9063"
+    },
+    {
+      "path": "nix/lib/kernel-lib-src.nix",
+      "sha256": "cf9597b2cfa02304aea1124864ae561828f9cf5a841f7628235b0117eb98ec8e"
+    },
+    {
+      "path": "nix/lib/kernel-glue-src.nix",
+      "sha256": "1d745679df67d1e4de877dae6be6eda73ac6797606cd09c07e27f1c1d85cd40b"
+    },
+    {
+      "path": "nix/lib/kernels-src.nix",
+      "sha256": "b0e9192497b375fe93fef2e67b56ab54723518831bcc427528706aaa12371457"
+    }
+  ],
+  "patch_application_checks": [
+    {
+      "name": "library",
+      "argv": [
+        "git",
+        "-C",
+        "/home/jasonbk/Projects/vllm-xpu-nix/build-dev/issue17/vllm-xpu-kernels",
+        "apply",
+        "--check",
+        "/home/jasonbk/Projects/vllm-xpu-nix/nix/patches/0001-split-kernel-libs.patch",
+        "/home/jasonbk/Projects/vllm-xpu-nix/nix/patches/0005-reduce-kernel-build-memory.patch"
+      ],
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "name": "glue",
+      "argv": [
+        "git",
+        "-C",
+        "/home/jasonbk/Projects/vllm-xpu-nix/build-dev/issue17/vllm-xpu-kernels",
+        "apply",
+        "--check",
+        "/home/jasonbk/Projects/vllm-xpu-nix/nix/patches/0001-split-kernel-libs.patch",
+        "/home/jasonbk/Projects/vllm-xpu-nix/nix/patches/0004-skip-prebuilt-additional-libs.patch",
+        "/home/jasonbk/Projects/vllm-xpu-nix/nix/patches/0006-forward-mhc-feature-flag.patch"
+      ],
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  ],
+  "scope": "Static patch application only; not compilation or final package qualification"
+}

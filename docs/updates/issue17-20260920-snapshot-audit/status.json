@@ -1,0 +1,62 @@
+{
+  "goal": "paused",
+  "phase": "paused at user request after A audits/reconciliation and partial replay",
+  "audit_total": 27,
+  "audit_done": 27,
+  "source_refresh": "27/27 audits and parent reconciliation complete; kernel k01 replay only; final minimized diff and qualification pending",
+  "integration": "not started",
+  "profiling": "not started",
+  "qualification": "not started",
+  "publication": "not started",
+  "host_activation": "separate handoff; not requested",
+  "gpu_maintenance": "chat active/running at pause inspection; no goal-owned work remaining; no services changed",
+  "live_processes": [],
+  "next": "Wait for explicit user resume; then reassess published v0.32-series/upstream criteria and audit applicability, resolve proposed scope split before implementation. Do not blindly replay frozen September snapshots.",
+  "updated_utc": "2026-09-20T07:45:41.493747+00:00",
+  "delegation_status": "27 distinct audit assignments completed; no active audit agents",
+  "dependency_build": "HF Hub 1.31.0 and XGrammar 0.2.7 realized; offline import/JSON grammar API smoke passed",
+  "packaging_dependency_commit": "880e74ed488a795963e631b46be5295a9389c323",
+  "vllm_lint_setup": "Incomplete: retained stub-loader/npm failures; Nix Node24 realization complete but hook setup not repaired/rerun; paused",
+  "source_heads": {
+    "vllm": "e378275a8f20eac9e92212e4a1fee84ec5a31dc7",
+    "vllm-xpu-kernels": "c66a48486dcd6b76336ec8a8b984a4700f89e1d9"
+  },
+  "source_replay_count": {
+    "vllm": 0,
+    "vllm-xpu-kernels": 1
+  },
+  "performance_claim": "No DFlash2 speedup or performance ceiling established; no new DFlash2 measurements",
+  "operational_release": "xpu-v1.10.0",
+  "resume_requires_explicit_user_request": true,
+  "planned_reassessment": "published upstream v0.32-series; no reserved patch version or readiness guarantee",
+  "phase_split_status": "proposed; not approved; neither phase started",
+  "host_service": {
+    "name": "vllm-xpu-chat.service",
+    "active": "active",
+    "substate": "running",
+    "main_pid": 1638887,
+    "changed_by_pause": false
+  },
+  "pause_checkpoint": "docs/updates/issue17-20260920-snapshot-audit/pause-checkpoint.json",
+  "remote_issue_body_verification": {
+    "verified_utc": "2026-09-20T07:44:59.201285+00:00",
+    "issue_url": "https://git.sunnycareboo.com/jasonbk/vllm-xpu-nix/issues/17",
+    "issue_number": 17,
+    "issue_state": "open",
+    "body_updated_inline": true,
+    "comment_created": false,
+    "readback_exact_match": true,
+    "body_sha256": "4e80324a899a4e9b8483108ba23c59b40eb618383f41fa2e48b66d2b9fd31f3e",
+    "body_bytes": 64946,
+    "updated_at": "2026-09-20T00:44:59-07:00",
+    "original_body_sha256": "77eccd10379a7528350620aba73df2a68173c05fab8a5915da8ddf67cda52573"
+  },
+  "supported_goal_control": {
+    "thread_id": "01a0bd7f-9dcd-7c50-ad85-07b03eb09a58",
+    "status": "paused",
+    "control_updated_unix": 1789889571,
+    "source": "get_goal supported control readback; already paused by user; no complete/blocked mutation",
+    "resume_only_on_explicit_user_request": true
+  },
+  "final_inspection": "benchmark-results/issue17-20260920/pause-final-inspection.json"
+}

@@ -1,0 +1,13 @@
+{
+  "verified_utc": "2026-09-20T07:44:59.201285+00:00",
+  "issue_url": "https://git.sunnycareboo.com/jasonbk/vllm-xpu-nix/issues/17",
+  "issue_number": 17,
+  "issue_state": "open",
+  "body_updated_inline": true,
+  "comment_created": false,
+  "readback_exact_match": true,
+  "body_sha256": "4e80324a899a4e9b8483108ba23c59b40eb618383f41fa2e48b66d2b9fd31f3e",
+  "body_bytes": 64946,
+  "updated_at": "2026-09-20T00:44:59-07:00",
+  "original_body_sha256": "77eccd10379a7528350620aba73df2a68173c05fab8a5915da8ddf67cda52573"
+}

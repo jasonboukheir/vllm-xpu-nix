@@ -1,0 +1,160 @@
+{
+  "observed_utc": "2026-09-20T07:38:25.360215+00:00",
+  "repos": {
+    "packaging": {
+      "path": "/home/jasonbk/Projects/vllm-xpu-nix",
+      "head": "880e74ed488a795963e631b46be5295a9389c323",
+      "branch": "main",
+      "status": "?? docs/updates/",
+      "refs": "",
+      "operation_in_progress": []
+    },
+    "vllm_candidate": {
+      "path": "/home/jasonbk/Projects/vllm-xpu-nix/build-dev/issue17/vllm",
+      "head": "e378275a8f20eac9e92212e4a1fee84ec5a31dc7",
+      "branch": "issue17-20260920-replay",
+      "status": "",
+      "refs": "e378275a8f20eac9e92212e4a1fee84ec5a31dc7 refs/heads/issue17-20260920-replay\n3b6c822e8a4f56dc3904c7fce388a76dff4c7bdd refs/recovery/issue17-20260920/local-main\n2fdd9d71f6895379b0940a8f755b4c9095840558 refs/recovery/issue17-20260920/release\n3b6c822e8a4f56dc3904c7fce388a76dff4c7bdd refs/recovery/issue17-20260920/remote-main\ne378275a8f20eac9e92212e4a1fee84ec5a31dc7 refs/snapshots/issue17-20260920/upstream-main",
+      "operation_in_progress": [],
+      "remote_refs": "3b6c822e8a4f56dc3904c7fce388a76dff4c7bdd\trefs/heads/main\n3b6c822e8a4f56dc3904c7fce388a76dff4c7bdd\trefs/heads/recovery/issue17-20260920-main\n7fc91e743b2f32da03a14ab22581b1281cdddbc6\trefs/tags/xpu-v1.10.0\n2fdd9d71f6895379b0940a8f755b4c9095840558\trefs/tags/xpu-v1.10.0^{}"
+    },
+    "kernels_candidate": {
+      "path": "/home/jasonbk/Projects/vllm-xpu-nix/build-dev/issue17/vllm-xpu-kernels",
+      "head": "c66a48486dcd6b76336ec8a8b984a4700f89e1d9",
+      "branch": "issue17-20260920-replay",
+      "status": "",
+      "refs": "c66a48486dcd6b76336ec8a8b984a4700f89e1d9 refs/heads/issue17-20260920-replay\n9bb1e2d428b8a25b262c0cd6704614bdf6ee3ad8 refs/recovery/issue17-20260920/local-main\n2c39287deec5e59cc2656e6d4a6dce51a567c411 refs/recovery/issue17-20260920/release\n9bb1e2d428b8a25b262c0cd6704614bdf6ee3ad8 refs/recovery/issue17-20260920/remote-main\nda16a5595c105605bcd44b558c7933b934a05f85 refs/snapshots/issue17-20260920/selected\nd7c35d281cf50564996fb0b9c41676b64f13f970 refs/snapshots/issue17-20260920/upstream-main",
+      "operation_in_progress": [],
+      "remote_refs": "9bb1e2d428b8a25b262c0cd6704614bdf6ee3ad8\trefs/heads/main\n9bb1e2d428b8a25b262c0cd6704614bdf6ee3ad8\trefs/heads/recovery/issue17-20260920-main\n4a44f090d452d8d726ef890d8d5e208d99b20995\trefs/tags/xpu-v1.10.0\n2c39287deec5e59cc2656e6d4a6dce51a567c411\trefs/tags/xpu-v1.10.0^{}"
+    },
+    "vllm_original": {
+      "path": "/home/jasonbk/Projects/vllm",
+      "head": "3b6c822e8a4f56dc3904c7fce388a76dff4c7bdd",
+      "branch": "main",
+      "status": "",
+      "refs": "",
+      "operation_in_progress": []
+    },
+    "kernels_original": {
+      "path": "/home/jasonbk/Projects/vllm-xpu-kernels",
+      "head": "9bb1e2d428b8a25b262c0cd6704614bdf6ee3ad8",
+      "branch": "main",
+      "status": "",
+      "refs": "",
+      "operation_in_progress": []
+    }
+  },
+  "packaging_remote_refs": "4ac4375aa3d0f649fb4b6b43d9447f413a8b1cc7\trefs/heads/main\n87d44a3e95b61f56c1bcb4e827f291e02fc6d259\trefs/tags/xpu-v1.10.0\n4ac4375aa3d0f649fb4b6b43d9447f413a8b1cc7\trefs/tags/xpu-v1.10.0^{}",
+  "service": "ActiveState=active\nSubState=running\nFragmentPath=/etc/systemd/system/vllm-xpu-chat.service\nMainPID=1638887\nExecStart={ path=/nix/store/v8jzs75kb7w0wy0542a99kl6njxsd1kp-python3.12-vllm-xpu-0.28.0+unstable.2026.09.15.g2fdd9d7/bin/vllm ; argv[]=/nix/store/v8jzs75kb7w0wy0542a99kl6njxsd1kp-python3.12-vllm-xpu-0.28.0+unstable.2026.09.15.g2fdd9d7/bin/vllm serve RedHatAI/Qwen3.8-27B-INT4 --host 127.0.0.1 --port 8000 --served-model-name sunny-chat --dtype bfloat16 --gpu-memory-utilization 0.960000 --revision bf08f3dbd9a324e53956920aad378a1f1b6dd24a --quantization compressed-tensors --kv-cache-dtype kvarn_k4v2_g128_compact --max-model-len 262144 --max-num-seqs 4 --speculative-config {\"kv_cache_dtype\":\"kvarn_k4v2_g128_compact\",\"method\":\"mtp\",\"num_speculative_tokens\":2} --enforce-eager --reasoning-parser qwen3 --enable-auto-tool-choice --tool-call-parser qwen3_xml --limit-mm-per-prompt {\"image\":2,\"video\":0} --no-enable-prefix-caching --max-num-batched-tokens 2048 --mm-processor-kwargs {\"max_pixels\":200704,\"min_pixels\":200704} ; ignore_errors=no ; start_time=[Sun 2026-09-20 00:34:02 PDT] ; stop_time=[n/a] ; pid=1638887 ; code=(null) ; status=0/0 }",
+  "current_system": "/nix/store/11y2n32j1k01p7h1hbrfigjp9b88wjh6-nixos-system-brutus-26.05.20260914.c3eea5b",
+  "goal_process_candidates": [],
+  "audits": {
+    "report_count": 27,
+    "row_count": 27,
+    "distinct_agents": 27,
+    "parent_reconciled": 27,
+    "report_hashes": {
+      "k01-8530de9d4298.md": "954d43fd79c3a42b5f8343914156f6c17898d1559b0c4bfabb1d735ea1cd1918",
+      "k02-27a9c28f8598.md": "f67e6ec1fc16ca9988d52c7de8f6c371704d0e1c51154f77483fd448316141cc",
+      "k03-32f424757748.md": "835158e3cf45019376aacdc4ea3251b420636804413e7d418e7e538550134d5b",
+      "k04-09925af1f9cb.md": "0139c1b02928128ee00a19e48a24dbd08085629d4347cfd0bef4d97f7907573b",
+      "k05-9e2ac704b862.md": "94b0d96c0c3ef581b2b7589db135eb80368faa3f09993201d7c4d3c58c24fed2",
+      "k06-be4d79b04ab6.md": "16bb0bc73ce2aafde34d14f81adaa9e31c0c19de52f5bcf5456627447b45f87c",
+      "k07-8900abc2df3e.md": "e6efac972f02cf7d771d5ac9ea1f642dc8fddc42a075c6fa5a8862379815f88f",
+      "k08-9bb1e2d428b8.md": "9b3bb45496dad89a0873e47b5abd8bf925433250255ae604743cbbe862fb6632",
+      "k09-f26ef2323399.md": "557dd2800dfa475ed0298c5a75f4d90d816324c51d6d4afb737dbbb3af8818c3",
+      "k10-c69cfad0586b.md": "e7ffeed3c73dd37373c4c277cd1e81a4481be62c23c2fbe8fba57b20522670a4",
+      "k11-2c39287deec5.md": "c21caa79c124b177fe4a3f3632c4e3d43978372e03dca227e5ca34a886d1a3d5",
+      "v01-f1056606736e.md": "2d327998039bb3a282ce6919175e3c406727470d348736fe0254a66b46f3091f",
+      "v02-cf0b834cd66c.md": "0a80dc2c7b04f34b5a75bcd148c0caa9ea4c11e60e54fd3b7445f31028c59f1c",
+      "v03-7de1e1c5ec5f.md": "617f56edf915b2e06e9e7cd401a99f9328cd4259fcf7017b35f0d9689dbb3d74",
+      "v04-c32113ed68b8.md": "e61c0499f6b4a16cbf0abe1bd3b9fdf3eb51a98984213b92138492fef64ba163",
+      "v05-fcab69494f17.md": "de1ce64ff9ec2b512a502575151bd35bc4d01b79beceb4928c923de8b95d32c5",
+      "v06-6700b7cad87b.md": "f44cc30e826efe9400bf54b71c4451230c14919015bdfdcf918a25737600ae93",
+      "v07-2352837c5eb1.md": "2ae92505462602f6da7ed57d9119866fbc2011db67fef39a58e01ba2bbedb2cc",
+      "v08-3b6c822e8a4f.md": "c229b1bf00e4c0457b3614ee5e2276818c7fafaefb92bc9b85f889df6743f295",
+      "v09-74a764d57a8c.md": "49939e8c281c6eb6c15a9c0fc1ad9f892761f75fa3ee4b5810cfbad5c1df7318",
+      "v10-80d5166fcb0b.md": "af23edddaf5850701ec06cb381f1c4f65e323c9c65995928326f1b5cafa4829f",
+      "v11-73fb9e7aa230.md": "dcdac54f10c9c9d2abae42ae30db3d14137db10d6a8efbf3ddfb9b298066fba0",
+      "v12-6519bf709dbb.md": "2ed6551dd741d041192a2289b5d7498f5610715cf070766f1cda2cda887d9919",
+      "v13-d6cb2e6cb2de.md": "16b9fc78129079c6d93579c177f23bd9269a00523d0d38f05f212f3af77bb477",
+      "v14-32289022a4e3.md": "205a9e276163857096c9f51b5d1f61b57752f28cb6733697e0538785aae7ee68",
+      "v15-2e010408b971.md": "05e106b911bc12e4a4b59be697c089d850668bbb92d255233cacc6d3e8d082a1",
+      "v16-2fdd9d71f689.md": "d5368161910f31937223adc3b7e70adcbd2fc2c20b8c2551c090ad636f53c680"
+    },
+    "mismatches": []
+  },
+  "goal_status": "paused",
+  "pause_reason": "user request",
+  "resume_requires": "explicit user request; upstream and audit reassessment; resolve proposed scope split before either phase",
+  "implementation_authorized": false,
+  "performance_limit_established": false,
+  "dflash2_measurements": false,
+  "goal_owned_processes_stopped": [],
+  "host_services_changed": false,
+  "host_activation_changed": false,
+  "planned_reassessment": "published upstream v0.32-series; no reserved patch version or readiness guarantee",
+  "phase_split_status": "proposed; not approved; neither phase started",
+  "remote_issue_body_verification": {
+    "verified_utc": "2026-09-20T07:44:59.201285+00:00",
+    "issue_url": "https://git.sunnycareboo.com/jasonbk/vllm-xpu-nix/issues/17",
+    "issue_number": 17,
+    "issue_state": "open",
+    "body_updated_inline": true,
+    "comment_created": false,
+    "readback_exact_match": true,
+    "body_sha256": "4e80324a899a4e9b8483108ba23c59b40eb618383f41fa2e48b66d2b9fd31f3e",
+    "body_bytes": 64946,
+    "updated_at": "2026-09-20T00:44:59-07:00",
+    "original_body_sha256": "77eccd10379a7528350620aba73df2a68173c05fab8a5915da8ddf67cda52573"
+  },
+  "preedit_archive_sha256": "c946be80b2bd32feeff70ca8dae42bd4f9e776c2ca2ea71fa4cee692cec0d8c8",
+  "original_issue_body_sha256": "77eccd10379a7528350620aba73df2a68173c05fab8a5915da8ddf67cda52573",
+  "prepared_issue_body_sha256": "4e80324a899a4e9b8483108ba23c59b40eb618383f41fa2e48b66d2b9fd31f3e",
+  "source_replay": {
+    "vllm": [],
+    "vllm-xpu-kernels": [
+      {
+        "id": "k01",
+        "old_sha": "8530de9d4298b199436079c46233acb33efb6fc2",
+        "candidate_sha": "c66a48486dcd6b76336ec8a8b984a4700f89e1d9",
+        "parent": "da16a5595c105605bcd44b558c7933b934a05f85",
+        "hooks": "passed before pause",
+        "native_build": "not run",
+        "gpu_validation": "not run"
+      }
+    ]
+  },
+  "updated_utc": "2026-09-20T07:45:41.493747+00:00",
+  "supported_goal_control": {
+    "thread_id": "01a0bd7f-9dcd-7c50-ad85-07b03eb09a58",
+    "status": "paused",
+    "control_updated_unix": 1789889571,
+    "source": "get_goal supported control readback; already paused by user; no complete/blocked mutation",
+    "resume_only_on_explicit_user_request": true
+  },
+  "final_inspection": {
+    "verified_utc": "2026-09-20T07:45:41.493747+00:00",
+    "goal_process_candidates": [],
+    "processes_stopped": [],
+    "repository_heads_unchanged": true,
+    "repository_statuses_unchanged": true,
+    "heads": {
+      "packaging": "880e74ed488a795963e631b46be5295a9389c323",
+      "vllm_candidate": "e378275a8f20eac9e92212e4a1fee84ec5a31dc7",
+      "kernels_candidate": "c66a48486dcd6b76336ec8a8b984a4700f89e1d9",
+      "vllm_original": "3b6c822e8a4f56dc3904c7fce388a76dff4c7bdd",
+      "kernels_original": "9bb1e2d428b8a25b262c0cd6704614bdf6ee3ad8"
+    },
+    "statuses": {
+      "packaging": "?? docs/updates/",
+      "vllm_candidate": "",
+      "kernels_candidate": "",
+      "vllm_original": "",
+      "kernels_original": ""
+    },
+    "service": "ActiveState=active\nSubState=running\nMainPID=1638887",
+    "current_system": "/nix/store/11y2n32j1k01p7h1hbrfigjp9b88wjh6-nixos-system-brutus-26.05.20260914.c3eea5b",
+    "host_mutations": []
+  }
+}

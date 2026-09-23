@@ -75,7 +75,7 @@
     "modules/flake/nixos/server/flake.lock"
   ],
   "host_activation": "not requested",
-  "maintenance_authorized": false,
+  "maintenance_authorized": true,
   "issue17_checkpoint": {
     "branch": "checkpoint/issue17-paused-20260920",
     "packaging_commit": "78a30c20abacc2455d8f36991a9783e251d60ace",
@@ -84,7 +84,7 @@
     "status": "draft; issue17 remains paused"
   },
   "packaging_main_start_verified": "4ac4375aa3d0f649fb4b6b43d9447f413a8b1cc7",
-  "updated_utc": "2026-09-23T05:05:57.438340+00:00",
+  "updated_utc": "2026-09-23T05:10:34.118404+00:00",
   "proposed_release": "xpu-v1.11.0; not reserved; recheck all local/remote refs before publication",
   "source_worktrees": "clean at final replayed tips; both rolling mains published and verified",
   "upstream_patch_preflight": "all four patch audits reviewed; final-source sequences apply with fuzz=0; final projections and architecture/AOT checks pass",
@@ -126,9 +126,12 @@
     }
   },
   "maintenance_observation": {
-    "chat": "enabled, inactive; clean stop 2026-09-22 21:01:56 PDT",
-    "embedding": "not found, inactive",
-    "changed_by_this_run": false,
-    "confirmation": "not recorded; verify operator intent before maintenance/GPU work"
+    "confirmed_utc": "2026-09-23T05:10:34.118404+00:00",
+    "user_confirmation": "yes I stopped it",
+    "authorized": "native build and GPU qualification for separate v0.30 release",
+    "chat": "failed/inactive execution; MainPID=0; user stopped it",
+    "embedding": "not found/inactive",
+    "stopped_by_this_run": [],
+    "restore_policy": "leave user-stopped services stopped; no host activation"
   }
 }

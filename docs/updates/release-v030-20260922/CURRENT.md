@@ -1,4 +1,4 @@
-# Separate v0.30 release: packaging prepared, native qualification pending
+# Separate v0.30 release: native build authorized
 
 The user authorized the ordinary release workflow on latest main, preserving
 existing eager V1 K4V2 target/draft bundled MTP2 and vision. Issue #17 remains
@@ -25,13 +25,14 @@ investigation belongs to this run.
 
 ## Next handoff
 
-The candidate has not been built or qualified natively. No new stable release
+The candidate is entering native build; it has not been qualified natively. No new stable release
 has been published. Operational baseline remains **xpu-v1.10.0**, packaging
 `4ac4375aa3d0f649fb4b6b43d9447f413a8b1cc7`. No service changes or host
 activation were performed. Chat is enabled but now inactive after a clean stop
 at 2026-09-22 21:01:56 PDT; embedding is absent/inactive. This run did not stop
-chat. Maintenance authorization has not been recorded; confirm operator intent
-at the runbook handoff and preserve the actual prior service state.
+chat. The user confirmed stopping it and authorized use of the downtime.
+The subsequent check found failed state with MainPID=0; leave it stopped and
+preserve that pre-existing state. Native build/GPU qualification is authorized.
 
 Read `resume.md` for exact build/qualification instructions and
 `qualification-status.json` for open gates. Provisional kernel performance
@@ -43,3 +44,19 @@ clean on `release-v030-20260922-replay`. Raw artifacts are private and ignored
 under `benchmark-results/release-v030-20260922/`; reviewed evidence is here.
 Host `~/.config/nix` has pre-existing changes to root and server `flake.lock`;
 preserve them. Host repinning/activation was not requested.
+
+## Live update: service restarted during native build
+
+Chat started again at 2026-09-22 22:15:57 PDT, MainPID 2761986. This run
+neither started nor stopped it. User clarification is pending before stopping
+that new instance or beginning GPU tests. The already authorized, bounded
+native build continues; no GPU measurement has begun. Read
+`benchmark-results/release-v030-20260922/native-build-status.json` and verify
+`owned-build-processes.json` before resuming; do not start a duplicate build.
+GDN compiled successfully; dependency builds are progressing.
+
+The serving preflight now accepts a failed unit only when MainPID/ControlPID
+are zero, its cgroup is absent and task count is zero/unset. This preserves a
+user-stopped failed unit without resetting it. All 45 affected harness tests
+pass, including active/lingering/unknown-state rejection. Formatting passes;
+ruff passes with the file's pre-existing path-bootstrap E402 excluded.

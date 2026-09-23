@@ -23,19 +23,39 @@ resume its V2/DFlash work, merge checkpoint PR #18, or change its goal status.
   `backup/origin-main-pre-v030-20260922`; original tips are in the manifest.
   Do not repeat the already completed audit/rebase or move old stable refs.
 
+## In-flight work (read before starting anything)
+
+The native build is running. Inspect this run's private `native-build-status.json`,
+`native-build.log` and `native-build-resources.jsonl`; verify PID start ticks
+against `owned-build-processes.json`. Do not launch a duplicate. Read current
+user messages: chat unexpectedly restarted at 22:15:57 PDT, and clarification
+was requested before stopping the new instance or starting GPU qualification.
+Initial maintenance authorization persists, but do not override an intentional
+operator restart. The initial build itself continues with max-jobs=1/cores=4.
+
+`qualification-packages.nix` prepares the actual Brutus test runtime and isolated
+no-k02/no-k10/no-k11 controls; evaluations pass. Only the attention source projection
+changes in each arm, with FA2 relinked; other native sources/derivations match.
+`controlled-source-variants.json` and `controlled-component-equivalence.json`
+record the exact differences. They have not been built or measured.
+`qualification-protocol.json` freezes native ABBA and matched release comparisons.
+The copied API/native harnesses and old serving workload inputs are retained here;
+check their provenance before execution. Use the current final source tests and
+installed candidate modules; never count an old installed binary as a new-pair pass.
+
 ## Remaining sequence
 
 1. Recheck actual refs, worktree/lock identities and `hostname -s` = `brutus`.
    The 27 source audits, four patch audits, parent reconciliation/replay, source
    publication, package evaluation and four lightweight checks are complete.
    Native build and GPU qualification are not complete.
-2. Follow `.agents/skills/vllm-xpu-update/references/workflow.md` section 6's
-   maintenance handoff. No maintenance confirmation is recorded. The latest
-   observation is chat enabled/inactive (clean stop 2026-09-22 21:01:56 PDT),
-   embedding absent/inactive; this run stopped neither. Verify current state
-   and operator intent before GPU work. Do not restart a previously stopped
-   worker automatically or change host activation.
-3. After the maintenance prerequisite is satisfied, build the exact Brutus
+2. Maintenance is confirmed: the user said "yes I stopped it" when asked to
+   use the downtime for the native build and GPU qualification. Chat has no
+   running main process (failed state, MainPID=0); embedding is absent/inactive.
+   This run stopped neither. Recheck current state, preserve any operator
+   changes, and leave user-stopped workers stopped. Do not ask again for the
+   same maintenance authorization or change host activation.
+3. With maintenance confirmed, build the exact Brutus
    override below with bounded jobs. Record actual compile concurrency/peak
    memory and perform the audit-required controlled build checks. Preserve
    artifacts when fixing a failure. Full packaging unit-tests require this

@@ -116,6 +116,38 @@ def stream_request(base, body, output, name, release):
     return result
 
 
+def require_stopped_service(unit):
+    """Accept a stopped failed unit only when systemd owns no processes."""
+    properties = subprocess.check_output(
+        [
+            "systemctl",
+            "show",
+            unit,
+            "-p",
+            "ActiveState",
+            "-p",
+            "MainPID",
+            "-p",
+            "ControlPID",
+            "-p",
+            "ControlGroup",
+            "-p",
+            "TasksCurrent",
+        ],
+        text=True,
+    )
+    state = dict(line.split("=", 1) for line in properties.splitlines() if "=" in line)
+    if not (
+        state.get("ActiveState") in ("inactive", "failed")
+        and state.get("MainPID") == "0"
+        and state.get("ControlPID") == "0"
+        and state.get("ControlGroup") == ""
+        and state.get("TasksCurrent") in ("0", "[not set]")
+    ):
+        raise RuntimeError(f"{unit} must be stopped with no owned processes: {state}")
+    return state
+
+
 def run(args):
     plan = json.loads(args.plan.read_text())
     if not plan["trials"] or plan["repeats"] < 3 or plan["output_tokens"] < 128:
@@ -139,11 +171,7 @@ def run(args):
     if any(arg.split("=", 1)[0] in reserved for arg in plan["server_args"]):
         raise ValueError("server_args override an arm identity or owned endpoint")
     for unit in ("vllm-xpu-chat.service", "vllm-xpu-embedding.service"):
-        state = subprocess.check_output(
-            ["systemctl", "show", unit, "-p", "ActiveState", "--value"], text=True
-        ).strip()
-        if state != "inactive":
-            raise RuntimeError(f"{unit} must be inactive")
+        require_stopped_service(unit)
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=False)
     runtime = args.service_env.resolve(strict=True)

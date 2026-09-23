@@ -34,12 +34,12 @@
     {
       "id": "maintenance",
       "requirement": "record enabled/active services and operator confirmation before expensive build/GPU work",
-      "status": "not authorized; chat now inactive, embedding absent; this run changed neither"
+      "status": "initial user confirmation retained; unexpected chat restart 22:15:57 PDT; clarification pending before GPU tests"
     },
     {
       "id": "build",
       "requirement": "exact Brutus override with bounded jobs, observed compiler memory/concurrency, actual native schema/import identity",
-      "status": "pending"
+      "status": "running; GDN built; dependency builds in progress; resource monitor active"
     },
     {
       "id": "gpu-correctness",

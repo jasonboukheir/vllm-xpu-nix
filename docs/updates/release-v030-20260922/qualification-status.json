@@ -69,12 +69,12 @@
     {
       "id": "publication",
       "requirement": "new unused coordinated minor version, paired stable source refs, exact final package equivalence, packaging publication and remote peeled-ref verification",
-      "status": "xpu-v1.11.0 refs preflight passed; pending publication"
+      "status": "passed: all three branch/tag refs and remotely fetched package verified; publication-verification.json"
     },
     {
       "id": "host",
       "requirement": "repin/activation only if separately requested; restore only services stopped for authorized maintenance",
-      "status": "not requested; no repin or activation"
+      "status": "user separately requested packaging-main configuration update; activation not requested"
     }
   ],
   "historical_limits": [
@@ -83,6 +83,6 @@
     "free-running concurrent output divergence; not matched-history accuracy samples"
   ],
   "notes": "Original audit recommendations remain historical evidence. The later user instruction selects actual Brutus settings and reasonable output for release acceptance; unrun optional controls are not passes.",
-  "updated_utc": "2026-09-23T06:59:10.763049+00:00",
+  "updated_utc": "2026-09-23T07:10:12.151243+00:00",
   "acceptance": "release-acceptance.json"
 }

@@ -1,14 +1,14 @@
 {
   "run_id": "release-v030-20260922",
-  "phase": "qualified and tag-pinned; packaging publication next",
+  "phase": "release complete; all immutable refs and remote package verified",
   "audit_total": 27,
   "audit_done": 27,
   "source_replay": "complete: five vLLM and eight kernel commits, final source review passed",
   "qualification": "Accepted under user-selected operational scope; all actual Brutus checks passed. Optional AEON/NaN limitations retained; experimental performance/build controls not run.",
-  "publication": "both immutable source releases verified; packaging ready to commit/publish",
+  "publication": "xpu-v1.11.0 published in all three repos; publication-verification.json",
   "issue17": "paused; checkpoint branches and draft PR #18 published and verified",
   "maintenance": "user explicitly authorized stop; chat/embedding observed inactive with no tasks",
-  "updated_utc": "2026-09-23T07:04:15.604654+00:00",
+  "updated_utc": "2026-09-23T07:10:12.151243+00:00",
   "lint_environment": "applicable hooks pass; recorded Nix tool adapters",
   "patch_audit_total": 4,
   "patch_audit_done": 4,
@@ -21,5 +21,7 @@
   "packaging_evaluation": "generic/Brutus evaluation, four lightweight checks, native Brutus build and full unit checks passed",
   "native_checkpoint": "native-build-review.json",
   "background_work": "none; all qualification helpers and services exited",
-  "acceptance": "release-acceptance.json"
+  "acceptance": "release-acceptance.json",
+  "packaging_release_commit": "93c021f9433e132e4f594d6c64353777f391dcf2",
+  "host_handoff": "User subsequently requested ~/.config/nix follow packaging main; separate configuration-only handoff, no activation."
 }

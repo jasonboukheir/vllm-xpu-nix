@@ -1,0 +1,53 @@
+{
+  "checked_utc": "2026-09-23T07:08:20.230036+00:00",
+  "release": "xpu-v1.11.0",
+  "repos": {
+    "vllm": {
+      "commit": "466b9d5abe84f13c29b38c686e4d77fc09e09aa4",
+      "verified_remote_refs": {
+        "refs/heads/checkpoint/issue17-paused-20260920": "e378275a8f20eac9e92212e4a1fee84ec5a31dc7",
+        "refs/heads/main": "466b9d5abe84f13c29b38c686e4d77fc09e09aa4",
+        "refs/heads/releases/xpu-v1.10.0": "2fdd9d71f6895379b0940a8f755b4c9095840558",
+        "refs/heads/releases/xpu-v1.11.0": "466b9d5abe84f13c29b38c686e4d77fc09e09aa4",
+        "refs/tags/xpu-v1.10.0^{}": "2fdd9d71f6895379b0940a8f755b4c9095840558",
+        "refs/tags/xpu-v1.11.0": "47e738785393a719c20d8e670eff14005d29e41f",
+        "refs/tags/xpu-v1.11.0^{}": "466b9d5abe84f13c29b38c686e4d77fc09e09aa4"
+      }
+    },
+    "vllm-xpu-kernels": {
+      "commit": "193cee080d654ff67c4f8bfaf924201bc88b9cf5",
+      "verified_remote_refs": {
+        "refs/heads/checkpoint/issue17-paused-20260920": "c66a48486dcd6b76336ec8a8b984a4700f89e1d9",
+        "refs/heads/main": "193cee080d654ff67c4f8bfaf924201bc88b9cf5",
+        "refs/heads/releases/xpu-v1.10.0": "2c39287deec5e59cc2656e6d4a6dce51a567c411",
+        "refs/heads/releases/xpu-v1.11.0": "193cee080d654ff67c4f8bfaf924201bc88b9cf5",
+        "refs/tags/xpu-v1.10.0^{}": "2c39287deec5e59cc2656e6d4a6dce51a567c411",
+        "refs/tags/xpu-v1.11.0": "baa1cc2295be6136481f3f02ae49acb492ec7ebb",
+        "refs/tags/xpu-v1.11.0^{}": "193cee080d654ff67c4f8bfaf924201bc88b9cf5"
+      }
+    },
+    "vllm-xpu-nix": {
+      "commit": "93c021f9433e132e4f594d6c64353777f391dcf2",
+      "verified_remote_refs": {
+        "refs/heads/checkpoint/issue17-paused-20260920": "78a30c20abacc2455d8f36991a9783e251d60ace",
+        "refs/heads/main": "93c021f9433e132e4f594d6c64353777f391dcf2",
+        "refs/heads/releases/xpu-v1.10.0": "4ac4375aa3d0f649fb4b6b43d9447f413a8b1cc7",
+        "refs/heads/releases/xpu-v1.11.0": "93c021f9433e132e4f594d6c64353777f391dcf2",
+        "refs/tags/xpu-v1.10.0^{}": "4ac4375aa3d0f649fb4b6b43d9447f413a8b1cc7",
+        "refs/tags/xpu-v1.11.0": "48b0392a20c4f9936e033a2dcd601e6a7bc89841",
+        "refs/tags/xpu-v1.11.0^{}": "93c021f9433e132e4f594d6c64353777f391dcf2"
+      }
+    }
+  },
+  "remote_packaging": {
+    "url": "git+ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm-xpu-nix.git?ref=refs/tags/xpu-v1.11.0",
+    "commit": "93c021f9433e132e4f594d6c64353777f391dcf2",
+    "path": "/nix/store/jqp0qnx8xbapvyn5gsay4awaw1d51w94-source",
+    "manifest_sha256": "0a8b4107f40f4c8181e8b100f107328f9d1a2e37d280226b9c587457431f128f",
+    "manifest_and_locks_match": true,
+    "brutus_derivation": "/nix/store/cjr2ccv93h5cqhvh49nkxqrkp8y4dp90-python3.12-vllm-xpu-0.30.0+unstable.2026.09.23.g466b9d5.drv",
+    "exact_qualified_package": true
+  },
+  "status": "all three immutable releases published and verified; previous release and paused checkpoints unchanged",
+  "host": "not repinned or activated; user-stopped service state preserved"
+}

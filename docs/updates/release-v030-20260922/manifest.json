@@ -62,7 +62,7 @@
       "worktree": "clean"
     }
   },
-  "release": "xpu-v1.10.0",
+  "release": "xpu-v1.11.0",
   "run_id": "release-v030-20260922",
   "created_utc": "2026-09-23T03:17:19.842016+00:00",
   "operation": "User-authorized release workflow on latest main; independent of paused issue17",
@@ -84,8 +84,8 @@
     "status": "draft; issue17 remains paused"
   },
   "packaging_main_start_verified": "4ac4375aa3d0f649fb4b6b43d9447f413a8b1cc7",
-  "updated_utc": "2026-09-23T06:59:10.763049+00:00",
-  "proposed_release": "xpu-v1.11.0; unused local/remote refs verified in all three repos",
+  "updated_utc": "2026-09-23T07:10:12.151243+00:00",
+  "proposed_release": "published and verified",
   "source_worktrees": "clean at final replayed tips; both rolling mains published and verified",
   "upstream_patch_preflight": "all four patch audits reviewed; final-source sequences apply with fuzz=0; final projections and architecture/AOT checks pass",
   "dependencies": {
@@ -110,7 +110,7 @@
     "unchanged": true
   },
   "packaging_branch": "release-v030-20260922",
-  "packaging_state": "Brutus-profile qualification accepted; immutable publication pending",
+  "packaging_state": "release published and verified; configuration handoff separately requested",
   "packaging_evaluation": {
     "brutus": {
       "version": "0.30.0+unstable.2026.09.23.g466b9d5",
@@ -147,5 +147,8 @@
     "background_work": "none; diagnostic02 completed naturally"
   },
   "packaging_tested_commit": "a14bd453c900146669d8dac330ae8417e1389e9c",
-  "release_acceptance": "release-acceptance.json"
+  "release_acceptance": "release-acceptance.json",
+  "packaging_release_commit": "93c021f9433e132e4f594d6c64353777f391dcf2",
+  "publication_verification": "publication-verification.json",
+  "host_configuration_request": "Follow updated packaging main at the same tested source pair; preserve HTTPS transports."
 }

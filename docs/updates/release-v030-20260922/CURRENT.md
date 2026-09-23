@@ -1,4 +1,4 @@
-# v0.30 release: actual Brutus qualification accepted
+# xpu-v1.11.0 published and verified
 
 The user selected Brutus's real settings and reasonable output as release
 acceptance. Those checks passed; see `release-acceptance.json`. Extra experimental
@@ -31,12 +31,17 @@ All qualification workers exited. Chat is failed with MainPID/ControlPID 0,
 empty cgroup and no tasks. Preserve the user-stopped state; no host repin or
 activation was requested. xpu-v1.10.0 remains the host's operational baseline.
 
-Source xpu-v1.11.0 annotated tags and release branches are now published and
-verified. Packaging pins those tags; Brutus package/runtime and generic/kernel
-derivations are identical to qualification. Final flake evaluation and all four
-lightweight packaging checks passed. Next: commit and publish packaging main,
-release branch and annotated tag, then record remote verification. Read `resume.md`;
-never retarget an existing release reference.
+All three xpu-v1.11.0 annotated tags and release branches are published and
+verified. Packaging release commit is `93c021f9433e132e4f594d6c64353777f391dcf2`.
+The remotely fetched release manifest and locks match, and its Brutus derivation
+is exactly the qualified package. See `publication-verification.json`.
+Final flake evaluation and four lightweight checks passed. Release work is complete.
+
+The user subsequently requested that `~/.config/nix` follow packaging `main`,
+with the same frozen source pair. That configuration-only handoff is separate;
+activation remains unrequested. The host's deployed baseline remains xpu-v1.10.0
+until an operator activates the updated configuration. Preserve the existing
+HTTPS transport overrides, advancing their source tags together with packaging.
 
 Private raw artifacts: `benchmark-results/release-v030-20260922/`. Pre-decision
 status documents are retained under `before-user-scope-decision/` there. Original

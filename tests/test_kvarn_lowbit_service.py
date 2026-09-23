@@ -10,6 +10,61 @@ import pytest
 from scripts import kvarn_lowbit_service as runner
 
 
+@pytest.mark.parametrize("active", ["inactive", "failed"])
+def test_service_preflight_accepts_stopped_units_without_resetting(monkeypatch, active):
+    calls = []
+
+    def show(argv, **kwargs):
+        calls.append(argv)
+        return (
+            f"ActiveState={active}\nMainPID=0\nControlPID=0\n"
+            "ControlGroup=\nTasksCurrent=[not set]\n"
+        )
+
+    monkeypatch.setattr(runner.subprocess, "check_output", show)
+    assert runner.require_stopped_service("chat.service")["ActiveState"] == active
+    assert len(calls) == 1 and calls[0][:3] == ["systemctl", "show", "chat.service"]
+
+
+@pytest.mark.parametrize(
+    "changed",
+    [
+        {"ActiveState": "active"},
+        {"ActiveState": "activating"},
+        {"ActiveState": "deactivating"},
+        {"MainPID": "123"},
+        {"ControlPID": "456"},
+        {"ControlGroup": "/system.slice/chat.service"},
+        {"TasksCurrent": "2"},
+        {"TasksCurrent": "unknown"},
+    ],
+)
+def test_service_preflight_rejects_running_or_uncertain_ownership(monkeypatch, changed):
+    state = (
+        dict(
+            ActiveState="failed",
+            MainPID="0",
+            ControlPID="0",
+            ControlGroup="",
+            TasksCurrent="[not set]",
+        )
+        | changed
+    )
+    monkeypatch.setattr(
+        runner.subprocess,
+        "check_output",
+        lambda *a, **k: "\n".join(f"{key}={value}" for key, value in state.items()),
+    )
+    with pytest.raises(RuntimeError, match="no owned processes"):
+        runner.require_stopped_service("chat.service")
+
+
+def test_service_preflight_rejects_missing_properties(monkeypatch):
+    monkeypatch.setattr(runner.subprocess, "check_output", lambda *a, **k: "")
+    with pytest.raises(RuntimeError, match="no owned processes"):
+        runner.require_stopped_service("chat.service")
+
+
 def _history_fixture():
     # Three complete pairs: both match, only first matches, first rejects.
     # A correct second guess after a wrong first guess is not an acceptance.

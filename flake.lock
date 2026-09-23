@@ -101,7 +101,7 @@
       "locked": {
         "lastModified": 1790139024,
         "narHash": "sha256-qq+cVLZrMfBZ8J8qikV46atQynsMZDv/Cqv6smnwZUI=",
-        "ref": "refs/heads/main",
+        "ref": "refs/tags/xpu-v1.11.0",
         "rev": "193cee080d654ff67c4f8bfaf924201bc88b9cf5",
         "revCount": 389,
         "submodules": true,
@@ -109,7 +109,7 @@
         "url": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm-xpu-kernels.git"
       },
       "original": {
-        "ref": "refs/heads/main",
+        "ref": "refs/tags/xpu-v1.11.0",
         "submodules": true,
         "type": "git",
         "url": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm-xpu-kernels.git"
@@ -137,14 +137,14 @@
       "locked": {
         "lastModified": 1790139044,
         "narHash": "sha256-i67X1QTia36S2opxOz27H2gBkuVG/kXlY6+rsGu2y7s=",
-        "ref": "refs/heads/main",
+        "ref": "refs/tags/xpu-v1.11.0",
         "rev": "466b9d5abe84f13c29b38c686e4d77fc09e09aa4",
         "revCount": 21408,
         "type": "git",
         "url": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm.git"
       },
       "original": {
-        "ref": "refs/heads/main",
+        "ref": "refs/tags/xpu-v1.11.0",
         "type": "git",
         "url": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm.git"
       }

@@ -1,0 +1,183 @@
+{
+  "schema": 1,
+  "release": "xpu-v1.11.0",
+  "prepared_utc": "2026-09-23T07:02:38.287130+00:00",
+  "qualification_status": "passed user-selected actual Brutus operational qualification; optional limitations explicit",
+  "sources": {
+    "vllm": {
+      "repository": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm.git",
+      "upstream_tag": "v0.30.0",
+      "upstream_commit": "ced6857afa0ea7b2e3f0846a62e1394e90f15607",
+      "commit": "466b9d5abe84f13c29b38c686e4d77fc09e09aa4",
+      "fork_commit_count": 5,
+      "locked": {
+        "lastModified": 1790139044,
+        "narHash": "sha256-i67X1QTia36S2opxOz27H2gBkuVG/kXlY6+rsGu2y7s=",
+        "ref": "refs/tags/xpu-v1.11.0",
+        "rev": "466b9d5abe84f13c29b38c686e4d77fc09e09aa4",
+        "revCount": 21408,
+        "type": "git",
+        "url": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm.git"
+      },
+      "release_tag": "refs/tags/xpu-v1.11.0",
+      "release_branch": "refs/heads/releases/xpu-v1.11.0"
+    },
+    "vllm-xpu-kernels": {
+      "repository": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm-xpu-kernels.git",
+      "upstream_tag": "v0.1.15",
+      "upstream_commit": "1c7cbeee1cd0c1481d48f5031f679a47f3f0ef45",
+      "commit": "193cee080d654ff67c4f8bfaf924201bc88b9cf5",
+      "fork_commit_count": 8,
+      "locked": {
+        "lastModified": 1790139024,
+        "narHash": "sha256-qq+cVLZrMfBZ8J8qikV46atQynsMZDv/Cqv6smnwZUI=",
+        "ref": "refs/tags/xpu-v1.11.0",
+        "rev": "193cee080d654ff67c4f8bfaf924201bc88b9cf5",
+        "revCount": 389,
+        "submodules": true,
+        "type": "git",
+        "url": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm-xpu-kernels.git"
+      },
+      "release_tag": "refs/tags/xpu-v1.11.0",
+      "release_branch": "refs/heads/releases/xpu-v1.11.0"
+    }
+  },
+  "qualified_package": {
+    "drvPath": "/nix/store/cjr2ccv93h5cqhvh49nkxqrkp8y4dp90-python3.12-vllm-xpu-0.30.0+unstable.2026.09.23.g466b9d5.drv",
+    "outPath": "/nix/store/h3phd3ijav9zp34kzbvhyicxqsbanr94-python3.12-vllm-xpu-0.30.0+unstable.2026.09.23.g466b9d5",
+    "runtime": "/nix/store/zhv84h5afvyx99fkw0l56rpj8rldhivl-v030-brutus-qualification-env",
+    "runtime_drvPath": "/nix/store/bnjf87l5v8m5sl9lch8szczd6vz9bv8p-v030-brutus-qualification-env.drv",
+    "host_override": {
+      "path": "/home/jasonbk/.config/nix/hosts/brutus/services/vllm-xpu/package.nix",
+      "sha256": "7ac223d83a815c55976851aa1181187ae81aa8d9ae17f0c5a1fabed9e5779b95",
+      "withTorchvision": true,
+      "aotDevices": [
+        "bmg"
+      ],
+      "unchanged": true
+    }
+  },
+  "profile": {
+    "model": "RedHatAI/Qwen3.8-27B-INT4",
+    "revision": "bf08f3dbd9a324e53956920aad378a1f1b6dd24a",
+    "weights": "W4A16 compressed-tensors",
+    "dtype": "bfloat16",
+    "runner": "V1",
+    "enforce_eager": true,
+    "kv_cache_dtype": "kvarn_k4v2_g128_compact",
+    "speculative_config": {
+      "method": "mtp",
+      "num_speculative_tokens": 2,
+      "kv_cache_dtype": "kvarn_k4v2_g128_compact"
+    },
+    "max_model_len": 262144,
+    "max_num_seqs": 4,
+    "max_num_batched_tokens": 2048,
+    "gpu_memory_utilization": 0.96,
+    "prefix_caching": false,
+    "images": 2,
+    "image_pixels": 200704,
+    "video": 0,
+    "reasoning_parser": "qwen3",
+    "tool_call_parser": "qwen3_xml",
+    "gpu_block_override": null
+  },
+  "selected_checks": {
+    "packaging": 608,
+    "installed_native_backend": 705,
+    "supplemental_GDN_independent_reference": 14
+  },
+  "audit": {
+    "individual_source_reports": 27,
+    "independent_packaging_patch_reports": 4,
+    "source_commits": {
+      "vllm": 5,
+      "vllm-xpu-kernels": 8
+    },
+    "commit_map": "../updates/release-v030-20260922/commit-map.json"
+  },
+  "capacity": {
+    "candidate_usable_attention_tokens": 346880,
+    "previous_release_usable_attention_tokens": 346880,
+    "difference_tokens": 0,
+    "candidate_occupied_minimum_tokens": 345728,
+    "concurrent_prompt_tokens_each": 172415,
+    "output_tokens_each": 512,
+    "preemptions": 0
+  },
+  "performance": "No fresh controlled performance comparison; no speedup or non-regression claim. Historical optimization evidence is preserved, not remeasured.",
+  "limitations": [
+    "No new optimization benefit or performance non-regression established by this release.",
+    "No DFlash2 speedup or performance ceiling established.",
+    "Optional AEON exact whole-model concurrent invariance fails; baseline reproduces the original duplicate-fixture limitation.",
+    "Unused BF16 NaN poison diagnostics retain six failures; sparse writer controls pass.",
+    "Candidate-only optional AEON mixed-long output differed from isolated execution; no matching baseline diagnostic was run.",
+    "FastAPI0.139 exceeds upstream declared<0.137 through a pre-existing relaxation; actual Brutus API checks passed.",
+    "CUDA-only source checks were unavailable; installed-pair tests target XPU."
+  ],
+  "experimental_comparisons_not_run": [
+    "k02 cold compile pruning controls",
+    "k04 reduced/released/upstream barrier performance controls",
+    "k10 reducer ABBA",
+    "k11 FP16 block-load ABBA",
+    "patch0005 controlled compile/link memory comparisons",
+    "metadata synchronization timing",
+    "matched candidate versus released throughput/latency and memory comparison"
+  ],
+  "dependency_policy": {
+    "keep": [
+      "nixpkgs",
+      "Torch 2.13.0+xpu",
+      "Triton 3.7.2+xpu",
+      "oneAPI 2026.0",
+      "XGrammar 0.2.1",
+      "OpenAI 2.41.1"
+    ],
+    "required_change": "Hugging Face Hub 1.28.0 overlay -> 1.31.0",
+    "preexisting_relaxation": "FastAPI 0.139.0 exceeds declared <0.137.0; ordinary API qualification and existing optional integration limits remain explicit"
+  },
+  "evidence_location": {
+    "public": "docs/updates/release-v030-20260922/",
+    "private": "/home/jasonbk/Projects/vllm-xpu-nix/benchmark-results/release-v030-20260922"
+  },
+  "evidence_sha256": {
+    "docs/updates/release-v030-20260922/release-acceptance.json": "0b107d0eb6d7e75c09089d2840250c5caf5eaebb0c3a0f13cfcbe00d97a7dfac",
+    "docs/updates/release-v030-20260922/release-package-equivalence.json": "351993cc12bb86556170008b66f7d865deee68d99aed4f7e7299e5472deeb215",
+    "docs/updates/release-v030-20260922/commit-map.json": "8771d5ada78a2fde78f4504b0273af988a3e9b44680810f0bfdf95a1bbcef110",
+    "docs/updates/release-v030-20260922/patch-audit-map.json": "b23361b7cae08005b0e89b5f133ff35ec160ff4e4ff490d8712e6b42eb9c885e",
+    "docs/updates/release-v030-20260922/native-build-review.json": "a6fb590e796d81d70bff8b72516d298d39b4fafe1886a50f729d86f7fb3135b7",
+    "docs/updates/release-v030-20260922/packaging-checks.json": "04ab8df929b75886448741e58049db8101e7018ef725045fb7b46006d866053b",
+    "docs/updates/release-v030-20260922/native-correctness-review.json": "d9403c2dca47c75e66c52247351415db1a2c21a603706cdc0ddb68453bfc52a0",
+    "docs/updates/release-v030-20260922/foreground-qualification-review.json": "af44f3dcf11ea43d4e415a8b2ba9412003695099b56732bb56acc78f29706eaa",
+    "docs/updates/release-v030-20260922/foreground-memory-review.json": "480be06eb3a473d6ab4422087d73e0bd228185787602aaf9409fd2cee17a9234",
+    "docs/updates/release-v030-20260922/native-capacity-comparison.json": "c16aaa85678a4b1e4f053ef300f26a0c9e641230212f23becae8041cfe5f844a",
+    "docs/updates/release-v030-20260922/nan-diagnostic-review.json": "20e843d08db5bd83ab9ffe60318f8750f52315909101187dcf956e74009b3ebc",
+    "docs/updates/release-v030-20260922/aeon-qualification-investigation.json": "a9cb1c864dd573631597dabd43498da33942be0d4abb524592e33eded37ddea7",
+    "benchmark-results/release-v030-20260922/installed-identity.json": "ffa95609492e0286ea6e6eb3ad9269be7a863cc3e7171c8acb5f336577cbcb6d",
+    "benchmark-results/release-v030-20260922/brutus-api-02/manifest.json": "8f68a4e706e3df71b07ce74e5fba1f182cefe27d7d2e127fc0b0e40f1bb01249",
+    "benchmark-results/release-v030-20260922/brutus-api-03/manifest.json": "def56d072ed641123f9339d9f04a998c6d22363caaca5d26b2a055d1aac6b05b",
+    "benchmark-results/release-v030-20260922/brutus-baseline-capacity-01/manifest.json": "402d2195c9b56c084cec5239e004e29158d43a215c9001beeb0e871157f17105",
+    "benchmark-results/release-v030-20260922/aeon-api-02/manifest.json": "a6b9f5a9ead194725a9860cf142bae00dee3d7b2a8df9f27f73144c8ace51c70",
+    "benchmark-results/release-v030-20260922/aeon-baseline-01/manifest.json": "2d2d683bd4297695d1fa20377bf704d7327592f573b3a0e3bd1922c94d89fc71",
+    "benchmark-results/release-v030-20260922/aeon-candidate-diagnostic-02/manifest.json": "f1ab88351f919f9d01d5930c9e1e33bf0a3a01567ea0f7b83eddb3a74e9d4ebe",
+    "docs/updates/release-v030-20260922/release-final-checks.json": "0703acad8da2c742b931f76e3ba9d8b3b5583ae5a2e0064d8fa51726160a5d0f",
+    "docs/updates/release-v030-20260922/source-release-verification.json": "7aef655e4d9ba09fa5766754dc411533dc263e7ee4db6af91e3be352d9514402"
+  },
+  "release_refs": {
+    "packaging_repository": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm-xpu-nix.git",
+    "branch": "refs/heads/releases/xpu-v1.11.0",
+    "annotated_tag": "refs/tags/xpu-v1.11.0",
+    "packaging_commit": "Resolve xpu-v1.11.0^{commit}; this manifest is contained in that immutable commit.",
+    "verification_record": "docs/updates/release-v030-20260922/publication-verification.json on packaging main after publication"
+  },
+  "rollback": {
+    "release": "xpu-v1.10.0",
+    "packaging_commit": "4ac4375aa3d0f649fb4b6b43d9447f413a8b1cc7",
+    "vllm_commit": "2fdd9d71f6895379b0940a8f755b4c9095840558",
+    "kernels_commit": "2c39287deec5e59cc2656e6d4a6dce51a567c411"
+  },
+  "host_deployment_included": false,
+  "host_operational_baseline": "xpu-v1.10.0; user-stopped services preserved",
+  "issue17": "paused; preservation-only draft PR18 excluded; no DFlash2/V2 work or performance limit claim",
+  "final_package_checks": "passed: exact derivations unchanged; final flake evaluation and four lightweight checks passed"
+}

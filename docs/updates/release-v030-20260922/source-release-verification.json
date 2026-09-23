@@ -1,0 +1,25 @@
+{
+  "checked_utc": "2026-09-23T07:03:28.363355+00:00",
+  "repos": {
+    "vllm": {
+      "refs/heads/backup/main-pre-v030-20260922": "3b6c822e8a4f56dc3904c7fce388a76dff4c7bdd",
+      "refs/heads/backup/origin-main-pre-v030-20260922": "3b6c822e8a4f56dc3904c7fce388a76dff4c7bdd",
+      "refs/heads/checkpoint/issue17-paused-20260920": "e378275a8f20eac9e92212e4a1fee84ec5a31dc7",
+      "refs/heads/main": "466b9d5abe84f13c29b38c686e4d77fc09e09aa4",
+      "refs/heads/releases/xpu-v1.11.0": "466b9d5abe84f13c29b38c686e4d77fc09e09aa4",
+      "refs/tags/xpu-v1.10.0^{}": "2fdd9d71f6895379b0940a8f755b4c9095840558",
+      "refs/tags/xpu-v1.11.0": "47e738785393a719c20d8e670eff14005d29e41f",
+      "refs/tags/xpu-v1.11.0^{}": "466b9d5abe84f13c29b38c686e4d77fc09e09aa4"
+    },
+    "vllm-xpu-kernels": {
+      "refs/heads/backup/main-pre-v030-20260922": "9bb1e2d428b8a25b262c0cd6704614bdf6ee3ad8",
+      "refs/heads/backup/origin-main-pre-v030-20260922": "9bb1e2d428b8a25b262c0cd6704614bdf6ee3ad8",
+      "refs/heads/checkpoint/issue17-paused-20260920": "c66a48486dcd6b76336ec8a8b984a4700f89e1d9",
+      "refs/heads/main": "193cee080d654ff67c4f8bfaf924201bc88b9cf5",
+      "refs/heads/releases/xpu-v1.11.0": "193cee080d654ff67c4f8bfaf924201bc88b9cf5",
+      "refs/tags/xpu-v1.10.0^{}": "2c39287deec5e59cc2656e6d4a6dce51a567c411",
+      "refs/tags/xpu-v1.11.0": "baa1cc2295be6136481f3f02ae49acb492ec7ebb",
+      "refs/tags/xpu-v1.11.0^{}": "193cee080d654ff67c4f8bfaf924201bc88b9cf5"
+    }
+  }
+}

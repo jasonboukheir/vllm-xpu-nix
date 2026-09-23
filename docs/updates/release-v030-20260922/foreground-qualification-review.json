@@ -1,6 +1,6 @@
 {
   "checked_utc": "2026-09-23T06:27:55.972612+00:00",
-  "status": "foreground API/lifecycle/near-capacity checks passed; performance and other audits still pending",
+  "status": "passed actual Brutus API/lifecycle/near-capacity checks; accepted under release-acceptance.json",
   "checks": [
     {
       "run": "brutus-api-02",
@@ -105,7 +105,7 @@
     "cause": "launcher compared numeric 0.96 with actual Nix formatting 0.960000 as a string after HTTP readiness; corrected harness to float comparison",
     "source_changed": false
   },
-  "limits": "Native-budget capacity captured without override; timings here are not controlled performance comparisons. Scoped AEON, control builds/native timing, metadata synchronization and matched release comparison remain open.",
+  "limits": "Native-budget capacity captured without override. Timings are not controlled performance comparisons. Optional AEON findings are separate; extra experimental comparisons not run under user-selected scope.",
   "retained_helper_imports": {
     "artifact": "retained-helper-import-identities.json",
     "sha256": "bc76ccd5f1f9fc9539edb9bc0083e65122ddec1051e794744c8645f5c3091ede",

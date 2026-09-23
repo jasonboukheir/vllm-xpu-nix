@@ -1,5 +1,10 @@
 # Parent reconciliation work record
 
+The later user-selected release acceptance is recorded in `release-acceptance.json`.
+Actual Brutus operation passed. Extra controlled optimization comparisons are
+not release gates for this scope and were not run; no new speedup is claimed.
+The independent reports retain their original recommendations as history.
+
 **Source audit/reconciliation gate passed:** all 27 distinct target-specific
 reports have been reviewed, hashed and mapped. Inventory coverage matches the
 16 vLLM and 11 kernel commits, including released fixes absent from main.
@@ -32,7 +37,7 @@ the surviving commits and map the two v15 subsets explicitly.
   length fields. The existing builder's `cam.seq_lens.tolist()` fallback is
   exact; never replace it with `seq_lens_cpu_upper_bound`. Preserve its exact
   per-builder list for flushing/materialization. Update the stale cached-copy
-  comment and measure the exposed synchronization against the old release.
+  comment and retain the exposed synchronization cost as unmeasured in this release.
 - v16's surviving production change is out-of-place CPU upper-bound addition.
   Adapt its existing tests to owner/overlapping-view/separate/missing bounds,
   retained snapshots, two draft steps and deliberately optimistic bounds.
@@ -69,9 +74,9 @@ the surviving commits and map the two v15 subsets explicitly.
 
 - k01 KEEP: deterministic oneDNN W4A16 attributes, unchanged upstream and
   dependency implementation, focused numerical/replay gates retained.
-- k02 provisional KEEP: early disabled-policy host recursion pruning survives
-  upstream's different enabled-device extern repair. Final retention needs a
-  controlled cold compile/RSS comparison. It prunes eight policies in the narrow
+- k02 KEEP: early disabled-policy host recursion pruning survives
+  upstream's different enabled-device extern repair. A controlled cold compile/RSS comparison remains unrun; retention follows
+  the user-selected operational acceptance scope. It prunes eight policies in the narrow
   packaging profile and none in the actual all-policy Brutus profile. Preserve
   upstream's broader b16 routing. No measured build-speed claim yet.
 - k03 KEEP: the supported untiled non-speculative convolution guard and
@@ -79,9 +84,8 @@ the surviving commits and map the two v15 subsets explicitly.
   is unchanged. Do not substitute a new tiled implementation during this port.
 - k04 ADAPT: retain the fresh-state O2 producer/consumer workgroup barrier
   inside `if (!has_prev_state)` before its output-dimension loop. Upstream
-  barriers already order U and next-chunk S. Retain the complete regression
-  suite and compare the reduced form with released/upstream controls on GPU.
-  If that reduction fails, retain the released protection in this same commit.
+  barriers already order U and next-chunk S. The installed regression suite and 14 supplemental independent-reference
+  cases passed. Comparative performance controls were prepared but not run.
 - k05 KEEP: the trailing optional `split_mixed_non_spec=False` schema and
   cached-decode arithmetic path must ship with v03. Preserve the target's
   upstream checkpoint behavior. The k04 test insertion dependency is textual.
@@ -102,28 +106,28 @@ the surviving commits and map the two v15 subsets explicitly.
 - k09 KEEP/fold k08: compact K4V2 records, width-aware readers/writers and
   trailing `value_bits=4` defaults remain paired with v10's explicit value 2.
   Historical coordinate coverage is evidence for ownership, not GPU qualification.
-- k10 provisional KEEP/fold k08: independent reanalysis confirms a 1.03032884x
+- k10 KEEP/fold k08: independent reanalysis confirms a 1.03032884x
   historical short-cell gain and 216 exact matching output comparisons. Broad
   repeatability failures and the controlled 3.67% K4V4 regression remain open.
-  Final retention requires fresh-pair ABBA with identical k11, native execution
-  proof, independent numerical references and the report's frozen bounds.
+  Fresh-pair ABBA was not run. Retention follows source review, installed
+  correctness and the user-selected operational acceptance; no new speed claim.
 - k11 KEEP/fold k08: preserve resident FP16 block loads, independent K/V
   64-byte alignment guards and scalar fallback. Recomputed eight historical
   timing cells and 32 saved-output hashes support the 39–51% K4V2 span gain;
-  the short K4V4 +12.3% anomaly remains explicit. Fresh controlled ABBA,
-  independent correctness and the combined fused split-16 path remain gates.
+  the short K4V4 +12.3% anomaly remains explicit. Installed independent correctness passed; fresh controlled ABBA was not run
+  and is outside the user-selected release acceptance.
   k11 is independently retainable if the k10 reducer gate later rejects k10.
 
 The intended kernel stack has eight explained commits: k01 through k07
-individually, followed by the coherent k08 feature. Source preservation of
-k02/k10 is provisional until their explicit controlled build/performance gates
-are resolved; it is not a performance claim or a waiver of release qualification.
+individually, followed by the coherent k08 feature. k02/k10 are retained under the later user-selected Brutus operational
+acceptance. Their extra controlled comparisons are unmeasured, not passed;
+this decision makes no fresh performance or build-resource benefit claim.
 
 ## Validation interpretation
 
 Audit CPU extraction checks and rehashed historical evidence support source
-dispositions. They are not installed-pair qualification. Use the applicable
-report gates and `qualification-status.json` after replay. Preserve historical
+dispositions. They are not installed-pair qualification. The installed-pair results and later acceptance scope are recorded in
+`qualification-status.json` and `release-acceptance.json`. Preserve historical
 semantic/NaN-padding failures and concurrent free-running trajectory differences.
 Hardware-unavailable CUDA checks must remain marked unavailable. No DFlash
 experiment, new BF16 serving milestone or performance-ceiling conclusion belongs

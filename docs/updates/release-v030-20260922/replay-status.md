@@ -1,5 +1,9 @@
 # Source replay complete and published
 
+This is the historical source-stage checkpoint. Final native qualification and
+user-selected release acceptance are in `release-acceptance.json` and `CURRENT.md`;
+its pending-work descriptions below are superseded by those records.
+
 Both clean source stacks passed parent final review and were published with
 exact leases after remote backups were verified. vLLM has five commits ending
 at `466b9d5abe84f13c29b38c686e4d77fc09e09aa4`; kernels have eight ending at

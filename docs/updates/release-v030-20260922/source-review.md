@@ -1,5 +1,9 @@
 # Final source replay review
 
+This is the historical source-stage checkpoint. Final native qualification and
+user-selected release acceptance are in `release-acceptance.json` and `CURRENT.md`;
+its pending-work descriptions below are superseded by those records.
+
 Reviewed pair (native qualification pending):
 
 - vLLM `466b9d5abe84f13c29b38c686e4d77fc09e09aa4`, five commits on frozen

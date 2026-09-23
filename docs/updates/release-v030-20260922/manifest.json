@@ -84,8 +84,8 @@
     "status": "draft; issue17 remains paused"
   },
   "packaging_main_start_verified": "4ac4375aa3d0f649fb4b6b43d9447f413a8b1cc7",
-  "updated_utc": "2026-09-23T05:51:54.005412+00:00",
-  "proposed_release": "xpu-v1.11.0; not reserved; recheck all local/remote refs before publication",
+  "updated_utc": "2026-09-23T06:59:10.763049+00:00",
+  "proposed_release": "xpu-v1.11.0; unused local/remote refs verified in all three repos",
   "source_worktrees": "clean at final replayed tips; both rolling mains published and verified",
   "upstream_patch_preflight": "all four patch audits reviewed; final-source sequences apply with fuzz=0; final projections and architecture/AOT checks pass",
   "dependencies": {
@@ -110,7 +110,7 @@
     "unchanged": true
   },
   "packaging_branch": "release-v030-20260922",
-  "packaging_state": "local native-built candidate; GPU qualification and stable publication pending",
+  "packaging_state": "Brutus-profile qualification accepted; immutable publication pending",
   "packaging_evaluation": {
     "brutus": {
       "version": "0.30.0+unstable.2026.09.23.g466b9d5",
@@ -136,14 +136,16 @@
   },
   "native_checkpoint": "native-build-review.json",
   "maintenance_current": {
-    "checked_utc": "2026-09-23T05:51:54.005412+00:00",
+    "checked_utc": "2026-09-23T06:59:10.763049+00:00",
     "user_instruction": "Stop it again for qualification",
-    "chat": "inactive/dead; MainPID=0; ControlPID=0; empty ControlGroup; TasksCurrent unset",
+    "chat": "failed; MainPID=0; ControlPID=0; empty cgroup; no tasks",
     "embedding": "inactive; MainPID=0; ControlPID=0; empty ControlGroup; TasksCurrent unset",
     "stop_attempt": "sudo -n systemctl stop vllm-xpu-chat.service required a password; subsequent observation was already inactive",
     "stopped_by_this_run": [],
     "authorization": "native/GPU/serving qualification; stopping restarted chat explicitly permitted",
-    "restoration": "preserve user-stopped workers; no host activation"
+    "restoration": "preserve user-stopped workers; no host activation",
+    "background_work": "none; diagnostic02 completed naturally"
   },
-  "packaging_tested_commit": "a14bd453c900146669d8dac330ae8417e1389e9c"
+  "packaging_tested_commit": "a14bd453c900146669d8dac330ae8417e1389e9c",
+  "release_acceptance": "release-acceptance.json"
 }

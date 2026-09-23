@@ -1,0 +1,18 @@
+{
+  "checked_utc": "2026-09-23T07:04:15.604654+00:00",
+  "status": "passed",
+  "flake_check": "--offline --no-build, exit0; lib output unchecked by Nix",
+  "lightweight_checks": [
+    "kernel-build-parallelism",
+    "kernel-glue-cache-identity",
+    "kernel-lib-cache-identity",
+    "formatting"
+  ],
+  "exact_package_equivalence": "release-package-equivalence.json",
+  "evidence_sha256": {
+    "benchmark-results/release-v030-20260922/release-final-checks.log": "e2601cad9d783723c167bec63be6aae44264867840996d1d696b13e41ce97b93",
+    "benchmark-results/release-v030-20260922/release-flake-check.log": "6175cb4a8b83a0cccd3187e933d8996eb37bd23856abad12ae7e1b1e902e6350",
+    "benchmark-results/release-v030-20260922/source-release-verification.json": "7aef655e4d9ba09fa5766754dc411533dc263e7ee4db6af91e3be352d9514402"
+  },
+  "full_tests": "608 packaging tests and installed native/foreground checks already passed on the identical package; not repeated for source-ref/documentation-only edits"
+}

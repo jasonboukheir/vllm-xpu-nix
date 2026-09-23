@@ -27,8 +27,12 @@ git show 8c72895340deafef77998a579335d078800626ab:docs/updates/release-v030-2026
 The user requested the host follow packaging main. Host-config commit
 `0f0d46f83078404a3285325dc279b3b5fed277e1` locks packaging `8c72895` and the
 same source pair over HTTPS. Its Brutus package exactly matches the qualified
-release and full system evaluation passed. Activation remains an operator
-handoff; no service restart was performed. Rollback is xpu-v1.10.0, packaging
+release and full system evaluation passed. The user activated Brutus on
+September 23. The system service started at 00:25:28 PDT and its HTTP API became
+ready at 00:29:06. Post-activation chat, reasoning, two-image vision and tool-call
+checks passed on the exact qualified package, with active MTP, 346880 usable
+attention tokens and zero restarts. Evidence is retained in
+`benchmark-results/post-activation-20260923/`. Rollback is xpu-v1.10.0, packaging
 `4ac4375aa3d0f649fb4b6b43d9447f413a8b1cc7`.
 
 Issue #17 remains paused. Its complete reports and exact resume instructions

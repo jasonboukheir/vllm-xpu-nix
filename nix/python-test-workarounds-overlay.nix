@@ -6,15 +6,15 @@
 _final: prev: {
   pythonPackagesExtensions = (prev.pythonPackagesExtensions or [ ]) ++ [
     (_pyFinal: pyPrev: {
-      # vLLM main requires huggingface-hub >=1.28.0. The pinned nixpkgs
+      # vLLM v0.30 requires huggingface-hub >=1.31.0. The pinned nixpkgs
       # substrate is intentionally held stable for the XPU runtime and only
       # carries 1.26.0, so update this one pure-Python dependency in place.
       huggingface-hub = pyPrev.huggingface-hub.overridePythonAttrs (old: rec {
-        version = "1.28.0";
+        version = "1.31.0";
         src = prev.fetchPypi {
           pname = "huggingface_hub";
           inherit version;
-          hash = "sha256-RqLpUMCSNN5UCT1YfRZ1OC8NCNvWANn7WZtZMvWyxss=";
+          hash = "sha256-+OnnEKIQYT+l0PJrum2gXvSu+fuloPI/UI9axNCLb5A=";
         };
         meta = (old.meta or { }) // {
           changelog = "https://github.com/huggingface/huggingface_hub/releases/tag/v${version}";

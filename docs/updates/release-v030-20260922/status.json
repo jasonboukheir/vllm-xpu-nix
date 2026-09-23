@@ -1,0 +1,22 @@
+{
+  "run_id": "release-v030-20260922",
+  "phase": "packaging prepared; maintenance handoff",
+  "audit_total": 27,
+  "audit_done": 27,
+  "source_replay": "complete: five vLLM and eight kernel commits, final source review passed",
+  "qualification": "source and lightweight packaging checks passed; native/GPU checks pending",
+  "publication": "both rolling source mains published and verified; stable publication pending",
+  "issue17": "paused; checkpoint branches and draft PR #18 published and verified",
+  "maintenance": "not authorized; chat now inactive, embedding absent; this run changed neither",
+  "updated_utc": "2026-09-23T05:05:57.438340+00:00",
+  "lint_environment": "applicable hooks pass; recorded Nix tool adapters",
+  "patch_audit_total": 4,
+  "patch_audit_done": 4,
+  "kernel_candidate": "193cee080d654ff67c4f8bfaf924201bc88b9cf5",
+  "vllm_candidate_parent": "984e6c3edda05c4f2dca37703534cb0e69cfa0fa",
+  "vllm_candidate": "466b9d5abe84f13c29b38c686e4d77fc09e09aa4",
+  "vllm_main_pushed": "466b9d5abe84f13c29b38c686e4d77fc09e09aa4",
+  "kernel_main_pushed": "193cee080d654ff67c4f8bfaf924201bc88b9cf5",
+  "packaging_branch": "release-v030-20260922",
+  "packaging_evaluation": "generic and exact Brutus passed; four lightweight checks passed; full packaging unit-tests require native closure"
+}

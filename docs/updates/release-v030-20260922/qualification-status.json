@@ -1,0 +1,86 @@
+{
+  "scope": "Separate v0.30 V1/MTP/vision release; no V2/DFlash experiment or issue17 performance goal",
+  "gates": [
+    {
+      "id": "source",
+      "requirement": "all 27 independently audited; parent dispositions, source folds, paired interfaces, target ancestry, effective diffs and range-diffs",
+      "status": "source gate passed; see source-review.md; native qualification pending"
+    },
+    {
+      "id": "cpu-metadata",
+      "requirement": "GDN suffix padding, mixed scheduler alignment, target/draft ownership, surviving CPU-bound aliases and optimistic-bound sensitivity",
+      "status": "source gate passed; see source-review.md; native qualification pending"
+    },
+    {
+      "id": "cpu-pools",
+      "requirement": "independent allocation/grouping, mixed formats, recurrent reservations, nulls/overrides, HiSparse field/role preservation and physical draft zeroing",
+      "status": "source gate passed; see source-review.md; native qualification pending"
+    },
+    {
+      "id": "cpu-kvarn",
+      "requirement": "compact record widths/ABI, lifecycle policy, split boundaries, bounded materialization and unsupported mode guards",
+      "status": "source gate passed; see source-review.md; native qualification pending"
+    },
+    {
+      "id": "lint",
+      "requirement": "both source hooks with recorded Nix adapters; Python compile checks and packaging checks",
+      "status": "source hooks, Python compile checks and packaging formatting passed; full packaging unit-tests pending native closure"
+    },
+    {
+      "id": "packaging",
+      "requirement": "four independent patch audits; final-source patch/projection/AOT checks; exact source locks and generic/Brutus evaluations",
+      "status": "source locks, four patch audits, final-source patch/projection/AOT checks, generic/Brutus evaluation and four lightweight checks passed; native composition/import checks pending"
+    },
+    {
+      "id": "maintenance",
+      "requirement": "record enabled/active services and operator confirmation before expensive build/GPU work",
+      "status": "not authorized; chat now inactive, embedding absent; this run changed neither"
+    },
+    {
+      "id": "build",
+      "requirement": "exact Brutus override with bounded jobs, observed compiler memory/concurrency, actual native schema/import identity",
+      "status": "pending"
+    },
+    {
+      "id": "gpu-correctness",
+      "requirement": "retained relevant native tests incl numerical references, padding/ragged GDN, finite unused-storage controls, K4V2 bytes/materialization and native-only dispatch",
+      "status": "pending"
+    },
+    {
+      "id": "lifecycle",
+      "requirement": "cold inspection/error propagation, startup/shutdown/restart, cancellation/reuse, state-slot reorder and committed-history boundaries",
+      "status": "pending"
+    },
+    {
+      "id": "serving",
+      "requirement": "existing V1 eager K4V2 target/draft MTP2, tools, two images, four-way overlap, mixed prefill, long-context retrieval and actual draft counters",
+      "status": "pending"
+    },
+    {
+      "id": "capacity",
+      "requirement": "unchanged context/scheduler limits, tensor storage and timestamped memory coverage, usable shared KV capacity including recurrent reservations",
+      "status": "pending"
+    },
+    {
+      "id": "performance",
+      "requirement": "matched released-vs-new V1 workloads including metadata sync cost; audit-required kernel/build optimization controls and retained historical anomalies",
+      "status": "pending"
+    },
+    {
+      "id": "publication",
+      "requirement": "new unused coordinated minor version, paired stable source refs, exact final package equivalence, packaging publication and remote peeled-ref verification",
+      "status": "pending"
+    },
+    {
+      "id": "host",
+      "requirement": "repin/activation only if separately requested; restore only services stopped for authorized maintenance",
+      "status": "not requested"
+    }
+  ],
+  "historical_limits": [
+    "xpu-v1.10.0 semantic arithmetic control 901 versus899",
+    "six unused-BF16-NaN failures",
+    "free-running concurrent output divergence; not matched-history accuracy samples"
+  ],
+  "notes": "Audit reports define precise applicable checks. Historical passes are evidence for requirements, not new-pair qualification."
+}

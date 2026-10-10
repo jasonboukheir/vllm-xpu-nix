@@ -1,0 +1,38 @@
+{
+  "status": "normal host profile and narrow-policy native build gates passed",
+  "purpose": "k02 disabled-policy dispatcher pruning removal; no comparative compile-speed claim",
+  "narrow_attention": {
+    "derivation": "/nix/store/8096f148056bi2q49yy7nknwx6sv14mw-vllm-xpu-attn-kernels-xe-2-0.1.15.4+src.084piyg58z3lwv77knps7r1wdidblz0v.drv",
+    "output": "/nix/store/f9gck0bgb40d5hiq7sa34cwk6gdrdvrw-vllm-xpu-attn-kernels-xe-2-0.1.15.4+src.084piyg58z3lwv77knps7r1wdidblz0v",
+    "native_sha256": "82ab93f328c921887cf4a06f87b648ac37e3e99362ed68d3a27bf948a0c78b2a",
+    "max_jobs": 1,
+    "cores": 2,
+    "returncode": 0,
+    "build_steps": 15,
+    "log_sha256": "c62c0a2566fe78ac8c30588f601b7994c3bfd3d66cd6988764307694f0e32fe6"
+  },
+  "execution_note": "Started independent narrow gate after oneDNN finished, with two compiler jobs and monitored memory. Nix store locks share the result with the original paired build.",
+  "host_kernels": {
+    "derivation": "/nix/store/76463fj10nb2a4yssrya3wcz9r68pcqq-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f.drv",
+    "output": "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f",
+    "returncode": 0,
+    "max_jobs": 1,
+    "cores": 4,
+    "log_sha256": "93d03eb96d91fb79a6344ea762fdbb2673002688f6857c1d0769a602c7944c5e",
+    "native_sha256": {
+      "lib/python3.12/site-packages/vllm_xpu_kernels/_C.abi3.so": "190d29c6115d11c7883352e1af09eb41c998c7121d81c9b65e9d74a0ef64cfac",
+      "lib/python3.12/site-packages/vllm_xpu_kernels/_moe_C.abi3.so": "db0b77d2dcaf2ce02aaca9424e8d15febb9e2109269e02cdba24e1ae9f044592",
+      "lib/python3.12/site-packages/vllm_xpu_kernels/_vllm_fa2_C.abi3.so": "ad6ef5ef54ea5155a777efca7f4821bacf9cc7480ae42fe4db4c0f224371ad5f",
+      "lib/python3.12/site-packages/vllm_xpu_kernels/_xpu_C.abi3.so": "7076ec3059ab05eb40e777f1edd194f050b78677ae3f0e370641e8cfa5937fc6",
+      "lib/python3.12/site-packages/vllm_xpu_kernels/xpumem_allocator.abi3.so": "7ccd3f85fcddbe79bf0777856e5d0f423b29bb84956c372bd3fec6a8ad07ea4a"
+    }
+  },
+  "observed_resources": {
+    "samples": 870,
+    "sample_span_seconds": 4432.690572977066,
+    "minimum_host_available_ram_GiB": 41.03969192504883,
+    "largest_observed_compiler_process_RSS_GiB": 33.182640075683594,
+    "sample_sha256": "41cac6f32bf81c10d6cadff633fb9a32cfeae876951f0910fd49ef6a4c9f9cd7",
+    "scope": "Host compiler processes; includes overlapping oneDNN/client work and may include unrelated builds. Sampled observations, not a per-derivation cold-build comparison. No compile-speed or memory-improvement claim."
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "version": "xpu-v1.12.0",
+  "started_utc": "2026-10-10T10:33:42.238376+00:00",
+  "prior_release_refs_per_repository": {
+    "vllm": 40,
+    "vllm-xpu-kernels": 40,
+    "vllm-xpu-nix": 40
+  },
+  "sources": {
+    "vllm": {
+      "commit": "ef92dc5600af64103c01f97e3300b81c3a1083ee",
+      "branch": "refs/heads/releases/xpu-v1.12.0",
+      "tag": "refs/tags/xpu-v1.12.0",
+      "tag_object": "a73057c1051820faac59b346ddbd812ef122c5f0",
+      "all_prior_release_refs_unchanged": true
+    },
+    "vllm-xpu-kernels": {
+      "commit": "dbb684f4c9b38a8b3bbf52bda0c490ee47049221",
+      "branch": "refs/heads/releases/xpu-v1.12.0",
+      "tag": "refs/tags/xpu-v1.12.0",
+      "tag_object": "e00cada270a659301b8a12e097a217ae6d91bcab",
+      "all_prior_release_refs_unchanged": true
+    }
+  },
+  "status": "passed"
+}

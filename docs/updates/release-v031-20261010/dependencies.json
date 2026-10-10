@@ -1,0 +1,121 @@
+{
+  "recorded_utc": "2026-10-10T08:11:55.492290+00:00",
+  "policy": "Keep nixpkgs and unrelated inputs fixed; update only dependencies required by v0.31 XPU requirements and Torch 2.14 ABI.",
+  "required": {
+    "torch": "2.14.0+xpu",
+    "triton": "3.8.0+xpu",
+    "torchvision": "0.29.0+xpu",
+    "oneapi": "2026.1.0.192",
+    "intel-pti": "1.0.1",
+    "pyzes": "0.1.2",
+    "xgrammar": "0.2.7",
+    "oss-harmony": "0.0.11"
+  },
+  "oneapi_verification": "Downloaded official installer; SHA384 matches Intel product API; SHA256 fixed in Nix.",
+  "artifact_sources": {
+    "torch-xpu.nix": [
+      "https://files.pythonhosted.org/packages/74/46/90e1741b3926e3b8590dfaa819439891865568fc5c90a0f5596b76ee6bff/pyzes-${version}-py3-none-any.whl",
+      "sha256-VjhoQ5kEmUBBQHGvr/+R7ofxiAdFezyw0xzV1aC32yM=",
+      "https://download-r2.pytorch.org/whl/xpu/torch-2.14.0%2Bxpu-cp312-cp312-manylinux_2_28_x86_64.whl",
+      "sha256-BfjxMOJcJNT3kDJmrxZRRekjT66M5z7CYTrfwBXLo0o="
+    ],
+    "triton-xpu.nix": [
+      "https://download-r2.pytorch.org/whl/triton_xpu-${version}-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+      "sha256-sZ9HcmdWtHLsdEYQ4wztEAj0kRMGqUtcpSJLcaEcIUk=",
+      "https://github.com/intel/intel-xpu-backend-for-triton/releases/download/v3.8.0/triton-3.8.0%2Bxpu-py3-none-any.whl",
+      "sha256-8Wsk78x4njmH7mArdELhHKwLnTvHj5bjouw83Vpgt7s="
+    ],
+    "torchvision-xpu.nix": [
+      "https://download-r2.pytorch.org/whl/xpu/torchvision-0.29.0%2Bxpu-cp312-cp312-manylinux_2_28_x86_64.whl",
+      "sha256-582JITCsz2pFaZhPOCHU4DzudeBQMsS9YhS+5kImcZ8="
+    ],
+    "intel-oneapi.nix": [
+      "https://registrationcenter-download.intel.com/akdlm/IRC_NAS/33cb2a22-ddf1-4aa9-8d68-1f5a118acaf2/intel-oneapi-toolkit-2026.1.0.192_offline.sh",
+      "sha256-KJEZ4us+D37l0fO4muyyDWLgy3lkHKmSJfbR/6MEgW8="
+    ],
+    "intel-pti.nix": [
+      "https://files.pythonhosted.org/packages/46/d4/48737239235707852fef380005f53405740b08dc5f3700c72e5b43946452/intel_pti-${version}-py2.py3-none-manylinux_2_28_x86_64.whl",
+      "sha256-TnrZ6VXS2tjkHNldIuirHkdrri5uNR8Oi0ZT/nerLgw="
+    ],
+    "python-xpu.nix": [
+      "https://files.pythonhosted.org/packages/89/68/001d7429a692b2db0c03bd49b756f834716b64afc0bbbece96824e8f0af8/oss_harmony-${version}-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+      "sha256-2HfGtSbNvfVQaLro8FxgOY6SnJ4pbH9podUzM5cIvoA=",
+      "https://files.pythonhosted.org/packages/f5/4c/c78d78c3d52b0ac594ad7cc8ef5972adfe070e3597a8a4c6ce0cd39196ea/mcp_types-${version}-py3-none-any.whl",
+      "sha256-ay3nl8onl/Vot5Up4bJZSONN5RG8wL2C/vEDmm0bjrA=",
+      "https://files.pythonhosted.org/packages/67/72/7d7897418912c1d12e87556630dfb7bf0eac71160e9bef8b447960804ee3/mcp-${version}-py3-none-any.whl",
+      "sha256-HLTHXS0se4wddWNV5dgqOfKCLMfxPiKiBR18o1kjSdY=",
+      "sha256-1+xL0S/AbrKi+6/pJQvh2b03R5HM04mzazVe7k4jxVg="
+    ]
+  },
+  "oneapi_product_api": "https://www.intel.com/libs/apps/intel/idz/productsinfo?downloadId=736b4a1f-bab6-4b5b-b0e9-f8e9b2ef9f70",
+  "torch_metadata_requirements": [
+    "Requires-Dist: filelock",
+    "Requires-Dist: typing-extensions>=4.10.0",
+    "Requires-Dist: setuptools>=77.0.3",
+    "Requires-Dist: sympy>=1.13.3",
+    "Requires-Dist: networkx>=2.5.1",
+    "Requires-Dist: jinja2",
+    "Requires-Dist: fsspec>=0.8.5",
+    "Requires-Dist: intel-cmplr-lib-rt==2026.1.0",
+    "Requires-Dist: intel-cmplr-lib-ur==2026.1.0",
+    "Requires-Dist: intel-cmplr-lic-rt==2026.1.0",
+    "Requires-Dist: intel-sycl-rt==2026.1.0",
+    "Requires-Dist: oneccl-devel==2022.1.1; platform_system == \"Linux\" and platform_machine == \"x86_64\"",
+    "Requires-Dist: oneccl==2022.1.1; platform_system == \"Linux\" and platform_machine == \"x86_64\"",
+    "Requires-Dist: impi-rt==2021.18.1; platform_system == \"Linux\" and platform_machine == \"x86_64\"",
+    "Requires-Dist: onemkl-license==2026.1.0",
+    "Requires-Dist: onemkl-sycl-blas==2026.1.0",
+    "Requires-Dist: onemkl-sycl-dft==2026.1.0",
+    "Requires-Dist: onemkl-sycl-lapack==2026.1.0",
+    "Requires-Dist: onemkl-sycl-rng==2026.1.0",
+    "Requires-Dist: onemkl-sycl-sparse==2026.1.0",
+    "Requires-Dist: dpcpp-cpp-rt==2026.1.0",
+    "Requires-Dist: intel-opencl-rt==2026.1.0",
+    "Requires-Dist: mkl==2026.1.0",
+    "Requires-Dist: intel-openmp==2026.1.0",
+    "Requires-Dist: tbb==2023.1.0",
+    "Requires-Dist: tcmlib==1.5.0",
+    "Requires-Dist: umf==1.1.0",
+    "Requires-Dist: intel-pti==1.0.1",
+    "Requires-Dist: pyzes==0.1.2; platform_system == \"Linux\" and platform_machine == \"x86_64\"",
+    "Requires-Dist: triton-xpu~=3.8.0; python_version < \"3.15\"",
+    "Requires-Dist: optree>=0.13.0; extra == \"optree\"",
+    "Requires-Dist: opt-einsum>=3.3; extra == \"opt-einsum\"",
+    "Requires-Dist: pyyaml; extra == \"pyyaml\""
+  ],
+  "previous_to_candidate": {
+    "torch": {
+      "previous": "2.13.0+xpu",
+      "candidate": "2.14.0+xpu"
+    },
+    "triton": {
+      "previous": "3.7.2+xpu",
+      "candidate": "3.8.0+xpu"
+    },
+    "torchvision": {
+      "previous": "0.28.0+xpu",
+      "candidate": "0.29.0+xpu"
+    },
+    "oneapi": {
+      "previous": "2026.0",
+      "candidate": "2026.1.0.192"
+    },
+    "intel-pti": {
+      "previous": "0.17.0",
+      "candidate": "1.0.1"
+    },
+    "pyzes": {
+      "previous": "0.1.1",
+      "candidate": "0.1.2"
+    },
+    "xgrammar": {
+      "previous": "0.2.1",
+      "candidate": "0.2.7"
+    },
+    "harmony": {
+      "previous": "openai-harmony distribution",
+      "candidate": "oss-harmony 0.0.11; same openai_harmony import"
+    }
+  },
+  "unchanged_nixpkgs": "0e251e24a4f24e036a084b6b4b2d2491af4167f4"
+}

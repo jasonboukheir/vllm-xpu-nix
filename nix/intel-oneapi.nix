@@ -1,18 +1,4 @@
-# Unified oneAPI 2026.0 base toolkit (libsycl.so.9, libmkl_*.so.3 /
-# libmkl_sycl_*.so.6, oneCCL 2022.0.0). Pairs with the torch+xpu nightly we
-# track in nix/torch-xpu.nix.
-#
-# oneCCL 2022.0.0 ships with the unified toolkit and supersedes the
-# standalone oneccl-bmg (2021.15.9.14) we shipped against the earlier 2025.3
-# base toolkit:
-#   - 2021.17.2 added BMG single-process / multi-thread support for
-#     allreduce, allgatherv, reduce_scatter
-#   - 2022.0.0 added Arc Pro B-Series SPMD allreduce / allgather / alltoall
-#     / reduce_scatter / broadcast / pt2pt
-# The 2021.15.9.x line has no further patches; it also pinned libsycl.so.8,
-# which the 2026.0 toolkit's libsycl.so.9 cannot satisfy — so going back to
-# a stable torch (which links 2025.x) is the only way to use the standalone
-# oneccl-bmg.
+# Torch 2.14 requires the oneAPI 2026.1 runtime and matching compiler.
 { pkgs }:
 (pkgs.intel-oneapi-toolkit.override {
   components = [
@@ -21,30 +7,37 @@
     "intel.oneapi.lin.dpl"
     "intel.oneapi.lin.ccl.devel"
   ];
-}).overrideAttrs (old: {
-  # nixpkgs' intel-oneapi-toolkit has no `depsByComponent.ccl` entry
-  # (only dpcpp-cpp-compiler / mpi / pti / vtune / mkl / etc.), so
-  # adding the ccl component to the install list pulls the binaries
-  # in without their native deps. autoPatchelfHook then fails on
-  # libccl.so.1 -> libfabric/librdmacm/libibverbs/libpsm2/libucp/...
-  # Mirror the depsByComponent.ccl set our standalone oneccl-bmg
-  # derivation used.
-  # TODO: upstream a depsByComponent.ccl entry to nixpkgs'
-  # intel-oneapi-toolkit and drop this list.
-  buildInputs =
-    (old.buildInputs or [])
-    ++ (with pkgs; [
-      rdma-core
-      libpsm2
-      ucx
-      numactl
-      libffi
-      libuuid
-      libfabric
-    ]);
-  postInstall =
-    (old.postInstall or "")
-    + ''
+}).overrideAttrs
+  (old: {
+    versionYear = "2026";
+    versionMajor = "1";
+    versionMinor = "0";
+    versionRel = "192";
+    src = pkgs.fetchurl {
+      url = "https://registrationcenter-download.intel.com/akdlm/IRC_NAS/33cb2a22-ddf1-4aa9-8d68-1f5a118acaf2/intel-oneapi-toolkit-2026.1.0.192_offline.sh";
+      hash = "sha256-KJEZ4us+D37l0fO4muyyDWLgy3lkHKmSJfbR/6MEgW8=";
+    };
+    # nixpkgs' intel-oneapi-toolkit has no `depsByComponent.ccl` entry
+    # (only dpcpp-cpp-compiler / mpi / pti / vtune / mkl / etc.), so
+    # adding the ccl component to the install list pulls the binaries
+    # in without their native deps. autoPatchelfHook then fails on
+    # libccl.so.1 -> libfabric/librdmacm/libibverbs/libpsm2/libucp/...
+    # Mirror the depsByComponent.ccl set our standalone oneccl-bmg
+    # derivation used.
+    # TODO: upstream a depsByComponent.ccl entry to nixpkgs'
+    # intel-oneapi-toolkit and drop this list.
+    buildInputs =
+      (old.buildInputs or [ ])
+      ++ (with pkgs; [
+        rdma-core
+        libpsm2
+        ucx
+        numactl
+        libffi
+        libuuid
+        libfabric
+      ]);
+    postInstall = (old.postInstall or "") + ''
       # libccl dlopens libfabric.so when CCL_ATL_TRANSPORT=ofi: first by
       # name, then as `<dirname libccl.so>/libfabric.so`. With neither
       # resolvable, OFI init silently fails ("OFI transport was not
@@ -67,4 +60,4 @@
         fi
       done
     '';
-})
+  })

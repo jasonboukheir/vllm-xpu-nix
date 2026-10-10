@@ -1,0 +1,34 @@
+{
+  "status": "passed",
+  "candidate": {
+    "candidate": {
+      "derivation": "/nix/store/gkr9g6s5bsi0zkyfnnss6r2z9h481yby-python3.12-vllm-xpu-0.31.0+unstable.2026.10.10.gef92dc5.drv",
+      "version": "0.31.0+unstable.2026.10.10.gef92dc5",
+      "output": "/nix/store/mcyp3ljp8yl1hwfllnfzf22mw3j1z42y-python3.12-vllm-xpu-0.31.0+unstable.2026.10.10.gef92dc5"
+    },
+    "kernels": {
+      "derivation": "/nix/store/76463fj10nb2a4yssrya3wcz9r68pcqq-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f.drv",
+      "output": "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f",
+      "version": "0.1.15.4+unstable.2026.10.10.gdbb684f"
+    },
+    "runtime": {
+      "derivation": "/nix/store/p4zfny6pfqm2c6cwfkva3xb2bnhi7yss-v031-brutus-qualification-env.drv",
+      "output": "/nix/store/x70lv8ammab6cam04rz95gqzf202bz22-v031-brutus-qualification-env"
+    },
+    "status": "built; installed and exact Brutus foreground qualification passed"
+  },
+  "release_derivations": {
+    "candidate": "/nix/store/gkr9g6s5bsi0zkyfnnss6r2z9h481yby-python3.12-vllm-xpu-0.31.0+unstable.2026.10.10.gef92dc5.drv",
+    "kernels": "/nix/store/76463fj10nb2a4yssrya3wcz9r68pcqq-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f.drv",
+    "runtime": "/nix/store/p4zfny6pfqm2c6cwfkva3xb2bnhi7yss-v031-brutus-qualification-env.drv"
+  },
+  "changed_lock_nodes": [
+    "vllm-xpu-kernels-unstable-src",
+    "vllm-xpu-unstable-src"
+  ],
+  "only_change": "refs/heads/main to refs/tags/xpu-v1.12.0 in original/locked source refs; exact source SHAs, narHash, timestamps and all unrelated locks unchanged",
+  "host_override_sha256": "7ac223d83a815c55976851aa1181187ae81aa8d9ae17f0c5a1fabed9e5779b95",
+  "rolling_lock_sha256": "21d1616afb824fa344a897348139987c4478c4c89299ad02bf0b3ac4ffe5f3f7",
+  "release_lock_sha256": "ff6de2aaf88c1299dfaf4db57bc5c359f9f08eb6b5d6368e6107adba857137c4",
+  "runtime_outputs_exist": true
+}

@@ -1,0 +1,20 @@
+{
+  "candidate": {
+    "derivation": "/nix/store/pnda6nma48brxmwz9vy4z7v8v0jb1rpp-python3.12-vllm-xpu-0.31.0+unstable.2026.10.10.gef92dc5.drv",
+    "unrealized_output_placeholder": "/0k4mghi4brgiq0k94s1awjjr9xm5r30rgnhfbicmdl0h6dqld944",
+    "version": "0.31.0+unstable.2026.10.10.gef92dc5",
+    "output": "/nix/store/ms3pjzgn97cf9vx5nzp2kin5rkmryv7a-python3.12-vllm-xpu-0.31.0+unstable.2026.10.10.gef92dc5"
+  },
+  "kernels": {
+    "derivation": "/nix/store/76463fj10nb2a4yssrya3wcz9r68pcqq-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f.drv",
+    "unrealized_output_placeholder": "/0z2lqkw5bm839jkl1jwdgvfkcqf1q4j77wlwpqbjv3nn8iwq5dbc",
+    "version": "0.1.15.4+unstable.2026.10.10.gdbb684f",
+    "output": "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f"
+  },
+  "runtime": {
+    "derivation": "/nix/store/z58466sby7wd2ckmbbqmzxb9qmii6asj-v031-brutus-qualification-env.drv",
+    "unrealized_output_placeholder": "/0vx9y989ldaiiqzpdnsxbrzc33m071bmac1dsgrv8bz36dmcjlga",
+    "output": "/nix/store/cp0c15jk173smzp9d77kgcx36a7ibx1m-v031-brutus-qualification-env"
+  },
+  "status": "built; installed and service qualification pending"
+}

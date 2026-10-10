@@ -1,0 +1,304 @@
+{
+  "schema": 1,
+  "release": "xpu-v1.12.0",
+  "prepared_utc": "2026-10-10T10:36:44.073893+00:00",
+  "qualification_status": "passed installed tests and exact Brutus operational qualification; MTP2 retained after matched performance screen",
+  "sources": {
+    "vllm": {
+      "repository": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm.git",
+      "upstream_label": "v0.31.0",
+      "upstream_commit": "db9527a46873454610df6dbedf79a36d6bf1a7f6",
+      "commit": "ef92dc5600af64103c01f97e3300b81c3a1083ee",
+      "fork_commit_count": 5,
+      "locked": {
+        "lastModified": 1791621265,
+        "narHash": "sha256-AQsg5fDPJpwOxo4Yq8rrzfNWB/GsCbYBqfLGuWqf0ho=",
+        "ref": "refs/tags/xpu-v1.12.0",
+        "rev": "ef92dc5600af64103c01f97e3300b81c3a1083ee",
+        "revCount": 22125,
+        "type": "git",
+        "url": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm.git"
+      },
+      "release_tag": "refs/tags/xpu-v1.12.0",
+      "release_branch": "refs/heads/releases/xpu-v1.12.0"
+    },
+    "vllm-xpu-kernels": {
+      "repository": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm-xpu-kernels.git",
+      "upstream_label": "release/0.1.15.4",
+      "upstream_commit": "ddf336d86e3c8602888572a3502f951abd51df12",
+      "commit": "dbb684f4c9b38a8b3bbf52bda0c490ee47049221",
+      "fork_commit_count": 7,
+      "locked": {
+        "lastModified": 1791620554,
+        "narHash": "sha256-v+vBY8x3L8cILKz4j12dVV3Ar4Fk4Gj4vTDkr5tpOZg=",
+        "ref": "refs/tags/xpu-v1.12.0",
+        "rev": "dbb684f4c9b38a8b3bbf52bda0c490ee47049221",
+        "revCount": 392,
+        "submodules": true,
+        "type": "git",
+        "url": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm-xpu-kernels.git"
+      },
+      "release_tag": "refs/tags/xpu-v1.12.0",
+      "release_branch": "refs/heads/releases/xpu-v1.12.0"
+    }
+  },
+  "kernel_release_mapping": "Official released wheel 0.1.15.4 matches all seven Python files at the frozen official release branch source; no matching tag or embedded native source SHA. Native code rebuilt from that frozen source.",
+  "qualified_package": {
+    "drvPath": "/nix/store/gkr9g6s5bsi0zkyfnnss6r2z9h481yby-python3.12-vllm-xpu-0.31.0+unstable.2026.10.10.gef92dc5.drv",
+    "outPath": "/nix/store/mcyp3ljp8yl1hwfllnfzf22mw3j1z42y-python3.12-vllm-xpu-0.31.0+unstable.2026.10.10.gef92dc5",
+    "runtime": "/nix/store/x70lv8ammab6cam04rz95gqzf202bz22-v031-brutus-qualification-env",
+    "runtime_drvPath": "/nix/store/p4zfny6pfqm2c6cwfkva3xb2bnhi7yss-v031-brutus-qualification-env.drv",
+    "kernels": {
+      "derivation": "/nix/store/76463fj10nb2a4yssrya3wcz9r68pcqq-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f.drv",
+      "output": "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f",
+      "version": "0.1.15.4+unstable.2026.10.10.gdbb684f"
+    },
+    "host_override": {
+      "path": "/home/jasonbk/.config/nix/hosts/brutus/services/vllm-xpu/package.nix",
+      "sha256": "7ac223d83a815c55976851aa1181187ae81aa8d9ae17f0c5a1fabed9e5779b95",
+      "withTorchvision": true,
+      "aotDevices": [
+        "bmg"
+      ],
+      "unchanged": true
+    }
+  },
+  "profile": {
+    "model": "RedHatAI/Qwen3.8-27B-INT4",
+    "revision": "bf08f3dbd9a324e53956920aad378a1f1b6dd24a",
+    "weights": "W4A16 compressed-tensors",
+    "dtype": "bfloat16",
+    "runner": "V1",
+    "enforce_eager": true,
+    "kv_cache_dtype": "kvarn_k4v2_g128_compact",
+    "speculative_config": {
+      "method": "mtp",
+      "num_speculative_tokens": 2,
+      "kv_cache_dtype": "kvarn_k4v2_g128_compact"
+    },
+    "max_model_len": 262144,
+    "max_num_seqs": 4,
+    "max_num_batched_tokens": 2048,
+    "gpu_memory_utilization": 0.96,
+    "prefix_caching": false,
+    "images": 2,
+    "image_pixels": 200704,
+    "video": 0,
+    "reasoning_parser": "qwen3",
+    "tool_call_parser": "qwen3_xml",
+    "gpu_block_override": null
+  },
+  "selected_checks": {
+    "packaging": 608,
+    "installed_cpu_passed": 660,
+    "installed_cpu_expected_cuda_skips": 14,
+    "installed_native_backend": 724,
+    "calibrated_w4_references": 18,
+    "count_scope": "Individual suites include overlapping CPU contracts; counts are not additive or all GPU executions."
+  },
+  "audit": {
+    "individual_source_reports": 13,
+    "independent_packaging_patch_reports": 4,
+    "source_commits": {
+      "vllm": 5,
+      "vllm-xpu-kernels": 7
+    },
+    "native_production_changed_lines_removed": 173,
+    "commit_map": "../updates/release-v031-20261010/commit-map.json"
+  },
+  "capacity": {
+    "candidate_usable_attention_tokens": 350336,
+    "candidate_occupied_minimum_tokens": 349184,
+    "concurrent_prompt_tokens_each": 174079,
+    "output_tokens_each": 512,
+    "preemptions": 0,
+    "both_prefilled_before_either_last_token": true,
+    "scope": "Shared attention capacity; four scheduler slots do not imply four full 262K contexts."
+  },
+  "performance": {
+    "report": "../updates/release-v031-20261010/performance-results.json",
+    "decision": "Keep bundled MTP2; MTP1 slowed sustained decode in the matched short screen.",
+    "feature_review": "../updates/release-v031-20261010/performance-review.md"
+  },
+  "packaging_fixes": [
+    "Reconcile CUDA pyproject build Torch pin to verified exact XPU requirement.",
+    "Default OpenCL discovery to packaged Intel ICD provider.",
+    "Add existing oneCCL component library directory for dynamic plugin discovery."
+  ],
+  "dependency_policy": {
+    "recorded_utc": "2026-10-10T08:11:55.492290+00:00",
+    "policy": "Keep nixpkgs and unrelated inputs fixed; update only dependencies required by v0.31 XPU requirements and Torch 2.14 ABI.",
+    "required": {
+      "torch": "2.14.0+xpu",
+      "triton": "3.8.0+xpu",
+      "torchvision": "0.29.0+xpu",
+      "oneapi": "2026.1.0.192",
+      "intel-pti": "1.0.1",
+      "pyzes": "0.1.2",
+      "xgrammar": "0.2.7",
+      "oss-harmony": "0.0.11"
+    },
+    "oneapi_verification": "Downloaded official installer; SHA384 matches Intel product API; SHA256 fixed in Nix.",
+    "artifact_sources": {
+      "torch-xpu.nix": [
+        "https://files.pythonhosted.org/packages/74/46/90e1741b3926e3b8590dfaa819439891865568fc5c90a0f5596b76ee6bff/pyzes-${version}-py3-none-any.whl",
+        "sha256-VjhoQ5kEmUBBQHGvr/+R7ofxiAdFezyw0xzV1aC32yM=",
+        "https://download-r2.pytorch.org/whl/xpu/torch-2.14.0%2Bxpu-cp312-cp312-manylinux_2_28_x86_64.whl",
+        "sha256-BfjxMOJcJNT3kDJmrxZRRekjT66M5z7CYTrfwBXLo0o="
+      ],
+      "triton-xpu.nix": [
+        "https://download-r2.pytorch.org/whl/triton_xpu-${version}-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+        "sha256-sZ9HcmdWtHLsdEYQ4wztEAj0kRMGqUtcpSJLcaEcIUk=",
+        "https://github.com/intel/intel-xpu-backend-for-triton/releases/download/v3.8.0/triton-3.8.0%2Bxpu-py3-none-any.whl",
+        "sha256-8Wsk78x4njmH7mArdELhHKwLnTvHj5bjouw83Vpgt7s="
+      ],
+      "torchvision-xpu.nix": [
+        "https://download-r2.pytorch.org/whl/xpu/torchvision-0.29.0%2Bxpu-cp312-cp312-manylinux_2_28_x86_64.whl",
+        "sha256-582JITCsz2pFaZhPOCHU4DzudeBQMsS9YhS+5kImcZ8="
+      ],
+      "intel-oneapi.nix": [
+        "https://registrationcenter-download.intel.com/akdlm/IRC_NAS/33cb2a22-ddf1-4aa9-8d68-1f5a118acaf2/intel-oneapi-toolkit-2026.1.0.192_offline.sh",
+        "sha256-KJEZ4us+D37l0fO4muyyDWLgy3lkHKmSJfbR/6MEgW8="
+      ],
+      "intel-pti.nix": [
+        "https://files.pythonhosted.org/packages/46/d4/48737239235707852fef380005f53405740b08dc5f3700c72e5b43946452/intel_pti-${version}-py2.py3-none-manylinux_2_28_x86_64.whl",
+        "sha256-TnrZ6VXS2tjkHNldIuirHkdrri5uNR8Oi0ZT/nerLgw="
+      ],
+      "python-xpu.nix": [
+        "https://files.pythonhosted.org/packages/89/68/001d7429a692b2db0c03bd49b756f834716b64afc0bbbece96824e8f0af8/oss_harmony-${version}-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        "sha256-2HfGtSbNvfVQaLro8FxgOY6SnJ4pbH9podUzM5cIvoA=",
+        "https://files.pythonhosted.org/packages/f5/4c/c78d78c3d52b0ac594ad7cc8ef5972adfe070e3597a8a4c6ce0cd39196ea/mcp_types-${version}-py3-none-any.whl",
+        "sha256-ay3nl8onl/Vot5Up4bJZSONN5RG8wL2C/vEDmm0bjrA=",
+        "https://files.pythonhosted.org/packages/67/72/7d7897418912c1d12e87556630dfb7bf0eac71160e9bef8b447960804ee3/mcp-${version}-py3-none-any.whl",
+        "sha256-HLTHXS0se4wddWNV5dgqOfKCLMfxPiKiBR18o1kjSdY=",
+        "sha256-1+xL0S/AbrKi+6/pJQvh2b03R5HM04mzazVe7k4jxVg="
+      ]
+    },
+    "oneapi_product_api": "https://www.intel.com/libs/apps/intel/idz/productsinfo?downloadId=736b4a1f-bab6-4b5b-b0e9-f8e9b2ef9f70",
+    "torch_metadata_requirements": [
+      "Requires-Dist: filelock",
+      "Requires-Dist: typing-extensions>=4.10.0",
+      "Requires-Dist: setuptools>=77.0.3",
+      "Requires-Dist: sympy>=1.13.3",
+      "Requires-Dist: networkx>=2.5.1",
+      "Requires-Dist: jinja2",
+      "Requires-Dist: fsspec>=0.8.5",
+      "Requires-Dist: intel-cmplr-lib-rt==2026.1.0",
+      "Requires-Dist: intel-cmplr-lib-ur==2026.1.0",
+      "Requires-Dist: intel-cmplr-lic-rt==2026.1.0",
+      "Requires-Dist: intel-sycl-rt==2026.1.0",
+      "Requires-Dist: oneccl-devel==2022.1.1; platform_system == \"Linux\" and platform_machine == \"x86_64\"",
+      "Requires-Dist: oneccl==2022.1.1; platform_system == \"Linux\" and platform_machine == \"x86_64\"",
+      "Requires-Dist: impi-rt==2021.18.1; platform_system == \"Linux\" and platform_machine == \"x86_64\"",
+      "Requires-Dist: onemkl-license==2026.1.0",
+      "Requires-Dist: onemkl-sycl-blas==2026.1.0",
+      "Requires-Dist: onemkl-sycl-dft==2026.1.0",
+      "Requires-Dist: onemkl-sycl-lapack==2026.1.0",
+      "Requires-Dist: onemkl-sycl-rng==2026.1.0",
+      "Requires-Dist: onemkl-sycl-sparse==2026.1.0",
+      "Requires-Dist: dpcpp-cpp-rt==2026.1.0",
+      "Requires-Dist: intel-opencl-rt==2026.1.0",
+      "Requires-Dist: mkl==2026.1.0",
+      "Requires-Dist: intel-openmp==2026.1.0",
+      "Requires-Dist: tbb==2023.1.0",
+      "Requires-Dist: tcmlib==1.5.0",
+      "Requires-Dist: umf==1.1.0",
+      "Requires-Dist: intel-pti==1.0.1",
+      "Requires-Dist: pyzes==0.1.2; platform_system == \"Linux\" and platform_machine == \"x86_64\"",
+      "Requires-Dist: triton-xpu~=3.8.0; python_version < \"3.15\"",
+      "Requires-Dist: optree>=0.13.0; extra == \"optree\"",
+      "Requires-Dist: opt-einsum>=3.3; extra == \"opt-einsum\"",
+      "Requires-Dist: pyyaml; extra == \"pyyaml\""
+    ],
+    "previous_to_candidate": {
+      "torch": {
+        "previous": "2.13.0+xpu",
+        "candidate": "2.14.0+xpu"
+      },
+      "triton": {
+        "previous": "3.7.2+xpu",
+        "candidate": "3.8.0+xpu"
+      },
+      "torchvision": {
+        "previous": "0.28.0+xpu",
+        "candidate": "0.29.0+xpu"
+      },
+      "oneapi": {
+        "previous": "2026.0",
+        "candidate": "2026.1.0.192"
+      },
+      "intel-pti": {
+        "previous": "0.17.0",
+        "candidate": "1.0.1"
+      },
+      "pyzes": {
+        "previous": "0.1.1",
+        "candidate": "0.1.2"
+      },
+      "xgrammar": {
+        "previous": "0.2.1",
+        "candidate": "0.2.7"
+      },
+      "harmony": {
+        "previous": "openai-harmony distribution",
+        "candidate": "oss-harmony 0.0.11; same openai_harmony import"
+      }
+    },
+    "unchanged_nixpkgs": "0e251e24a4f24e036a084b6b4b2d2491af4167f4"
+  },
+  "limitations": [
+    "Short synthetic performance screen with small samples, output drift and whole-stack changes; no isolated fusion speedup or general performance guarantee.",
+    "Current KVarN is V1/eager; Inco DFlash2 requires a separate V2 ownership/history/allocation port or a separately qualified BF16-cache prototype.",
+    "Optional AEON whole-model invariance and historical unused-BF16-NaN diagnostics are not newly resolved or qualified.",
+    "Native W4 reference uses empirically controlled B70 BF16 RTZ weight conversion; original RNE-reference discrepancies remain recorded.",
+    "FastAPI0.139 exceeds upstream declared<0.137 through a pre-existing relaxation; actual Brutus API checks passed.",
+    "CUDA-only checks skipped; other models/backends and retained optimization/build-memory benefits are not newly qualified."
+  ],
+  "release_refs": {
+    "packaging_repository": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm-xpu-nix.git",
+    "branch": "refs/heads/releases/xpu-v1.12.0",
+    "annotated_tag": "refs/tags/xpu-v1.12.0",
+    "packaging_commit": "Resolve xpu-v1.12.0^{commit}; this manifest is contained in that immutable commit.",
+    "verification_record": "docs/updates/release-v031-20261010/publication-verification.json on packaging main after publication"
+  },
+  "rollback": {
+    "release": "xpu-v1.11.0",
+    "packaging_commit": "93c021f9433e132e4f594d6c64353777f391dcf2",
+    "vllm_commit": "466b9d5abe84f13c29b38c686e4d77fc09e09aa4",
+    "kernels_commit": "193cee080d654ff67c4f8bfaf924201bc88b9cf5"
+  },
+  "host_deployment_included": false,
+  "host_handoff": "Pin packaging permanent release branch and matching nested HTTPS source tags; prove host derivation equals qualified package. User performs rebuild/switch.",
+  "evidence_location": {
+    "public": "docs/updates/release-v031-20261010/",
+    "private": "/home/jasonbk/Projects/vllm-xpu-nix/benchmark-results/release-v031-20261010",
+    "public_ref": "refs/tags/xpu-v1.12.0"
+  },
+  "evidence_sha256": {
+    "docs/updates/release-v031-20261010/candidate-before-ccl-plugin-fix.json": "870adb60f9cbd78c4e24afda52886e2c4042770b52865da0d427466c89a1c6e2",
+    "docs/updates/release-v031-20261010/candidate-before-opencl-fix.json": "1e4fe4661eeba23a411c092d25292e912cc39c21498a1ad5095e73577ce607e1",
+    "docs/updates/release-v031-20261010/candidate-before-torch-build-pin-fix.json": "624d3252315646d4574111ee764aebbd8a3a8d00f572920016e9f0fc0182519d",
+    "docs/updates/release-v031-20261010/candidate-derivations.json": "b313b597040c68f8e2e0652704280ffea2789b8f1d9f984c83977c0099ca2a1d",
+    "docs/updates/release-v031-20261010/commit-map.json": "bd05a7a8a400b39077cfa839c5271ca44043000fd9405b602a8ace44c1ad8c30",
+    "docs/updates/release-v031-20261010/dependencies.json": "c136e61e9a465dd118499261da8fe336a2285022c51c480ff57956864f139689",
+    "docs/updates/release-v031-20261010/foreground-memory-review.json": "cf869411bcf829eeafcd0222fca9a63dd360c98f03fcb038e86100d8d46f2a55",
+    "docs/updates/release-v031-20261010/foreground-qualification-review.json": "f89fee7bf36214d8dc3d60537eab21acf0efe41e04c94777cb3c6a25eec90ea3",
+    "docs/updates/release-v031-20261010/installed-cpu-review.json": "f58bb5b5c1e5c3c5b5e97fb311518ee7d565e09c6a9ec7029da12477ce7fe709",
+    "docs/updates/release-v031-20261010/inventory.json": "c007f28d3f3b12df887e962d03d32fc755574ee9d5ebf5ced2d4a87c1c8dcbdc",
+    "docs/updates/release-v031-20261010/kernel-delta-size.json": "a0cdb73ff6d9f8b2d842c0c6a05463dafb2253d221f192fdc01522a294cb61e3",
+    "docs/updates/release-v031-20261010/kernel-wheel-source-check.json": "2c15056147d9cc7bdd886abf8747f733940c722cd85c68746addab762ea8c1c1",
+    "docs/updates/release-v031-20261010/native-build-review.json": "1125f0452c6bd697476247bba0eec036cb741de03f412e72ec44ea11df07ef9f",
+    "docs/updates/release-v031-20261010/native-correctness-review.json": "205c6843426e3340f20fb47dcb5d245f4b8bf35482b31aebb97091f6bf85e6e9",
+    "docs/updates/release-v031-20261010/oneccl-discovery-review.json": "2a54a918910f9612d43c721993921f5c9401cfb47b2e63e205f488759bb54265",
+    "docs/updates/release-v031-20261010/packaging-checks.json": "d7e7b1133d9dc9fedff873c17fbd466fbb3657e6129a0e349437c82742d15b8f",
+    "docs/updates/release-v031-20261010/patch-audit-map.json": "453aabb170046ae1955b1f507101832928c32c7c0539f17b9bd46faf9d55b882",
+    "docs/updates/release-v031-20261010/performance-results.json": "0b9b3c76996a93cd7b862a698eb2c5204909203e856d01bf18d60248f37eaa96",
+    "docs/updates/release-v031-20261010/python-dependency-derivations.json": "3177d0855f912cc3c5a9e4d97abb6808574046712354b04efdd7c8ec0b40a182",
+    "docs/updates/release-v031-20261010/release-final-checks.json": "991870ec1698239764d0290d038e243726936f7b37db9d0ad19eae72d34b9b59",
+    "docs/updates/release-v031-20261010/release-package-equivalence.json": "4cbff3ea4ea702b8c0afd6ae77fd765cafdda783d4b56d5405eb6c09d934bc67",
+    "docs/updates/release-v031-20261010/source-release-verification.json": "ccad3101927aa3410ad4527050489167b63b03dc3d8ac627df80c141a2278bbc",
+    "docs/updates/release-v031-20261010/substrate-derivations.json": "a5d65c1430b7fb3fd6e92b15a56f84fb462e8f2b4539476dcb671375dc24ea23",
+    "docs/updates/release-v031-20261010/upstream-vllm-release.json": "3df11d1b5766ce51dcc881cf322b292e2d26cf18c6b1bd72b2d4ccb8d75b2df6",
+    "docs/updates/release-v031-20261010/w4-correctness-review.json": "465fc65ef143ccebb168e006109c07b39d6aa564efd391d7563f17b20a20107d"
+  }
+}

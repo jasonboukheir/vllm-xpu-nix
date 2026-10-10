@@ -1,0 +1,120 @@
+{
+  "run": "release-v031-20261010",
+  "created_utc": "2026-10-10T08:05:33.993658+00:00",
+  "operation": "v0.31 release, minimize both fork stacks, qualify actual Brutus model, publish mains and immutable release refs, repin host for operator rebuild",
+  "repos": {
+    "vllm": {
+      "old_base": "ced6857afa0ea7b2e3f0846a62e1394e90f15607",
+      "old_main": "466b9d5abe84f13c29b38c686e4d77fc09e09aa4",
+      "expected_remote": "466b9d5abe84f13c29b38c686e4d77fc09e09aa4",
+      "target": "db9527a46873454610df6dbedf79a36d6bf1a7f6",
+      "version": "v0.31.0",
+      "commits": [
+        {
+          "sha": "cfbd127232d3121e185eac2d24a9a50ea8141aa0",
+          "parent": "ced6857afa0ea7b2e3f0846a62e1394e90f15607",
+          "subject": "fix(xpu): strip graph padding from GDN index tensors",
+          "patch_id": "73c55934b009279f414f33eb37ce51c9ad43b846"
+        },
+        {
+          "sha": "6efe5e7cc59de64ae8d3ec67bbe77379be34d2c9",
+          "parent": "cfbd127232d3121e185eac2d24a9a50ea8141aa0",
+          "subject": "fix(xpu): stabilize Qwen GDN prefill and mixed scheduling",
+          "patch_id": "b1f78180963d8928e113c17f5418afc7a63517c7"
+        },
+        {
+          "sha": "d909b25f0119419481bc378c3c0a3c656f9b76b0",
+          "parent": "6efe5e7cc59de64ae8d3ec67bbe77379be34d2c9",
+          "subject": "fix(xpu): preserve functional batch-invariant residual RMSNorm",
+          "patch_id": "2db40de80fa6583e1083c2f41979f06b51c3bd08"
+        },
+        {
+          "sha": "984e6c3edda05c4f2dca37703534cb0e69cfa0fa",
+          "parent": "d909b25f0119419481bc378c3c0a3c656f9b76b0",
+          "subject": "fix(xpu): accept explicit unquantized KV cache dtypes",
+          "patch_id": "6f704ef6d098637584d969bf3fe2b27a26615957"
+        },
+        {
+          "sha": "466b9d5abe84f13c29b38c686e4d77fc09e09aa4",
+          "parent": "984e6c3edda05c4f2dca37703534cb0e69cfa0fa",
+          "subject": "feat(xpu): add KVarN cache with compact K4V2 and bundled MTP",
+          "patch_id": "ffe68651f548654af1e078df09d79b6389c9aa3f"
+        }
+      ],
+      "backup_refs": [
+        "refs/heads/backup/main-pre-rebase-v031-20261010",
+        "refs/heads/backup/origin-main-pre-rebase-v031-20261010"
+      ],
+      "backups_published": true
+    },
+    "vllm-xpu-kernels": {
+      "old_base": "1c7cbeee1cd0c1481d48f5031f679a47f3f0ef45",
+      "old_main": "193cee080d654ff67c4f8bfaf924201bc88b9cf5",
+      "expected_remote": "193cee080d654ff67c4f8bfaf924201bc88b9cf5",
+      "target": "ddf336d86e3c8602888572a3502f951abd51df12",
+      "version": "0.1.15.4",
+      "commits": [
+        {
+          "sha": "98bdbfde3e75f164bc5040574990db843bf888de",
+          "parent": "1c7cbeee1cd0c1481d48f5031f679a47f3f0ef45",
+          "subject": "fix(onednn): make W4A16 matmul deterministic",
+          "patch_id": "7ea50ac3b0ceb331108743cc12894af0bd2fce23"
+        },
+        {
+          "sha": "e1bec3b3e9d0c02cc0e8ce9354d5d2908d51a87f",
+          "parent": "98bdbfde3e75f164bc5040574990db843bf888de",
+          "subject": "fix(attn): avoid instantiating disabled chunk-prefill policies",
+          "patch_id": "a67e39bf2d719c6ffb4a8a0389b3e9d3bfbb6a76"
+        },
+        {
+          "sha": "956b61f95a0b38e73eeebe9cbfeff1be782a9283",
+          "parent": "e1bec3b3e9d0c02cc0e8ce9354d5d2908d51a87f",
+          "subject": "fix(gdn): disable unstable tiled causal-convolution prefill",
+          "patch_id": "f7fd14e5d76964b1426c46ae21f46913f227194d"
+        },
+        {
+          "sha": "3b5deb0773be875a328a1831c5e4a08233460d32",
+          "parent": "956b61f95a0b38e73eeebe9cbfeff1be782a9283",
+          "subject": "fix(gdn): order fresh-state prefill output reads",
+          "patch_id": "be4c0310f7f161dda8916d4d75bfd15db795f471"
+        },
+        {
+          "sha": "9a17a2c8617be2b0471db79fb301912601ee945c",
+          "parent": "3b5deb0773be875a328a1831c5e4a08233460d32",
+          "subject": "fix(gdn): preserve cached decode arithmetic in mixed batches",
+          "patch_id": "21d478c5a5c87f2f04d87acf4cb3b4a0e21e8672"
+        },
+        {
+          "sha": "30fda95e35666948deb3c9bd7fd72aaff9c2ad66",
+          "parent": "9a17a2c8617be2b0471db79fb301912601ee945c",
+          "subject": "fix(gdn): preserve rollback for shortened speculative queries",
+          "patch_id": "a937990b68b5515486ac49363b7879acd876eb7e"
+        },
+        {
+          "sha": "8b6ec9d6a31836e3f19447ec790169655ce7da6a",
+          "parent": "30fda95e35666948deb3c9bd7fd72aaff9c2ad66",
+          "subject": "test(attn): cover native FlashAttention replay determinism",
+          "patch_id": "43a970403358d0f0303a73a99af6367d7a0e5012"
+        },
+        {
+          "sha": "193cee080d654ff67c4f8bfaf924201bc88b9cf5",
+          "parent": "8b6ec9d6a31836e3f19447ec790169655ce7da6a",
+          "subject": "feat(attn): add native KVarN cache and compact K4V2 attention",
+          "patch_id": "4ff4c3eb11770280350fa8f4739b6edee6cacff4"
+        }
+      ],
+      "backup_refs": [
+        "refs/heads/backup/main-pre-rebase-v031-20261010",
+        "refs/heads/backup/origin-main-pre-rebase-v031-20261010"
+      ],
+      "backups_published": true
+    }
+  },
+  "kernel_release_provenance": {
+    "package_index": "https://pypi.org/project/vllm-xpu-kernels/0.1.15.4/",
+    "source_branch": "release/0.1.15.4",
+    "tag": null,
+    "wheel_sha256": "4ec262f7afdd07c62defc8286dc9f357569627b996c09b410f7972b653696fe7",
+    "note": "Published wheel release, no corresponding source tag; frozen official release-branch source. Wheel has no embedded source SHA. Verify pure Python payload and required toolchain before replay."
+  }
+}

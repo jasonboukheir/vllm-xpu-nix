@@ -1,0 +1,30 @@
+[
+  {
+    "path": "vllm_xpu_kernels/__init__.py",
+    "identical": true
+  },
+  {
+    "path": "vllm_xpu_kernels/flash_attn_interface.py",
+    "identical": true
+  },
+  {
+    "path": "vllm_xpu_kernels/fused_moe_interface.py",
+    "identical": true
+  },
+  {
+    "path": "vllm_xpu_kernels/moe_utils.py",
+    "identical": true
+  },
+  {
+    "path": "vllm_xpu_kernels/rotary.py",
+    "identical": true
+  },
+  {
+    "path": "vllm_xpu_kernels/quantization/__init__.py",
+    "identical": true
+  },
+  {
+    "path": "vllm_xpu_kernels/quantization/_quantize_convert.py",
+    "identical": true
+  }
+]

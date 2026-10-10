@@ -10,13 +10,13 @@
 
 python3Packages.buildPythonPackage rec {
   pname = "torchvision";
-  # Stable XPU wheel paired with torch 2.13.0+xpu.
-  version = "0.28.0+xpu";
+  # Stable XPU wheel paired with torch 2.14.0+xpu.
+  version = "0.29.0+xpu";
   format = "wheel";
 
   src = fetchurl {
-    url = "https://download-r2.pytorch.org/whl/xpu/torchvision-0.28.0%2Bxpu-cp312-cp312-manylinux_2_28_x86_64.whl";
-    hash = "sha256-qln/qRxELe65BBnSG/kMRtdQDADCYQ0WX0USO7E6GAc=";
+    url = "https://download-r2.pytorch.org/whl/xpu/torchvision-0.29.0%2Bxpu-cp312-cp312-manylinux_2_28_x86_64.whl";
+    hash = "sha256-582JITCsz2pFaZhPOCHU4DzudeBQMsS9YhS+5kImcZ8=";
   };
 
   nativeBuildInputs = [

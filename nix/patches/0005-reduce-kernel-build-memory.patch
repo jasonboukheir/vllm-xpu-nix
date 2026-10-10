@@ -1,30 +1,17 @@
 From: vllm-xpu-nix <noreply@anthropic.com>
-Subject: [PATCH] cmake: expose kernel-build memory knobs via cache vars
+Subject: [PATCH] cmake: configure device-link concurrency and diagnostic depth
 
-Exposes the two flags that dominate peak compile-/link-time RAM of the
-SYCL kernel libraries (attn_kernels_xe_2 and friends) as CMake cache
-vars, so memory-constrained builders can dial them down without
-patching upstream. Defaults match the previous hardcoded behaviour —
-no change for existing builds.
+Expose two existing compiler options as CMake cache variables. Defaults match
+upstream's hardcoded values.
 
-  * `VLLM_XPU_SYCL_LINK_PARALLELISM` (default 16) replaces the
-    hardcoded `-fsycl-max-parallel-link-jobs=16`. Device link is the
-    memory peak: every inner job holds the full fat-module bitcode plus
-    its own LLVM context plus the AOT backend, and up to four kernel
-    libraries link concurrently — 16 inner jobs is far more aggressive
-    than typical hardware can absorb. Downstream builders running on
-    24-core / 96-GB boxes drop to 4 to stay out of swap.
+  * VLLM_XPU_SYCL_LINK_PARALLELISM (default 16) controls parallel device-link
+    jobs. Downstream split libraries set it from NIX_BUILD_CORES so operators
+    can bound this concurrency with --cores.
+  * VLLM_XPU_CUTLASS_TEMPLATE_BACKTRACE_LIMIT (default 0, unlimited) limits
+    template diagnostic entries. Downstream selects 10. A successful-build
+    memory or compile-time benefit has not been measured.
 
-  * `VLLM_XPU_CUTLASS_TEMPLATE_BACKTRACE_LIMIT` (default 0 = unlimited)
-    replaces the hardcoded `-ftemplate-backtrace-limit=0` on the
-    CUTLASS-SYCL TUs. The unlimited backtrace makes the frontend retain
-    the entire template instantiation chain for diagnostics that almost
-    never fire; CUTLASS-SYCL is template-pathological and pays this
-    cost across ~200 TUs. Downstream builders cap at 10 to recover the
-    frontend RSS without breaking error reporting.
-
-`-flink-huge-device-code` is intentionally left in place — at this
-kernel scale the device linker truncates relocations without it.
+The existing -flink-huge-device-code option is unchanged.
 ---
  CMakeLists.txt | 13 +++++++++----
  1 file changed, 9 insertions(+), 4 deletions(-)
@@ -36,7 +23,7 @@ kernel scale the device linker truncates relocations without it.
  
    # ============= LINK OPTIONS ==================
 +  set(VLLM_XPU_SYCL_LINK_PARALLELISM "16" CACHE STRING
-+      "Inner parallelism for SYCL device link (-fsycl-max-parallel-link-jobs). Lower values reduce peak link-time memory.")
++      "Maximum parallel SYCL device-link jobs (-fsycl-max-parallel-link-jobs).")
    set(SYCL_LINK_FLAGS "")
    list(APPEND SYCL_LINK_FLAGS "-fsycl")
    # For l0 ops like getMemoryInfo
@@ -56,7 +43,7 @@ kernel scale the device linker truncates relocations without it.
    list(APPEND VLLM_CUTLASS_FLAGS "-DCUTLASS_VERSIONS_GENERATED")
 -  list(APPEND VLLM_CUTLASS_FLAGS "-ftemplate-backtrace-limit=0")
 +  set(VLLM_XPU_CUTLASS_TEMPLATE_BACKTRACE_LIMIT "0" CACHE STRING
-+      "Template instantiation backtrace depth for CUTLASS-SYCL TUs. Lower values reduce frontend memory retention; 0 = unlimited.")
++      "Template diagnostic backtrace depth for CUTLASS-SYCL TUs; 0 = unlimited.")
 +  list(APPEND VLLM_CUTLASS_FLAGS "-ftemplate-backtrace-limit=${VLLM_XPU_CUTLASS_TEMPLATE_BACKTRACE_LIMIT}")
    list(APPEND VLLM_CUTLASS_FLAGS "-fdiagnostics-color=always")
  endif()

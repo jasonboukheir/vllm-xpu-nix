@@ -1,0 +1,342 @@
+{
+  "schema_version": 1,
+  "reviewer": "v05_kvarn",
+  "status": "passed_with_expected_cuda_skips",
+  "recorded_utc": "2026-10-10T09:58:46.844628+00:00",
+  "run_started_utc": "2026-10-10T09:57:18.623730+00:00",
+  "run_finished_utc": "2026-10-10T09:57:44.699606+00:00",
+  "returncode": 0,
+  "counts": {
+    "unique_collected": 674,
+    "passed": 660,
+    "skipped": 14,
+    "failed": 0,
+    "not_run": 0,
+    "collection_errors": 0
+  },
+  "count_scope": "674 unique parametrized node IDs in one installed-runtime invocation; no aggregation with earlier source/old-closure runs.",
+  "counts_by_test_file": {
+    "tests/model_executor/layers/test_request_stable_linear.py": {
+      "passed": 80
+    },
+    "tests/platforms/test_xpu_kvarn_beta.py": {
+      "passed": 71
+    },
+    "tests/quantization/test_kvarn.py": {
+      "passed": 207
+    },
+    "tests/test_config.py": {
+      "passed": 3
+    },
+    "tests/v1/attention/test_gdn_metadata_builder.py": {
+      "passed": 5
+    },
+    "tests/v1/core/prefix_cache/test_partial_prefix_cache_hits.py": {
+      "passed": 117
+    },
+    "tests/v1/core/test_independent_kv_cache_pools.py": {
+      "passed": 5
+    },
+    "tests/v1/core/test_kv_cache_utils.py": {
+      "passed": 86
+    },
+    "tests/v1/core/test_mamba_align_chunk_split.py": {
+      "passed": 56
+    },
+    "tests/v1/spec_decode/test_llm_base_proposer.py": {
+      "passed": 10
+    },
+    "tests/v1/worker/test_gpu_model_runner.py": {
+      "passed": 7
+    },
+    "tests/v1/worker/test_gpu_warmup.py": {
+      "passed": 3
+    },
+    "tests/v1/worker/test_kv_block_zeroer.py": {
+      "skipped": 14,
+      "passed": 8
+    },
+    "tests/v1/worker/test_kv_cache_pool_ownership.py": {
+      "passed": 2
+    }
+  },
+  "identity": {
+    "runtime": {
+      "derivation": "/nix/store/p4zfny6pfqm2c6cwfkva3xb2bnhi7yss-v031-brutus-qualification-env.drv",
+      "output": "/nix/store/x70lv8ammab6cam04rz95gqzf202bz22-v031-brutus-qualification-env"
+    },
+    "runtime_python_wrapper_sha256": "43644829ad85278298dfbe923a2491a31ac1d53c994a4b66b61f6e2b35680f39",
+    "interpreter": "/nix/store/rdd76cs82hxnf28fr3y8jjshd8mssgx6-python3-3.12.13-env/bin/python",
+    "interpreter_resolved": "/nix/store/rdd76cs82hxnf28fr3y8jjshd8mssgx6-python3-3.12.13-env/bin/python3.12",
+    "candidate": {
+      "derivation": "/nix/store/gkr9g6s5bsi0zkyfnnss6r2z9h481yby-python3.12-vllm-xpu-0.31.0+unstable.2026.10.10.gef92dc5.drv",
+      "version": "0.31.0+unstable.2026.10.10.gef92dc5",
+      "output": "/nix/store/mcyp3ljp8yl1hwfllnfzf22mw3j1z42y-python3.12-vllm-xpu-0.31.0+unstable.2026.10.10.gef92dc5"
+    },
+    "paired_kernels": {
+      "derivation": "/nix/store/76463fj10nb2a4yssrya3wcz9r68pcqq-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f.drv",
+      "output": "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f",
+      "version": "0.1.15.4+unstable.2026.10.10.gdbb684f"
+    },
+    "paired_kernel_scope": "Identity from candidate manifest; these CPU tests do not qualify native XPU execution.",
+    "installed_vllm": "/nix/store/mcyp3ljp8yl1hwfllnfzf22mw3j1z42y-python3.12-vllm-xpu-0.31.0+unstable.2026.10.10.gef92dc5/lib/python3.12/site-packages/vllm/__init__.py",
+    "installed_vllm_config": "/nix/store/mcyp3ljp8yl1hwfllnfzf22mw3j1z42y-python3.12-vllm-xpu-0.31.0+unstable.2026.10.10.gef92dc5/lib/python3.12/site-packages/vllm/config/__init__.py",
+    "version": "0.31.0+unstable.2026.10.10.gef92dc5",
+    "torch": {
+      "version": "2.14.0+xpu",
+      "file": "/nix/store/yv16l8ysyld56xn99xlwpgx7bijagcz8-python3.12-torch-2.14.0+xpu/lib/python3.12/site-packages/torch/__init__.py"
+    },
+    "test_source_commit": "ef92dc5600af64103c01f97e3300b81c3a1083ee",
+    "test_source_clean_at_review": true
+  },
+  "environment": {
+    "VLLM_TARGET_DEVICE": "cpu",
+    "CUDA_VISIBLE_DEVICES": "",
+    "ZE_AFFINITY_MASK": "",
+    "ONEAPI_DEVICE_SELECTOR": null,
+    "PYTHONPATH": null,
+    "HF_HUB_OFFLINE": "1"
+  },
+  "evidence": {
+    "results": {
+      "path": "benchmark-results/release-v031-20261010/installed-cpu-final-results.json",
+      "sha256": "5f69e481c532211d85a2d36ce0b8e4a93d439754269a03e3db7690d1729b8717"
+    },
+    "log": {
+      "path": "benchmark-results/release-v031-20261010/installed-cpu-final-results.log",
+      "sha256": "2378f8756295d6b8f5bd3816443c9e915fae41608665fbeb7a2afb1e40847813"
+    },
+    "harness": {
+      "path": "benchmark-results/release-v031-20261010/run-installed-cpu-tests.py",
+      "sha256": "cde1a5e53a81fffbf7e629d03508dd497a1730df8c9cc3fc4c78683db5f54001"
+    },
+    "candidate_version_sha256": "83c60e232be1893737ad4041a8b878fe82755c3665fcc6db97adadd93feac654",
+    "candidate_manifest_sha256_at_review": "6ced79a3a56fe110e876f82a1c834e950f4be73ecb561a8b95e305e52f1a9026",
+    "raw_evidence_location": "benchmark-results is ignored; hashes bind the retained local raw reports."
+  },
+  "attestation": {
+    "vllm_and_config_imported_before_source_helpers": true,
+    "installed_vllm_bindings_preserved_through_tests": true,
+    "worktree_vllm_implementation_imported": false,
+    "installed_modules_before_helpers": 120,
+    "installed_modules_after_tests": 915,
+    "all_recorded_vllm_module_files_within_candidate_output": true,
+    "all_recorded_python_module_hashes_reverified": true,
+    "implementation_manifest_sha256": "1408e5ce4035f8aacd9ad0f4d3625c7d056e66c9a491b07b77a8e217f1e44b6b",
+    "selected_source_hashes_reverified": true,
+    "loaded_test_helper_modules": 23,
+    "loaded_test_helper_hashes_reverified": true,
+    "stage_reports_reconciled_with_unique_node_outcomes": true,
+    "recorded_python_implementation_hashes_identical_to_previous_run": true
+  },
+  "selected_test_sources_sha256": {
+    "tests/model_executor/layers/test_request_stable_linear.py": "1dddb92081c179642c5fc5676a8df9d48c587601ed4c13ea6a199319eddfb447",
+    "tests/platforms/test_xpu_kvarn_beta.py": "2dbcaf5e29c769233b0233af16fecc561a96cabd1055d24c74c4381058e26b8a",
+    "tests/quantization/test_kvarn.py": "06433981075d1a8dc35b7c1b5ac3e46064a443adfa659beaf2e890949422c5aa",
+    "tests/test_config.py": "e1f933d007b69f708d4195c240e2f98b0125050ad8106943d594e8692827e22e",
+    "tests/v1/attention/test_gdn_metadata_builder.py": "216a9ee78cedd3428686c3cb6fe48748b76f22209f78092ad4df3dc83c444824",
+    "tests/v1/core/prefix_cache/test_partial_prefix_cache_hits.py": "5c1c217f0c8fa212039e42c03d0b8acd5e38e9628a0e131a34158641d9c459d4",
+    "tests/v1/core/test_independent_kv_cache_pools.py": "3b381ecc4bf942ae622340df8bdd7825c9e5ee3229140bf31a606dd3604e9dd4",
+    "tests/v1/core/test_kv_cache_utils.py": "02498bd4a7b59540d9e628bc575cd2e473d73069f436dc3c811b87efb9a7cc81",
+    "tests/v1/core/test_mamba_align_chunk_split.py": "a32d11469b685421914a3f48fa02954f7a97b6e1fd9bb0105277ae6084d3926e",
+    "tests/v1/spec_decode/test_llm_base_proposer.py": "ed647095ff735ddae5eab7a7ccf062516c6da18520959559ff54a3de13add16f",
+    "tests/v1/worker/test_gpu_model_runner.py": "196aab60cd0872a14ae5a8b7e9e00bc19d4d9fb119225404b905ca5d8db4b7ca",
+    "tests/v1/worker/test_gpu_warmup.py": "05e9c6e9cf4e4732ea9223402a3e8a2495e154bdded258f19e95c4cd66d8d5fc",
+    "tests/v1/worker/test_kv_block_zeroer.py": "43ee57feee50ced21c5d874d85f333ce51e4623f31947321d07cea241d82cf04",
+    "tests/v1/worker/test_kv_cache_pool_ownership.py": "0f3285ed5f48294af4b80da03175b470253811e5ef997534a535e18aa6a60db5"
+  },
+  "loaded_test_helpers_sha256": {
+    "tests/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "tests/model_executor/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "tests/quantization/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "tests/quantization/test_kvarn.py": "06433981075d1a8dc35b7c1b5ac3e46064a443adfa659beaf2e890949422c5aa",
+    "tests/test_config.py": "e1f933d007b69f708d4195c240e2f98b0125050ad8106943d594e8692827e22e",
+    "tests/v1/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "tests/v1/attention/utils.py": "36149aa92ce44902b135546223ac42f79f7f6c3b7389e7e3d9d3a9b8a1eab653",
+    "tests/v1/core/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "tests/v1/core/test_independent_kv_cache_pools.py": "3b381ecc4bf942ae622340df8bdd7825c9e5ee3229140bf31a606dd3604e9dd4",
+    "tests/v1/core/test_kv_cache_utils.py": "02498bd4a7b59540d9e628bc575cd2e473d73069f436dc3c811b87efb9a7cc81",
+    "tests/v1/core/test_mamba_align_chunk_split.py": "a32d11469b685421914a3f48fa02954f7a97b6e1fd9bb0105277ae6084d3926e",
+    "tests/v1/core/test_prefix_caching.py": "b0be1b38ba3f1f245c476bf49fd101e5280fd1ef2ee2d945fbdfc076a82ab915",
+    "tests/v1/core/utils.py": "2e7071e98e83c685ed230982ba46dfccb95191f725578bb915a57ab239032694",
+    "tests/v1/kv_connector/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "tests/v1/kv_connector/unit/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "tests/v1/kv_connector/unit/utils.py": "f77a3a8989976f812b066c19ce23ca6fab7486dd7ff21d647f4ffdfb4f039ff0",
+    "tests/v1/spec_decode/__init__.py": "e3c55cbb0d7a8bd47df6f3378835644645f5d3bc89b45793b5d5a02d013e5c58",
+    "tests/v1/spec_decode/test_llm_base_proposer.py": "ed647095ff735ddae5eab7a7ccf062516c6da18520959559ff54a3de13add16f",
+    "tests/v1/worker/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "tests/v1/worker/test_gpu_model_runner.py": "196aab60cd0872a14ae5a8b7e9e00bc19d4d9fb119225404b905ca5d8db4b7ca",
+    "tests/v1/worker/test_gpu_warmup.py": "05e9c6e9cf4e4732ea9223402a3e8a2495e154bdded258f19e95c4cd66d8d5fc",
+    "tests/v1/worker/test_kv_block_zeroer.py": "43ee57feee50ced21c5d874d85f333ce51e4623f31947321d07cea241d82cf04",
+    "tests/v1/worker/test_kv_cache_pool_ownership.py": "0f3285ed5f48294af4b80da03175b470253811e5ef997534a535e18aa6a60db5"
+  },
+  "fixture_handling": {
+    "root_conftest_loaded": false,
+    "option": "--noconftest",
+    "logging_fixture_source": "tests/conftest.py",
+    "logging_fixture_source_sha256": "04ebad61208572ec894a650a2f0009c9e75ed0d5017bd1491490f9834d24e178",
+    "logging_fixture_ast_sha256": {
+      "temporary_enable_log_propagate": "9bf888411dbd70a98485260e9868dc05bed7f898b718bec2f21fa7fd0539397e",
+      "caplog_vllm": "b86862e27e379d9a8112b1bc9219b145d3707af000feea28d4ab9b605cdf7f0c"
+    },
+    "method": "Unmodified FunctionDef AST including decorators",
+    "assertions_removed_or_disabled": false
+  },
+  "skips": [
+    {
+      "nodeid": "tests/v1/worker/test_kv_block_zeroer.py::test_attention_blocks_are_zeroed[sliding-window]",
+      "when": "setup",
+      "reason": "CUDA required"
+    },
+    {
+      "nodeid": "tests/v1/worker/test_kv_block_zeroer.py::test_attention_blocks_are_zeroed[chunked-local]",
+      "when": "setup",
+      "reason": "CUDA required"
+    },
+    {
+      "nodeid": "tests/v1/worker/test_kv_block_zeroer.py::test_layers_in_one_group_may_use_different_kernel_pages_per_block",
+      "when": "setup",
+      "reason": "CUDA required"
+    },
+    {
+      "nodeid": "tests/v1/worker/test_kv_block_zeroer.py::test_block_ids_are_not_overwritten_while_copy_is_in_flight",
+      "when": "setup",
+      "reason": "CUDA required"
+    },
+    {
+      "nodeid": "tests/v1/worker/test_kv_block_zeroer.py::test_non_uniform_page_sizes",
+      "when": "setup",
+      "reason": "CUDA required"
+    },
+    {
+      "nodeid": "tests/v1/worker/test_kv_block_zeroer.py::test_packed_segment_zeros_only_its_last_block_page",
+      "when": "setup",
+      "reason": "CUDA required"
+    },
+    {
+      "nodeid": "tests/v1/worker/test_kv_block_zeroer.py::test_warmup_compiles_for_all_block_counts",
+      "when": "setup",
+      "reason": "CUDA required"
+    },
+    {
+      "nodeid": "tests/v1/worker/test_kv_block_zeroer.py::test_warmup_respects_available_block_count",
+      "when": "setup",
+      "reason": "CUDA required"
+    },
+    {
+      "nodeid": "tests/v1/worker/test_kv_block_zeroer.py::test_zeroes_exactly_one_block_per_layer[KVCacheLayout.LBHNC]",
+      "when": "setup",
+      "reason": "CUDA required"
+    },
+    {
+      "nodeid": "tests/v1/worker/test_kv_block_zeroer.py::test_zeroes_exactly_one_block_per_layer[KVCacheLayout.LBNHC]",
+      "when": "setup",
+      "reason": "CUDA required"
+    },
+    {
+      "nodeid": "tests/v1/worker/test_kv_block_zeroer.py::test_zeroes_exactly_one_block_per_layer[KVCacheLayout.LHBNC]",
+      "when": "setup",
+      "reason": "CUDA required"
+    },
+    {
+      "nodeid": "tests/v1/worker/test_kv_block_zeroer.py::test_zeroes_exactly_one_block_per_layer[KVCacheLayout.BLHNC]",
+      "when": "setup",
+      "reason": "CUDA required"
+    },
+    {
+      "nodeid": "tests/v1/worker/test_kv_block_zeroer.py::test_zeroes_exactly_one_block_per_layer[KVCacheLayout.BLNHC]",
+      "when": "setup",
+      "reason": "CUDA required"
+    },
+    {
+      "nodeid": "tests/v1/worker/test_kv_block_zeroer.py::test_zeroes_exactly_one_block_per_layer[KVCacheLayout.BHLNC]",
+      "when": "setup",
+      "reason": "CUDA required"
+    }
+  ],
+  "diagnosis": {
+    "test_failures": [],
+    "skips": "All 14 are upstream CUDA-only block-zeroer tests skipped during setup in this CPU invocation. CPU allocator and zeroer metadata cases passed; no skipped case is claimed as coverage.",
+    "warnings": "Torch opaque-base/custom-class deprecations, expected zero-XPU-device warning with devices hidden, and a SWIG metadata DeprecationWarning appeared; no associated test failure."
+  },
+  "limitations": [
+    "CPU Python unit regressions; native XPU execution, service loading, model correctness and performance require separate qualification. Root conftest is disabled; only the two exact logging fixtures are extracted, plus fixtures defined in selected test files and pytest. The GDN selection covers its padding adapter; broader GDN metadata tests requiring cached model configuration are not selected.",
+    "CPU tests mock XPU dispatch boundaries where their original unit tests require it; passing them is not native kernel validation.",
+    "Only the two selected model-runner ownership/cleanup functions were collected; distributed fixture-dependent runner tests were excluded.",
+    "These results do not include the separately running packaging unit check or any native/service/performance gate.",
+    "Final CPU suite was rerun with VLLM_TARGET_DEVICE=cpu, GPUs hidden, and installed final-wrapper runtime; review rehashed sources. No GPU computations or service/native probes were run by this reviewer."
+  ],
+  "rerun_reason": "The final wrapper adds the existing oneCCL plugin directory to LD_LIBRARY_PATH. Source, native kernel output, Torch and all recorded vLLM Python implementation hashes are unchanged; qualification is tied to the final package/runtime outputs.",
+  "prior_runs": [
+    {
+      "role": "Superseded runtime before oneCCL plugin discovery fix; retained provenance only, counts are not added to final run.",
+      "counts": {
+        "unique_collected": 674,
+        "passed": 660,
+        "skipped": 14,
+        "failed": 0,
+        "not_run": 0,
+        "collection_errors": 0
+      },
+      "identity": {
+        "runtime": {
+          "derivation": "/nix/store/z58466sby7wd2ckmbbqmzxb9qmii6asj-v031-brutus-qualification-env.drv",
+          "unrealized_output_placeholder": "/0vx9y989ldaiiqzpdnsxbrzc33m071bmac1dsgrv8bz36dmcjlga",
+          "output": "/nix/store/cp0c15jk173smzp9d77kgcx36a7ibx1m-v031-brutus-qualification-env"
+        },
+        "runtime_python_wrapper_sha256": "f085c481100670e5d6f001b667080b93da3cc77a61d18eb21d20b97c123653b8",
+        "interpreter": "/nix/store/7fqgpzgj8ra7j3zp5rw0pk30832vrhqp-python3-3.12.13-env/bin/python",
+        "interpreter_resolved": "/nix/store/7fqgpzgj8ra7j3zp5rw0pk30832vrhqp-python3-3.12.13-env/bin/python3.12",
+        "candidate": {
+          "derivation": "/nix/store/pnda6nma48brxmwz9vy4z7v8v0jb1rpp-python3.12-vllm-xpu-0.31.0+unstable.2026.10.10.gef92dc5.drv",
+          "unrealized_output_placeholder": "/0k4mghi4brgiq0k94s1awjjr9xm5r30rgnhfbicmdl0h6dqld944",
+          "version": "0.31.0+unstable.2026.10.10.gef92dc5",
+          "output": "/nix/store/ms3pjzgn97cf9vx5nzp2kin5rkmryv7a-python3.12-vllm-xpu-0.31.0+unstable.2026.10.10.gef92dc5"
+        },
+        "paired_kernels": {
+          "derivation": "/nix/store/76463fj10nb2a4yssrya3wcz9r68pcqq-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f.drv",
+          "unrealized_output_placeholder": "/0z2lqkw5bm839jkl1jwdgvfkcqf1q4j77wlwpqbjv3nn8iwq5dbc",
+          "version": "0.1.15.4+unstable.2026.10.10.gdbb684f",
+          "output": "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f"
+        },
+        "paired_kernel_scope": "Identity from candidate manifest; these CPU tests do not qualify native XPU execution.",
+        "installed_vllm": "/nix/store/ms3pjzgn97cf9vx5nzp2kin5rkmryv7a-python3.12-vllm-xpu-0.31.0+unstable.2026.10.10.gef92dc5/lib/python3.12/site-packages/vllm/__init__.py",
+        "installed_vllm_config": "/nix/store/ms3pjzgn97cf9vx5nzp2kin5rkmryv7a-python3.12-vllm-xpu-0.31.0+unstable.2026.10.10.gef92dc5/lib/python3.12/site-packages/vllm/config/__init__.py",
+        "version": "0.31.0+unstable.2026.10.10.gef92dc5",
+        "torch": {
+          "version": "2.14.0+xpu",
+          "file": "/nix/store/yv16l8ysyld56xn99xlwpgx7bijagcz8-python3.12-torch-2.14.0+xpu/lib/python3.12/site-packages/torch/__init__.py"
+        },
+        "test_source_commit": "ef92dc5600af64103c01f97e3300b81c3a1083ee",
+        "test_source_clean_at_review": true
+      },
+      "evidence": {
+        "results": {
+          "path": "benchmark-results/release-v031-20261010/installed-cpu-results.json",
+          "sha256": "a6d0b64bf142cd0c093c7e33ea67f633099cb4b646a79dc57ab6ae05ea392065"
+        },
+        "log": {
+          "path": "benchmark-results/release-v031-20261010/installed-cpu-results.log",
+          "sha256": "b206db334bbc309cb1b2a0c60d4a2951fb6066f3783b70ad1a4f52ae410b3b06"
+        },
+        "harness": {
+          "path": "benchmark-results/release-v031-20261010/run-installed-cpu-tests.py",
+          "sha256": "cde1a5e53a81fffbf7e629d03508dd497a1730df8c9cc3fc4c78683db5f54001"
+        },
+        "candidate_version_sha256": "83c60e232be1893737ad4041a8b878fe82755c3665fcc6db97adadd93feac654",
+        "candidate_manifest_sha256_at_review": "870adb60f9cbd78c4e24afda52886e2c4042770b52865da0d427466c89a1c6e2",
+        "raw_evidence_location": "benchmark-results is ignored; hashes bind the retained local raw reports."
+      },
+      "review_json_sha256_before_update": "dfaa535e807b1a505fe23a69c77da6839a7b385f486a21d0cb57d3fba0c384a6",
+      "run_started_utc": "2026-10-10T09:51:25.525473+00:00",
+      "run_finished_utc": "2026-10-10T09:52:01.415829+00:00"
+    }
+  ],
+  "oneccl_wrapper_review": {
+    "plugin_directory": "/nix/store/byb3w06riimppns4lc2v04s01bm3gvlm-intel-oneapi-toolkit-2026.1.0.192/ccl/latest/lib",
+    "installed_runtime_wrapper_contains_directory": true,
+    "installed_vllm_wrapper_contains_directory": true,
+    "native_kernel_identity_unchanged": true,
+    "probe_evidence_scope": "Existing parent-run GPU probe logs were read only; these CPU counts do not include their results."
+  }
+}

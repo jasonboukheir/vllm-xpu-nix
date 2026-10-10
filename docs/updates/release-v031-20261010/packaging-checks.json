@@ -1,0 +1,32 @@
+{
+  "status": "passed",
+  "returncode": 0,
+  "unique_passed_nodeids": 608,
+  "passed_report_lines": 608,
+  "summary_passed_count": 608,
+  "summary_skipped_count": 0,
+  "files": 45,
+  "build": [
+    {
+      "drvPath": "/nix/store/dj1fcg29sfm95f50z0wd3a0vkws89w8r-vllm-xpu-nix-unit-tests-v031-release.drv",
+      "outputs": {
+        "out": "/nix/store/yvc1bhqhb6wps54w0y6x5ia6v6xmngvi-vllm-xpu-nix-unit-tests-v031-release"
+      }
+    }
+  ],
+  "log_sha256": "fd209df1a30fe23cfdd805eee0444d477532728c5228efae8a0dcc66490d60ef",
+  "scope": "Unchanged full per-file packaging pytest command and quantization environment; forced-decode tests use exact new Brutus runtime. No GPU execution inside sandbox.",
+  "subtests_passed": 8,
+  "prior_run": {
+    "build": [
+      {
+        "drvPath": "/nix/store/c17659wqf3ygi81bcgqijh0mwy1rwyxg-vllm-xpu-nix-unit-tests-v031-release.drv",
+        "outputs": {
+          "out": "/nix/store/lxwi74rjv7p07jgpkjwhb5yycc653hi1-vllm-xpu-nix-unit-tests-v031-release"
+        }
+      }
+    ],
+    "log_sha256": "3861e9da05945d617ccccdc31497fe61a6abf2380c4c1e0fca739603b0a16624"
+  },
+  "runtime": "/nix/store/x70lv8ammab6cam04rz95gqzf202bz22-v031-brutus-qualification-env"
+}

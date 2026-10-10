@@ -1,0 +1,242 @@
+{
+  "status": "passed",
+  "runtime": "/nix/store/x70lv8ammab6cam04rz95gqzf202bz22-v031-brutus-qualification-env",
+  "unique_passed": 724,
+  "skipped": 0,
+  "failed": 0,
+  "groups": [
+    {
+      "group": "kernel-attention",
+      "passed": 188,
+      "unique_added": 188,
+      "collected": 188,
+      "evidence_sha256": "ac20367193e1d2645fde8c08d4bf96474713554c07ef6063578b3de91f40672d",
+      "elapsed_s": 35.844709634780884,
+      "native_sha256": {
+        "/nix/store/12bymn674qx3m7zm9hbz2d0vbhg578bs-vllm-xpu-attn-kernels-xe-2-0.1.15.4+src.084piyg58z3lwv77knps7r1wdidblz0v/lib/libattn_kernels_xe_2.so": "f6064c5ccd82f4b874f3ae829293d4f776e87e97452b0adb05a68c163565e6e9",
+        "/nix/store/2sp8wf7ml5knbz1kjqq53sszhlfff2k1-vllm-xpu-gdn-attn-kernels-xe-2-0.1.15.4+src.n4z7w0s5x5d0g51synib0mqfnhl2krj5/lib/libgdn_attn_kernels_xe_2.so": "b181d074858a9a6f4b3fa8e8c46a431d455d39635ca3392ea4fa26093bbfc391",
+        "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_C.abi3.so": "190d29c6115d11c7883352e1af09eb41c998c7121d81c9b65e9d74a0ef64cfac",
+        "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_moe_C.abi3.so": "db0b77d2dcaf2ce02aaca9424e8d15febb9e2109269e02cdba24e1ae9f044592",
+        "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_vllm_fa2_C.abi3.so": "ad6ef5ef54ea5155a777efca7f4821bacf9cc7480ae42fe4db4c0f224371ad5f",
+        "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_xpu_C.abi3.so": "7076ec3059ab05eb40e777f1edd194f050b78677ae3f0e370641e8cfa5937fc6"
+      }
+    },
+    {
+      "group": "kernel-gdn-replays",
+      "passed": 54,
+      "unique_added": 54,
+      "collected": 54,
+      "evidence_sha256": "9d2503bff8e1d19a59b3f75e751eacfe235d2aedd11ca7c86f16632a0e837985",
+      "elapsed_s": 3.54307222366333,
+      "native_sha256": {
+        "/nix/store/12bymn674qx3m7zm9hbz2d0vbhg578bs-vllm-xpu-attn-kernels-xe-2-0.1.15.4+src.084piyg58z3lwv77knps7r1wdidblz0v/lib/libattn_kernels_xe_2.so": "f6064c5ccd82f4b874f3ae829293d4f776e87e97452b0adb05a68c163565e6e9",
+        "/nix/store/2sp8wf7ml5knbz1kjqq53sszhlfff2k1-vllm-xpu-gdn-attn-kernels-xe-2-0.1.15.4+src.n4z7w0s5x5d0g51synib0mqfnhl2krj5/lib/libgdn_attn_kernels_xe_2.so": "b181d074858a9a6f4b3fa8e8c46a431d455d39635ca3392ea4fa26093bbfc391",
+        "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_C.abi3.so": "190d29c6115d11c7883352e1af09eb41c998c7121d81c9b65e9d74a0ef64cfac",
+        "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_moe_C.abi3.so": "db0b77d2dcaf2ce02aaca9424e8d15febb9e2109269e02cdba24e1ae9f044592",
+        "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_vllm_fa2_C.abi3.so": "ad6ef5ef54ea5155a777efca7f4821bacf9cc7480ae42fe4db4c0f224371ad5f",
+        "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_xpu_C.abi3.so": "7076ec3059ab05eb40e777f1edd194f050b78677ae3f0e370641e8cfa5937fc6"
+      }
+    },
+    {
+      "group": "kernel-upstream-ragged",
+      "passed": 5,
+      "unique_added": 5,
+      "collected": 5,
+      "evidence_sha256": "058817ae378f31cad1d39e22f28ba113a9329cbf04b73f3794ce45462e5a7f1e",
+      "elapsed_s": 1.8464570045471191,
+      "native_sha256": {
+        "/nix/store/12bymn674qx3m7zm9hbz2d0vbhg578bs-vllm-xpu-attn-kernels-xe-2-0.1.15.4+src.084piyg58z3lwv77knps7r1wdidblz0v/lib/libattn_kernels_xe_2.so": "f6064c5ccd82f4b874f3ae829293d4f776e87e97452b0adb05a68c163565e6e9",
+        "/nix/store/2sp8wf7ml5knbz1kjqq53sszhlfff2k1-vllm-xpu-gdn-attn-kernels-xe-2-0.1.15.4+src.n4z7w0s5x5d0g51synib0mqfnhl2krj5/lib/libgdn_attn_kernels_xe_2.so": "b181d074858a9a6f4b3fa8e8c46a431d455d39635ca3392ea4fa26093bbfc391",
+        "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_C.abi3.so": "190d29c6115d11c7883352e1af09eb41c998c7121d81c9b65e9d74a0ef64cfac",
+        "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_moe_C.abi3.so": "db0b77d2dcaf2ce02aaca9424e8d15febb9e2109269e02cdba24e1ae9f044592",
+        "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_vllm_fa2_C.abi3.so": "ad6ef5ef54ea5155a777efca7f4821bacf9cc7480ae42fe4db4c0f224371ad5f",
+        "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_xpu_C.abi3.so": "7076ec3059ab05eb40e777f1edd194f050b78677ae3f0e370641e8cfa5937fc6"
+      }
+    },
+    {
+      "group": "kernel-gdn-reference",
+      "passed": 8,
+      "unique_added": 8,
+      "collected": 8,
+      "evidence_sha256": "fd149d30c819c21d81b3c8e17314a143d84c7613375a4e5b334c03ccd673fd61",
+      "elapsed_s": 1.6201176643371582,
+      "native_sha256": {
+        "/nix/store/12bymn674qx3m7zm9hbz2d0vbhg578bs-vllm-xpu-attn-kernels-xe-2-0.1.15.4+src.084piyg58z3lwv77knps7r1wdidblz0v/lib/libattn_kernels_xe_2.so": "f6064c5ccd82f4b874f3ae829293d4f776e87e97452b0adb05a68c163565e6e9",
+        "/nix/store/2sp8wf7ml5knbz1kjqq53sszhlfff2k1-vllm-xpu-gdn-attn-kernels-xe-2-0.1.15.4+src.n4z7w0s5x5d0g51synib0mqfnhl2krj5/lib/libgdn_attn_kernels_xe_2.so": "b181d074858a9a6f4b3fa8e8c46a431d455d39635ca3392ea4fa26093bbfc391",
+        "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_C.abi3.so": "190d29c6115d11c7883352e1af09eb41c998c7121d81c9b65e9d74a0ef64cfac",
+        "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_moe_C.abi3.so": "db0b77d2dcaf2ce02aaca9424e8d15febb9e2109269e02cdba24e1ae9f044592",
+        "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_vllm_fa2_C.abi3.so": "ad6ef5ef54ea5155a777efca7f4821bacf9cc7480ae42fe4db4c0f224371ad5f",
+        "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_xpu_C.abi3.so": "7076ec3059ab05eb40e777f1edd194f050b78677ae3f0e370641e8cfa5937fc6"
+      }
+    },
+    {
+      "group": "vllm-attention",
+      "passed": 80,
+      "unique_added": 80,
+      "collected": 80,
+      "evidence_sha256": "04e81c71ec9740180f5d57baeee5fcba4d481a121d79b263c4cd3c284c105640",
+      "elapsed_s": 19.620662689208984,
+      "native_sha256": {
+        "/nix/store/12bymn674qx3m7zm9hbz2d0vbhg578bs-vllm-xpu-attn-kernels-xe-2-0.1.15.4+src.084piyg58z3lwv77knps7r1wdidblz0v/lib/libattn_kernels_xe_2.so": "f6064c5ccd82f4b874f3ae829293d4f776e87e97452b0adb05a68c163565e6e9",
+        "/nix/store/2sp8wf7ml5knbz1kjqq53sszhlfff2k1-vllm-xpu-gdn-attn-kernels-xe-2-0.1.15.4+src.n4z7w0s5x5d0g51synib0mqfnhl2krj5/lib/libgdn_attn_kernels_xe_2.so": "b181d074858a9a6f4b3fa8e8c46a431d455d39635ca3392ea4fa26093bbfc391",
+        "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_C.abi3.so": "190d29c6115d11c7883352e1af09eb41c998c7121d81c9b65e9d74a0ef64cfac",
+        "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_moe_C.abi3.so": "db0b77d2dcaf2ce02aaca9424e8d15febb9e2109269e02cdba24e1ae9f044592",
+        "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_vllm_fa2_C.abi3.so": "ad6ef5ef54ea5155a777efca7f4821bacf9cc7480ae42fe4db4c0f224371ad5f",
+        "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_xpu_C.abi3.so": "7076ec3059ab05eb40e777f1edd194f050b78677ae3f0e370641e8cfa5937fc6"
+      }
+    },
+    {
+      "group": "vllm-rmsnorm",
+      "passed": 25,
+      "unique_added": 25,
+      "collected": 25,
+      "evidence_sha256": "4098154a1be0d0117a6459a3c69addb4e5a670dfad970df3204c284dc8b9d461",
+      "elapsed_s": 2.849247694015503,
+      "native_sha256": {
+        "/nix/store/12bymn674qx3m7zm9hbz2d0vbhg578bs-vllm-xpu-attn-kernels-xe-2-0.1.15.4+src.084piyg58z3lwv77knps7r1wdidblz0v/lib/libattn_kernels_xe_2.so": "f6064c5ccd82f4b874f3ae829293d4f776e87e97452b0adb05a68c163565e6e9",
+        "/nix/store/2sp8wf7ml5knbz1kjqq53sszhlfff2k1-vllm-xpu-gdn-attn-kernels-xe-2-0.1.15.4+src.n4z7w0s5x5d0g51synib0mqfnhl2krj5/lib/libgdn_attn_kernels_xe_2.so": "b181d074858a9a6f4b3fa8e8c46a431d455d39635ca3392ea4fa26093bbfc391",
+        "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_C.abi3.so": "190d29c6115d11c7883352e1af09eb41c998c7121d81c9b65e9d74a0ef64cfac",
+        "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_moe_C.abi3.so": "db0b77d2dcaf2ce02aaca9424e8d15febb9e2109269e02cdba24e1ae9f044592",
+        "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_vllm_fa2_C.abi3.so": "ad6ef5ef54ea5155a777efca7f4821bacf9cc7480ae42fe4db4c0f224371ad5f",
+        "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_xpu_C.abi3.so": "7076ec3059ab05eb40e777f1edd194f050b78677ae3f0e370641e8cfa5937fc6"
+      }
+    },
+    {
+      "group": "vllm-contracts",
+      "passed": 364,
+      "unique_added": 364,
+      "collected": 364,
+      "evidence_sha256": "25c19e93cfb885898a1b28f7a4aa5e74f6f417a7dbc8a13088c2b88a8f93fa42",
+      "elapsed_s": 2.887892723083496,
+      "native_sha256": {
+        "/nix/store/12bymn674qx3m7zm9hbz2d0vbhg578bs-vllm-xpu-attn-kernels-xe-2-0.1.15.4+src.084piyg58z3lwv77knps7r1wdidblz0v/lib/libattn_kernels_xe_2.so": "f6064c5ccd82f4b874f3ae829293d4f776e87e97452b0adb05a68c163565e6e9",
+        "/nix/store/2sp8wf7ml5knbz1kjqq53sszhlfff2k1-vllm-xpu-gdn-attn-kernels-xe-2-0.1.15.4+src.n4z7w0s5x5d0g51synib0mqfnhl2krj5/lib/libgdn_attn_kernels_xe_2.so": "b181d074858a9a6f4b3fa8e8c46a431d455d39635ca3392ea4fa26093bbfc391",
+        "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_C.abi3.so": "190d29c6115d11c7883352e1af09eb41c998c7121d81c9b65e9d74a0ef64cfac",
+        "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_moe_C.abi3.so": "db0b77d2dcaf2ce02aaca9424e8d15febb9e2109269e02cdba24e1ae9f044592",
+        "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_vllm_fa2_C.abi3.so": "ad6ef5ef54ea5155a777efca7f4821bacf9cc7480ae42fe4db4c0f224371ad5f",
+        "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_xpu_C.abi3.so": "7076ec3059ab05eb40e777f1edd194f050b78677ae3f0e370641e8cfa5937fc6"
+      }
+    }
+  ],
+  "note": "Tests import installed vLLM/kernels before loading pinned source tests. Native and backend test count includes CPU contracts and is not a GPU execution count. CPU review has overlapping quantization/contract cases; do not add counts across reports. All four DSOs imported; free XPU memory checked before each fresh group.",
+  "selection_sha256": "ca68aa9f330dfc9643b38a49aa7d530fcfd3568830f4c057869c78a8a8ae2e91",
+  "harness_sha256": "73cb174efdb6a96e96892e2144ded1eeb3e00dc410eab8615f0a3426f59ca10e",
+  "prior_run": {
+    "runtime": "/nix/store/cp0c15jk173smzp9d77kgcx36a7ibx1m-v031-brutus-qualification-env",
+    "report_sha256": "4d7c12c5da763796a7937d5dafb219338cc746410b82c9eb1e4e46fd2dd8044a",
+    "groups": [
+      {
+        "group": "kernel-attention",
+        "passed": 188,
+        "unique_added": 188,
+        "collected": 188,
+        "evidence_sha256": "62dc52199d76e7d3c483ddc8e36eaf53f05de81cbb226ba5dbdc1c1fd174c7bb",
+        "elapsed_s": 36.33622622489929,
+        "native_sha256": {
+          "/nix/store/12bymn674qx3m7zm9hbz2d0vbhg578bs-vllm-xpu-attn-kernels-xe-2-0.1.15.4+src.084piyg58z3lwv77knps7r1wdidblz0v/lib/libattn_kernels_xe_2.so": "f6064c5ccd82f4b874f3ae829293d4f776e87e97452b0adb05a68c163565e6e9",
+          "/nix/store/2sp8wf7ml5knbz1kjqq53sszhlfff2k1-vllm-xpu-gdn-attn-kernels-xe-2-0.1.15.4+src.n4z7w0s5x5d0g51synib0mqfnhl2krj5/lib/libgdn_attn_kernels_xe_2.so": "b181d074858a9a6f4b3fa8e8c46a431d455d39635ca3392ea4fa26093bbfc391",
+          "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_C.abi3.so": "190d29c6115d11c7883352e1af09eb41c998c7121d81c9b65e9d74a0ef64cfac",
+          "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_moe_C.abi3.so": "db0b77d2dcaf2ce02aaca9424e8d15febb9e2109269e02cdba24e1ae9f044592",
+          "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_vllm_fa2_C.abi3.so": "ad6ef5ef54ea5155a777efca7f4821bacf9cc7480ae42fe4db4c0f224371ad5f",
+          "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_xpu_C.abi3.so": "7076ec3059ab05eb40e777f1edd194f050b78677ae3f0e370641e8cfa5937fc6"
+        }
+      },
+      {
+        "group": "kernel-gdn-replays",
+        "passed": 54,
+        "unique_added": 54,
+        "collected": 54,
+        "evidence_sha256": "d97eda95d0e1224526f3026f2696b03a29fb2ea10b1142019f3723db89901ba7",
+        "elapsed_s": 3.619462013244629,
+        "native_sha256": {
+          "/nix/store/12bymn674qx3m7zm9hbz2d0vbhg578bs-vllm-xpu-attn-kernels-xe-2-0.1.15.4+src.084piyg58z3lwv77knps7r1wdidblz0v/lib/libattn_kernels_xe_2.so": "f6064c5ccd82f4b874f3ae829293d4f776e87e97452b0adb05a68c163565e6e9",
+          "/nix/store/2sp8wf7ml5knbz1kjqq53sszhlfff2k1-vllm-xpu-gdn-attn-kernels-xe-2-0.1.15.4+src.n4z7w0s5x5d0g51synib0mqfnhl2krj5/lib/libgdn_attn_kernels_xe_2.so": "b181d074858a9a6f4b3fa8e8c46a431d455d39635ca3392ea4fa26093bbfc391",
+          "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_C.abi3.so": "190d29c6115d11c7883352e1af09eb41c998c7121d81c9b65e9d74a0ef64cfac",
+          "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_moe_C.abi3.so": "db0b77d2dcaf2ce02aaca9424e8d15febb9e2109269e02cdba24e1ae9f044592",
+          "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_vllm_fa2_C.abi3.so": "ad6ef5ef54ea5155a777efca7f4821bacf9cc7480ae42fe4db4c0f224371ad5f",
+          "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_xpu_C.abi3.so": "7076ec3059ab05eb40e777f1edd194f050b78677ae3f0e370641e8cfa5937fc6"
+        }
+      },
+      {
+        "group": "kernel-upstream-ragged",
+        "passed": 5,
+        "unique_added": 5,
+        "collected": 5,
+        "evidence_sha256": "a3c096ca5088b3df40cedb052c46207bf23be5e310f2bee24ee0fee6a5a8e14f",
+        "elapsed_s": 1.8629608154296875,
+        "native_sha256": {
+          "/nix/store/12bymn674qx3m7zm9hbz2d0vbhg578bs-vllm-xpu-attn-kernels-xe-2-0.1.15.4+src.084piyg58z3lwv77knps7r1wdidblz0v/lib/libattn_kernels_xe_2.so": "f6064c5ccd82f4b874f3ae829293d4f776e87e97452b0adb05a68c163565e6e9",
+          "/nix/store/2sp8wf7ml5knbz1kjqq53sszhlfff2k1-vllm-xpu-gdn-attn-kernels-xe-2-0.1.15.4+src.n4z7w0s5x5d0g51synib0mqfnhl2krj5/lib/libgdn_attn_kernels_xe_2.so": "b181d074858a9a6f4b3fa8e8c46a431d455d39635ca3392ea4fa26093bbfc391",
+          "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_C.abi3.so": "190d29c6115d11c7883352e1af09eb41c998c7121d81c9b65e9d74a0ef64cfac",
+          "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_moe_C.abi3.so": "db0b77d2dcaf2ce02aaca9424e8d15febb9e2109269e02cdba24e1ae9f044592",
+          "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_vllm_fa2_C.abi3.so": "ad6ef5ef54ea5155a777efca7f4821bacf9cc7480ae42fe4db4c0f224371ad5f",
+          "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_xpu_C.abi3.so": "7076ec3059ab05eb40e777f1edd194f050b78677ae3f0e370641e8cfa5937fc6"
+        }
+      },
+      {
+        "group": "kernel-gdn-reference",
+        "passed": 8,
+        "unique_added": 8,
+        "collected": 8,
+        "evidence_sha256": "fdaca6c6fbb61dbf9dd52f94149363d420869fb8358fe4611d91246a8a1c8dbc",
+        "elapsed_s": 1.608504295349121,
+        "native_sha256": {
+          "/nix/store/12bymn674qx3m7zm9hbz2d0vbhg578bs-vllm-xpu-attn-kernels-xe-2-0.1.15.4+src.084piyg58z3lwv77knps7r1wdidblz0v/lib/libattn_kernels_xe_2.so": "f6064c5ccd82f4b874f3ae829293d4f776e87e97452b0adb05a68c163565e6e9",
+          "/nix/store/2sp8wf7ml5knbz1kjqq53sszhlfff2k1-vllm-xpu-gdn-attn-kernels-xe-2-0.1.15.4+src.n4z7w0s5x5d0g51synib0mqfnhl2krj5/lib/libgdn_attn_kernels_xe_2.so": "b181d074858a9a6f4b3fa8e8c46a431d455d39635ca3392ea4fa26093bbfc391",
+          "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_C.abi3.so": "190d29c6115d11c7883352e1af09eb41c998c7121d81c9b65e9d74a0ef64cfac",
+          "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_moe_C.abi3.so": "db0b77d2dcaf2ce02aaca9424e8d15febb9e2109269e02cdba24e1ae9f044592",
+          "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_vllm_fa2_C.abi3.so": "ad6ef5ef54ea5155a777efca7f4821bacf9cc7480ae42fe4db4c0f224371ad5f",
+          "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_xpu_C.abi3.so": "7076ec3059ab05eb40e777f1edd194f050b78677ae3f0e370641e8cfa5937fc6"
+        }
+      },
+      {
+        "group": "vllm-attention",
+        "passed": 80,
+        "unique_added": 80,
+        "collected": 80,
+        "evidence_sha256": "caccdb7276b669c46665c12595b102f1fdebd9ed1f4fad043a8629610f1dba54",
+        "elapsed_s": 20.242061614990234,
+        "native_sha256": {
+          "/nix/store/12bymn674qx3m7zm9hbz2d0vbhg578bs-vllm-xpu-attn-kernels-xe-2-0.1.15.4+src.084piyg58z3lwv77knps7r1wdidblz0v/lib/libattn_kernels_xe_2.so": "f6064c5ccd82f4b874f3ae829293d4f776e87e97452b0adb05a68c163565e6e9",
+          "/nix/store/2sp8wf7ml5knbz1kjqq53sszhlfff2k1-vllm-xpu-gdn-attn-kernels-xe-2-0.1.15.4+src.n4z7w0s5x5d0g51synib0mqfnhl2krj5/lib/libgdn_attn_kernels_xe_2.so": "b181d074858a9a6f4b3fa8e8c46a431d455d39635ca3392ea4fa26093bbfc391",
+          "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_C.abi3.so": "190d29c6115d11c7883352e1af09eb41c998c7121d81c9b65e9d74a0ef64cfac",
+          "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_moe_C.abi3.so": "db0b77d2dcaf2ce02aaca9424e8d15febb9e2109269e02cdba24e1ae9f044592",
+          "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_vllm_fa2_C.abi3.so": "ad6ef5ef54ea5155a777efca7f4821bacf9cc7480ae42fe4db4c0f224371ad5f",
+          "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_xpu_C.abi3.so": "7076ec3059ab05eb40e777f1edd194f050b78677ae3f0e370641e8cfa5937fc6"
+        }
+      },
+      {
+        "group": "vllm-rmsnorm",
+        "passed": 25,
+        "unique_added": 25,
+        "collected": 25,
+        "evidence_sha256": "31926561f43e082e9ebb911233b95eb21e28fbf1b20357bac970a244fe2bf1a6",
+        "elapsed_s": 2.8170814514160156,
+        "native_sha256": {
+          "/nix/store/12bymn674qx3m7zm9hbz2d0vbhg578bs-vllm-xpu-attn-kernels-xe-2-0.1.15.4+src.084piyg58z3lwv77knps7r1wdidblz0v/lib/libattn_kernels_xe_2.so": "f6064c5ccd82f4b874f3ae829293d4f776e87e97452b0adb05a68c163565e6e9",
+          "/nix/store/2sp8wf7ml5knbz1kjqq53sszhlfff2k1-vllm-xpu-gdn-attn-kernels-xe-2-0.1.15.4+src.n4z7w0s5x5d0g51synib0mqfnhl2krj5/lib/libgdn_attn_kernels_xe_2.so": "b181d074858a9a6f4b3fa8e8c46a431d455d39635ca3392ea4fa26093bbfc391",
+          "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_C.abi3.so": "190d29c6115d11c7883352e1af09eb41c998c7121d81c9b65e9d74a0ef64cfac",
+          "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_moe_C.abi3.so": "db0b77d2dcaf2ce02aaca9424e8d15febb9e2109269e02cdba24e1ae9f044592",
+          "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_vllm_fa2_C.abi3.so": "ad6ef5ef54ea5155a777efca7f4821bacf9cc7480ae42fe4db4c0f224371ad5f",
+          "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_xpu_C.abi3.so": "7076ec3059ab05eb40e777f1edd194f050b78677ae3f0e370641e8cfa5937fc6"
+        }
+      },
+      {
+        "group": "vllm-contracts",
+        "passed": 364,
+        "unique_added": 364,
+        "collected": 364,
+        "evidence_sha256": "369a6ea81522b6119b0a1e7bf9c09493047ecd2f77f11350b5b64d650af8c0ba",
+        "elapsed_s": 2.869032382965088,
+        "native_sha256": {
+          "/nix/store/12bymn674qx3m7zm9hbz2d0vbhg578bs-vllm-xpu-attn-kernels-xe-2-0.1.15.4+src.084piyg58z3lwv77knps7r1wdidblz0v/lib/libattn_kernels_xe_2.so": "f6064c5ccd82f4b874f3ae829293d4f776e87e97452b0adb05a68c163565e6e9",
+          "/nix/store/2sp8wf7ml5knbz1kjqq53sszhlfff2k1-vllm-xpu-gdn-attn-kernels-xe-2-0.1.15.4+src.n4z7w0s5x5d0g51synib0mqfnhl2krj5/lib/libgdn_attn_kernels_xe_2.so": "b181d074858a9a6f4b3fa8e8c46a431d455d39635ca3392ea4fa26093bbfc391",
+          "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_C.abi3.so": "190d29c6115d11c7883352e1af09eb41c998c7121d81c9b65e9d74a0ef64cfac",
+          "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_moe_C.abi3.so": "db0b77d2dcaf2ce02aaca9424e8d15febb9e2109269e02cdba24e1ae9f044592",
+          "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_vllm_fa2_C.abi3.so": "ad6ef5ef54ea5155a777efca7f4821bacf9cc7480ae42fe4db4c0f224371ad5f",
+          "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_xpu_C.abi3.so": "7076ec3059ab05eb40e777f1edd194f050b78677ae3f0e370641e8cfa5937fc6"
+        }
+      }
+    ]
+  }
+}

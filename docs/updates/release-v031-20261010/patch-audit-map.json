@@ -1,0 +1,33 @@
+{
+  "status": "all four independently audited and reconciled; host and narrow native build gates passed",
+  "patches": [
+    {
+      "patch": "nix/patches/0001-split-kernel-libs.patch",
+      "sha256": "0d7b31cef2a1855a67910023d6c35e0a91345376dfd2e82a4f663d55d7809ead",
+      "report": "audits/p01-split-libraries.md",
+      "decision": "KEEP"
+    },
+    {
+      "patch": "nix/patches/0004-skip-prebuilt-additional-libs.patch",
+      "sha256": "45c1e47d947d2f576054096278825f0d8fe0ad4787b9536afcc3af73061ad873",
+      "report": "audits/p04-prebuilt-libraries.md",
+      "decision": "KEEP"
+    },
+    {
+      "patch": "nix/patches/0005-reduce-kernel-build-memory.patch",
+      "sha256": "e017852b1365a37bbd7eab968f1ee7dbb2dde347cc687f9403d694b6594f9b67",
+      "report": "audits/p05-build-memory.md",
+      "decision": "ADAPT documentation only"
+    },
+    {
+      "patch": "nix/patches/0006-forward-mhc-feature-flag.patch",
+      "sha256": "8f2cba38bf161f7d557f3f1fce0b584c6beda21cb315a4b17ee39a4c5411de98",
+      "report": "audits/p06-mhc-flag.md",
+      "decision": "KEEP"
+    }
+  ],
+  "notes": [
+    "P05 cache-variable behavior unchanged; corrected unsupported diagnostic-depth memory claims.",
+    "Xe3p remains disabled for existing Xe2/default split composition."
+  ]
+}

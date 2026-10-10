@@ -1,0 +1,791 @@
+{
+  "status": "passed",
+  "package": "/nix/store/mcyp3ljp8yl1hwfllnfzf22mw3j1z42y-python3.12-vllm-xpu-0.31.0+unstable.2026.10.10.gef92dc5",
+  "runtime_identity": {
+    "candidate": {
+      "derivation": "/nix/store/gkr9g6s5bsi0zkyfnnss6r2z9h481yby-python3.12-vllm-xpu-0.31.0+unstable.2026.10.10.gef92dc5.drv",
+      "version": "0.31.0+unstable.2026.10.10.gef92dc5",
+      "output": "/nix/store/mcyp3ljp8yl1hwfllnfzf22mw3j1z42y-python3.12-vllm-xpu-0.31.0+unstable.2026.10.10.gef92dc5"
+    },
+    "kernels": {
+      "derivation": "/nix/store/76463fj10nb2a4yssrya3wcz9r68pcqq-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f.drv",
+      "output": "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f",
+      "version": "0.1.15.4+unstable.2026.10.10.gdbb684f"
+    },
+    "runtime": {
+      "derivation": "/nix/store/p4zfny6pfqm2c6cwfkva3xb2bnhi7yss-v031-brutus-qualification-env.drv",
+      "output": "/nix/store/x70lv8ammab6cam04rz95gqzf202bz22-v031-brutus-qualification-env"
+    },
+    "status": "built and foreground qualification passed"
+  },
+  "model": "RedHatAI/Qwen3.8-27B-INT4",
+  "model_revision": "bf08f3dbd9a324e53956920aad378a1f1b6dd24a",
+  "actual_argv": [
+    "/nix/store/mcyp3ljp8yl1hwfllnfzf22mw3j1z42y-python3.12-vllm-xpu-0.31.0+unstable.2026.10.10.gef92dc5/bin/vllm",
+    "serve",
+    "RedHatAI/Qwen3.8-27B-INT4",
+    "--host",
+    "127.0.0.1",
+    "--port",
+    "18000",
+    "--served-model-name",
+    "sunny-chat",
+    "--dtype",
+    "bfloat16",
+    "--gpu-memory-utilization",
+    "0.960000",
+    "--revision",
+    "bf08f3dbd9a324e53956920aad378a1f1b6dd24a",
+    "--quantization",
+    "compressed-tensors",
+    "--kv-cache-dtype",
+    "kvarn_k4v2_g128_compact",
+    "--max-model-len",
+    "262144",
+    "--max-num-seqs",
+    "4",
+    "--speculative-config",
+    "{\"kv_cache_dtype\":\"kvarn_k4v2_g128_compact\",\"method\":\"mtp\",\"num_speculative_tokens\":2}",
+    "--enforce-eager",
+    "--reasoning-parser",
+    "qwen3",
+    "--enable-auto-tool-choice",
+    "--tool-call-parser",
+    "qwen3_xml",
+    "--limit-mm-per-prompt",
+    "{\"image\":2,\"video\":0}",
+    "--no-enable-prefix-caching",
+    "--max-num-batched-tokens",
+    "2048",
+    "--mm-processor-kwargs",
+    "{\"max_pixels\":200704,\"min_pixels\":200704}",
+    "--enable-log-requests"
+  ],
+  "service_environment": {
+    "CCL_ATL_TRANSPORT": "ofi",
+    "CCL_LOG_LEVEL": "warn",
+    "CCL_PROCESS_LAUNCHER": "none",
+    "CCL_ZE_IPC_EXCHANGE": "sockets",
+    "HF_HOME": "/var/cache/huggingface",
+    "HOME": "/home/jasonbk/Projects/vllm-xpu-nix/benchmark-results/release-v031-20261010/foreground-runtime-cache",
+    "PATH": "/nix/store/bhv6xyvqw6gjs3j488gi1z6wdv18bdpa-coreutils-9.11/bin:/nix/store/nl0wq6d4bpjrxmlax141liq0qr9z87gn-findutils-4.10.0/bin:/nix/store/cqhgy07rpxdwk9kd2qlc3cw4s9ajzm9f-gnugrep-3.12/bin:/nix/store/0s17nja4n8b63by0nlg1m31mxn2bq1g1-gnused-4.10/bin:/nix/store/kmzlca218j6j1ar292fxj7707qzypij8-systemd-260.5/bin:/nix/store/bhv6xyvqw6gjs3j488gi1z6wdv18bdpa-coreutils-9.11/sbin:/nix/store/nl0wq6d4bpjrxmlax141liq0qr9z87gn-findutils-4.10.0/sbin:/nix/store/cqhgy07rpxdwk9kd2qlc3cw4s9ajzm9f-gnugrep-3.12/sbin:/nix/store/0s17nja4n8b63by0nlg1m31mxn2bq1g1-gnused-4.10/sbin:/nix/store/kmzlca218j6j1ar292fxj7707qzypij8-systemd-260.5/sbin",
+    "VLLM_CACHE_ROOT": "/home/jasonbk/Projects/vllm-xpu-nix/benchmark-results/release-v031-20261010/foreground-runtime-cache",
+    "VLLM_TARGET_DEVICE": "xpu",
+    "VLLM_USE_V2_MODEL_RUNNER": "0"
+  },
+  "qualification_overrides": [
+    "candidate executable",
+    "port 18000",
+    "writable HOME/VLLM_CACHE_ROOT",
+    "request logging"
+  ],
+  "health_status": 200,
+  "served_model": "sunny-chat",
+  "completed_stages": [
+    {
+      "stage": "smoke",
+      "returncode": 0,
+      "elapsed_s": 8.09200184699148
+    },
+    {
+      "stage": "overlap_requests",
+      "returncode": 0,
+      "elapsed_s": 51.98859865637496
+    },
+    {
+      "stage": "mixed_prefill",
+      "returncode": 0,
+      "elapsed_s": 24.300274656154215
+    },
+    {
+      "stage": "cancel_reuse",
+      "returncode": 0,
+      "elapsed_s": 60.39577957103029
+    },
+    {
+      "stage": "long-context",
+      "returncode": 0,
+      "elapsed_s": 515.8507882859558
+    },
+    {
+      "stage": "draft_capacity",
+      "returncode": 0,
+      "elapsed_s": 596.9551863591187
+    }
+  ],
+  "evidence": {
+    "service-tests-01/smoke/20261010T100223Z-smoke/summary.json": {
+      "sha256": "b5ef61bbe6f7fa7db183bc8c93efde436b63bba97d42e413fd083bff863e61c2",
+      "bytes": 2911,
+      "passed": true
+    },
+    "service-tests-01/overlap_requests/20261010T100231Z-smoke/concurrent-summary.json": {
+      "sha256": "1291c85bf1c4b4f999c898cdc6ba812c71541aaeb5a6048854d1bd40de719d93",
+      "bytes": 31666,
+      "passed": true
+    },
+    "service-tests-01/mixed_prefill/20261010T100323Z-smoke/mixed-prefill-summary.json": {
+      "sha256": "99f74348764d35921ac2db9c26faf131980ec58facb8c73780cb1b6f6e63b904",
+      "bytes": 10440,
+      "passed": true
+    },
+    "service-tests-01/cancel_reuse/summary.json": {
+      "sha256": "f1fd5366cff1949bb2eaf3de79ee2f95c4c609227cebfbab43c0e82994c92f72",
+      "bytes": 894,
+      "passed": true
+    },
+    "service-tests-01/long-context/20261010T100448Z-smoke/long-context-summary.json": {
+      "sha256": "bf4051d9f9b14d2c9adfe3b83b8901d83589b52f2ad45eb7400f1a5ca23d2abe",
+      "bytes": 1061,
+      "passed": true
+    },
+    "service-tests-01/draft_capacity/summary.json": {
+      "sha256": "ee1e2808ef0ecc5f2629c31b00c34ce2db0bee78f82630ae10cefd1c4dcf0071",
+      "bytes": 25152,
+      "passed": true
+    },
+    "service-tests-01/status.json": {
+      "sha256": "cd3f6bc836c33639a772fe104d59e26f4c01a689920585beeb2e755c8707936e",
+      "bytes": 882
+    },
+    "service-tests-01.log": {
+      "sha256": "2f39468e6f73e7d00ba66c7a7a0e810784b11a9c24e941f3e778d8a31a5c8732",
+      "bytes": 450
+    },
+    "brutus-api-02/manifest.json": {
+      "sha256": "942e0bcc020c037ecd9058c8e4c4f0971518da294cf8cebe6a806e54e44adef7",
+      "bytes": 3854
+    },
+    "brutus-api-02/plan.json": {
+      "sha256": "6d22aca635c28ce211a4b6a0c6d1223d15b5e2798fe05e7b7b8eea64c2a48593",
+      "bytes": 74
+    },
+    "brutus-api-02/service.log": {
+      "sha256": "49a9c98d8090e85fbe81d7e3edccf896d85cabb7008adc9cae60d686b67bf511",
+      "bytes": 929759
+    },
+    "brutus-api-02/models.json": {
+      "sha256": "acae7c139bca1b27f56e48b3494300978b1b4428b03146f25eac40c940f0b6eb",
+      "bytes": 727
+    },
+    "brutus-api-02/readiness.log": {
+      "sha256": "a3c1d21ce4f7b014018c679f26d43ccda92def127c5ab40de9fa9a838cd44ef8",
+      "bytes": 274
+    },
+    "service-tests-01/draft_capacity/scheduler-samples.json": {
+      "sha256": "542a56b471e3dd2d36ae3a4722e9014069a2bcd4f14044701bf34a7f7b1fc0a2",
+      "bytes": 2415204
+    },
+    "service-tests-01/draft_capacity/metrics-before.txt": {
+      "sha256": "f5615da26639bd7baecba06b2ef8d2fc7939dbb0fb314b559c6641033553d687",
+      "bytes": 60004
+    },
+    "service-tests-01/draft_capacity/metrics-after.txt": {
+      "sha256": "0348837c7437d3e8c4e22c5df5b38e17df5ffae5703813634ea5090317a388bb",
+      "bytes": 59993
+    },
+    "service-tests-01/cancel_reuse/server-abort-log.txt": {
+      "sha256": "43938543827dbe7ae5b1489847af85ecf8e8ec29d75d097862f9483104cabc59",
+      "bytes": 10616
+    },
+    "service-tests-01/cancel_reuse/idle-after-cancel.json": {
+      "sha256": "32a00cf1a5936da54e2dda3a3d0135c97fc98411e685a56b992364f7b6dc2ad9",
+      "bytes": 109
+    },
+    "service-tests-01/smoke.log": {
+      "sha256": "bd00edaeba8a4b90c3815b7e688fed2f47b6eacd0bdc47ddcf21c58f39242d1e",
+      "bytes": 2242
+    },
+    "service-tests-01/overlap_requests.log": {
+      "sha256": "0164fafbb5f83a43c338c8fa20b2b0880c536b6ad7a9600ea5fb1b120aa18e89",
+      "bytes": 29902
+    },
+    "service-tests-01/mixed_prefill.log": {
+      "sha256": "e79c77539962146210322cf8d1795a56b254e5f77946bb69545cd43a9819e090",
+      "bytes": 9954
+    },
+    "service-tests-01/cancel_reuse.log": {
+      "sha256": "75d7d3259504b9b3d462b6040feb6b69c83b259958a79259155279f6ab2b9f95",
+      "bytes": 23
+    },
+    "service-tests-01/long-context.log": {
+      "sha256": "170e4256b0e937de8c416e1711273e07b17b79e19a8bce90877df8ecf294a3a6",
+      "bytes": 873
+    },
+    "service-tests-01/draft_capacity.log": {
+      "sha256": "17b4e63868f3495fddb4668f05d575a54cd337bb3244ccc2d8b253858d609fff",
+      "bytes": 3402
+    }
+  },
+  "manifest_sha256": "942e0bcc020c037ecd9058c8e4c4f0971518da294cf8cebe6a806e54e44adef7",
+  "host_service_definition_sha256": "8f9a941dc7f80a190b1efb62522f8b9d2a095587e91ee35574b589ea71ee20ed",
+  "limitations": "Synthetic functional qualification of this exact eager V1 K4V2 target/MTP2/vision profile. Tool calls inspected, never executed. No combined assertion/test total. Long-context and near-capacity checks are not a model-quality evaluation or controlled throughput comparison. Occupancy is allocated cache pages, including possible lookahead, not only semantically consumed tokens. Memory sampling is reported separately in foreground-memory-review.json. Benchmark A is outside this correctness suite.",
+  "schema_version": 2,
+  "recorded_utc": "2026-10-10T10:26:33.447119+00:00",
+  "server_run": "brutus-api-02",
+  "suite_run": "service-tests-01",
+  "started_utc": "2026-10-10T10:02:23.320442+00:00",
+  "finished_utc": "2026-10-10T10:23:20.922083+00:00",
+  "identity_source": "Frozen brutus-api-02 manifest; its original start-time status remains in the hashed raw artifact.",
+  "source_heads": {
+    "vllm": "ef92dc5600af64103c01f97e3300b81c3a1083ee",
+    "vllm_xpu_kernels": "dbb684f4c9b38a8b3bbf52bda0c490ee47049221"
+  },
+  "count_scope": "Each stage is reported separately. Request counts, semantic assertions, token counts and native/CPU tests are not added into a combined pass total.",
+  "stages": {
+    "smoke": {
+      "passed": true,
+      "requests": 4,
+      "results": [
+        {
+          "name": "text",
+          "http_status": 200,
+          "stream_done": true,
+          "usage": {
+            "prompt_tokens": 28,
+            "total_tokens": 91,
+            "completion_tokens": 63,
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "finish_reason": "stop",
+          "smoke_pass": true
+        },
+        {
+          "name": "reasoning",
+          "http_status": 200,
+          "stream_done": true,
+          "usage": {
+            "prompt_tokens": 57,
+            "total_tokens": 186,
+            "completion_tokens": 129,
+            "completion_tokens_details": {
+              "reasoning_tokens": 55
+            }
+          },
+          "finish_reason": "stop",
+          "smoke_pass": true
+        },
+        {
+          "name": "vision",
+          "http_status": 200,
+          "stream_done": true,
+          "usage": {
+            "prompt_tokens": 428,
+            "total_tokens": 432,
+            "completion_tokens": 4,
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "finish_reason": "stop",
+          "smoke_pass": true
+        },
+        {
+          "name": "tools",
+          "http_status": 200,
+          "stream_done": true,
+          "usage": {
+            "prompt_tokens": 324,
+            "total_tokens": 375,
+            "completion_tokens": 51,
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "finish_reason": "tool_calls",
+          "smoke_pass": true
+        }
+      ],
+      "checks": "Nonempty text; 17*19=323 with separate reasoning; two-image red/blue order; exact synthetic tool name and JSON arguments. Tool was never executed."
+    },
+    "overlap_requests": {
+      "passed": true,
+      "requests": 12,
+      "results": [
+        {
+          "name": "r0-essay",
+          "http_status": 200,
+          "stream_done": true,
+          "usage": {
+            "prompt_tokens": 49,
+            "total_tokens": 689,
+            "completion_tokens": 640,
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "finish_reason": "length",
+          "check_pass": true
+        },
+        {
+          "name": "r0-code",
+          "http_status": 200,
+          "stream_done": true,
+          "usage": {
+            "prompt_tokens": 46,
+            "total_tokens": 558,
+            "completion_tokens": 512,
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "finish_reason": "length",
+          "check_pass": true
+        },
+        {
+          "name": "r0-vision",
+          "http_status": 200,
+          "stream_done": true,
+          "usage": {
+            "prompt_tokens": 449,
+            "total_tokens": 897,
+            "completion_tokens": 448,
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "finish_reason": "length",
+          "check_pass": true
+        },
+        {
+          "name": "r0-math",
+          "http_status": 200,
+          "stream_done": true,
+          "usage": {
+            "prompt_tokens": 49,
+            "total_tokens": 369,
+            "completion_tokens": 320,
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "finish_reason": "length",
+          "check_pass": true
+        },
+        {
+          "name": "r1-essay",
+          "http_status": 200,
+          "stream_done": true,
+          "usage": {
+            "prompt_tokens": 49,
+            "total_tokens": 689,
+            "completion_tokens": 640,
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "finish_reason": "length",
+          "check_pass": true
+        },
+        {
+          "name": "r1-code",
+          "http_status": 200,
+          "stream_done": true,
+          "usage": {
+            "prompt_tokens": 46,
+            "total_tokens": 558,
+            "completion_tokens": 512,
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "finish_reason": "length",
+          "check_pass": true
+        },
+        {
+          "name": "r1-vision",
+          "http_status": 200,
+          "stream_done": true,
+          "usage": {
+            "prompt_tokens": 449,
+            "total_tokens": 897,
+            "completion_tokens": 448,
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "finish_reason": "length",
+          "check_pass": true
+        },
+        {
+          "name": "r1-math",
+          "http_status": 200,
+          "stream_done": true,
+          "usage": {
+            "prompt_tokens": 49,
+            "total_tokens": 369,
+            "completion_tokens": 320,
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "finish_reason": "length",
+          "check_pass": true
+        },
+        {
+          "name": "r2-essay",
+          "http_status": 200,
+          "stream_done": true,
+          "usage": {
+            "prompt_tokens": 49,
+            "total_tokens": 689,
+            "completion_tokens": 640,
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "finish_reason": "length",
+          "check_pass": true
+        },
+        {
+          "name": "r2-code",
+          "http_status": 200,
+          "stream_done": true,
+          "usage": {
+            "prompt_tokens": 46,
+            "total_tokens": 558,
+            "completion_tokens": 512,
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "finish_reason": "length",
+          "check_pass": true
+        },
+        {
+          "name": "r2-vision",
+          "http_status": 200,
+          "stream_done": true,
+          "usage": {
+            "prompt_tokens": 449,
+            "total_tokens": 897,
+            "completion_tokens": 448,
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "finish_reason": "length",
+          "check_pass": true
+        },
+        {
+          "name": "r2-math",
+          "http_status": 200,
+          "stream_done": true,
+          "usage": {
+            "prompt_tokens": 49,
+            "total_tokens": 369,
+            "completion_tokens": 320,
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "finish_reason": "length",
+          "check_pass": true
+        }
+      ],
+      "peak_running": 4.0,
+      "mtp_counter_deltas": {
+        "spec_decode_num_drafts_total": 2252.0,
+        "spec_decode_num_draft_tokens_total": 4504.0,
+        "spec_decode_num_accepted_tokens_total": 3507.0
+      },
+      "checks": "Three rounds of four simultaneous essay/code/vision/math requests, finite streams and expected content checks; active MTP counters."
+    },
+    "mixed_prefill": {
+      "passed": true,
+      "requests": 4,
+      "results": [
+        {
+          "name": "mixed-essay",
+          "http_status": 200,
+          "stream_done": true,
+          "usage": {
+            "prompt_tokens": 64,
+            "total_tokens": 704,
+            "completion_tokens": 640,
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "finish_reason": "length",
+          "check_pass": true
+        },
+        {
+          "name": "mixed-code",
+          "http_status": 200,
+          "stream_done": true,
+          "usage": {
+            "prompt_tokens": 60,
+            "total_tokens": 572,
+            "completion_tokens": 512,
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "finish_reason": "length",
+          "check_pass": true
+        },
+        {
+          "name": "mixed-math",
+          "http_status": 200,
+          "stream_done": true,
+          "usage": {
+            "prompt_tokens": 63,
+            "total_tokens": 383,
+            "completion_tokens": 320,
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "finish_reason": "length",
+          "check_pass": true
+        },
+        {
+          "name": "mixed-long",
+          "http_status": 200,
+          "stream_done": true,
+          "usage": {
+            "prompt_tokens": 8191,
+            "total_tokens": 8639,
+            "completion_tokens": 448,
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "finish_reason": "length",
+          "check_pass": true
+        }
+      ],
+      "peak_running": 4.0,
+      "checks": "Long prefill arrives while short requests decode; four running requests observed, all semantic checks pass."
+    },
+    "long-context": {
+      "passed": true,
+      "requests": 2,
+      "results": [
+        {
+          "name": "long-131071",
+          "http_status": 200,
+          "stream_done": true,
+          "usage": {
+            "prompt_tokens": 131071,
+            "total_tokens": 131083,
+            "completion_tokens": 12,
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "finish_reason": "stop",
+          "check_pass": true
+        },
+        {
+          "name": "long-262015",
+          "http_status": 200,
+          "stream_done": true,
+          "usage": {
+            "prompt_tokens": 262015,
+            "total_tokens": 262027,
+            "completion_tokens": 12,
+            "completion_tokens_details": {
+              "reasoning_tokens": 0
+            }
+          },
+          "finish_reason": "stop",
+          "check_pass": true
+        }
+      ],
+      "checks": "Two 448x448 synthetic images plus early label retrieval through chunked prefill; exact tokenizer and response prompt counts 131071 and 262015; both return SUNDIAL-482, Red, Blue and stop normally."
+    },
+    "cancel_reuse": {
+      "passed": true,
+      "cancelled_after_tokens": 3074,
+      "max_tokens": 4096,
+      "completion_counter_delta_during_cancel": {
+        "stop": 0.0,
+        "length": 0.0,
+        "abort": 0.0,
+        "error": 0.0,
+        "repetition": 0.0
+      },
+      "server_generated_tokens_during_cancel": 3074.0,
+      "stream_id": "cmpl-ba138233a9b72c17",
+      "matched_server_abort": "Request cmpl-ba138233a9b72c17-0 aborted.",
+      "retained_helper": "kvarn_service_gate.wait_for_idle/http_request",
+      "note": "Cancellation at >=3073 tokens crosses high-water16 cache flush. Matching request-ID abort log, scheduler idle and server generation count below4096 prove early cancellation. This base removes client-aborted output state before completion counters, so abort need not increment; all other completion reasons must remain unchanged. Fresh JSON semantics and repeated baseline output verified after scheduler idle. No tool execution.",
+      "checks": "Cancel after crossing the compact-cache flush high-water mark; match request-ID abort log; await scheduler idle; verify fresh JSON semantics and repeated baseline output. Completion abort counters are not used as proof."
+    },
+    "draft_capacity": {
+      "acceptance": {
+        "accepted_first": 336,
+        "accepted_fraction_of_proposals": 0.6636363636363637,
+        "accepted_second": 248,
+        "accepted_tokens": 584,
+        "accepted_tokens_per_round": 1.3272727272727274,
+        "both_acceptance_per_two_token_round": 0.5636363636363636,
+        "conditional_second_acceptance_bounds": [
+          0.7380952380952381,
+          0.7380952380952381
+        ],
+        "conditional_second_denominator_bounds": [
+          336,
+          336
+        ],
+        "first_acceptance": 0.7636363636363637,
+        "note": "Conditional-second bounds account for first acceptances on budget-trimmed one-token rounds; equal bounds identify the exact rate.",
+        "one_token_rounds": 0,
+        "output_budget_clipped_tokens": 2,
+        "proposed_tokens": 880,
+        "rounds": 440,
+        "two_token_rounds": 440
+      },
+      "allocation": {
+        "paged_allocated_bytes": 5004625920,
+        "pools": [
+          {
+            "allocated": 2026831872,
+            "block_sizes": [
+              262144
+            ],
+            "id": 0,
+            "layers": 48,
+            "max_request_blocks": 3,
+            "null_blocks": 1,
+            "page_sizes": [
+              3248128
+            ],
+            "physical_blocks": 13,
+            "types": [
+              "MambaSpec"
+            ],
+            "usable_blocks": 12
+          },
+          {
+            "allocated": 5004625920,
+            "block_sizes": [
+              128
+            ],
+            "id": 1,
+            "layers": 17,
+            "max_request_blocks": 2048,
+            "null_blocks": 1,
+            "page_sizes": [
+              107520
+            ],
+            "physical_blocks": 2738,
+            "types": [
+              "FullAttentionSpec"
+            ],
+            "usable_blocks": 2737
+          }
+        ],
+        "recurrent_allocated_bytes": 2026831872,
+        "usable_tokens": 350336
+      },
+      "both_prefilled_before_either_last_token": true,
+      "combined_processed_prompt_fraction": 0.9937831110705152,
+      "draft_cache": "kvarn_k4v2_g128_compact",
+      "generated_tokens_each": 512,
+      "minimum_occupied_attention_blocks": 2728,
+      "minimum_occupied_attention_tokens": 349184,
+      "new_usable_attention_tokens": 350336,
+      "non_attention_usage_upper_bound": 0.5,
+      "note": "Aggregate max-pool gauge identifies attention because observed usage exceeds the logged two-request bound for every recurrent pool. Matching full-attention block sizes/capacities, prefix-off profile and coordinator allocation semantics make attention occupancy equal across target/draft pools. The recorded physical pool audit establishes the equal-capacity/prefix-off premises for this arm. At least98% of configured attention capacity is represented by two completed processed prompts; reported occupancy counts allocated pages, which can also include lookahead. Actual SSE token counts, full-prefill overlap, labels and zero preemptions verified. Fixed output cap is for occupancy; this is not a generation-quality or throughput benchmark.",
+      "passed": true,
+      "peak_attention_usage": 0.9967117281695287,
+      "plan_sha256": "6d22aca635c28ce211a4b6a0c6d1223d15b5e2798fe05e7b7b8eea64c2a48593",
+      "prompt_tokens_each": 174079,
+      "results": [
+        {
+          "id": "q0",
+          "stream_done": true,
+          "usage": {
+            "completion_tokens": 512,
+            "prompt_tokens": 174079,
+            "total_tokens": 174591
+          },
+          "finish_reason": "length",
+          "quality_findings": [],
+          "request_sha256": "4b33b57011915751bc2dc62f98402c22a36e98923291684f9ef05c6e351ffd4c",
+          "raw_stream_sha256": "c51e4c2c07346bf71eef0f03f26e6cedcbd3bd5a5b95f07deeb33bff7cdfe4a7"
+        },
+        {
+          "id": "q1",
+          "stream_done": true,
+          "usage": {
+            "completion_tokens": 512,
+            "prompt_tokens": 174079,
+            "total_tokens": 174591
+          },
+          "finish_reason": "length",
+          "quality_findings": [],
+          "request_sha256": "61a17141eca660e52ff0c9275a710cd079003261efaefa7940677c8de3d3870f",
+          "raw_stream_sha256": "ca959658c84c9176e54e12a572a407e9150545590e9332fee45a0bd77798fc53"
+        }
+      ],
+      "requests": 2,
+      "semantic_checks": "Both streams contain their distinct COPPER-318/SILVER-926 label and 29*31=899; exact SSE output-token counts and usage match, no quality findings.",
+      "preemptions": {
+        "before": 0.0,
+        "after": 0.0,
+        "delta": 0.0
+      },
+      "scheduler_samples": 10850,
+      "peak_running": 2
+    }
+  },
+  "raw_suite_tree": {
+    "files": 159,
+    "sha256_manifest": "19bc64b437009c0a481715f331d0ac495a2eef87acfe6bd439aac0e073feda87",
+    "method": "SHA256 of UTF-8 lines sorted lexically by relative path, each line: lowercase SHA256 + two spaces + path relative to service-tests-01 + newline. Includes every regular file in the frozen suite directory. Raw synthetic payloads remain private."
+  },
+  "harness_provenance": {
+    "origin": "retained xpu-v1.11.0 synthetic HTTP qualification harnesses",
+    "adaptation": "Use current packaging helper modules instead of historical ignored worktree in cancel_reuse.py/draft_capacity.py. Assertions unchanged.",
+    "selected_stages": [
+      "smoke",
+      "overlap_requests",
+      "mixed_prefill",
+      "cancel_reuse",
+      "long-context",
+      "draft_capacity"
+    ],
+    "source_sha256": {
+      "benchmark-results/release-v031-20261010/run-service-suite.py": "3e0dfc778e0334422d58f2fc46ae6e605e34600d6941ab7b36c2a932afc16c31",
+      "benchmark-results/release-v031-20261010/retained-service-harness/provenance.json": "ec334d93313c003a5014fd37fdcd9e99b5458491802595855ec7ca95b6573978",
+      "benchmark-results/release-v031-20261010/retained-service-harness/smoke.py": "487083b4930e0a1566ef3717155960b6a5822f05aefc077d9f22f63445709ead",
+      "benchmark-results/release-v031-20261010/retained-service-harness/overlap_requests.py": "3d96ce7179a9a1cf41a4e08bd0e6ffabc9a11799251699958821e6916ece5f81",
+      "benchmark-results/release-v031-20261010/retained-service-harness/mixed_prefill.py": "384cb42d67a6314aa11f48564c0834b4650d7168a437fbd0af78a8ba488c9f92",
+      "benchmark-results/release-v031-20261010/retained-service-harness/cancel_reuse.py": "0dc5677aff0d0cb635311dee137823f1217ae4dd2922bb181109e81dae120bfe",
+      "benchmark-results/release-v031-20261010/retained-service-harness/long-context.py": "2f3e6ec6eab473d90f2cc81d2df8f5f4ae46a03179f35661e6be33946928750a",
+      "benchmark-results/release-v031-20261010/retained-service-harness/draft_capacity.py": "de77874b2172e8c71da09769972498d54fea808d0a31a04ddd5df82921a29e3a",
+      "scripts/kvarn_perf_run.py": "ea724304d7ab59c888aa0387c28e56a164bee17fa82abd589da5a658c0858d84",
+      "scripts/kvarn_mtp_draft_compare.py": "c9d1010eddc82474bd60738c8cb190ea7df5568d5fb309e15d25098760127c1d",
+      "scripts/kvarn_lowbit_compare.py": "69a7ef757df0d745abfc820b2b3fd6a8e486ed584c1c4211fd33e043ce3e7a2f",
+      "scripts/kvarn_lowbit_service.py": "d55d836625461af65a8b1ba6d2142c015f20db5199cfbaeb3eca8c3da6f55062",
+      "scripts/kvarn_mtp_compare.py": "83ccb4b38233816170160fe21e735d352ca3fdbec516d8df3d253e620723b8ce",
+      "scripts/kvarn_service_gate.py": "7f48d9fa12cd714b3ed67e753db1177e7a39d5e93e6f42ced83d0f3b305e94d1"
+    },
+    "note": "The retained provenance file describes preparation time. Actual completed execution is established by the final suite status, stage logs and result summaries above."
+  },
+  "failed_start_provenance": {
+    "server_run": "brutus-api-01",
+    "failed_runtime": "/nix/store/cp0c15jk173smzp9d77kgcx36a7ibx1m-v031-brutus-qualification-env",
+    "failure": "Torch 2.14 XCCL calls libccl.so.2; its legacy plugin is dynamically discovered by filename and the component directory was absent from LD_LIBRARY_PATH. EngineCore exited with SIGFPE before model load.",
+    "fix": "Package wrapper prepends the existing toolkit ccl/latest/lib directory. No native code, compiler or source-fork changes.",
+    "public_review": "oneccl-discovery-review.json",
+    "public_review_sha256": "2a54a918910f9612d43c721993921f5c9401cfb47b2e63e205f488759bb54265",
+    "evidence_sha256": {
+      "brutus-api-01/service.log": "fb3a9909c6a725257b80373b0265cebd066ee4a980d2b9b4426265dcd841e7c0",
+      "brutus-api-01/manifest.json": "7315184bea5ec45841799bb7b6cc63108fa40be67401b82d6213c853f61463b0"
+    }
+  },
+  "shutdown": {
+    "owner_reported_server_exitcode": 0,
+    "owner_reported_monitor_exitcode": 0,
+    "application_shutdown_complete_logged": true,
+    "note": "Owner stopped the test server after the separate MTP2 benchmark A. Shutdown logs contain one resource_tracker leaked-semaphore warning; no functional request failure is attributed to it."
+  },
+  "interim_public_review_sha256": "f7d724c93160197e15d600df36e05e01a92fa044a4d249748adfada178118e8c"
+}

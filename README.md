@@ -3,7 +3,7 @@
 [![build](https://github.com/jasonboukheir/vllm-xpu-nix/actions/workflows/build.yml/badge.svg)](https://github.com/jasonboukheir/vllm-xpu-nix/actions/workflows/build.yml)
 
 Nix-native Intel XPU substrate for [vLLM](https://github.com/vllm-project/vllm):
-`torch+xpu`, `triton-xpu`, `vllm-xpu-kernels`, and (in progress) `vllm` itself,
+`torch+xpu`, `triton-xpu`, `vllm-xpu-kernels`, and `vllm` itself,
 all packaged as nix-store derivations rather than baked into a container image.
 
 The aim is to let a NixOS host run `vllm serve` as a native systemd unit, with
@@ -14,6 +14,8 @@ container, no host-managed `~/.local/lib/python*/site-packages`, no
 
 ## Documentation
 
+- [xpu-v1.12.0 release: vLLM 0.31 on Brutus](docs/releases/xpu-v1.12.0.md)
+- [Paired-fork release runbook](.agents/skills/vllm-xpu-update/SKILL.md)
 - [Build something locally](docs/build.md)
 - [Using on a NixOS server (overlay pattern)](docs/nixos-overlay.md)
 - [Hardware prerequisites](docs/hardware.md)

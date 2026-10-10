@@ -1,0 +1,21 @@
+ .github/workflows/wheel-per-commit.yaml            |   4 +-
+ AGENTS.md                                          |   4 +-
+ CMakeLists.txt                                     |   2 +-
+ Dockerfile.xpu                                     |   2 +-
+ README.md                                          |   2 +-
+ benchmark/benchmark_topk_softplus_sqrt.py          |  90 ++++++-
+ build_script/build_wheel_docker.sh                 |   2 +-
+ cmake/utils.cmake                                  |   7 +-
+ csrc/moe/moe_ops.h                                 |   4 +-
+ csrc/moe/topk_softplus_sqrt_kernels.cpp            | 185 ++++++++-----
+ csrc/moe/torch_bindings.cpp                        |   3 +-
+ .../attn/kernel_configs/paged_decode_default.conf  |   3 +-
+ csrc/xpu/gdn_attn/causal_conv1d.hpp                |  37 ++-
+ csrc/xpu/gdn_attn/gated_delta_rule.hpp             |  28 +-
+ csrc/xpu/gdn_attn/gdn_attn_interface.cpp           |   8 +-
+ pyproject.toml                                     |   2 +-
+ requirements.txt                                   |   2 +-
+ tests/gdn_attn/test_gdn_attn.py                    | 290 +++++++++++++++++----
+ tests/register_ops.py                              |   4 +
+ tests/test_topk_softplus_sqrt.py                   | 166 +++++++++++-
+ 20 files changed, 685 insertions(+), 160 deletions(-)

@@ -2,7 +2,7 @@
 
 ```bash
 nix build .#vllm-xpu-kernels             # upstream pin
-nix build .#vllm-xpu-kernels-unstable    # jasonboukheir/vllm-xpu-kernels main
+nix build .#vllm-xpu-kernels-unstable    # maintained fork pin
 
 nix build .#torch-xpu
 nix build .#triton-xpu
@@ -20,22 +20,29 @@ nix build .#grouped-gemm-xe-2
 
 Upstream's generated attention buildout now emits one translation unit per
 kernel variant, replacing the former local `0007`/`0008` split patches. A
-partial chunk-prefill/paged-decode config is the primary way to bound both
-total compile work and generated-TU memory. The Kvarn integration additionally
-prunes disabled policy dispatch trees before their recursive boolean templates
-are instantiated; without that source fix, the `fmha_xe2.cpp` dispatcher can
-still consume tens of GiB even for a narrow generated build.
+partial chunk-prefill/paged-decode config bounds the generated kernel buildout.
+Upstream's dispatcher checks generated policy and tuple availability before
+instantiating kernels. The former local early dispatcher-pruning optimization
+was retired for v0.31; it pruned no policies in the normal Brutus preset.
 
-Each lib drv runs `ninja -j$NIX_BUILD_CORES` at the daemon default (`nproc`).
-On memory-constrained hosts cap parallelism with `nix build --cores N` (or
-`cores = N` in nix.conf); the same value feeds
-`-fsycl-max-parallel-link-jobs`. The per-library `compileJobs` override limits
-concurrent compiler processes, but cannot cap the memory of one template-heavy
-frontend.
+Split libraries use `NIX_BUILD_CORES` for compiler and device-link parallelism;
+attention also caps concurrent compiler processes at 12. On memory-constrained
+hosts use `nix build --cores N` (or `cores = N` in nix.conf). The Python extension
+and FA2 binding honor that compile limit but retain upstream's inner device-link
+limit of 16. These settings cannot cap the memory of an individual frontend.
+The template-backtrace limit controls diagnostic length; a successful-build
+memory reduction has not been measured.
+
+The v0.31 XPU closure uses Torch 2.14, Triton 3.8 and oneAPI 2026.1.
+Its Python build reconciles the common CUDA Torch build pin with the exact XPU
+requirement. The executable wrapper supplies the pinned OpenCL ICD directory
+for oneDNN discovery and the toolkit's `ccl/latest/lib` loader path for oneCCL's
+runtime plugins. An import-only build check does not exercise either startup
+path; qualification includes native primitives and a real XCCL process group.
 
 ## Compiler launcher cache
 
-Both `vllm-xpu-lib.nix` (the five kernel SHARED libs — attn, gdn-attn,
+Both `vllm-xpu-lib.nix` (the six kernel SHARED libs — attn, gdn-attn, mhc,
 mqa-logits, grouped-gemm-xe-2, grouped-gemm-xe-default) and
 `vllm-xpu-kernels.nix` (the Python extension module + the libs not
 covered by the prebuilt-lib split: basic_kernels, xpu_specific,

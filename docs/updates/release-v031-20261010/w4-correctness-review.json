@@ -1,0 +1,903 @@
+{
+  "status": "final installed W4 matrix and profile primitives passed; service qualification pending",
+  "candidate_main": "ef92dc5600af64103c01f97e3300b81c3a1083ee",
+  "kernel_main": "dbb684f4c9b38a8b3bbf52bda0c490ee47049221",
+  "reference": "BF16 RTZ dequantization; CPU FP32 accumulation; BF16 RNE output",
+  "tolerance": {
+    "atol": 0.01,
+    "rtol": 0.01
+  },
+  "matched_cases": 18,
+  "all_native_outputs_byte_identical": true,
+  "original_RNE_diagnostic_passed": false,
+  "original_failure_explanation": "New BF16 harness assumed RNE dequantization; installed B70 implementation empirically uses RTZ, isolated with one-hot input. Both old and new retain RNE/FP32 discrepancies on random scales.",
+  "candidate_native_path": "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_xpu_C.abi3.so",
+  "candidate_native_sha256": "7076ec3059ab05eb40e777f1edd194f050b78677ae3f0e370641e8cfa5937fc6",
+  "baseline_native_path": "/nix/store/lyycjcfj6gzy20r9kj8vp7w2n17yr7j9-vllm-xpu-kernels-0.1.15+unstable.2026.09.23.g193cee0/lib/python3.12/site-packages/vllm_xpu_kernels/_xpu_C.abi3.so",
+  "baseline_native_sha256": "585c44159565a8cbb7aaf468521d1b7cb3d43227a0eeb1a379f8e16eef9b5de3",
+  "cases": [
+    {
+      "case": "decode-attention/dyadic",
+      "m": 1,
+      "k": 5120,
+      "n": 8192,
+      "status": "passed",
+      "fixture_hash": {
+        "packed": "dd4cf27dd32df8a8b8a951f49a01115ad2fbaec996e9b906efe4d5bd076e8945",
+        "x": "83074c40b623016bc4e53f81e8fc7698c7f949ccfa2e9e81000a2eccb99f18a0",
+        "scales": "166d49c6136b4527e35613c91e533111c60e2e50e2984e67b6548f164af2f27a"
+      },
+      "comparisons": {
+        "bf16_rtz": {
+          "max_abs": 0.03125,
+          "mean_abs": 3.8745347410440445e-06,
+          "mismatches": 3,
+          "failures": 0,
+          "max_tolerance_ratio": 0.4629629850387573
+        },
+        "bf16_rne": {
+          "max_abs": 0.03125,
+          "mean_abs": 3.8745347410440445e-06,
+          "mismatches": 3,
+          "failures": 0,
+          "max_tolerance_ratio": 0.4629629850387573
+        },
+        "fp32": {
+          "max_abs": 0.03125,
+          "mean_abs": 3.8745347410440445e-06,
+          "mismatches": 3,
+          "failures": 0,
+          "max_tolerance_ratio": 0.4629629850387573
+        }
+      },
+      "native_output_sha256": "842763a25d3bee8274ee4cab17e1c9b5e176c826b51b9c711af3ce218ec1cf8b",
+      "other_runtime_comparison": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "mismatches": 0,
+        "failures": 0,
+        "max_tolerance_ratio": 0.0
+      },
+      "other_runtime_bytes_equal": true
+    },
+    {
+      "case": "decode-attention/random",
+      "m": 1,
+      "k": 5120,
+      "n": 8192,
+      "status": "passed",
+      "fixture_hash": {
+        "packed": "dd4cf27dd32df8a8b8a951f49a01115ad2fbaec996e9b906efe4d5bd076e8945",
+        "x": "83074c40b623016bc4e53f81e8fc7698c7f949ccfa2e9e81000a2eccb99f18a0",
+        "scales": "41c1b2dfc321f7c74af2a24f15cc50b0433022d82b9b2dce26ac7d735f358295"
+      },
+      "comparisons": {
+        "bf16_rtz": {
+          "max_abs": 0.03125,
+          "mean_abs": 3.8226135075092316e-06,
+          "mismatches": 3,
+          "failures": 0,
+          "max_tolerance_ratio": 0.3937007784843445
+        },
+        "bf16_rne": {
+          "max_abs": 0.125,
+          "mean_abs": 0.023168552666902542,
+          "mismatches": 4719,
+          "failures": 876,
+          "max_tolerance_ratio": 5.871121883392334
+        },
+        "fp32": {
+          "max_abs": 0.125,
+          "mean_abs": 0.018014468252658844,
+          "mismatches": 4161,
+          "failures": 440,
+          "max_tolerance_ratio": 4.051941871643066
+        }
+      },
+      "native_output_sha256": "729e420e888465571766d641e298733937f711e8d693a5ef81a9bac60ee54189",
+      "other_runtime_comparison": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "mismatches": 0,
+        "failures": 0,
+        "max_tolerance_ratio": 0.0
+      },
+      "other_runtime_bytes_equal": true
+    },
+    {
+      "case": "prefill-attention/dyadic",
+      "m": 162,
+      "k": 5120,
+      "n": 8192,
+      "status": "passed",
+      "fixture_hash": {
+        "packed": "753e20cc544af91c6977104272c0048576191d6b2684991552fd49c3782f2b09",
+        "x": "e3626d8b69f8d17dea02c61837fc5330a7a4e2dcf4d36520a7774a99c1c7573a",
+        "scales": "c0867e919e82e880b898e4acbffb589883e321b2718e96e5d3f23fe37613a9a0"
+      },
+      "comparisons": {
+        "bf16_rtz": {
+          "max_abs": 0.125,
+          "mean_abs": 8.184549642464845e-07,
+          "mismatches": 122,
+          "failures": 0,
+          "max_tolerance_ratio": 0.6849315166473389
+        },
+        "bf16_rne": {
+          "max_abs": 0.125,
+          "mean_abs": 8.184549642464845e-07,
+          "mismatches": 122,
+          "failures": 0,
+          "max_tolerance_ratio": 0.6849315166473389
+        },
+        "fp32": {
+          "max_abs": 0.125,
+          "mean_abs": 8.184549642464845e-07,
+          "mismatches": 122,
+          "failures": 0,
+          "max_tolerance_ratio": 0.6849315166473389
+        }
+      },
+      "native_output_sha256": "3420da4c7efbaeb35b8ecd01ccc1e837c19c3efda17b3af22b4e26bc1bd7d84b",
+      "other_runtime_comparison": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "mismatches": 0,
+        "failures": 0,
+        "max_tolerance_ratio": 0.0
+      },
+      "other_runtime_bytes_equal": true
+    },
+    {
+      "case": "prefill-attention/random",
+      "m": 162,
+      "k": 5120,
+      "n": 8192,
+      "status": "passed",
+      "fixture_hash": {
+        "packed": "753e20cc544af91c6977104272c0048576191d6b2684991552fd49c3782f2b09",
+        "x": "e3626d8b69f8d17dea02c61837fc5330a7a4e2dcf4d36520a7774a99c1c7573a",
+        "scales": "14c7ef1af519df4d1c040782d0c692a6072ca7886dd1f7fc478e2782aa44e7ca"
+      },
+      "comparisons": {
+        "bf16_rtz": {
+          "max_abs": 0.125,
+          "mean_abs": 1.980734850803856e-06,
+          "mismatches": 325,
+          "failures": 0,
+          "max_tolerance_ratio": 0.7092198729515076
+        },
+        "bf16_rne": {
+          "max_abs": 0.25,
+          "mean_abs": 0.023139912635087967,
+          "mismatches": 765836,
+          "failures": 137212,
+          "max_tolerance_ratio": 12.026053428649902
+        },
+        "fp32": {
+          "max_abs": 0.25,
+          "mean_abs": 0.01779048889875412,
+          "mismatches": 665623,
+          "failures": 68835,
+          "max_tolerance_ratio": 7.7757792472839355
+        }
+      },
+      "native_output_sha256": "96f11bb97eae4900022c156f36f6ee256b09f6bd2cdaf31abb5a8365c8b1f205",
+      "other_runtime_comparison": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "mismatches": 0,
+        "failures": 0,
+        "max_tolerance_ratio": 0.0
+      },
+      "other_runtime_bytes_equal": true
+    },
+    {
+      "case": "decode-gdn-qkvz/dyadic",
+      "m": 1,
+      "k": 5120,
+      "n": 16384,
+      "status": "passed",
+      "fixture_hash": {
+        "packed": "6332d746fc1f3413d8b1cda3d05ef0e3d769d61746fb3eda51e1f529b10c5dd9",
+        "x": "b2aecc208982b4f45512cecd587fd150e939ed28f6616020f477993e1261daaa",
+        "scales": "86572213845cfa17e9d62c9513a7bf00ccb6e2216b15f092c23a03460d6f0b7e"
+      },
+      "comparisons": {
+        "bf16_rtz": {
+          "max_abs": 0.03125,
+          "mean_abs": 2.86102294921875e-06,
+          "mismatches": 2,
+          "failures": 0,
+          "max_tolerance_ratio": 0.4926108419895172
+        },
+        "bf16_rne": {
+          "max_abs": 0.03125,
+          "mean_abs": 2.86102294921875e-06,
+          "mismatches": 2,
+          "failures": 0,
+          "max_tolerance_ratio": 0.4926108419895172
+        },
+        "fp32": {
+          "max_abs": 0.03125,
+          "mean_abs": 2.86102294921875e-06,
+          "mismatches": 2,
+          "failures": 0,
+          "max_tolerance_ratio": 0.4926108419895172
+        }
+      },
+      "native_output_sha256": "a7e1c8d3b681f321953c23ea8b58cd4624346649d8d48d01972aabc7b7b55349",
+      "other_runtime_comparison": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "mismatches": 0,
+        "failures": 0,
+        "max_tolerance_ratio": 0.0
+      },
+      "other_runtime_bytes_equal": true
+    },
+    {
+      "case": "decode-gdn-qkvz/random",
+      "m": 1,
+      "k": 5120,
+      "n": 16384,
+      "status": "passed",
+      "fixture_hash": {
+        "packed": "6332d746fc1f3413d8b1cda3d05ef0e3d769d61746fb3eda51e1f529b10c5dd9",
+        "x": "b2aecc208982b4f45512cecd587fd150e939ed28f6616020f477993e1261daaa",
+        "scales": "03055220e8b0d41b3dd72bbfeaad15848d55b97d9f995cbd5ad1caa51a753146"
+      },
+      "comparisons": {
+        "bf16_rtz": {
+          "max_abs": 0.03125,
+          "mean_abs": 1.9986764527857304e-06,
+          "mismatches": 5,
+          "failures": 0,
+          "max_tolerance_ratio": 0.5319149494171143
+        },
+        "bf16_rne": {
+          "max_abs": 0.25,
+          "mean_abs": 0.023504771292209625,
+          "mismatches": 9486,
+          "failures": 1648,
+          "max_tolerance_ratio": 6.934137344360352
+        },
+        "fp32": {
+          "max_abs": 0.25,
+          "mean_abs": 0.018012704327702522,
+          "mismatches": 8194,
+          "failures": 814,
+          "max_tolerance_ratio": 4.372937202453613
+        }
+      },
+      "native_output_sha256": "4a3c0c76903e9f49757c5c23e63461d0a6ec5feeb0ca93bf98b0a79cd60f8d3a",
+      "other_runtime_comparison": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "mismatches": 0,
+        "failures": 0,
+        "max_tolerance_ratio": 0.0
+      },
+      "other_runtime_bytes_equal": true
+    },
+    {
+      "case": "prefill-gdn-qkvz/dyadic",
+      "m": 162,
+      "k": 5120,
+      "n": 16384,
+      "status": "passed",
+      "fixture_hash": {
+        "packed": "7f1cbd9e2bc87112d4007fd188633a9c0b5a3f049d8b20bb263aea72d42bd8c0",
+        "x": "833b00221583464e33f89b205fc68fee413b2cabe74b1adbf13fac903a85c26c",
+        "scales": "60b69e88f449893df37eaedf9e860c2db69337c2d166bea4019b25c7e1763cd2"
+      },
+      "comparisons": {
+        "bf16_rtz": {
+          "max_abs": 0.125,
+          "mean_abs": 8.943612215261965e-07,
+          "mismatches": 223,
+          "failures": 0,
+          "max_tolerance_ratio": 0.7092198729515076
+        },
+        "bf16_rne": {
+          "max_abs": 0.125,
+          "mean_abs": 8.943612215261965e-07,
+          "mismatches": 223,
+          "failures": 0,
+          "max_tolerance_ratio": 0.7092198729515076
+        },
+        "fp32": {
+          "max_abs": 0.125,
+          "mean_abs": 8.943612215261965e-07,
+          "mismatches": 223,
+          "failures": 0,
+          "max_tolerance_ratio": 0.7092198729515076
+        }
+      },
+      "native_output_sha256": "7733782e2a4dd5d51c22b8669e34518f4f4153a53fcdd83f727c50d177097c24",
+      "other_runtime_comparison": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "mismatches": 0,
+        "failures": 0,
+        "max_tolerance_ratio": 0.0
+      },
+      "other_runtime_bytes_equal": true
+    },
+    {
+      "case": "prefill-gdn-qkvz/random",
+      "m": 162,
+      "k": 5120,
+      "n": 16384,
+      "status": "passed",
+      "fixture_hash": {
+        "packed": "7f1cbd9e2bc87112d4007fd188633a9c0b5a3f049d8b20bb263aea72d42bd8c0",
+        "x": "833b00221583464e33f89b205fc68fee413b2cabe74b1adbf13fac903a85c26c",
+        "scales": "47aa4d3ee05d590b03e4d4a69214b1e990b80aa1cc1edb3b028f6f1935ca7de7"
+      },
+      "comparisons": {
+        "bf16_rtz": {
+          "max_abs": 0.125,
+          "mean_abs": 1.744070800668851e-06,
+          "mismatches": 665,
+          "failures": 0,
+          "max_tolerance_ratio": 0.7042253613471985
+        },
+        "bf16_rne": {
+          "max_abs": 0.25,
+          "mean_abs": 0.02314675599336624,
+          "mismatches": 1532561,
+          "failures": 275283,
+          "max_tolerance_ratio": 10.86160659790039
+        },
+        "fp32": {
+          "max_abs": 0.25,
+          "mean_abs": 0.01778293028473854,
+          "mismatches": 1332605,
+          "failures": 138230,
+          "max_tolerance_ratio": 7.63052225112915
+        }
+      },
+      "native_output_sha256": "e97aa737344e2b6c27d0d315a8b1575dcd1b302cccb956e14ccb37e8deb1e151",
+      "other_runtime_comparison": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "mismatches": 0,
+        "failures": 0,
+        "max_tolerance_ratio": 0.0
+      },
+      "other_runtime_bytes_equal": true
+    },
+    {
+      "case": "gdn-qkvz-t107/dyadic",
+      "m": 107,
+      "k": 5120,
+      "n": 16384,
+      "status": "passed",
+      "fixture_hash": {
+        "packed": "2b57bfc150ffeb754b7f7571a9fdae1dd76ef2bf4737173fc7852ff046048af8",
+        "x": "bf412ddac320be9c54068e40ff39f3488c2312f511e1520ec00d26ef2efba0a4",
+        "scales": "b2667088b3519b5c01e303548c67ebf39a3b10cc785155af0b9f4c44529c147c"
+      },
+      "comparisons": {
+        "bf16_rtz": {
+          "max_abs": 0.125,
+          "mean_abs": 9.872114787867758e-07,
+          "mismatches": 181,
+          "failures": 0,
+          "max_tolerance_ratio": 0.6711409687995911
+        },
+        "bf16_rne": {
+          "max_abs": 0.125,
+          "mean_abs": 9.872114787867758e-07,
+          "mismatches": 181,
+          "failures": 0,
+          "max_tolerance_ratio": 0.6711409687995911
+        },
+        "fp32": {
+          "max_abs": 0.125,
+          "mean_abs": 9.872114787867758e-07,
+          "mismatches": 181,
+          "failures": 0,
+          "max_tolerance_ratio": 0.6711409687995911
+        }
+      },
+      "native_output_sha256": "7ee3f1ea8792a07f6b5d597973b19e485f4297225d0b2fc5ac52159f21ea89bb",
+      "other_runtime_comparison": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "mismatches": 0,
+        "failures": 0,
+        "max_tolerance_ratio": 0.0
+      },
+      "other_runtime_bytes_equal": true
+    },
+    {
+      "case": "gdn-qkvz-t107/random",
+      "m": 107,
+      "k": 5120,
+      "n": 16384,
+      "status": "passed",
+      "fixture_hash": {
+        "packed": "2b57bfc150ffeb754b7f7571a9fdae1dd76ef2bf4737173fc7852ff046048af8",
+        "x": "bf412ddac320be9c54068e40ff39f3488c2312f511e1520ec00d26ef2efba0a4",
+        "scales": "30917339a21dfbc1ed0e74ca3143e9d4e67e4ccd17a0d1293c5fdddbe9009dae"
+      },
+      "comparisons": {
+        "bf16_rtz": {
+          "max_abs": 0.125,
+          "mean_abs": 1.8757813222691766e-06,
+          "mismatches": 470,
+          "failures": 0,
+          "max_tolerance_ratio": 0.7142857313156128
+        },
+        "bf16_rne": {
+          "max_abs": 0.25,
+          "mean_abs": 0.023193424567580223,
+          "mismatches": 1012401,
+          "failures": 181548,
+          "max_tolerance_ratio": 9.9744873046875
+        },
+        "fp32": {
+          "max_abs": 0.25,
+          "mean_abs": 0.01784348674118519,
+          "mismatches": 881103,
+          "failures": 91440,
+          "max_tolerance_ratio": 6.596306324005127
+        }
+      },
+      "native_output_sha256": "68b93b031d16cfbd4206bc606fa958063f63bbf5f994c96e218b361cf6252670",
+      "other_runtime_comparison": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "mismatches": 0,
+        "failures": 0,
+        "max_tolerance_ratio": 0.0
+      },
+      "other_runtime_bytes_equal": true
+    },
+    {
+      "case": "gdn-ba-t107/dyadic",
+      "m": 107,
+      "k": 5120,
+      "n": 96,
+      "status": "passed",
+      "fixture_hash": {
+        "packed": "020748f77519fe4f10ab1a01b54ce82ec17cf5f5fff9ac43d3bb05ab7333ecfb",
+        "x": "91cf81a6a7321b1781c2b50cb8be2bbb71258c3c6de82c8fdcb5eaa956e2093d",
+        "scales": "35cd0f376d05db0da212c38c7a60a0f6ff643c74395100ed174d5dc556761328"
+      },
+      "comparisons": {
+        "bf16_rtz": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "mismatches": 0,
+          "failures": 0,
+          "max_tolerance_ratio": 0.0
+        },
+        "bf16_rne": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "mismatches": 0,
+          "failures": 0,
+          "max_tolerance_ratio": 0.0
+        },
+        "fp32": {
+          "max_abs": 0.0,
+          "mean_abs": 0.0,
+          "mismatches": 0,
+          "failures": 0,
+          "max_tolerance_ratio": 0.0
+        }
+      },
+      "native_output_sha256": "533d1e9ee31350817225c826183cf9f5f3881f406597a69bc3629231d1805ac4",
+      "other_runtime_comparison": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "mismatches": 0,
+        "failures": 0,
+        "max_tolerance_ratio": 0.0
+      },
+      "other_runtime_bytes_equal": true
+    },
+    {
+      "case": "gdn-ba-t107/random",
+      "m": 107,
+      "k": 5120,
+      "n": 96,
+      "status": "passed",
+      "fixture_hash": {
+        "packed": "020748f77519fe4f10ab1a01b54ce82ec17cf5f5fff9ac43d3bb05ab7333ecfb",
+        "x": "91cf81a6a7321b1781c2b50cb8be2bbb71258c3c6de82c8fdcb5eaa956e2093d",
+        "scales": "4f84a817029a2ffa5ac22dbde20510f940f1e7ddbca8e9270f15069f4d914277"
+      },
+      "comparisons": {
+        "bf16_rtz": {
+          "max_abs": 0.03125,
+          "mean_abs": 5.323938694345998e-06,
+          "mismatches": 4,
+          "failures": 0,
+          "max_tolerance_ratio": 0.5434783101081848
+        },
+        "bf16_rne": {
+          "max_abs": 0.25,
+          "mean_abs": 0.0229670200496912,
+          "mismatches": 5893,
+          "failures": 1064,
+          "max_tolerance_ratio": 6.489314556121826
+        },
+        "fp32": {
+          "max_abs": 0.25,
+          "mean_abs": 0.01796702668070793,
+          "mismatches": 5186,
+          "failures": 560,
+          "max_tolerance_ratio": 4.784240245819092
+        }
+      },
+      "native_output_sha256": "32898c39fb4824cf663846c1067c517ab29e86ed9df39cae70765871b201983f",
+      "other_runtime_comparison": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "mismatches": 0,
+        "failures": 0,
+        "max_tolerance_ratio": 0.0
+      },
+      "other_runtime_bytes_equal": true
+    },
+    {
+      "case": "gdn-out-t107/dyadic",
+      "m": 107,
+      "k": 6144,
+      "n": 5120,
+      "status": "passed",
+      "fixture_hash": {
+        "packed": "c945633ec699171dd539e6aa5fab559f63f79b8f274695cf7df00b0e096a0f36",
+        "x": "0e5e2e908d448d30d9b91f8819012aefa418084e282ec5a82f0aa377a2ec0082",
+        "scales": "c4e2ec8cecc63f248628f140ac6615cfaad19c16b14ea52c50ab0dff4135ccbd"
+      },
+      "comparisons": {
+        "bf16_rtz": {
+          "max_abs": 0.125,
+          "mean_abs": 9.995736718337866e-07,
+          "mismatches": 86,
+          "failures": 0,
+          "max_tolerance_ratio": 0.6172839403152466
+        },
+        "bf16_rne": {
+          "max_abs": 0.125,
+          "mean_abs": 9.995736718337866e-07,
+          "mismatches": 86,
+          "failures": 0,
+          "max_tolerance_ratio": 0.6172839403152466
+        },
+        "fp32": {
+          "max_abs": 0.125,
+          "mean_abs": 9.995736718337866e-07,
+          "mismatches": 86,
+          "failures": 0,
+          "max_tolerance_ratio": 0.6172839403152466
+        }
+      },
+      "native_output_sha256": "34588c8e61cbf5072b5053812638376f2c6658acefc46f34a66056915278513e",
+      "other_runtime_comparison": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "mismatches": 0,
+        "failures": 0,
+        "max_tolerance_ratio": 0.0
+      },
+      "other_runtime_bytes_equal": true
+    },
+    {
+      "case": "gdn-out-t107/random",
+      "m": 107,
+      "k": 6144,
+      "n": 5120,
+      "status": "passed",
+      "fixture_hash": {
+        "packed": "c945633ec699171dd539e6aa5fab559f63f79b8f274695cf7df00b0e096a0f36",
+        "x": "0e5e2e908d448d30d9b91f8819012aefa418084e282ec5a82f0aa377a2ec0082",
+        "scales": "842e5baec6b15350950c1ef8910ace2153bebd527905a834a5c26db0fc364909"
+      },
+      "comparisons": {
+        "bf16_rtz": {
+          "max_abs": 0.0625,
+          "mean_abs": 1.2893933671875857e-06,
+          "mismatches": 149,
+          "failures": 0,
+          "max_tolerance_ratio": 0.6451613306999207
+        },
+        "bf16_rne": {
+          "max_abs": 0.25,
+          "mean_abs": 0.02539769373834133,
+          "mismatches": 316825,
+          "failures": 60094,
+          "max_tolerance_ratio": 11.126694679260254
+        },
+        "fp32": {
+          "max_abs": 0.25,
+          "mean_abs": 0.019511407241225243,
+          "mismatches": 275655,
+          "failures": 31107,
+          "max_tolerance_ratio": 7.718446254730225
+        }
+      },
+      "native_output_sha256": "3eda988bb0b5eaa3d2da6015e1a51e3b6700bd44c3b51d16e164f48e2e8ada4f",
+      "other_runtime_comparison": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "mismatches": 0,
+        "failures": 0,
+        "max_tolerance_ratio": 0.0
+      },
+      "other_runtime_bytes_equal": true
+    },
+    {
+      "case": "mlp-gate-up-t107/dyadic",
+      "m": 107,
+      "k": 5120,
+      "n": 34816,
+      "status": "passed",
+      "fixture_hash": {
+        "packed": "d0bdc20edd74527b1e3b09217197c7af18fb725fc16a5262becaaffed18f9909",
+        "x": "18c2cbdf025379ff24038f4f1b603e5a0018b70b05f46443b1cc9438df5870f8",
+        "scales": "24093a8848b78cfea9d2a8ffff26a0a2220aeefc41c0570e5490344a16b69000"
+      },
+      "comparisons": {
+        "bf16_rtz": {
+          "max_abs": 0.125,
+          "mean_abs": 8.859709055286658e-07,
+          "mismatches": 411,
+          "failures": 0,
+          "max_tolerance_ratio": 0.694444477558136
+        },
+        "bf16_rne": {
+          "max_abs": 0.125,
+          "mean_abs": 8.859709055286658e-07,
+          "mismatches": 411,
+          "failures": 0,
+          "max_tolerance_ratio": 0.694444477558136
+        },
+        "fp32": {
+          "max_abs": 0.125,
+          "mean_abs": 8.859709055286658e-07,
+          "mismatches": 411,
+          "failures": 0,
+          "max_tolerance_ratio": 0.694444477558136
+        }
+      },
+      "native_output_sha256": "9971604b3e0d33b7f76408c484d3feec719daa182ad45f983fd3194e6c2a4497",
+      "other_runtime_comparison": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "mismatches": 0,
+        "failures": 0,
+        "max_tolerance_ratio": 0.0
+      },
+      "other_runtime_bytes_equal": true
+    },
+    {
+      "case": "mlp-gate-up-t107/random",
+      "m": 107,
+      "k": 5120,
+      "n": 34816,
+      "status": "passed",
+      "fixture_hash": {
+        "packed": "d0bdc20edd74527b1e3b09217197c7af18fb725fc16a5262becaaffed18f9909",
+        "x": "18c2cbdf025379ff24038f4f1b603e5a0018b70b05f46443b1cc9438df5870f8",
+        "scales": "0cf66275767993365086065f1e76a16f470a3627091b38659690fd6bd8429085"
+      },
+      "comparisons": {
+        "bf16_rtz": {
+          "max_abs": 0.125,
+          "mean_abs": 1.9380640878807753e-06,
+          "mismatches": 948,
+          "failures": 0,
+          "max_tolerance_ratio": 0.7142857313156128
+        },
+        "bf16_rne": {
+          "max_abs": 0.25,
+          "mean_abs": 0.02325146086513996,
+          "mismatches": 2153110,
+          "failures": 386599,
+          "max_tolerance_ratio": 11.852678298950195
+        },
+        "fp32": {
+          "max_abs": 0.25,
+          "mean_abs": 0.017880674451589584,
+          "mismatches": 1872276,
+          "failures": 193540,
+          "max_tolerance_ratio": 7.241299152374268
+        }
+      },
+      "native_output_sha256": "fd12d2eed943a03cd1cb4ba66e4e30ce00319f5c6dd924392aeb93026a94647d",
+      "other_runtime_comparison": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "mismatches": 0,
+        "failures": 0,
+        "max_tolerance_ratio": 0.0
+      },
+      "other_runtime_bytes_equal": true
+    },
+    {
+      "case": "mlp-down-t107/dyadic",
+      "m": 107,
+      "k": 17408,
+      "n": 5120,
+      "status": "passed",
+      "fixture_hash": {
+        "packed": "c3aa67317e70132eadb2b9cc0f72947b910e1d59ce4eb963502072246e791d1b",
+        "x": "8fab7f28e5f44ad4122270f35eb5f58e8bcd1ab9cdad2bda65484f227c057b5f",
+        "scales": "be39381a39a40be49148613a9ac843260e5248033b1041d3eadc234dc260a9cc"
+      },
+      "comparisons": {
+        "bf16_rtz": {
+          "max_abs": 0.25,
+          "mean_abs": 3.994349299318856e-06,
+          "mismatches": 135,
+          "failures": 0,
+          "max_tolerance_ratio": 0.7194244861602783
+        },
+        "bf16_rne": {
+          "max_abs": 0.25,
+          "mean_abs": 3.994349299318856e-06,
+          "mismatches": 135,
+          "failures": 0,
+          "max_tolerance_ratio": 0.7194244861602783
+        },
+        "fp32": {
+          "max_abs": 0.25,
+          "mean_abs": 3.994349299318856e-06,
+          "mismatches": 135,
+          "failures": 0,
+          "max_tolerance_ratio": 0.7194244861602783
+        }
+      },
+      "native_output_sha256": "1270334283bb102b238c76e2f7d25fbff62dee5545f9e33301a3b12317baf503",
+      "other_runtime_comparison": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "mismatches": 0,
+        "failures": 0,
+        "max_tolerance_ratio": 0.0
+      },
+      "other_runtime_bytes_equal": true
+    },
+    {
+      "case": "mlp-down-t107/random",
+      "m": 107,
+      "k": 17408,
+      "n": 5120,
+      "status": "passed",
+      "fixture_hash": {
+        "packed": "c3aa67317e70132eadb2b9cc0f72947b910e1d59ce4eb963502072246e791d1b",
+        "x": "8fab7f28e5f44ad4122270f35eb5f58e8bcd1ab9cdad2bda65484f227c057b5f",
+        "scales": "dc381fc15859efe92ed74bffd802167242f3262f5cc956275097086b466a4526"
+      },
+      "comparisons": {
+        "bf16_rtz": {
+          "max_abs": 0.25,
+          "mean_abs": 6.74072134643211e-06,
+          "mismatches": 245,
+          "failures": 0,
+          "max_tolerance_ratio": 0.7518797516822815
+        },
+        "bf16_rne": {
+          "max_abs": 0.5,
+          "mean_abs": 0.042917340993881226,
+          "mismatches": 317039,
+          "failures": 74545,
+          "max_tolerance_ratio": 16.19271469116211
+        },
+        "fp32": {
+          "max_abs": 0.5,
+          "mean_abs": 0.03304839879274368,
+          "mismatches": 276462,
+          "failures": 43808,
+          "max_tolerance_ratio": 9.616198539733887
+        }
+      },
+      "native_output_sha256": "748dfff356082074613845664da4f7ab917245c5674e12602de540e53341406b",
+      "other_runtime_comparison": {
+        "max_abs": 0.0,
+        "mean_abs": 0.0,
+        "mismatches": 0,
+        "failures": 0,
+        "max_tolerance_ratio": 0.0
+      },
+      "other_runtime_bytes_equal": true
+    }
+  ],
+  "evidence_sha256": {
+    "w4-reference-calibrated.py": "3a974bca456e85b7c635745993ff40c736c93fd493cb29c9c0f0d72191d3a8bb",
+    "w4-calibrated-new-matrix.json": "5b9526e639a7ca462ca176b4b6241e9ff2420f3261e58cffaf9549181ce4ccb0",
+    "w4-calibrated-old-matrix.json": "4000cccedbf40d2a4f2b44cd5f10025a13e72e24a6ef27fba722afd54bf5958d",
+    "preliminary-w4-reference.json": "e05a4c9795defc339508942d4115b0e51393e07cab2cfc0f8fe948fd25c3aa6b",
+    "w4-diagnose-old-profile-no-icd.json": "94d2d74c3686121806693b603283b0a198dc8ddd4bae41fa9c01b328ec241788",
+    "w4-diagnose-old-profile-pinned-icd.json": "4309c90a9715734a758f7f2a98c65bc2e7c0245591e95785b4fe99dfbfa4bbfd",
+    "w4-final-installed-matrix.json": "268839598e8932f2f0afdc3febf22c4e12f9fc1a61e7c1dcb41ec77ddccaf585",
+    "w4-final-installed-matrix.log": "7b2d7f8689052400ba3c3aa274beec46f641e218311052dea6eead5b950784e1",
+    "w4-final-installed-matrix.pt": "ecb407791a5c5ada3456821404e5f8ac5a4ec9946e9ad7964f6b57723a46c885",
+    "w4a16-profile-primitives.json": "7bd10a129640c58ae678da3ec97ec73787737b77e76ca71b016e882df605f00a",
+    "w4a16-profile-primitives.log": "84bef44ef36e55cc0e655248adaa33cb801aa7a9a24a07465ee02c7806d9fbf4",
+    "w4a16-bf16-reference.py": "afe3038c73d6a80d1b90024191597a63b622f3bdcb4bb7f3e26977c3cb129063",
+    "w4-diagnose-new-basis-m1.json": "ad66758942715b1a048f704fcfcc056954351966a27472b187b5b7e89b9094b0"
+  },
+  "preliminary_component": {
+    "native_path": "/nix/store/9bbgl650kv0zhync281j4ajj72gzz000-python3.12-vllm-xpu-kernels-base-glue-0.1.15.4+src.8k7jv8c63alnvp72077hkagww9wkmqd1/lib/python3.12/site-packages/vllm_xpu_kernels/_xpu_C.abi3.so",
+    "native_sha256": "2703b6388649eb63044c90428a427d7bfe3e3597b1cd69e98e7e7015a880e69a",
+    "status": "separately tested; final composed DSO differs and was directly retested"
+  },
+  "candidate_runtime": "/nix/store/x70lv8ammab6cam04rz95gqzf202bz22-v031-brutus-qualification-env",
+  "candidate_modules": {
+    "torch": "/nix/store/yv16l8ysyld56xn99xlwpgx7bijagcz8-python3.12-torch-2.14.0+xpu/lib/python3.12/site-packages/torch/__init__.py",
+    "kernels": "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/__init__.py",
+    "native": "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_xpu_C.abi3.so",
+    "reference": "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/quantization/_quantize_convert.py"
+  },
+  "candidate_versions": {
+    "torch": "2.14.0+xpu",
+    "onednn": "3.13.0.N/A",
+    "oneapi": "2026.1.0.192",
+    "compute_runtime": "26.27.39122.11",
+    "device": "Intel(R) Arc(TM) Pro B70 Graphics"
+  },
+  "loaded_native_sha256": {
+    "/nix/store/50my05kqdxx0630hz48f0cdygp42v9ij-intel-graphics-compiler-2.38.2/lib/libigc.so.2.38.0+0": "fa708969ade85cddd99f9221228375ce87fc27e893a3be99e1bfc26925f0a31e",
+    "/nix/store/byb3w06riimppns4lc2v04s01bm3gvlm-intel-oneapi-toolkit-2026.1.0.192/compiler/2026.1/lib/libOpenCL.so.1.0.0": "9e362b438fb646e3ef5e806706d1b4d20c8029571e99552bdf4a55467f09e3b8",
+    "/nix/store/byb3w06riimppns4lc2v04s01bm3gvlm-intel-oneapi-toolkit-2026.1.0.192/compiler/2026.1/lib/libsycl.so.9.0.0": "6f45c9a03cadb2c68ce4d83eea0ebc74750b4ff1a707689ba01846d223ac1074",
+    "/nix/store/gcwa832p0329y80drcqhslmnzhw49bh8-intel-compute-runtime-26.27.39122.11/lib/intel-opencl/libigdrcl.so": "ea81168c31b750918a588cecc249b2f687c72a8f5124d9aac955e79596ead5cd",
+    "/nix/store/sppp6knybbd5svr25z0vjvlci2q6qk85-level-zero-1.32.0/lib/libze_loader.so.1.32.0": "47d238abc97f8b4b8d0a1cb2eca02c3c1ab92e48924f2fbc16b297bb79a4c0c4",
+    "/nix/store/sppp6knybbd5svr25z0vjvlci2q6qk85-level-zero-1.32.0/lib/libze_tracing_layer.so.1.32.0": "4fe7c61f340780f33f6d5c5f509e863a1248a40322b4c7609abbe500e3f9b4ed",
+    "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_vllm_fa2_C.abi3.so": "ad6ef5ef54ea5155a777efca7f4821bacf9cc7480ae42fe4db4c0f224371ad5f",
+    "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_xpu_C.abi3.so": "7076ec3059ab05eb40e777f1edd194f050b78677ae3f0e370641e8cfa5937fc6",
+    "/nix/store/xy29g2sfx27jszwyln8la8hhc666vl9w-intel-compute-runtime-26.27.39122.11-drivers/lib/libze_intel_gpu.so.1.15.39122": "921099f737764028976c0b22f8f9ae6d732cff7e9163d52cf5389f10882a0be6"
+  },
+  "opencl_icd_vendors": "/nix/store/gcwa832p0329y80drcqhslmnzhw49bh8-intel-compute-runtime-26.27.39122.11/etc/OpenCL/vendors",
+  "reference_scope": "Empirically one-hot-validated BF16 RTZ weight rounding on installed B70 implementation; not a universal oneDNN contract or model-quality guarantee.",
+  "profile_primitives": {
+    "status": "passed",
+    "accuracy_reference": false,
+    "scope": "primitive creation/execution with finite BF16 output, without full CPU accuracy reference",
+    "cases": [
+      {
+        "name": "profile-mlp-gate-up-t2048",
+        "m": 2048,
+        "k": 5120,
+        "n": 34816,
+        "status": "native primitive passed",
+        "accuracy_reference": false
+      },
+      {
+        "name": "profile-mlp-down-t2048",
+        "m": 2048,
+        "k": 17408,
+        "n": 5120,
+        "status": "native primitive passed",
+        "accuracy_reference": false
+      }
+    ],
+    "tested_runtime": "/nix/store/cp0c15jk173smzp9d77kgcx36a7ibx1m-v031-brutus-qualification-env"
+  },
+  "post_oneccl_wrapper_verification": {
+    "runtime": "/nix/store/x70lv8ammab6cam04rz95gqzf202bz22-v031-brutus-qualification-env",
+    "passed_cases": 18,
+    "all_old_outputs_byte_identical": true,
+    "evidence_sha256": "bc12acfbd47d399dc440afa939560b4e7057cef7ceb1cc5651468c5db2de4edb",
+    "loaded_native_sha256": {
+      "/nix/store/50my05kqdxx0630hz48f0cdygp42v9ij-intel-graphics-compiler-2.38.2/lib/libigc.so.2.38.0+0": "fa708969ade85cddd99f9221228375ce87fc27e893a3be99e1bfc26925f0a31e",
+      "/nix/store/byb3w06riimppns4lc2v04s01bm3gvlm-intel-oneapi-toolkit-2026.1.0.192/compiler/2026.1/lib/libOpenCL.so.1.0.0": "9e362b438fb646e3ef5e806706d1b4d20c8029571e99552bdf4a55467f09e3b8",
+      "/nix/store/byb3w06riimppns4lc2v04s01bm3gvlm-intel-oneapi-toolkit-2026.1.0.192/compiler/2026.1/lib/libsycl.so.9.0.0": "6f45c9a03cadb2c68ce4d83eea0ebc74750b4ff1a707689ba01846d223ac1074",
+      "/nix/store/gcwa832p0329y80drcqhslmnzhw49bh8-intel-compute-runtime-26.27.39122.11/lib/intel-opencl/libigdrcl.so": "ea81168c31b750918a588cecc249b2f687c72a8f5124d9aac955e79596ead5cd",
+      "/nix/store/sppp6knybbd5svr25z0vjvlci2q6qk85-level-zero-1.32.0/lib/libze_loader.so.1.32.0": "47d238abc97f8b4b8d0a1cb2eca02c3c1ab92e48924f2fbc16b297bb79a4c0c4",
+      "/nix/store/sppp6knybbd5svr25z0vjvlci2q6qk85-level-zero-1.32.0/lib/libze_tracing_layer.so.1.32.0": "4fe7c61f340780f33f6d5c5f509e863a1248a40322b4c7609abbe500e3f9b4ed",
+      "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_vllm_fa2_C.abi3.so": "ad6ef5ef54ea5155a777efca7f4821bacf9cc7480ae42fe4db4c0f224371ad5f",
+      "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f/lib/python3.12/site-packages/vllm_xpu_kernels/_xpu_C.abi3.so": "7076ec3059ab05eb40e777f1edd194f050b78677ae3f0e370641e8cfa5937fc6",
+      "/nix/store/xy29g2sfx27jszwyln8la8hhc666vl9w-intel-compute-runtime-26.27.39122.11-drivers/lib/libze_intel_gpu.so.1.15.39122": "921099f737764028976c0b22f8f9ae6d732cff7e9163d52cf5389f10882a0be6"
+    },
+    "note": "Final wrapper adds only CCL component loader path; source/native hashes unchanged."
+  },
+  "case_evidence_runtime_before_oneccl_fix": "/nix/store/cp0c15jk173smzp9d77kgcx36a7ibx1m-v031-brutus-qualification-env",
+  "evidence_provenance": "Main numerical case rows and profile primitives retain pre-oneCCL-wrapper evidence provenance. Final-wrapper calibrated matrix independently repeated all 18 cases with identical old/new bytes and identical loaded native hashes; see post_oneccl_wrapper_verification. Native artifacts did not change."
+}

@@ -1,0 +1,17 @@
+{
+  "candidate": {
+    "derivation": "/nix/store/wcss1bwi21786idk3mdp13785ky60kyv-python3.12-vllm-xpu-0.31.0+unstable.2026.10.10.gef92dc5.drv",
+    "version": "0.31.0+unstable.2026.10.10.gef92dc5",
+    "unrealized_output_placeholder": "/07ikdzq5m2qapy3rn6nf19p39aqmjx23k8l1spk6gacyi9cjskfb"
+  },
+  "kernels": {
+    "derivation": "/nix/store/76463fj10nb2a4yssrya3wcz9r68pcqq-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f.drv",
+    "version": "0.1.15.4+unstable.2026.10.10.gdbb684f",
+    "unrealized_output_placeholder": "/0z2lqkw5bm839jkl1jwdgvfkcqf1q4j77wlwpqbjv3nn8iwq5dbc"
+  },
+  "runtime": {
+    "derivation": "/nix/store/lmq87nr78gipq4pnc9c1i8869j601jy0-v031-brutus-qualification-env.drv",
+    "unrealized_output_placeholder": "/11gj7yyaxwlpf7dj4jl4n9w7s5n02w5n98gz5vdqk8b1yda5y8hn"
+  },
+  "status": "evaluated; content-addressed outputs not yet realized"
+}

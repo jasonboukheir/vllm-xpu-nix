@@ -1,0 +1,237 @@
+{
+  "status": "both audited integration mains published; installed and full actual Brutus service qualification passed",
+  "sources": {
+    "vllm": {
+      "old_base": "ced6857afa0ea7b2e3f0846a62e1394e90f15607",
+      "old_main": "466b9d5abe84f13c29b38c686e4d77fc09e09aa4",
+      "expected_remote": "466b9d5abe84f13c29b38c686e4d77fc09e09aa4",
+      "target": "db9527a46873454610df6dbedf79a36d6bf1a7f6",
+      "version": "v0.31.0",
+      "commits": [
+        {
+          "sha": "cfbd127232d3121e185eac2d24a9a50ea8141aa0",
+          "parent": "ced6857afa0ea7b2e3f0846a62e1394e90f15607",
+          "subject": "fix(xpu): strip graph padding from GDN index tensors",
+          "patch_id": "73c55934b009279f414f33eb37ce51c9ad43b846"
+        },
+        {
+          "sha": "6efe5e7cc59de64ae8d3ec67bbe77379be34d2c9",
+          "parent": "cfbd127232d3121e185eac2d24a9a50ea8141aa0",
+          "subject": "fix(xpu): stabilize Qwen GDN prefill and mixed scheduling",
+          "patch_id": "b1f78180963d8928e113c17f5418afc7a63517c7"
+        },
+        {
+          "sha": "d909b25f0119419481bc378c3c0a3c656f9b76b0",
+          "parent": "6efe5e7cc59de64ae8d3ec67bbe77379be34d2c9",
+          "subject": "fix(xpu): preserve functional batch-invariant residual RMSNorm",
+          "patch_id": "2db40de80fa6583e1083c2f41979f06b51c3bd08"
+        },
+        {
+          "sha": "984e6c3edda05c4f2dca37703534cb0e69cfa0fa",
+          "parent": "d909b25f0119419481bc378c3c0a3c656f9b76b0",
+          "subject": "fix(xpu): accept explicit unquantized KV cache dtypes",
+          "patch_id": "6f704ef6d098637584d969bf3fe2b27a26615957"
+        },
+        {
+          "sha": "466b9d5abe84f13c29b38c686e4d77fc09e09aa4",
+          "parent": "984e6c3edda05c4f2dca37703534cb0e69cfa0fa",
+          "subject": "feat(xpu): add KVarN cache with compact K4V2 and bundled MTP",
+          "patch_id": "ffe68651f548654af1e078df09d79b6389c9aa3f"
+        }
+      ],
+      "backup_refs": [
+        "refs/heads/backup/main-pre-rebase-v031-20261010",
+        "refs/heads/backup/origin-main-pre-rebase-v031-20261010"
+      ],
+      "backups_published": true,
+      "new_main": "ef92dc5600af64103c01f97e3300b81c3a1083ee",
+      "main_published": true
+    },
+    "vllm-xpu-kernels": {
+      "old_base": "1c7cbeee1cd0c1481d48f5031f679a47f3f0ef45",
+      "old_main": "193cee080d654ff67c4f8bfaf924201bc88b9cf5",
+      "expected_remote": "193cee080d654ff67c4f8bfaf924201bc88b9cf5",
+      "target": "ddf336d86e3c8602888572a3502f951abd51df12",
+      "version": "0.1.15.4",
+      "commits": [
+        {
+          "sha": "98bdbfde3e75f164bc5040574990db843bf888de",
+          "parent": "1c7cbeee1cd0c1481d48f5031f679a47f3f0ef45",
+          "subject": "fix(onednn): make W4A16 matmul deterministic",
+          "patch_id": "7ea50ac3b0ceb331108743cc12894af0bd2fce23"
+        },
+        {
+          "sha": "e1bec3b3e9d0c02cc0e8ce9354d5d2908d51a87f",
+          "parent": "98bdbfde3e75f164bc5040574990db843bf888de",
+          "subject": "fix(attn): avoid instantiating disabled chunk-prefill policies",
+          "patch_id": "a67e39bf2d719c6ffb4a8a0389b3e9d3bfbb6a76"
+        },
+        {
+          "sha": "956b61f95a0b38e73eeebe9cbfeff1be782a9283",
+          "parent": "e1bec3b3e9d0c02cc0e8ce9354d5d2908d51a87f",
+          "subject": "fix(gdn): disable unstable tiled causal-convolution prefill",
+          "patch_id": "f7fd14e5d76964b1426c46ae21f46913f227194d"
+        },
+        {
+          "sha": "3b5deb0773be875a328a1831c5e4a08233460d32",
+          "parent": "956b61f95a0b38e73eeebe9cbfeff1be782a9283",
+          "subject": "fix(gdn): order fresh-state prefill output reads",
+          "patch_id": "be4c0310f7f161dda8916d4d75bfd15db795f471"
+        },
+        {
+          "sha": "9a17a2c8617be2b0471db79fb301912601ee945c",
+          "parent": "3b5deb0773be875a328a1831c5e4a08233460d32",
+          "subject": "fix(gdn): preserve cached decode arithmetic in mixed batches",
+          "patch_id": "21d478c5a5c87f2f04d87acf4cb3b4a0e21e8672"
+        },
+        {
+          "sha": "30fda95e35666948deb3c9bd7fd72aaff9c2ad66",
+          "parent": "9a17a2c8617be2b0471db79fb301912601ee945c",
+          "subject": "fix(gdn): preserve rollback for shortened speculative queries",
+          "patch_id": "a937990b68b5515486ac49363b7879acd876eb7e"
+        },
+        {
+          "sha": "8b6ec9d6a31836e3f19447ec790169655ce7da6a",
+          "parent": "30fda95e35666948deb3c9bd7fd72aaff9c2ad66",
+          "subject": "test(attn): cover native FlashAttention replay determinism",
+          "patch_id": "43a970403358d0f0303a73a99af6367d7a0e5012"
+        },
+        {
+          "sha": "193cee080d654ff67c4f8bfaf924201bc88b9cf5",
+          "parent": "8b6ec9d6a31836e3f19447ec790169655ce7da6a",
+          "subject": "feat(attn): add native KVarN cache and compact K4V2 attention",
+          "patch_id": "4ff4c3eb11770280350fa8f4739b6edee6cacff4"
+        }
+      ],
+      "backup_refs": [
+        "refs/heads/backup/main-pre-rebase-v031-20261010",
+        "refs/heads/backup/origin-main-pre-rebase-v031-20261010"
+      ],
+      "backups_published": true,
+      "new_main": "dbb684f4c9b38a8b3bbf52bda0c490ee47049221",
+      "main_published": true
+    }
+  },
+  "map": [
+    {
+      "repo": "vllm",
+      "old_sha": "cfbd127232d3121e185eac2d24a9a50ea8141aa0",
+      "report": "audits/v01-gdn-padding.md",
+      "disposition": "KEEP",
+      "reason": "Requirement remains uncovered by the selected upstream pair.",
+      "new_sha": "3ecc9a1d4dcf6ce530bc61a45af9bdabf7e450d6",
+      "validation": "Replay and targeted checks passed; installed CPU/native regression coverage passed. See installed-cpu-review.json and native-correctness-review.json; actual service qualification separate."
+    },
+    {
+      "repo": "vllm",
+      "old_sha": "6efe5e7cc59de64ae8d3ec67bbe77379be34d2c9",
+      "report": "audits/v02-gdn-scheduling.md",
+      "disposition": "KEEP",
+      "reason": "Requirement remains uncovered by the selected upstream pair.",
+      "new_sha": "490bf7e42287a65f1d7dfa83ab8100e36d8f006b",
+      "validation": "Replay and targeted checks passed; installed CPU/native regression coverage passed. See installed-cpu-review.json and native-correctness-review.json; actual service qualification separate."
+    },
+    {
+      "repo": "vllm",
+      "old_sha": "d909b25f0119419481bc378c3c0a3c656f9b76b0",
+      "report": "audits/v03-rmsnorm.md",
+      "disposition": "KEEP",
+      "reason": "Requirement remains uncovered by the selected upstream pair.",
+      "new_sha": "41ab2f188262a62e747f126f319f57d56dea9cc4",
+      "validation": "Replay and targeted checks passed; installed CPU/native regression coverage passed. See installed-cpu-review.json and native-correctness-review.json; actual service qualification separate."
+    },
+    {
+      "repo": "vllm",
+      "old_sha": "984e6c3edda05c4f2dca37703534cb0e69cfa0fa",
+      "report": "audits/v04-explicit-kv.md",
+      "disposition": "KEEP",
+      "reason": "Requirement remains uncovered by the selected upstream pair.",
+      "new_sha": "1e1d1471b77014e3a54c7da59b3cf42487ceeaf4",
+      "validation": "Replay and targeted checks passed; installed CPU/native regression coverage passed. See installed-cpu-review.json and native-correctness-review.json; actual service qualification separate."
+    },
+    {
+      "repo": "vllm",
+      "old_sha": "466b9d5abe84f13c29b38c686e4d77fc09e09aa4",
+      "report": "audits/v05-kvarn.md",
+      "disposition": "ADAPT",
+      "reason": "Preserve upstream allocator/checkpoint/DCP/alignment behavior; forward prefill_end and use spec-aware KVarN block-size API.",
+      "new_sha": "ef92dc5600af64103c01f97e3300b81c3a1083ee",
+      "validation": "Replay and targeted checks passed; installed CPU/native regression coverage passed. See installed-cpu-review.json and native-correctness-review.json; actual service qualification separate."
+    },
+    {
+      "repo": "vllm-xpu-kernels",
+      "old_sha": "98bdbfde3e75f164bc5040574990db843bf888de",
+      "report": "audits/k01-deterministic-matmul.md",
+      "disposition": "KEEP",
+      "reason": "Requirement remains uncovered by the selected upstream pair.",
+      "new_sha": "dcbbeac2f2453948471569de43a33ded09fae0f8",
+      "validation": "Replay and targeted checks passed; installed CPU/native regression coverage passed. See installed-cpu-review.json and native-correctness-review.json; actual service qualification separate."
+    },
+    {
+      "repo": "vllm-xpu-kernels",
+      "old_sha": "e1bec3b3e9d0c02cc0e8ce9354d5d2908d51a87f",
+      "report": "audits/k02-build-policy.md",
+      "disposition": "DROP",
+      "reason": "Retire unmeasured early template-dispatch pruning; no effect for host profile; gate on host and narrow FA2 builds.",
+      "new_sha": null,
+      "validation": "Host full-profile native build and narrow 4/12-policy attention build passed without dispatcher pruning; see native-build-review.json."
+    },
+    {
+      "repo": "vllm-xpu-kernels",
+      "old_sha": "956b61f95a0b38e73eeebe9cbfeff1be782a9283",
+      "report": "audits/k03-untiled-conv.md",
+      "disposition": "KEEP",
+      "reason": "Requirement remains uncovered by the selected upstream pair.",
+      "new_sha": "7a1af6693963e91b3e63c119501ce5ea8fbfa955",
+      "validation": "Replay and targeted checks passed; installed CPU/native regression coverage passed. See installed-cpu-review.json and native-correctness-review.json; actual service qualification separate."
+    },
+    {
+      "repo": "vllm-xpu-kernels",
+      "old_sha": "3b5deb0773be875a328a1831c5e4a08233460d32",
+      "report": "audits/k04-gdn-barrier.md",
+      "disposition": "KEEP",
+      "reason": "Requirement remains uncovered by the selected upstream pair.",
+      "new_sha": "2322b830903a4a0d0d8e4c113b7e2acc5c7967cb",
+      "validation": "Replay and targeted checks passed; installed CPU/native regression coverage passed. See installed-cpu-review.json and native-correctness-review.json; actual service qualification separate."
+    },
+    {
+      "repo": "vllm-xpu-kernels",
+      "old_sha": "9a17a2c8617be2b0471db79fb301912601ee945c",
+      "report": "audits/k05-mixed-arithmetic.md",
+      "disposition": "KEEP",
+      "reason": "Requirement remains uncovered by the selected upstream pair.",
+      "new_sha": "7bc80d1569bedeb8f4adceb43524fbc1b4d07516",
+      "validation": "Replay and targeted checks passed; installed CPU/native regression coverage passed. See installed-cpu-review.json and native-correctness-review.json; actual service qualification separate."
+    },
+    {
+      "repo": "vllm-xpu-kernels",
+      "old_sha": "30fda95e35666948deb3c9bd7fd72aaff9c2ad66",
+      "report": "audits/k06-ragged-speculation.md",
+      "disposition": "ADAPT",
+      "reason": "Upstream f4b729a replaces native ragged-speculation code. Keep test-only storage/rollback guards; remove unnecessary split_mixed_non_spec argument.",
+      "new_sha": "c75a699930db98a3c77e4d6498892734e624b3a5",
+      "validation": "Replay and targeted checks passed; installed CPU/native regression coverage passed. See installed-cpu-review.json and native-correctness-review.json; actual service qualification separate."
+    },
+    {
+      "repo": "vllm-xpu-kernels",
+      "old_sha": "8b6ec9d6a31836e3f19447ec790169655ce7da6a",
+      "report": "audits/k07-native-reference.md",
+      "disposition": "KEEP",
+      "reason": "Requirement remains uncovered by the selected upstream pair.",
+      "new_sha": "2e7f76c799e3c8b68b4ae93d8c3e8eb65a525454",
+      "validation": "Replay and targeted checks passed; installed CPU/native regression coverage passed. See installed-cpu-review.json and native-correctness-review.json; actual service qualification separate."
+    },
+    {
+      "repo": "vllm-xpu-kernels",
+      "old_sha": "193cee080d654ff67c4f8bfaf924201bc88b9cf5",
+      "report": "audits/k08-kvarn-native.md",
+      "disposition": "KEEP",
+      "reason": "Requirement remains uncovered by the selected upstream pair.",
+      "new_sha": "dbb684f4c9b38a8b3bbf52bda0c490ee47049221",
+      "validation": "Replay and targeted checks passed; installed CPU/native regression coverage passed. See installed-cpu-review.json and native-correctness-review.json; actual service qualification separate."
+    }
+  ],
+  "candidate_release": "xpu-v1.12.0",
+  "native_delta_reduction": "Drop k02 production code and k06 native hunks; keep supported behavior and test coverage.",
+  "hook_substitution": "vLLM pre-commit hook referenced missing /tmp interpreter and pre-commit unavailable; pinned Nix Ruff lint/format, Python compilation and diff --check substituted. No hook pass claimed."
+}

@@ -1,0 +1,342 @@
+{
+  "schema_version": 1,
+  "status": "completed",
+  "recorded_utc": "2026-10-10T10:26:33.447119+00:00",
+  "server_run": "brutus-api-02",
+  "package": "/nix/store/mcyp3ljp8yl1hwfllnfzf22mw3j1z42y-python3.12-vllm-xpu-0.31.0+unstable.2026.10.10.gef92dc5",
+  "runtime_identity": {
+    "candidate": {
+      "derivation": "/nix/store/gkr9g6s5bsi0zkyfnnss6r2z9h481yby-python3.12-vllm-xpu-0.31.0+unstable.2026.10.10.gef92dc5.drv",
+      "version": "0.31.0+unstable.2026.10.10.gef92dc5",
+      "output": "/nix/store/mcyp3ljp8yl1hwfllnfzf22mw3j1z42y-python3.12-vllm-xpu-0.31.0+unstable.2026.10.10.gef92dc5"
+    },
+    "kernels": {
+      "derivation": "/nix/store/76463fj10nb2a4yssrya3wcz9r68pcqq-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f.drv",
+      "output": "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f",
+      "version": "0.1.15.4+unstable.2026.10.10.gdbb684f"
+    },
+    "runtime": {
+      "derivation": "/nix/store/p4zfny6pfqm2c6cwfkva3xb2bnhi7yss-v031-brutus-qualification-env.drv",
+      "output": "/nix/store/x70lv8ammab6cam04rz95gqzf202bz22-v031-brutus-qualification-env"
+    },
+    "status": "built and foreground qualification passed"
+  },
+  "model": "RedHatAI/Qwen3.8-27B-INT4",
+  "model_revision": "bf08f3dbd9a324e53956920aad378a1f1b6dd24a",
+  "profile": "Exact Brutus eager V1, K4V2 target and MTP2 draft, max_model_len=262144, max_num_seqs=4, max_num_batched_tokens=2048, two images, prefix cache off, GPU utilization 0.96. See foreground-qualification-review.json for complete arguments/environment.",
+  "collector": {
+    "method": "Read-only /proc/<pid>/fdinfo for members of the owned launcher process group; unique DRM clients keyed by PCI device and drm-client-id within each sample. No GPU work is submitted by the sampler.",
+    "configured_interval_seconds": 0.5,
+    "sample_count": 2838,
+    "samples_with_errors": 0,
+    "samples_without_clients": 9,
+    "elapsed_sample_span_seconds": 1478.944613456726,
+    "actual_interval_seconds": {
+      "minimum": 0.5177972316741943,
+      "median": 0.5207161903381348,
+      "maximum": 0.7919273376464844
+    },
+    "clients": {
+      "0000:03:00.0:1631": {
+        "pci_device": "0000:03:00.0",
+        "driver": "xe",
+        "pid": 3683630
+      },
+      "0000:03:00.0:1633": {
+        "pci_device": "0000:03:00.0",
+        "driver": "xe",
+        "pid": 3683630
+      },
+      "0000:03:00.0:1645": {
+        "pci_device": "0000:03:00.0",
+        "driver": "xe",
+        "pid": 3683732
+      },
+      "0000:03:00.0:1647": {
+        "pci_device": "0000:03:00.0",
+        "driver": "xe",
+        "pid": 3683732
+      }
+    },
+    "completion_log": "Owned foreground memory sampling complete",
+    "owner_reported_monitor_exitcode": 0
+  },
+  "aggregation": "For each sample, convert KiB fields to bytes and sum distinct owned DRM clients. Take the maximum of those simultaneous sums. Do not sum different clients' independent peaks. Fields are reported independently; VRAM, GTT and system figures are not added.",
+  "overall": {
+    "samples": 2838,
+    "samples_with_clients": 2829,
+    "first_sample_utc": "2026-10-10T09:59:36.872396+00:00",
+    "last_sample_utc": "2026-10-10T10:24:15.817010+00:00",
+    "peak_summed_client_bytes": {
+      "drm-resident-vram0": {
+        "bytes": 31762010112,
+        "gib": 29.580677,
+        "sampled_utc": "2026-10-10T10:24:03.823662+00:00"
+      },
+      "drm-total-vram0": {
+        "bytes": 31762010112,
+        "gib": 29.580677,
+        "sampled_utc": "2026-10-10T10:24:03.823662+00:00"
+      },
+      "drm-resident-system": {
+        "bytes": 3424256,
+        "gib": 0.003189,
+        "sampled_utc": "2026-10-10T10:02:34.719636+00:00"
+      },
+      "drm-resident-gtt": {
+        "bytes": 2715172864,
+        "gib": 2.528702,
+        "sampled_utc": "2026-10-10T10:00:13.031431+00:00"
+      },
+      "drm-shared-vram0": {
+        "bytes": 0,
+        "gib": 0.0,
+        "sampled_utc": "2026-10-10T09:59:36.872396+00:00"
+      }
+    }
+  },
+  "windows": {
+    "startup_before_http_ready": {
+      "samples": 302,
+      "samples_with_clients": 295,
+      "first_sample_utc": "2026-10-10T09:59:36.872396+00:00",
+      "last_sample_utc": "2026-10-10T10:02:14.869370+00:00",
+      "peak_summed_client_bytes": {
+        "drm-resident-vram0": {
+          "bytes": 31328804864,
+          "gib": 29.177223,
+          "sampled_utc": "2026-10-10T10:02:10.686690+00:00"
+        },
+        "drm-total-vram0": {
+          "bytes": 31328804864,
+          "gib": 29.177223,
+          "sampled_utc": "2026-10-10T10:02:10.686690+00:00"
+        },
+        "drm-resident-system": {
+          "bytes": 2371584,
+          "gib": 0.002209,
+          "sampled_utc": "2026-10-10T10:01:38.278472+00:00"
+        },
+        "drm-resident-gtt": {
+          "bytes": 2715172864,
+          "gib": 2.528702,
+          "sampled_utc": "2026-10-10T10:00:13.031431+00:00"
+        },
+        "drm-shared-vram0": {
+          "bytes": 0,
+          "gib": 0.0,
+          "sampled_utc": "2026-10-10T09:59:36.872396+00:00"
+        }
+      }
+    },
+    "ready_before_correctness_suite": {
+      "samples": 16,
+      "samples_with_clients": 16,
+      "first_sample_utc": "2026-10-10T10:02:15.391954+00:00",
+      "last_sample_utc": "2026-10-10T10:02:23.230147+00:00",
+      "peak_summed_client_bytes": {
+        "drm-resident-vram0": {
+          "bytes": 31328804864,
+          "gib": 29.177223,
+          "sampled_utc": "2026-10-10T10:02:15.391954+00:00"
+        },
+        "drm-total-vram0": {
+          "bytes": 31328804864,
+          "gib": 29.177223,
+          "sampled_utc": "2026-10-10T10:02:15.391954+00:00"
+        },
+        "drm-resident-system": {
+          "bytes": 929792,
+          "gib": 0.000866,
+          "sampled_utc": "2026-10-10T10:02:15.391954+00:00"
+        },
+        "drm-resident-gtt": {
+          "bytes": 45301760,
+          "gib": 0.042191,
+          "sampled_utc": "2026-10-10T10:02:15.391954+00:00"
+        },
+        "drm-shared-vram0": {
+          "bytes": 0,
+          "gib": 0.0,
+          "sampled_utc": "2026-10-10T10:02:15.391954+00:00"
+        }
+      }
+    },
+    "correctness_suite": {
+      "samples": 2414,
+      "samples_with_clients": 2414,
+      "first_sample_utc": "2026-10-10T10:02:23.753448+00:00",
+      "last_sample_utc": "2026-10-10T10:23:20.573664+00:00",
+      "peak_summed_client_bytes": {
+        "drm-resident-vram0": {
+          "bytes": 31759650816,
+          "gib": 29.57848,
+          "sampled_utc": "2026-10-10T10:20:53.657681+00:00"
+        },
+        "drm-total-vram0": {
+          "bytes": 31759650816,
+          "gib": 29.57848,
+          "sampled_utc": "2026-10-10T10:20:53.657681+00:00"
+        },
+        "drm-resident-system": {
+          "bytes": 3424256,
+          "gib": 0.003189,
+          "sampled_utc": "2026-10-10T10:02:34.719636+00:00"
+        },
+        "drm-resident-gtt": {
+          "bytes": 81477632,
+          "gib": 0.075882,
+          "sampled_utc": "2026-10-10T10:02:31.055119+00:00"
+        },
+        "drm-shared-vram0": {
+          "bytes": 0,
+          "gib": 0.0,
+          "sampled_utc": "2026-10-10T10:02:23.753448+00:00"
+        }
+      }
+    },
+    "after_correctness_suite_including_benchmark_a_and_shutdown": {
+      "samples": 106,
+      "samples_with_clients": 104,
+      "first_sample_utc": "2026-10-10T10:23:21.096143+00:00",
+      "last_sample_utc": "2026-10-10T10:24:15.817010+00:00",
+      "peak_summed_client_bytes": {
+        "drm-resident-vram0": {
+          "bytes": 31762010112,
+          "gib": 29.580677,
+          "sampled_utc": "2026-10-10T10:24:03.823662+00:00"
+        },
+        "drm-total-vram0": {
+          "bytes": 31762010112,
+          "gib": 29.580677,
+          "sampled_utc": "2026-10-10T10:24:03.823662+00:00"
+        },
+        "drm-resident-system": {
+          "bytes": 3162112,
+          "gib": 0.002945,
+          "sampled_utc": "2026-10-10T10:23:21.096143+00:00"
+        },
+        "drm-resident-gtt": {
+          "bytes": 81477632,
+          "gib": 0.075882,
+          "sampled_utc": "2026-10-10T10:23:21.096143+00:00"
+        },
+        "drm-shared-vram0": {
+          "bytes": 0,
+          "gib": 0.0,
+          "sampled_utc": "2026-10-10T10:23:21.096143+00:00"
+        }
+      }
+    }
+  },
+  "logged_kv_allocation": {
+    "paged_allocated_bytes": 5004625920,
+    "pools": [
+      {
+        "allocated": 2026831872,
+        "block_sizes": [
+          262144
+        ],
+        "id": 0,
+        "layers": 48,
+        "max_request_blocks": 3,
+        "null_blocks": 1,
+        "page_sizes": [
+          3248128
+        ],
+        "physical_blocks": 13,
+        "types": [
+          "MambaSpec"
+        ],
+        "usable_blocks": 12
+      },
+      {
+        "allocated": 5004625920,
+        "block_sizes": [
+          128
+        ],
+        "id": 1,
+        "layers": 17,
+        "max_request_blocks": 2048,
+        "null_blocks": 1,
+        "page_sizes": [
+          107520
+        ],
+        "physical_blocks": 2738,
+        "types": [
+          "FullAttentionSpec"
+        ],
+        "usable_blocks": 2737
+      }
+    ],
+    "recurrent_allocated_bytes": 2026831872,
+    "usable_tokens": 350336
+  },
+  "capacity_measurement": {
+    "prompt_tokens_each": 174079,
+    "generated_tokens_each": 512,
+    "combined_processed_prompt_fraction": 0.9937831110705152,
+    "peak_attention_usage": 0.9967117281695287,
+    "minimum_occupied_attention_blocks": 2728,
+    "minimum_occupied_attention_tokens": 349184,
+    "new_usable_attention_tokens": 350336,
+    "non_attention_usage_upper_bound": 0.5,
+    "both_prefilled_before_either_last_token": true
+  },
+  "separate_benchmark": {
+    "path": "performance/mtp2-01/summary.json",
+    "status": "completed",
+    "sha256": "cc2a4ef7cad65e0552cbb83bb7f4e71edc83d7b7a6e63223b4479c490f332201",
+    "scope": "Benchmark A ran after correctness and before shutdown, so its allocations are included in the overall samples. This memory report makes no performance comparison."
+  },
+  "evidence": {
+    "brutus-api-02/memory-fdinfo.jsonl": {
+      "sha256": "1fa07202e1e525a64fbf2d0d6f6774a4cb80af26f772d9fceaeb8b552cf5796b",
+      "bytes": 11374971
+    },
+    "brutus-api-02/memory-monitor.log": {
+      "sha256": "41944e4beae16b88313592a22ec5e2ba472c306af96a3b1a6d539fb2afa93143",
+      "bytes": 42
+    },
+    "brutus-api-02/service.log": {
+      "sha256": "49a9c98d8090e85fbe81d7e3edccf896d85cabb7008adc9cae60d686b67bf511",
+      "bytes": 929759
+    },
+    "brutus-api-02/manifest.json": {
+      "sha256": "942e0bcc020c037ecd9058c8e4c4f0971518da294cf8cebe6a806e54e44adef7",
+      "bytes": 3854
+    },
+    "brutus-api-02/plan.json": {
+      "sha256": "6d22aca635c28ce211a4b6a0c6d1223d15b5e2798fe05e7b7b8eea64c2a48593",
+      "bytes": 74
+    },
+    "service-tests-01/status.json": {
+      "sha256": "cd3f6bc836c33639a772fe104d59e26f4c01a689920585beeb2e755c8707936e",
+      "bytes": 882
+    },
+    "service-tests-01/draft_capacity/summary.json": {
+      "sha256": "ee1e2808ef0ecc5f2629c31b00c34ce2db0bee78f82630ae10cefd1c4dcf0071",
+      "bytes": 25152
+    },
+    "monitor-foreground.py": {
+      "sha256": "08b0453b15622b9b31b8e542f277872eea18d88e6748f495be77c904e003adf7",
+      "bytes": 826
+    },
+    "scripts/kvarn_vision_run.py": {
+      "sha256": "2740c0b0265dbde5b4152a4254d0e05990bb2c2846086c995d5cd660d613cb10",
+      "bytes": 35540
+    },
+    "scripts/kvarn_perf_run.py": {
+      "sha256": "ea724304d7ab59c888aa0387c28e56a164bee17fa82abd589da5a658c0858d84",
+      "bytes": 199067
+    }
+  },
+  "limitations": [
+    "Owned-process DRM accounting only, not total device utilization or host process RSS. Other clients and unreported driver allocations are excluded.",
+    "The roughly half-second sampler can miss transient peaks; recorded maxima are observed values, not a guaranteed upper bound.",
+    "Distinct clients are deduplicated within each sample. drm-shared-vram0 was zero throughout; summing client totals does not establish total physical-device usage.",
+    "drm-total-vram0 and drm-resident-vram0 are separate counters even where values agree; system/GTT counters can describe distinct or related mappings and are not combined.",
+    "Pool allocation bytes are startup allocations from the server log. Attention usage is a separate page-occupancy gauge, not a measurement of physical VRAM resident bytes.",
+    "This is one successful foreground run with correctness work plus benchmark A; no memory improvement versus the previous release is claimed."
+  ]
+}

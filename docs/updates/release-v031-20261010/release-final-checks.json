@@ -1,0 +1,43 @@
+{
+  "status": "passed",
+  "release": "xpu-v1.12.0",
+  "lightweight_checks": [
+    {
+      "drvPath": "/nix/store/sdvw3khwldqlrbikk5aijykmwcypacfh-vllm-xpu-nix-formatting.drv",
+      "outputs": {
+        "out": "/nix/store/2bgazfjxy3vvdlqmk9fymy4cpajw0cgg-vllm-xpu-nix-formatting"
+      }
+    },
+    {
+      "drvPath": "/nix/store/6v6yq7lfl9h9vzmf1j8vmc4ldzbd8rcq-kernel-build-parallelism.drv",
+      "outputs": {
+        "out": "/nix/store/jcfvrqivqv5ii05df6wzv6c36hrp9gzq-kernel-build-parallelism"
+      }
+    },
+    {
+      "drvPath": "/nix/store/9acvjfyh6xncjjmszdln0w0dl6gjgi54-kernel-glue-cache-identity.json.drv",
+      "outputs": {
+        "out": "/nix/store/c1wi7vb2rp9i5zhq31vfajn6r6qslx3k-kernel-glue-cache-identity.json"
+      }
+    },
+    {
+      "drvPath": "/nix/store/rndp3w2i0akbd2fnawxcq708nyrd5f61-kernel-lib-cache-identity.json.drv",
+      "outputs": {
+        "out": "/nix/store/binj41m90g7j1kqkgxikv7cyg4wlbwd4-kernel-lib-cache-identity.json"
+      }
+    }
+  ],
+  "log_sha256": "0bec389b4ae9b23d9c9d8ed26337954d31957ffd3b54736e06b17f0e347d420d",
+  "checks": [
+    "Nix formatting check",
+    "kernel build parallelism",
+    "kernel glue cache identity",
+    "kernel library cache identity",
+    "Pinned nixfmt 1.4 checks all eight changed Nix files",
+    "git diff --check"
+  ],
+  "installed_validation": "608 packaging;660 CPU+14 CUDA-only skips;724 native/backend;18 calibrated W4 references. Final package unchanged after release tag pin.",
+  "foreground_suite": "All six actual Brutus stages passed; keep MTP2 after matched performance screen.",
+  "source_checks": "Retained kernel patch IDs verified;73 changed vLLM Python files compiled and passed pinned Ruff lint/format. Broken original source pre-commit interpreter bypass documented in audit.",
+  "cleanup": "vllm-xpu-chat.service {'ActiveState': 'failed', 'MainPID': '0'}\nvllm-xpu-embedding.service {'ActiveState': 'inactive', 'MainPID': '0'}\nvllm-xpu-stt.service {'ActiveState': 'inactive', 'MainPID': '0'}\n{\"free_vram_bytes\": 34032697344, \"total_vram_bytes\": 34242297856, \"port\": 18000, \"clear\": true}\n"
+}

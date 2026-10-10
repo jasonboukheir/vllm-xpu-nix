@@ -99,17 +99,17 @@
     "vllm-xpu-kernels-unstable-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1790139024,
-        "narHash": "sha256-qq+cVLZrMfBZ8J8qikV46atQynsMZDv/Cqv6smnwZUI=",
-        "ref": "refs/tags/xpu-v1.11.0",
-        "rev": "193cee080d654ff67c4f8bfaf924201bc88b9cf5",
-        "revCount": 389,
+        "lastModified": 1791620554,
+        "narHash": "sha256-v+vBY8x3L8cILKz4j12dVV3Ar4Fk4Gj4vTDkr5tpOZg=",
+        "ref": "refs/tags/xpu-v1.12.0",
+        "rev": "dbb684f4c9b38a8b3bbf52bda0c490ee47049221",
+        "revCount": 392,
         "submodules": true,
         "type": "git",
         "url": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm-xpu-kernels.git"
       },
       "original": {
-        "ref": "refs/tags/xpu-v1.11.0",
+        "ref": "refs/tags/xpu-v1.12.0",
         "submodules": true,
         "type": "git",
         "url": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm-xpu-kernels.git"
@@ -135,16 +135,16 @@
     "vllm-xpu-unstable-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1790139044,
-        "narHash": "sha256-i67X1QTia36S2opxOz27H2gBkuVG/kXlY6+rsGu2y7s=",
-        "ref": "refs/tags/xpu-v1.11.0",
-        "rev": "466b9d5abe84f13c29b38c686e4d77fc09e09aa4",
-        "revCount": 21408,
+        "lastModified": 1791621265,
+        "narHash": "sha256-AQsg5fDPJpwOxo4Yq8rrzfNWB/GsCbYBqfLGuWqf0ho=",
+        "ref": "refs/tags/xpu-v1.12.0",
+        "rev": "ef92dc5600af64103c01f97e3300b81c3a1083ee",
+        "revCount": 22125,
         "type": "git",
         "url": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm.git"
       },
       "original": {
-        "ref": "refs/tags/xpu-v1.11.0",
+        "ref": "refs/tags/xpu-v1.12.0",
         "type": "git",
         "url": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm.git"
       }

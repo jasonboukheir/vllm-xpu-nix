@@ -528,8 +528,8 @@ publishes its release manifest. Otherwise preserve the reproducible candidate
 and its qualification record for a later release invocation.
 
 The packaging `main` branch carries integration work. Stable deployment uses
-the coordinated immutable packaging tag published in section 7, whose source
-inputs also reference the coordinated immutable source tags.
+the permanent packaging release branch published in section 7 (or its matching
+annotated tag when requested), whose source inputs reference coordinated source tags.
 
 ## 6. Qualify on Brutus and perform the requested release handoff
 
@@ -550,9 +550,9 @@ and deployment handoff; a default main refresh ends after qualification:
 1. Refresh and evaluate the local `vllm-xpu-nix` candidate, but do not publish
    its release or change the Brutus lock yet.
 1. Enter the maintenance handoff below, build the candidate, and run its
-   Brutus-derived foreground app on Brutus.
+   Brutus-derived foreground process on Brutus.
 1. Exercise the local APIs and repeat the source-fix, lock-refresh, build, and
-   foreground-app loop until it passes.
+   foreground-test loop until it passes.
 1. Commit and publish the passing `vllm-xpu-nix` candidate and coordinated
    release references.
 1. Update only the Brutus `vllm-xpu-release` lock input and prove the host package
@@ -675,21 +675,49 @@ artifacts. Keep raw qualification output in an ignored directory with private
 permissions, and publish only reviewed release metadata and synthetic results.
 
 Run that package with the chat environment and serve arguments derived from the
-Brutus NixOS configuration:
+current Brutus NixOS configuration. First inspect the flake's `apps` output:
+`vllm-xpu-brutus` may be only a package. The historical foreground app was
+removed at host commit `dc05414a`; `nix run .#vllm-xpu-brutus -- "$candidate_package"`
+then passes a package path to the ordinary vLLM CLI and is not a test launcher.
+
+When a dedicated foreground app exists, inspect and use it. Otherwise evaluate
+the current unit recipe into a private qualification directory:
 
 ```bash
-cd ~/.config/nix
-nix run .#vllm-xpu-brutus -- "$candidate_package"
+nix eval --impure --json --expr '
+  let
+    f = builtins.getFlake "git+file:///home/jasonbk/.config/nix";
+    c = f.nixosConfigurations.brutus.config;
+    s = c.systemd.services.vllm-xpu-chat;
+  in {
+    package = toString c.services.vllm-xpu.package;
+    command = s.serviceConfig.ExecStart;
+    environment = s.environment;
+    serviceConfig = builtins.removeAttrs s.serviceConfig [ "ExecStart" "Environment" ];
+  }'
 ```
 
-The app forces the chat instance on for testing even if deployment is
-temporarily disabled, substitutes the candidate package, and otherwise reuses
-the generated `vllm-xpu-chat.service` command and environment. It also uses the
-same shared `HF_HOME`; only its writable runtime compilation directory is kept
-under the invoking user's cache. Leave it running while testing
-`127.0.0.1:8000`, and stop it with Ctrl-C before the next candidate build or
-the final NixOS rebuild. Any other enabled model workers should be started
-separately so the foreground test reproduces their GPU residency.
+If the chat unit is absent because it is disabled, evaluate a temporary
+configuration extension enabling just that instance; leave the host checkout
+and deployed units unchanged. Inspect the actual unit's `EnvironmentFile` and
+other execution settings before treating its inline environment as complete.
+
+Create a foreground launcher from the evaluated recipe. Parse the generated
+command into arguments without shell evaluation, verify its executable, and
+replace only that executable with the realized candidate's `bin/vllm`. Use the
+unit environment and the same shared `HF_HOME`; put writable `HOME` and
+`VLLM_CACHE_ROOT` in a private user-owned qualification cache. Clear inherited
+experimental `VLLM_*`/`KVARN_*`, `PYTHONPATH`, and harness-only driver overrides
+before applying the unit environment so the package wrapper's defaults are
+actually exercised. Record the exact command, effective service environment,
+package derivation, and deliberate test overrides. Preserve runtime caches
+across retries and use a fresh log/manifest directory for each start.
+
+Verify the production workers are stopped and the test port is unused, then
+keep the foreground process running during API qualification. Stop only owned
+test processes with Ctrl-C before the final NixOS rebuild. Any other enabled
+model workers should be started separately so the test reproduces their GPU
+residency. Do not start intentionally disabled instances.
 
 When the production port has other callers, append an unused local test port,
 for example `--port 18000`, to the foreground command and point every probe and
@@ -715,9 +743,9 @@ make qualification pass. Capture the failure first. If an adjustment is needed,
 explain its effect and use existing user authorization or obtain the missing
 choice before changing the requested profile.
 
-Failures in this foreground app do not require a host rebuild. Fix the relevant
+Failures in this foreground process do not require a host rebuild. Fix the relevant
 source fork, commit and publish that source commit, update the local packaging
-lock, rebuild, and run the app again. Do not move a coordinated release branch
+lock, rebuild, and launch the foreground process again. Do not move a coordinated release branch
 or the Brutus lock until this loop passes.
 
 After updating the host lock, compare derivations before rebuilding:
@@ -742,13 +770,15 @@ match, the expensive output is already in Brutus's Nix store and the later
 system rebuild reuses it without recompiling the stack.
 
 Do not point Brutus at packaging `main` during candidate testing; the foreground
-app is the integration environment. After section 7 publishes the passing
+process is the integration environment. After section 7 publishes the passing
 coordinated release, change `vllm-xpu-release.ref` in
-`modules/flake/nixos/server/flake.nix` directly to the new immutable
-`refs/tags/xpu-vMAJOR.MINOR.PATCH`. Remove any temporary nested vLLM or
-kernel source-input overrides at the same time; otherwise they replace the
-release manifest's coordinated source refs with their default branches. Then
-update only the release input:
+`modules/flake/nixos/server/flake.nix` directly to the new permanent release
+branch `refs/heads/releases/xpu-vMAJOR.MINOR.PATCH`, as preferred by the operator.
+The matching annotated tag is also valid when explicitly requested. Neither
+release reference is ever moved. Remove temporary nested overrides to source
+main branches. Preserve transport-only HTTPS overrides needed for anonymous
+fetches, updating their exact source tags to match the release manifest and
+verifying the same source revisions and hashes. Then update only the release input:
 
 ```bash
 cd ~/.config/nix/modules/flake/nixos/server
@@ -816,7 +846,7 @@ When a build, startup, or API failure occurs:
    A compatible fix on the same upstream baseline is a patch; adopting a new
    upstream baseline requires a minor or major bump. Never modify an existing
    release reference.
-1. Refresh the scoped Brutus lock to that new tag and rebuild again.
+1. Refresh the scoped Brutus lock to that new release reference and rebuild again.
 
 Commit each repair before asking for the next rebuild so every tested candidate
 is reproducible. Repeat the handoff, rebuild, live API test, and repair cycle
@@ -886,7 +916,7 @@ Do not encode stable stack releases as `20.2.1-nix.3`: SemVer interprets that as
 a prerelease of `20.2.1`. SemVer also ignores `+nix.3` build metadata for version
 ordering, so that suffix cannot replace an ordered stack release version. The
 rolling `main` branches and immutable stable tags describe release channels;
-Brutus follows a specific qualified stable tag.
+Brutus follows a specific qualified permanent release branch (or its matching tag).
 
 ### Publish immutable references
 
@@ -1008,11 +1038,11 @@ SHAs in all three repositories. Record partial publication if any operation
 fails; never force or retarget existing references to repair it. Configure
 Forgejo protection for `releases/xpu-v*` and `xpu-v*` when practical.
 
-When deployment is requested, pin Brutus's `vllm-xpu-release.ref` to the **packaging tag**
-`refs/tags/$version`, remove temporary nested source overrides, and perform the
-scoped lock update, evaluation, derivation comparison, and operator rebuild
-handoff from section 6. Do not deploy packaging `main` or a movable source branch
-as the stable release.
+When deployment is requested, pin Brutus's `vllm-xpu-release.ref` to the permanent
+**packaging release branch** `refs/heads/releases/$version` (or the matching tag
+when requested). Apply the nested-source override policy and scoped lock update
+from section 6, evaluate, compare derivations, and prepare the operator rebuild
+handoff. Do not deploy packaging `main` or a movable source branch as the stable release.
 
 ### Patch an existing coordinated release
 
@@ -1024,7 +1054,7 @@ new working branch from the preserved release when appropriate. Apply a relevant
 fix to rolling `main` as well, but treat publishing that newer baseline as its
 own minor or major release. Follow the full publication sequence above, tagging
 unchanged source commits with the same new coordinated version, then update
-packaging's source tag refs. Update Brutus's packaging tag ref only when its
+packaging's source tag refs. Update Brutus's packaging release ref only when its
 repin/deployment is requested. All previous release branches, tags, and manifests remain
 unchanged.
 

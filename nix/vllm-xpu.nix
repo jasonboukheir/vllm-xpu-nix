@@ -84,7 +84,6 @@ let
       numba
       numpy
       openai
-      openai-harmony
       opencv-python-headless
       opentelemetry-api
       opentelemetry-exporter-otlp
@@ -117,6 +116,14 @@ let
       typing-extensions
       watchfiles
       xgrammar
+    ]
+    ++ [
+      (
+        if lib.versionAtLeast version "0.31.0" then
+          python3Packages.oss-harmony
+        else
+          python3Packages.openai-harmony
+      )
     ]
     ++ lib.optional withTorchvision python3Packages.torchvision
     ++ lib.optionals withAudio [
@@ -164,6 +171,11 @@ python3Packages.buildPythonPackage {
   # at engine init. Match the sitedirs the inline block already injects: vllm
   # itself plus the propagated deps.
   makeWrapperArgs = [
+    # oneDNN's Level Zero kernels also discover the matching OpenCL device.
+    # Loading its shared library alone does not register an ICD provider.
+    "--set-default OCL_ICD_VENDORS ${intel-compute-runtime}/etc/OpenCL/vendors"
+    # oneCCL's C API discovers its legacy plugin by name at runtime.
+    "--prefix LD_LIBRARY_PATH : ${intel-oneapi-base}/ccl/latest/lib"
     "--prefix LD_LIBRARY_PATH : ${
       lib.makeLibraryPath [
         level-zero
@@ -235,9 +247,14 @@ python3Packages.buildPythonPackage {
   dontUseCmakeConfigure = true;
 
   postPatch = ''
-    # Relax only the setuptools build bound. Stable torch 2.13.0+xpu satisfies
-    # upstream's torch 2.13 pin directly. Also drop setuptools-rust from
-    # build-system since the Rust frontend (PR #40848) is stripped below.
+    ${lib.optionalString (lib.versionAtLeast version "0.31.0") ''
+      # XPU uses a newer Torch release than the common CUDA build metadata.
+      grep -Fx 'torch==${lib.head (lib.splitString "+" torch-xpu.version)}' requirements/xpu.txt
+      substituteInPlace pyproject.toml \
+        --replace-fail '"torch == 2.13.0"' '"torch == ${lib.head (lib.splitString "+" torch-xpu.version)}"'
+    ''}
+
+    # Drop setuptools-rust because the Rust frontend is stripped below.
     substituteInPlace pyproject.toml \
       --replace-fail 'setuptools>=77.0.3,<81.0.0' 'setuptools' \
       --replace-fail '"setuptools-rust>=1.9.0",' ""

@@ -14,17 +14,17 @@
 }:
 
 let
-  # Stable torch 2.13.0+xpu declares pyzes==0.1.1 for fork-safe device
+  # Stable torch 2.14.0+xpu declares pyzes==0.1.2 for fork-safe device
   # discovery and XPU telemetry. Upstream pyzes hardcodes Debian's Level Zero
   # loader path, so point the tiny pure-Python binding at the Nix package.
   pyzes = python3Packages.buildPythonPackage rec {
     pname = "pyzes";
-    version = "0.1.1";
+    version = "0.1.2";
     format = "wheel";
 
     src = fetchurl {
-      url = "https://files.pythonhosted.org/packages/51/18/2ad3193ae512d91541f8cf7c0eec076904e54a18ac0db141d5a243078602/pyzes-${version}-py3-none-any.whl";
-      hash = "sha256-SqkGfX8hGznlW082viy7DtF2RcqvqFKWKfhlRV/juLM=";
+      url = "https://files.pythonhosted.org/packages/74/46/90e1741b3926e3b8590dfaa819439891865568fc5c90a0f5596b76ee6bff/pyzes-${version}-py3-none-any.whl";
+      hash = "sha256-VjhoQ5kEmUBBQHGvr/+R7ofxiAdFezyw0xzV1aC32yM=";
     };
 
     postInstall = ''
@@ -46,20 +46,13 @@ let
 in
 python3Packages.buildPythonPackage rec {
   pname = "torch";
-  # Stable 2.13 XPU is the release paired with vLLM's torch 2.13 and
-  # triton-xpu 3.7.2 pins. Its wheel targets the oneAPI 2026.0 ABI
-  # (libsycl.so.9, oneCCL 2022.0.0). The v2.13 branch also contains the
-  # BMG-specific revert of device-wide synchronization (#187423).
-  #
-  # The earlier Inductor Min/Max gather regression has no identified source
-  # fix, so the release gate still exercises compiled Qwen3.8 graph capture
-  # and generation at vocabulary extent 248320 on Brutus.
-  version = "2.13.0+xpu";
+  # vLLM 0.31 pairs Torch 2.14 with Triton 3.8 and oneAPI 2026.1.
+  version = "2.14.0+xpu";
   format = "wheel";
 
   src = fetchurl {
-    url = "https://download-r2.pytorch.org/whl/xpu/torch-2.13.0%2Bxpu-cp312-cp312-manylinux_2_28_x86_64.whl";
-    hash = "sha256-njm89P85dNfX0fpOJOOuTkiV2pfYdkejDG8WG5E23fw=";
+    url = "https://download-r2.pytorch.org/whl/xpu/torch-2.14.0%2Bxpu-cp312-cp312-manylinux_2_28_x86_64.whl";
+    hash = "sha256-BfjxMOJcJNT3kDJmrxZRRekjT66M5z7CYTrfwBXLo0o=";
   };
 
   nativeBuildInputs = [

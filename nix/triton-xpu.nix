@@ -15,12 +15,12 @@
 let
   backend = python3Packages.buildPythonPackage rec {
     pname = "triton-xpu";
-    version = "3.7.2";
+    version = "3.8.0";
     format = "wheel";
 
     src = fetchurl {
       url = "https://download-r2.pytorch.org/whl/triton_xpu-${version}-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl";
-      hash = "sha256-F+iBwtuilEUIxNe++r5VkLW0Wfqoo3xXdA+FstC2LU8=";
+      hash = "sha256-sZ9HcmdWtHLsdEYQ4wztEAj0kRMGqUtcpSJLcaEcIUk=";
     };
 
     nativeBuildInputs = [
@@ -62,14 +62,14 @@ let
 in
 python3Packages.buildPythonPackage rec {
   pname = "triton";
-  version = "3.7.2+xpu";
+  version = "3.8.0+xpu";
   format = "wheel";
 
   # Official compatibility shim: provides the distribution/version vLLM pins
   # while propagating the native triton-xpu backend wheel above.
   src = fetchurl {
-    url = "https://github.com/intel/intel-xpu-backend-for-triton/releases/download/v3.7.2/triton-3.7.2%2Bxpu-py3-none-any.whl";
-    hash = "sha256-PIIvc+mHBRL1mm7PXcMFpLyrEfpiP5zpEBH2BDFSJ+k=";
+    url = "https://github.com/intel/intel-xpu-backend-for-triton/releases/download/v3.8.0/triton-3.8.0%2Bxpu-py3-none-any.whl";
+    hash = "sha256-8Wsk78x4njmH7mArdELhHKwLnTvHj5bjouw83Vpgt7s=";
   };
 
   propagatedBuildInputs = [ backend ];

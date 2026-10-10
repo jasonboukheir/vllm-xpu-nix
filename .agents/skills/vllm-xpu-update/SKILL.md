@@ -1,6 +1,6 @@
 ---
 name: vllm-xpu-update
-description: Advance paired vLLM and XPU-kernel main branches onto compatible upstream releases, minimize fork drift with one audit agent per commit, and qualify the Nix stack for coordinated releases. Invoke explicitly for release checks, upgrades, patches, or an existing release handoff in vllm-xpu-nix.
+description: Refresh paired vLLM and XPU-kernel forks, audit and minimize patches, qualify Brutus, publish a coordinated release, and pin the host for an operator rebuild. Invoke explicitly for upgrades, release checks, patches, or an existing release handoff in vllm-xpu-nix.
 ---
 
 # Update the vLLM XPU stack
@@ -9,6 +9,12 @@ This skill belongs to the `vllm-xpu-nix` project and is explicitly invoked as
 `$vllm-xpu-update`. Its invocation policy disables automatic selection. Do not
 install it globally or add it to another repository's default instructions.
 
+An explicit update invocation, including `$vllm-xpu-update` alone or
+`$vllm-xpu-update update to 0.32`, requests the full workflow through release
+publication and the committed Brutus pin. No separate publication or host-pin
+request is needed. Explicit narrower requests override this default. The
+operator performs the actual system rebuild/switch.
+
 ## Choose the requested operation
 
 - **Default invocation / update if newer**: discover the newest eligible stable
@@ -16,11 +22,20 @@ install it globally or add it to another repository's default instructions.
   the complete source refresh: preserve recovery refs, assign one audit agent
   per fork commit in both repos, reconcile KEEP/DROP/ADAPT decisions, rebuild
   the minimal patch stacks, validate and publish both source `main` branches,
-  then prepare and qualify the paired Nix candidate. Resume an existing matching
-  candidate rather than repeating its rebase. If there is no newer pair and no
-  unfinished candidate, report the comparison and make no changes.
+  then build and qualify the paired Nix candidate with Brutus's actual model and
+  service settings. After qualification passes, push packaging main and new
+  coordinated release branches/tags in all three forks, update and commit the
+  Brutus release pin, verify the exact tested package, and hand off the rebuild
+  to the operator. Honor a named upstream version; otherwise select the newest
+  eligible stable pair. Resume an existing matching candidate or unfinished
+  release handoff rather than repeating completed work. If there is no newer
+  pair and no unfinished work, report the comparison and make no changes.
 - **Check only**: report integration, deployed, and available compatible pairs;
   make no repository or service changes. This explicit mode overrides the default.
+- **Source only / qualify only**: stop at the explicitly requested boundary.
+  Source-only work ends after the audited source mains are published;
+  qualification-only work records the tested candidate without creating release
+  refs or changing the host pin.
 - **Clean up current main**: run the same per-commit audit/replay workflow on
   the recorded current bases, even without a newer release. Collapse superseded
   changes and follow-up repairs into a minimal, reviewable stack.
@@ -37,23 +52,26 @@ install it globally or add it to another repository's default instructions.
   stages for the requested configuration.
 - **Release / deploy / resume**: inspect completed stages and actual remote refs,
   then continue the requested handoff. Publish a stable release only after its
-  qualification passes; deploy only when requested. Never retarget a release.
+  qualification passes. The operator performs the system rebuild/switch
+  unless explicitly delegated to the agent. Never retarget a release.
 
 For example:
 
-> $vllm-xpu-update
+> $vllm-xpu-update update to 0.32
 
-Runs the conditional main refresh and patch-cleanup workflow above. To include
-stable publication and the Brutus handoff:
+This requests patch audits, minimization, the actual Brutus foreground test and
+repair loop, performance review, publication of all three mains and permanent
+release branches/tags, and the committed host release pin. Bare invocation uses
+the same scope when a newer eligible stable pair exists. Review new features
+for the current one/two-user setup; use a dedicated performance agent and
+matched measurements before promoting a serving change.
 
-> $vllm-xpu-update Update to the latest compatible stable pair, clean up every
-> fork patch, and when it passes validation, cut a release and pin Brutus.
-
-The default refresh includes publishing the audited source `main` histories,
-including a backed-up rebase with exact leases. It does not implicitly request
-stable tags or deployment. Follow the existing maintenance/operator handoffs
-for GPU testing and host rebuilds; retain authorization already given rather
-than asking again. A check-only request remains read-only.
+Publishing source mains includes backed-up rebases with exact leases. Follow
+the existing maintenance handoff for GPU testing and preserve service state;
+retain authorization already given rather than asking again. Complete the
+release and host-pin work before handing off the operator rebuild. Check-only
+remains read-only; an explicit source-only or qualification-only request stops
+at that boundary.
 
 ## Read the relevant procedure
 

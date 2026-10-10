@@ -1,0 +1,68 @@
+{
+  "release": "xpu-v1.12.0",
+  "status": "passed",
+  "context": "Live production verification after the operator rebuilt Brutus; no agent rebuild, switch, or service restart.",
+  "system": "/nix/store/n8paac7mx7f9g991bl32w4af7imllavg-nixos-system-brutus-26.05.20261008.7c8764b",
+  "package": "/nix/store/mcyp3ljp8yl1hwfllnfzf22mw3j1z42y-python3.12-vllm-xpu-0.31.0+unstable.2026.10.10.gef92dc5",
+  "service": "vllm-xpu-chat.service",
+  "model": "RedHatAI/Qwen3.8-27B-INT4",
+  "model_revision": "bf08f3dbd9a324e53956920aad378a1f1b6dd24a",
+  "started_utc": "2026-10-10T19:19:20.085390+00:00",
+  "ready_utc": "2026-10-10T19:20:35.154789+00:00",
+  "finished_utc": "2026-10-10T19:21:37.453850+00:00",
+  "service_started_local": "Sat 2026-10-10 12:17:26 PDT",
+  "active_state": "active",
+  "sub_state": "running",
+  "main_pid": 3784816,
+  "restarts": 0,
+  "health_http_status": 200,
+  "served_models": [
+    "sunny-chat"
+  ],
+  "inference": {
+    "synthetic_prompt": "What is 17 times 19? Reply with only the number.",
+    "status": 200,
+    "answer": "323",
+    "elapsed_seconds": 2.27336547896266,
+    "usage": {
+      "prompt_tokens": 28,
+      "total_tokens": 32,
+      "completion_tokens": 4,
+      "prompt_tokens_details": null,
+      "completion_tokens_details": {
+        "reasoning_tokens": 0
+      }
+    }
+  },
+  "post_inference_health_samples": [
+    {
+      "utc": "2026-10-10T19:20:37.434031+00:00",
+      "pid": "3784816",
+      "restarts": 0,
+      "health": 200
+    },
+    {
+      "utc": "2026-10-10T19:20:57.440504+00:00",
+      "pid": "3784816",
+      "restarts": 0,
+      "health": 200
+    },
+    {
+      "utc": "2026-10-10T19:21:17.446988+00:00",
+      "pid": "3784816",
+      "restarts": 0,
+      "health": 200
+    },
+    {
+      "utc": "2026-10-10T19:21:37.453621+00:00",
+      "pid": "3784816",
+      "restarts": 0,
+      "health": 200
+    }
+  ],
+  "limits": "Startup, HTTP/model readiness, one synthetic inference request, and 60 seconds of post-inference stability. Full foreground qualification is recorded separately.",
+  "private_evidence": {
+    "path": "benchmark-results/release-v031-20261010/production-watch-20261010T191920Z/summary.json",
+    "sha256": "7d1086992af7c185f27a09ce6ed782eb1189386c43d04ca4afa420a2cd830f3e"
+  }
+}

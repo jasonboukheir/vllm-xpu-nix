@@ -1,7 +1,7 @@
 interface:
   display_name: "vLLM XPU Update"
-  short_description: "Refresh paired main branches and minimize fork drift"
-  default_prompt: "Use $vllm-xpu-update to advance both main branches to a newer compatible stable upstream pair, audit every fork commit with its own agent, minimize the retained patches, and qualify the paired candidate."
+  short_description: "Audit, qualify, release, and pin the Brutus XPU stack"
+  default_prompt: "Use $vllm-xpu-update to update the paired forks, audit and minimize every patch, review performance, qualify the actual Brutus profile, push all three mains and permanent release branches/tags, and commit the host release pin for my rebuild."
 
 policy:
   allow_implicit_invocation: false

@@ -34,7 +34,7 @@ rebuilding, inspecting services, or testing `127.0.0.1:8000`/`:8001`.
 | vLLM fork            | `~/Projects/vllm`             | Rebase fork commits onto a selected stable upstream release tag's commit |
 | XPU kernels fork     | `~/Projects/vllm-xpu-kernels` | Select a compatible released kernel version; audit and rebase when it changes |
 | Nix packaging        | `~/Projects/vllm-xpu-nix`     | Refresh inputs, validate, commit, and push                      |
-| Brutus configuration | `~/.config/nix`               | Update only the `vllm-xpu-release` input, then rebuild and test |
+| Brutus configuration | `~/.config/nix`               | Commit the scoped release pin; operator rebuilds, then verify the live service |
 
 The `origin` remote is the Sunnycareboo fork and `upstream` is the corresponding
 GitHub project. Stop if that is not true. Before publication, verify the actual
@@ -70,12 +70,15 @@ Python runtime; generic downloaded hook binaries may not execute. If a hook's
 environment fails, run the applicable checks through working Nix tools and
 record that substitution rather than claiming the hook passed.
 
-1. **Resolve the operation and eligible pair.** Bare invocation runs the
-   conditional refresh defined in SKILL.md. Run section 0 first; resume an
-   existing matching candidate without replaying completed work. With no newer
-   pair or unfinished candidate, stop without mutations. Explicit check-only
-   stops after discovery; an explicit same-base cleanup, patch or release uses
-   its recorded bases instead of requiring a newer release. A targeted patch or
+1. **Resolve the operation and eligible pair.** An explicit update invocation,
+   including bare invocation or `update to 0.32`, requests the full release and
+   committed host-pin workflow defined in SKILL.md. Honor a named version;
+   otherwise discover the newest eligible stable pair. Run section 0 first;
+   resume an existing matching candidate or unfinished release handoff without
+   replaying completed work. With no newer pair or unfinished work, stop without
+   mutations. Explicit check-only stops after discovery; an explicit
+   same-base cleanup, patch or release uses its recorded bases instead of
+   requiring a newer release. A targeted patch or
    release skips the full audit/rebase stages and proceeds to paired integration
    after focused source review and tests.
 1. **Preserve the working baseline.** Record the current source tips and bases,
@@ -91,14 +94,16 @@ record that substitution rather than claiming the hook passed.
    as exact leases. Existing release references remain unchanged.
 1. **Integrate the new upstream stack separately.** Refresh packaging only after
    the source rebase, then build and qualify the paired candidate through the
-   maintenance and
-   foreground-test workflow. The default ends with published source mains and
-   a qualified candidate, or an explicit record of remaining validation.
-   Stable publication and the operator rebuild handoff run when requested.
-   A successful rebase alone does not authorize declaring the
-   new upstream stack stable. A newly adopted upstream baseline starts a new
-   minor release line, unless compatibility requires a major bump. If the
-   request ends at source publication, stop there with the baseline release and
+   maintenance and foreground-test workflow. Review upstream performance
+   opportunities for the actual one/two-user workload with a dedicated agent;
+   compare applicable settings before promoting a change. After qualification
+   passes, the default continues through coordinated publication in section 7,
+   the committed Brutus release pin and the operator rebuild handoff. Verify
+   all three mains and new immutable release refs remotely. A successful rebase
+   alone does not qualify the new upstream stack as stable. A newly adopted
+   upstream baseline starts a new minor release line, unless compatibility
+   requires a major bump. If the request ends at source publication, stop there
+   with the baseline release and
    host pins preserved.
 
 ## 0. Discover a newer eligible upstream release pair
@@ -173,7 +178,8 @@ publication; do not silently fall back to upstream `main`.
 
 - **No newer compatible pair:** report current, latest available, and eligible
   versions for both repositories and stop unless the requested operation is
-  resuming an unfinished candidate or explicitly cleaning up current main.
+  resuming an unfinished candidate/release handoff or explicitly cleaning up
+  current main.
   Check-only always stops here. Do not create a patch release, refresh
   dependencies, rebase, or interrupt services just because the check ran.
 - **Newer compatible pair:** continue the authorized update through the
@@ -523,9 +529,11 @@ reuses every compatible translation unit from generic and experimental builds.
 
 Review the diff and preserve the candidate locally. Continue to the foreground
 integration loop in section 6 before publishing packaging or release references.
-When a release was requested and the candidate passes, section 7 commits and
-publishes its release manifest. Otherwise preserve the reproducible candidate
-and its qualification record for a later release invocation.
+The default update invocation includes the release request: after the candidate
+passes, section 7 commits and publishes its release manifest, then section 6
+finishes the host pin and operator handoff. For an explicit qualification-only
+request, preserve the reproducible candidate and its qualification record at
+that requested boundary.
 
 The packaging `main` branch carries integration work. Stable deployment uses
 the permanent packaging release branch published in section 7 (or its matching
@@ -541,8 +549,9 @@ test "$(hostname -s)" = brutus
 
 Use a staged commit-first loop. Full source builds are intentionally deferred to
 Brutus because they are slow and the live XPU environment is the authoritative
-integration test. The final three steps apply only to the requested release
-and deployment handoff; a default main refresh ends after qualification:
+integration test. The default update invocation requests every step below;
+explicit source-only or qualification-only requests stop at their stated
+boundary. The actual system rebuild/switch remains the operator's step:
 
 1. Complete patch audits and make the source changes that are justified by
    static review and cheap targeted tests.
@@ -557,7 +566,8 @@ and deployment handoff; a default main refresh ends after qualification:
    release references.
 1. Update only the Brutus `vllm-xpu-release` lock input and prove the host package
    derivation is identical to the candidate already tested and realized.
-1. Commit the host lock change, then ask the operator for one final rebuild.
+1. Evaluate the Brutus system, commit the host pin and lock changes, then hand
+   off the final rebuild to the operator.
 
 Source commits may be published as the foreground loop advances, but do not
 publish the packaging release candidate or create coordinated release
@@ -595,12 +605,13 @@ commit map/locks, and rerun affected checks. Do not leave temporary repair or
 revert commits in the final stack. Preserve the previously recorded remote tip
 before each authorized rewrite; never mask someone else's intervening push.
 
-For a default invocation, complete source main publication and prepare/qualify
-the packaging candidate, then record its exact refs, derivation and outcomes.
-Sections 6–7's stable publication, host repin and rebuild actions apply only
-when included in the user's operation. An unavailable GPU check is pending
-qualification, not success. A passing candidate is not a published stable
-release until all three repositories' release refs have been verified.
+For a default update invocation, complete source and packaging main publication,
+paired qualification, coordinated release publication and the committed Brutus
+pin. Record exact refs, derivations and outcomes, and leave the system rebuild
+for the operator. Honor an explicit narrower scope. An unavailable GPU check is
+pending qualification, not success; preserve the deployed pin while resolving
+it. A passing candidate is not a published stable release until all three
+repositories' release refs have been verified.
 
 ### Maintenance mode and exact-package prebuild
 
@@ -1038,9 +1049,10 @@ SHAs in all three repositories. Record partial publication if any operation
 fails; never force or retarget existing references to repair it. Configure
 Forgejo protection for `releases/xpu-v*` and `xpu-v*` when practical.
 
-When deployment is requested, pin Brutus's `vllm-xpu-release.ref` to the permanent
-**packaging release branch** `refs/heads/releases/$version` (or the matching tag
-when requested). Apply the nested-source override policy and scoped lock update
+For the default update or another requested host handoff, pin Brutus's
+`vllm-xpu-release.ref` to the permanent **packaging release branch**
+`refs/heads/releases/$version` (or the matching tag when requested). Apply the
+nested-source override policy and scoped lock update
 from section 6, evaluate, compare derivations, and prepare the operator rebuild
 handoff. Do not deploy packaging `main` or a movable source branch as the stable release.
 

@@ -1,5 +1,11 @@
 # Brutus handoff: xpu-v1.12.0
 
+After the operator's rebuild on 2026-10-10, the production chat service loaded
+this exact package, passed HTTP/model readiness and a synthetic inference
+request, and remained healthy with zero restarts during the observation window.
+[Production verification](production-verification.json) records the results.
+The remainder of this note records the original pre-rebuild handoff.
+
 The host configuration is committed at `59db9d0a729ad388c6f9c035396558c979fde858` and ready for
 the operator's rebuild. No system switch or production service restart was run.
 

@@ -121,7 +121,11 @@ only the stages needed for the current operation:
 - Carry the existing maintenance and operator rebuild handoffs forward. If the
   user has already confirmed maintenance, verify it and continue. Prepare all
   authorized work before asking for any still-required operator action.
-- Keep release metadata, source SHAs, commands/results and remaining limitations
-  in the packaging release notes. Use `tea` for requested Forgejo issue context,
-  and `gh` or official upstream metadata for GitHub releases. Do not post issue
-  comments or other messages unless the user requests them.
+- Put update summaries, release rationale, validation outcomes and host handoffs
+  in descriptive commit messages. Do not create Markdown status logs, changelogs
+  or per-release narrative summaries. Preserve machine-readable release
+  manifests and validation evidence; maintain the skill/runbook, technical audit
+  reports and useful operating documentation.
+- Use `tea` for requested Forgejo issue context, and `gh` or official upstream
+  metadata for GitHub releases. Do not post issue comments or other messages
+  unless the user requests them.

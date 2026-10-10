@@ -1086,12 +1086,19 @@ unchanged.
 
 ## Completion record
 
-Store the completed release manifest and validation notes in the packaging
-repository's [docs/releases](../../../../docs/releases) directory. Keep the
-selected upstream release pair, exact base and fork SHAs, and package derivation
-there so later discovery does not depend on temporary worktrees or this skill.
+Store the machine-readable release manifest in the packaging repository's
+[docs/releases](../../../../docs/releases) directory. Preserve the selected
+upstream release pair, exact base and fork SHAs, package derivation and links to
+validation evidence so later discovery does not depend on temporary worktrees.
 
-Record these revisions in the commit or maintenance notes:
+Use descriptive commit messages for update summaries, release rationale,
+validation outcomes and operator handoffs. Do not add Markdown status logs,
+changelogs or per-release narrative summaries. Technical audit reports and
+maintained operating documentation remain useful; avoid duplicating the
+manifest and measurements as a narrative update file.
+
+Record these revisions and outcomes in the relevant commit messages and
+machine-readable evidence:
 
 ```text
 baseline stable version and validation evidence:

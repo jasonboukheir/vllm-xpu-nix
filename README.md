@@ -14,7 +14,7 @@ container, no host-managed `~/.local/lib/python*/site-packages`, no
 
 ## Documentation
 
-- [xpu-v1.12.0 release: vLLM 0.31 on Brutus](docs/releases/xpu-v1.12.0.md)
+- [xpu-v1.12.0 manifest: vLLM 0.31 on Brutus](docs/releases/xpu-v1.12.0.json)
 - [Paired-fork release runbook](.agents/skills/vllm-xpu-update/SKILL.md)
 - [Build something locally](docs/build.md)
 - [Using on a NixOS server (overlay pattern)](docs/nixos-overlay.md)

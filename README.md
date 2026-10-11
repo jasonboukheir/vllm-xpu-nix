@@ -14,7 +14,7 @@ container, no host-managed `~/.local/lib/python*/site-packages`, no
 
 ## Documentation
 
-- [xpu-v1.12.1 manifest: Qwen KVarN prefix caching](docs/releases/xpu-v1.12.1.json)
+- [xpu-v1.12.2 manifest: KVarN prefix caching in system RAM](docs/releases/xpu-v1.12.2.json)
 - [Prefix-cache memory sizing and capacity](docs/kvarn-prefix-cache.md)
 - [Paired-fork release runbook](.agents/skills/vllm-xpu-update/SKILL.md)
 - [Build something locally](docs/build.md)

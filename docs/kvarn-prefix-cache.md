@@ -8,7 +8,8 @@ Brutus recipe uses two. See [the serving profile](kvarn-beta.md#serving-profile)
 
 ## What occupies memory
 
-Attention KV pages hold both active requests and reusable prompt prefixes.
+With GPU-resident prefix caching, attention KV pages hold both active requests
+and reusable prompt prefixes.
 Prefix reuse shares those same KVarN-compressed pages, without making an
 uncompressed prompt copy. Unreferenced cached pages can be evicted when active
 requests need memory. KVarN's bounded recent-token and sink buffers retain
@@ -29,7 +30,101 @@ For the Brutus model and MTP2 recipe:
 - Exchanging one checkpoint for attention capacity costs about 10,918 tokens,
   rounded to whole 128-token blocks.
 
-## Capacity breakpoints
+## RAM prefix storage
+
+The `xpu-v1.12.2` release uses an 8 GiB RAM-cache configuration on Brutus.
+Its tested scope is the Brutus BF16 Qwen3.5 compact K4V2 profile, TP1/PP1,
+eager V1, four configured sequences and bundled MTP2. Model weights and native
+kernels are unchanged.
+
+Use the existing `OffloadingConnector` with the independent-pool CPU backend.
+Add these arguments to the serving profile:
+
+```nix
+extraArgs = [
+  "--enable-prefix-caching"
+  "--kv-transfer-config"
+  (builtins.toJSON {
+    kv_connector = "OffloadingConnector";
+    kv_role = "kv_both";
+    kv_connector_extra_config = {
+      spec_name = "IndependentCPUOffloadingSpec";
+      cpu_bytes_to_use = 8589934592; # 8 GiB of system RAM
+      gpu_cache_policy = "active_only";
+      offload_prompt_only = false;
+    };
+  })
+];
+```
+
+Active requests keep their attention pages and recurrent working states in
+VRAM. Reusable history is copied to a bounded, pinned RAM arena. When the last
+active reference to a GPU page is released, `active_only` removes its local
+cache entry so that a later request restores the prefix from RAM. The GPU
+allocation remains available to the active-request pool; this does not return
+its preallocated memory to the operating system. Setting
+`offload_prompt_only = false` also permits storing computed continuation pages.
+
+The RAM arena holds compressed attention pages and the matching recurrent
+checkpoints together, charging each entry its actual byte size. There is no
+fixed number of RAM checkpoint slots and no fixed attention/recurrent split.
+Completed, unused entries are evicted in LRU order when space is needed;
+in-flight transfers keep their storage pinned. Shared prefixes reuse entries,
+while longer distinct histories consume more attention storage. Checkpoint
+retention still determines which recurrent boundaries can be reused.
+
+Attention history stays KVarN-compressed in RAM. Recurrent states retain their
+existing precision. The first attention page can carry an additional FP16
+sink snapshot. Non-sink history resumes from its packed representation, as it
+does after ordinary idle-prefix reclamation; the active recent-token FP16
+window is not retained as a separate copy of the whole conversation.
+
+This backend omits the four extra GPU checkpoint reservations. The 16 live
+recurrent slots remain, and the installed package measured **306,688 shared attention
+tokens**, compared with **263,040** under the four-extra-checkpoint GPU-resident
+policy. The per-request limit remains **262,144 combined input/output tokens**.
+The 8 GiB limit bounds the pinned cache arena, not total process memory;
+temporary transfer buffers and cache metadata use additional host memory.
+Four active requests still share the 306,688 GPU attention tokens. Increasing
+RAM to hold four unrelated idle maximum-size prefixes does not provide GPU
+capacity for those four requests to run together. Active requests with a shared
+prefix can share physical attention pages.
+
+For four unrelated histories, approximate RAM requirements are:
+
+| Tokens per cached session | RAM for four sessions |
+| ---: | ---: |
+| 20,000 | 1.7 GiB |
+| 65,536 | 4.1 GiB |
+| 131,072 | 7.6 GiB |
+| 262,144 | 14.6 GiB |
+
+These estimates round attention storage to complete 128-token pages and include
+one 148.6875 MiB recurrent checkpoint and an approximately 8.5 MiB FP16 sink
+snapshot per session (8,912,960 arena bytes after alignment). The selected
+8 GiB budget fits the estimate for four 128K histories. For four unrelated
+262K histories, 16 GiB is an alternative
+(`cpu_bytes_to_use = 17179869184`). These budgets do not allocate session slots
+or guarantee retention: LRU eviction acts on entries, branches and additional
+checkpoints can consume more memory, and shared histories can consume less.
+
+The installed package with an 8 GiB arena measured **383.389 seconds** to the
+first streamed token for a cold 262,015-token prompt with two images, then
+**2.690 and 1.749 seconds** on RAM hits. Each hit reused 261,760 tokens,
+computed 255 tokens and loaded 3,902,755,874 bytes, with identical generated
+token IDs and correct text/image retrieval. The GPU prefix cache was cleared
+before each replay. These timings include restoration and remaining prefill;
+they are not estimates from PCIe bandwidth. A 20,307-token text history took
+14.606 seconds cold and 0.431 seconds on natural RAM reuse, without manually
+resetting the GPU cache. That hit restored 20,096 tokens and computed 211.
+See the
+[installed qualification data](updates/ram-prefix-20261011/installed-measurements.json).
+Copies complete synchronously at the connector fence, so transfer time can
+also delay other active requests.
+
+## GPU-resident prefix-cache capacity breakpoints
+
+The following tables describe the GPU-resident policy without RAM offloading.
 
 With four configured sequences, MTP2 and align-mode caching, 16 recurrent slots
 cover the live-state reservation. The allocator reserves up to four more
@@ -78,7 +173,7 @@ than promised startup capacities. Five sequences would spend the four spare
 checkpoints on live state; six would fail the full-context capacity check at
 this budget.
 
-## Choosing the balance
+## Choosing the GPU-resident balance
 
 Longer distinct prompts consume more attention pages. More active requests
 increase the mandatory recurrent reservation through `max_num_seqs`; more

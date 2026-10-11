@@ -35,6 +35,35 @@ performance and memory with the K4V2 target held fixed. The MTP layer has its
 own attention weights and KV contents; choosing the same format does not make
 the target's cache reusable by the drafter.
 
+## Store reusable prefixes in system RAM
+
+The `xpu-v1.12.2` RAM prefix-cache backend uses `OffloadingConnector` with
+`IndependentCPUOffloadingSpec` to retain both compressed attention pages and
+recurrent checkpoints in system RAM. Active requests continue using GPU KV
+storage. The `active_only` GPU cache policy releases idle local cache entries;
+the next request restores its reusable prefix from RAM.
+
+The selected 8 GiB pinned host arena shares its byte budget across attention
+pages and recurrent checkpoints, without a fixed checkpoint-slot count. Four
+unrelated 131,072-token histories need approximately 7.6 GiB with one recurrent
+checkpoint and a full FP16 sink snapshot each. Four 262,144-token histories
+need approximately 14.6 GiB, for which 16 GiB is an alternative. Branches and
+extra retained checkpoints can use more; these estimates do not guarantee
+retention.
+Attention stays KVarN-compressed; recurrent states keep their existing
+precision, and FP16 attention sinks are preserved separately. Other cached
+history uses the packed representation from normal idle-prefix reclamation.
+This configuration removes the four extra GPU checkpoint reservations. The
+installed 8 GiB configuration measured 306,688 shared attention tokens, retaining the
+262,144-token request limit. The GPU-resident four-extra-checkpoint policy
+measured 263,040 tokens. Four active requests share the GPU token capacity;
+storing four unrelated full idle histories in RAM does not allow all four to
+run at once. Active requests can share physical pages for a common prefix.
+
+See the [exact Nix arguments and installed measurements](kvarn-prefix-cache.md#ram-prefix-storage).
+Qualification uses 8 GiB with BF16 Qwen3.5, compact K4V2 for target and draft,
+TP1/PP1, eager V1 and MTP2. Weights and native kernels are unchanged.
+
 ## Choose the cache format
 
 Both formats keep four-bit keys. K4V2 reduces values to two bits. At head
@@ -101,6 +130,8 @@ vLLM and native kernel release; an older native library cannot read its records.
 - At most two 448×448 images; no video.
 - Local prefix caching is supported for this BF16 Qwen3.5 compact K4V2
   TP1/PP1 profile. See [prefix-cache sizing](kvarn-prefix-cache.md).
+- RAM prefix storage is supported for this profile with MTP2;
+  see [the RAM-cache configuration](kvarn-prefix-cache.md#ram-prefix-storage).
 - No XPU graphs.
 - Bundled MTP: one or two draft tokens; two recommended.
 

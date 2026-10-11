@@ -1,0 +1,267 @@
+{
+  "schema": 1,
+  "release": "xpu-v1.12.2",
+  "previous_release": "xpu-v1.12.1",
+  "prepared_utc": "2026-10-11T23:01:31.601346+00:00",
+  "qualification_status": "passed final installed package CPU regression and Brutus RAM prefix-cache qualification",
+  "version_policy": "User-requested patch release on unchanged upstream source bases",
+  "sources": {
+    "vllm": {
+      "repository": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm.git",
+      "upstream_label": "v0.31.0",
+      "upstream_commit": "db9527a46873454610df6dbedf79a36d6bf1a7f6",
+      "commit": "dcba4007ef6af8ba143d2794c194c36b58397339",
+      "fork_commit_count": 8,
+      "locked": {
+        "lastModified": 1791758592,
+        "narHash": "sha256-x+x0HxXmikA/S+73hJY/vi4BCH54fz6CZI9wRyGSh8o=",
+        "ref": "refs/tags/xpu-v1.12.2",
+        "rev": "dcba4007ef6af8ba143d2794c194c36b58397339",
+        "revCount": 22128,
+        "type": "git",
+        "url": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm.git"
+      },
+      "release_tag": "refs/tags/xpu-v1.12.2",
+      "release_branch": "refs/heads/releases/xpu-v1.12.2"
+    },
+    "vllm-xpu-kernels": {
+      "repository": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm-xpu-kernels.git",
+      "upstream_label": "release/0.1.15.4",
+      "upstream_commit": "ddf336d86e3c8602888572a3502f951abd51df12",
+      "commit": "dbb684f4c9b38a8b3bbf52bda0c490ee47049221",
+      "fork_commit_count": 7,
+      "locked": {
+        "lastModified": 1791620554,
+        "narHash": "sha256-v+vBY8x3L8cILKz4j12dVV3Ar4Fk4Gj4vTDkr5tpOZg=",
+        "ref": "refs/tags/xpu-v1.12.2",
+        "rev": "dbb684f4c9b38a8b3bbf52bda0c490ee47049221",
+        "revCount": 392,
+        "submodules": true,
+        "type": "git",
+        "url": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm-xpu-kernels.git"
+      },
+      "release_tag": "refs/tags/xpu-v1.12.2",
+      "release_branch": "refs/heads/releases/xpu-v1.12.2",
+      "unchanged_from": "xpu-v1.12.1"
+    }
+  },
+  "kernel_release_mapping": "Official released wheel 0.1.15.4 matches all seven Python files at the frozen official release branch source; no matching tag or embedded native source SHA. Native code rebuilt from that frozen source.",
+  "qualified_package": {
+    "drvPath": "/nix/store/9gmk5jx3xflmk7r9vmiw50nnabxdiqmk-python3.12-vllm-xpu-0.31.0+unstable.2026.10.11.gdcba400.drv",
+    "outPath": "/nix/store/aja19mdns76j5pw27dlirzzmpjfwgf2j-python3.12-vllm-xpu-0.31.0+unstable.2026.10.11.gdcba400",
+    "runtime": "/nix/store/cdf0scl7ibnfby9dxfgqvqh2yg9b5q45-v031-brutus-qualification-env",
+    "runtime_drvPath": "/nix/store/qm97vqkrslw437kkmwbmy7rdq00b7drz-v031-brutus-qualification-env.drv",
+    "kernels": {
+      "derivation": "/nix/store/76463fj10nb2a4yssrya3wcz9r68pcqq-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f.drv",
+      "output": "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f",
+      "version": "0.1.15.4+unstable.2026.10.10.gdbb684f"
+    },
+    "host_override": {
+      "path": "/home/jasonbk/.config/nix/hosts/brutus/services/vllm-xpu/package.nix",
+      "sha256": "7ac223d83a815c55976851aa1181187ae81aa8d9ae17f0c5a1fabed9e5779b95",
+      "withTorchvision": true,
+      "aotDevices": [
+        "bmg"
+      ],
+      "unchanged": true
+    },
+    "qualification_status": "passed installed CPU and GPU checks"
+  },
+  "profile": {
+    "model": "RedHatAI/Qwen3.8-27B-INT4",
+    "revision": "bf08f3dbd9a324e53956920aad378a1f1b6dd24a",
+    "weights": "W4A16 compressed-tensors",
+    "dtype": "bfloat16",
+    "runner": "V1",
+    "enforce_eager": true,
+    "kv_cache_dtype": "kvarn_k4v2_g128_compact",
+    "speculative_config": {
+      "method": "mtp",
+      "num_speculative_tokens": 2,
+      "kv_cache_dtype": "kvarn_k4v2_g128_compact"
+    },
+    "max_model_len": 262144,
+    "max_num_seqs": 4,
+    "max_num_batched_tokens": 2048,
+    "gpu_memory_utilization": 0.96,
+    "prefix_caching": true,
+    "images": 2,
+    "image_pixels": 200704,
+    "video": 0,
+    "reasoning_parser": "qwen3",
+    "tool_call_parser": "qwen3_xml",
+    "gpu_block_override": null,
+    "kv_transfer_config": {
+      "kv_connector": "OffloadingConnector",
+      "kv_role": "kv_both",
+      "kv_connector_extra_config": {
+        "spec_name": "IndependentCPUOffloadingSpec",
+        "cpu_bytes_to_use": 8589934592,
+        "gpu_cache_policy": "active_only",
+        "offload_prompt_only": false
+      }
+    },
+    "tensor_parallel_size": 1,
+    "pipeline_parallel_size": 1
+  },
+  "changes": [
+    "Retain idle prefixes in a bounded pinned CPU byte arena shared by compact attention pages and recurrent checkpoints",
+    "Reuse OffloadingConnector lookup and scheduling with physical-pool-qualified transfer fences and per-group cache views",
+    "Materialize complete KVarN packed pages before copying; preserve FP16 sink sidecars and invalidate stale destination residency on restore",
+    "Keep active KV in VRAM while active_only removes idle GPU cache entries and omits the extra recurrent checkpoint reserve",
+    "Use the existing batched DMA operation synchronously at connector fences; native kernels and model weights are unchanged",
+    "Preserve legacy zero-block cache metadata while requiring positive capacity for explicit physical pools",
+    "Preserve KVarN ownership and fill metadata for masked MTP rows that perform no cache writes",
+    "At the context ceiling, populate the MTP cache with a zero-proposal first forward before offloading shared attention pages"
+  ],
+  "selected_checks": {
+    "installed_cpu_passed": 1310,
+    "installed_cpu_skipped": 2,
+    "installed_cpu_breakdown": {
+      "focused_regression": 1299,
+      "mtp_context_boundary_runner": 9,
+      "mocked_dma_worker_roundtrip": 2
+    },
+    "source_overlay_cpu_passed": 1310,
+    "count_scope": "Installed total combines disjoint focused regression, nine runner boundary tests and two CPU DMA-mock tests; source-overlay results are separate, not additive",
+    "cpu_scope": "XPU guards, prefix caching, independent pools, Mamba alignment, allocation/capacity, native offloading config/scheduler/events/metrics/views, host arena lifecycle, KVarN sink transfer hooks and byte-exact mock-DMA roundtrips, masked MTP ownership and cache-only context-boundary runner bookkeeping",
+    "cpu_harness": "Copied committed source tests and helpers; installed package imports and extracted logging fixture avoid unrelated asset fixtures",
+    "runtime_source_equivalence": "All 14 changed runtime files byte-identical between installed package and committed source dcba4007ef6af8ba143d2794c194c36b58397339",
+    "ruff_version": "0.14.0",
+    "ruff_lint_and_format": "passed all 23 changed source and test files using matching Nix Ruff 0.14.0 binary",
+    "nix_checks": {
+      "status": "passed with final release locks",
+      "required": [
+        "formatting",
+        "kernel-lib-cache-identity",
+        "kernel-glue-cache-identity",
+        "kernel-build-parallelism"
+      ]
+    },
+    "installed_gpu_status": "passed",
+    "unchanged_native_baseline": "xpu-v1.12.1; native kernel source and derivation unchanged, native suites not rerun",
+    "pre_commit_limitation": "Downloaded hook executables do not run directly on NixOS; matching native Nix Ruff lint and format were run on all changed Python files",
+    "installed_api_successful_responses": 115,
+    "installed_api_intentional_cancellations": 1,
+    "source_context_boundary_responses": 52,
+    "release_derivation_matches_tested_package": true
+  },
+  "capacity": {
+    "measurement_status": "confirmed on final installed 8 GiB profile",
+    "gpu_allocated_bytes": 7031804928,
+    "cpu_capacity_bytes": 8589934592,
+    "cpu_allocation_policy": "shared variable-size byte arena; no fixed attention/recurrent partition",
+    "gpu_cache_policy": "active_only",
+    "checkpoint_bytes": 155910144,
+    "attention_page_bytes": 1827840,
+    "attention_block_tokens": 128,
+    "baseline_live_recurrent_slots": 16,
+    "extra_gpu_checkpoint_slots": 0,
+    "recurrent_physical_blocks_including_null": 17,
+    "attention_physical_blocks_including_null": 2397,
+    "shared_attention_tokens": 306688,
+    "previous_gpu_resident_shared_attention_tokens": 263040,
+    "max_model_len": 262144,
+    "preserves_262144": true,
+    "fp16_sink_sidecar_bytes": 8912932,
+    "fp16_sink_aligned_arena_bytes": 8912960,
+    "cpu_budget_scope": "Pinned cache arena only; process metadata and temporary transfer buffers are additional"
+  },
+  "measurements": {
+    "artifact": "../updates/ram-prefix-20261011/installed-measurements.json",
+    "all_pass": true,
+    "cpu_bytes_to_use": 8589934592,
+    "full_context": [
+      {
+        "name": "cold",
+        "ttft_seconds": 383.3885555942543,
+        "computed_tokens": 262015.0,
+        "ram_hit_tokens": 0.0,
+        "gpu_hit_tokens": 0.0,
+        "load_bytes": 0,
+        "preemptions": 0.0,
+        "pass": true
+      },
+      {
+        "name": "ram-0",
+        "ttft_seconds": 2.6902210377156734,
+        "computed_tokens": 255.0,
+        "ram_hit_tokens": 261760.0,
+        "gpu_hit_tokens": 0.0,
+        "load_bytes": 3902755874.0,
+        "preemptions": 0.0,
+        "pass": true
+      },
+      {
+        "name": "ram-1",
+        "ttft_seconds": 1.7493786388076842,
+        "computed_tokens": 255.0,
+        "ram_hit_tokens": 261760.0,
+        "gpu_hit_tokens": 0.0,
+        "load_bytes": 3902755874.0,
+        "preemptions": 0.0,
+        "pass": true
+      }
+    ],
+    "exact_context_limit": "262143 input + 1 output twice; identical IDs, RAM reuse and successful deferred-store flush checks",
+    "natural_20k_reuse": {
+      "cold_ttft_seconds": 14.606,
+      "ram_ttft_seconds": 0.431,
+      "prompt_tokens": 20307,
+      "ram_hit_tokens": 20096,
+      "computed_tokens": 211
+    },
+    "warm_shared_b4_ttft_seconds_range": [
+      1.02,
+      1.272
+    ],
+    "eviction": "64 distinct histories exceed the 8 GiB tier; newest restores, oldest recomputes with identical output IDs",
+    "counts": {
+      "full_context": 3,
+      "exact_context_limit": 2,
+      "lifecycle": 92,
+      "warm_parallel": 12,
+      "smoke": 4,
+      "exact_limit_deferred_store_flush_checks": 2,
+      "successful_responses": 115,
+      "intentional_cancellations": 1,
+      "history_eviction_requests": 64
+    }
+  },
+  "source_overlay_measurements": "../updates/ram-prefix-20261011/source-measurements.json",
+  "scope": "Targeted synthetic correctness and latency qualification for the specified installed 8 GiB Brutus profile. Covers full and exact context, MTP2, natural RAM reuse, branches, multi-turn, B4 concurrency, cancellation, eviction, text, reasoning, two images and tool calls. Other profiles and broad model-quality or throughput evaluation are outside this qualification.",
+  "source_overlay_initial_probe": {
+    "scope": "20K synthetic prefix; source overlay, not installed package",
+    "prompt_tokens": 20307,
+    "cold_ttft_seconds": 18.931,
+    "ram_hit_ttft_seconds": [
+      0.509,
+      0.376
+    ],
+    "ram_hit_tokens": 20096,
+    "computed_input_tokens_on_hit": 211,
+    "load_bytes_per_hit": 451793954,
+    "generated_token_ids_identical": true,
+    "cpu_capacity_bytes": 8589934592
+  },
+  "source_overlay_full_context_probe": {
+    "scope": "262015-token two-image retrieval; source overlay, not installed package",
+    "prompt_tokens": 262015,
+    "cold_ttft_seconds": 387.323,
+    "ram_hit_ttft_seconds": [
+      3.203,
+      1.865
+    ],
+    "ram_hit_tokens": 261760,
+    "gpu_hit_tokens": 0,
+    "computed_input_tokens_on_hit": 255,
+    "load_bytes_per_hit": 3902755874,
+    "generated_token_ids_identical": true,
+    "retrieval": [
+      "SUNDIAL-482",
+      "Red",
+      "Blue"
+    ],
+    "cpu_capacity_bytes": 8589934592
+  }
+}

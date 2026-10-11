@@ -1,0 +1,4260 @@
+{
+  "schema_version": 1,
+  "recorded_utc": "2026-10-11T22:19:45.348268+00:00",
+  "qualification_stage": "source overlay",
+  "all_pass": true,
+  "sources": {
+    "vllm_base_at_launch": "81dc387cf9a80e88468b7f77f7df8dfb71939921",
+    "vllm_candidate_commit": "a76fbb1ce06d50159978786f70daf44c27847ddd",
+    "kernels_commit": "dbb684f4c9b38a8b3bbf52bda0c490ee47049221",
+    "note": "Foreground source overlay started before the candidate commit; final installed-package qualification is recorded separately."
+  },
+  "profile": {
+    "host": "brutus",
+    "accelerator": "Intel Arc Pro B70",
+    "model": "RedHatAI/Qwen3.8-27B-INT4",
+    "model_revision": "bf08f3dbd9a324e53956920aad378a1f1b6dd24a",
+    "served_model_name": "sunny-chat",
+    "dtype": "bfloat16",
+    "quantization": "compressed-tensors",
+    "kv_cache_dtype": "kvarn_k4v2_g128_compact",
+    "mtp_tokens": 2,
+    "model_runner": "V1 eager",
+    "max_model_len": 262144,
+    "max_num_seqs": 4,
+    "max_num_batched_tokens": 2048,
+    "gpu_memory_utilization": 0.96,
+    "images_per_request": 2,
+    "image_pixels": 200704,
+    "tensor_parallel_size": 1,
+    "pipeline_parallel_size": 1,
+    "connector": "OffloadingConnector",
+    "offloading_spec": "IndependentCPUOffloadingSpec",
+    "cpu_bytes_to_use": 8589934592,
+    "gpu_cache_policy": "active_only",
+    "offload_prompt_only": false,
+    "test_port": 18000
+  },
+  "gpu_capacity": {
+    "shared_attention_tokens": 306688,
+    "attention_physical_blocks": 2397,
+    "attention_usable_blocks": 2396,
+    "attention_block_tokens": 128,
+    "attention_allocation_bytes": 4381332480,
+    "recurrent_physical_blocks": 17,
+    "recurrent_usable_blocks": 16,
+    "recurrent_allocation_bytes": 2650472448,
+    "extra_retained_gpu_checkpoints": 0
+  },
+  "cpu_tests": {
+    "passed": 1297,
+    "skipped": 2,
+    "artifact": "benchmark-results/ram-prefix-20261011/cpu-03/pytest.log",
+    "scope": "Prefix caching, pool allocation, connector scheduling/canonical mappings/worker views/metrics, byte-budget manager, KVarN; skips are accelerator-dependent attention backends in CPU-only run."
+  },
+  "counts": {
+    "ram_proof": 4,
+    "full_context": 3,
+    "lifecycle": 92,
+    "warm_parallel": 12,
+    "smoke": 4,
+    "successful_responses": 115,
+    "intentional_cancellations": 1,
+    "history_eviction_requests": 64,
+    "preemptions": 0
+  },
+  "transfer_bandwidth": {
+    "started_utc": "2026-10-11T21:57:30.490089+00:00",
+    "service": "inactive",
+    "torch": "2.14.0+xpu",
+    "device": "Intel(R) Arc(TM) Pro B70 Graphics",
+    "method": "One pinned host byte buffer and one XPU byte buffer; synchronized wall clock; 1 warmup and 3 measured copies in each direction; all bytes verified outside timed region.",
+    "measurements": [
+      {
+        "bytes": 441450496,
+        "MiB": 421.0,
+        "all_bytes_verified": true,
+        "host_to_xpu": {
+          "seconds": [
+            0.015439191833138466,
+            0.015382925979793072,
+            0.015366375911980867
+          ],
+          "median_seconds": 0.015382925979793072,
+          "median_GB_per_second": 28.697433542869994,
+          "median_GiB_per_second": 26.726567692002277,
+          "estimated_3_63_GiB_seconds": 0.1358199093064333
+        },
+        "xpu_to_host": {
+          "seconds": [
+            0.01547126192599535,
+            0.015461975242942572,
+            0.015463246963918209
+          ],
+          "median_seconds": 0.015463246963918209,
+          "median_GB_per_second": 28.54837001763448,
+          "median_GiB_per_second": 26.587741465898677,
+          "estimated_3_63_GiB_seconds": 0.13652908445254075
+        }
+      },
+      {
+        "bytes": 1073741824,
+        "MiB": 1024.0,
+        "all_bytes_verified": true,
+        "host_to_xpu": {
+          "seconds": [
+            0.0373941077850759,
+            0.037343763280659914,
+            0.037355444859713316
+          ],
+          "median_seconds": 0.037355444859713316,
+          "median_GB_per_second": 28.74391746724979,
+          "median_GiB_per_second": 26.7698592201339,
+          "estimated_3_63_GiB_seconds": 0.13560026484075932
+        },
+        "xpu_to_host": {
+          "seconds": [
+            0.037638173904269934,
+            0.03762913681566715,
+            0.03763189213350415
+          ],
+          "median_seconds": 0.03763189213350415,
+          "median_GB_per_second": 28.532762057000955,
+          "median_GiB_per_second": 26.573205419816965,
+          "estimated_3_63_GiB_seconds": 0.13660376844462008
+        }
+      }
+    ],
+    "completed_utc": "2026-10-11T21:57:33.069062+00:00"
+  },
+  "ram_proof": {
+    "artifact": "benchmark-results/ram-prefix-20261011/proof-01/summary.json",
+    "all_pass": true,
+    "tests": [
+      {
+        "name": "cold",
+        "http_status": 200,
+        "stream_done": true,
+        "ttft_seconds": 18.93142443196848,
+        "seconds": 19.094830970745534,
+        "content": "SUNDIAL-482",
+        "usage": {
+          "prompt_tokens": 20307,
+          "total_tokens": 20315,
+          "completion_tokens": 8,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "token_ids": [
+          50,
+          12821,
+          6014,
+          12,
+          19,
+          23,
+          17,
+          248046
+        ],
+        "finish_reason": "stop",
+        "gpu_hit_tokens": 0.0,
+        "ram_hit_tokens": 0.0,
+        "load_bytes": 0,
+        "store_bytes": 453621794.0,
+        "computed_tokens": 20307.0,
+        "preemptions": 0.0,
+        "pass": true,
+        "transfer_counter_deltas": {
+          "vllm:spec_decode_num_drafts_total": 3.0,
+          "vllm:spec_decode_num_draft_tokens_total": 6.0,
+          "vllm:spec_decode_num_accepted_tokens_total": 6.0,
+          "vllm:spec_decode_num_accepted_tokens_per_pos_total": 6.0,
+          "vllm:kv_offload_store_bytes_total": 453621794.0,
+          "vllm:kv_offload_store_time_total": 3.3020961675792933,
+          "vllm:kv_offload_store_size_count": 12.0,
+          "vllm:kv_offload_store_size_sum": 453621794.0
+        }
+      },
+      {
+        "name": "ram-0",
+        "http_status": 200,
+        "stream_done": true,
+        "ttft_seconds": 0.5092916786670685,
+        "seconds": 0.701232245657593,
+        "content": "SUNDIAL-482",
+        "usage": {
+          "prompt_tokens": 20307,
+          "total_tokens": 20315,
+          "completion_tokens": 8,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "token_ids": [
+          50,
+          12821,
+          6014,
+          12,
+          19,
+          23,
+          17,
+          248046
+        ],
+        "finish_reason": "stop",
+        "gpu_hit_tokens": 0.0,
+        "ram_hit_tokens": 20096.0,
+        "load_bytes": 451793954.0,
+        "store_bytes": 0.0,
+        "computed_tokens": 211.0,
+        "preemptions": 0.0,
+        "pass": true,
+        "same_tokens_as_cold": true,
+        "transfer_counter_deltas": {
+          "vllm:spec_decode_num_drafts_total": 3.0,
+          "vllm:spec_decode_num_draft_tokens_total": 6.0,
+          "vllm:spec_decode_num_accepted_tokens_total": 6.0,
+          "vllm:spec_decode_num_accepted_tokens_per_pos_total": 6.0,
+          "vllm:kv_offload_load_bytes_total": 451793954.0,
+          "vllm:kv_offload_load_time_total": 0.16918534273281693,
+          "vllm:kv_offload_load_size_count": 1.0,
+          "vllm:kv_offload_load_size_sum": 451793954.0,
+          "vllm:kv_offload_store_bytes_total": 0.0,
+          "vllm:kv_offload_store_time_total": 0.0,
+          "vllm:kv_offload_store_size_count": 0.0,
+          "vllm:kv_offload_store_size_sum": 0.0
+        }
+      },
+      {
+        "name": "ram-1",
+        "http_status": 200,
+        "stream_done": true,
+        "ttft_seconds": 0.37611479964107275,
+        "seconds": 0.5542161390185356,
+        "content": "SUNDIAL-482",
+        "usage": {
+          "prompt_tokens": 20307,
+          "total_tokens": 20315,
+          "completion_tokens": 8,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "token_ids": [
+          50,
+          12821,
+          6014,
+          12,
+          19,
+          23,
+          17,
+          248046
+        ],
+        "finish_reason": "stop",
+        "gpu_hit_tokens": 0.0,
+        "ram_hit_tokens": 20096.0,
+        "load_bytes": 451793954.0,
+        "store_bytes": 0.0,
+        "computed_tokens": 211.0,
+        "preemptions": 0.0,
+        "pass": true,
+        "same_tokens_as_cold": true,
+        "transfer_counter_deltas": {
+          "vllm:spec_decode_num_drafts_total": 3.0,
+          "vllm:spec_decode_num_draft_tokens_total": 6.0,
+          "vllm:spec_decode_num_accepted_tokens_total": 6.0,
+          "vllm:spec_decode_num_accepted_tokens_per_pos_total": 6.0,
+          "vllm:kv_offload_load_bytes_total": 451793954.0,
+          "vllm:kv_offload_load_time_total": 0.05788567382842302,
+          "vllm:kv_offload_load_size_count": 1.0,
+          "vllm:kv_offload_load_size_sum": 451793954.0,
+          "vllm:kv_offload_store_bytes_total": 0.0,
+          "vllm:kv_offload_store_time_total": 0.0,
+          "vllm:kv_offload_store_size_count": 0.0,
+          "vllm:kv_offload_store_size_sum": 0.0
+        }
+      },
+      {
+        "name": "cold-control",
+        "http_status": 200,
+        "stream_done": true,
+        "ttft_seconds": 14.402091964147985,
+        "seconds": 14.56965637486428,
+        "content": "SUNDIAL-482",
+        "usage": {
+          "prompt_tokens": 20307,
+          "total_tokens": 20315,
+          "completion_tokens": 8,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "token_ids": [
+          50,
+          12821,
+          6014,
+          12,
+          19,
+          23,
+          17,
+          248046
+        ],
+        "finish_reason": "stop",
+        "gpu_hit_tokens": 0.0,
+        "ram_hit_tokens": 0.0,
+        "load_bytes": 0.0,
+        "store_bytes": 453621794.0,
+        "computed_tokens": 20307.0,
+        "preemptions": 0.0,
+        "pass": true,
+        "same_tokens_as_cold": true,
+        "transfer_counter_deltas": {
+          "vllm:spec_decode_num_drafts_total": 3.0,
+          "vllm:spec_decode_num_draft_tokens_total": 6.0,
+          "vllm:spec_decode_num_accepted_tokens_total": 6.0,
+          "vllm:spec_decode_num_accepted_tokens_per_pos_total": 6.0,
+          "vllm:kv_offload_load_bytes_total": 0.0,
+          "vllm:kv_offload_load_time_total": 0.0,
+          "vllm:kv_offload_load_size_count": 0.0,
+          "vllm:kv_offload_load_size_sum": 0.0,
+          "vllm:kv_offload_store_bytes_total": 453621794.0,
+          "vllm:kv_offload_store_time_total": 0.5108582628890872,
+          "vllm:kv_offload_store_size_count": 12.0,
+          "vllm:kv_offload_store_size_sum": 453621794.0
+        }
+      }
+    ]
+  },
+  "full_context": {
+    "artifact": "benchmark-results/ram-prefix-20261011/long-proof-01/summary.json",
+    "all_pass": true,
+    "tests": [
+      {
+        "name": "cold",
+        "http_status": 200,
+        "stream_done": true,
+        "ttft_seconds": 387.3230178649537,
+        "seconds": 387.591282770969,
+        "content": "SUNDIAL-482, Red, Blue",
+        "usage": {
+          "prompt_tokens": 262015,
+          "total_tokens": 262027,
+          "completion_tokens": 12,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "token_ids": [
+          50,
+          12821,
+          6014,
+          12,
+          19,
+          23,
+          17,
+          11,
+          3605,
+          11,
+          8432,
+          248046
+        ],
+        "finish_reason": "stop",
+        "gpu_hit_tokens": 0.0,
+        "ram_hit_tokens": 0.0,
+        "load_bytes": 0.0,
+        "store_bytes": 3906411554.0,
+        "computed_tokens": 262015.0,
+        "preemptions": 0.0,
+        "pass": true,
+        "transfer_counter_deltas": {
+          "vllm:spec_decode_num_drafts_total": 4.0,
+          "vllm:spec_decode_num_draft_tokens_total": 8.0,
+          "vllm:spec_decode_num_accepted_tokens_total": 8.0,
+          "vllm:spec_decode_num_accepted_tokens_per_pos_total": 8.0,
+          "vllm:kv_offload_load_bytes_total": 0.0,
+          "vllm:kv_offload_load_time_total": 0.0,
+          "vllm:kv_offload_load_size_count": 0.0,
+          "vllm:kv_offload_load_size_sum": 0.0,
+          "vllm:kv_offload_store_bytes_total": 3906411554.0,
+          "vllm:kv_offload_store_time_total": 10.059817804489285,
+          "vllm:kv_offload_store_size_count": 131.0,
+          "vllm:kv_offload_store_size_sum": 3906411554.0
+        }
+      },
+      {
+        "name": "ram-0",
+        "http_status": 200,
+        "stream_done": true,
+        "ttft_seconds": 3.202774642035365,
+        "seconds": 3.770281882956624,
+        "content": "SUNDIAL-482, Red, Blue",
+        "usage": {
+          "prompt_tokens": 262015,
+          "total_tokens": 262027,
+          "completion_tokens": 12,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "token_ids": [
+          50,
+          12821,
+          6014,
+          12,
+          19,
+          23,
+          17,
+          11,
+          3605,
+          11,
+          8432,
+          248046
+        ],
+        "finish_reason": "stop",
+        "gpu_hit_tokens": 0.0,
+        "ram_hit_tokens": 261760.0,
+        "load_bytes": 3902755874.0,
+        "store_bytes": 0.0,
+        "computed_tokens": 255.0,
+        "preemptions": 0.0,
+        "pass": true,
+        "same_tokens_as_cold": true,
+        "transfer_counter_deltas": {
+          "vllm:spec_decode_num_drafts_total": 4.0,
+          "vllm:spec_decode_num_draft_tokens_total": 8.0,
+          "vllm:spec_decode_num_accepted_tokens_total": 8.0,
+          "vllm:spec_decode_num_accepted_tokens_per_pos_total": 8.0,
+          "vllm:kv_offload_load_bytes_total": 3902755874.0,
+          "vllm:kv_offload_load_time_total": 1.4646839872002602,
+          "vllm:kv_offload_load_size_count": 1.0,
+          "vllm:kv_offload_load_size_sum": 3902755874.0,
+          "vllm:kv_offload_store_bytes_total": 0.0,
+          "vllm:kv_offload_store_time_total": 0.0,
+          "vllm:kv_offload_store_size_count": 0.0,
+          "vllm:kv_offload_store_size_sum": 0.0
+        }
+      },
+      {
+        "name": "ram-1",
+        "http_status": 200,
+        "stream_done": true,
+        "ttft_seconds": 1.864517823792994,
+        "seconds": 2.4790293062105775,
+        "content": "SUNDIAL-482, Red, Blue",
+        "usage": {
+          "prompt_tokens": 262015,
+          "total_tokens": 262027,
+          "completion_tokens": 12,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "token_ids": [
+          50,
+          12821,
+          6014,
+          12,
+          19,
+          23,
+          17,
+          11,
+          3605,
+          11,
+          8432,
+          248046
+        ],
+        "finish_reason": "stop",
+        "gpu_hit_tokens": 0.0,
+        "ram_hit_tokens": 261760.0,
+        "load_bytes": 3902755874.0,
+        "store_bytes": 0.0,
+        "computed_tokens": 255.0,
+        "preemptions": 0.0,
+        "pass": true,
+        "same_tokens_as_cold": true,
+        "transfer_counter_deltas": {
+          "vllm:spec_decode_num_drafts_total": 4.0,
+          "vllm:spec_decode_num_draft_tokens_total": 8.0,
+          "vllm:spec_decode_num_accepted_tokens_total": 8.0,
+          "vllm:spec_decode_num_accepted_tokens_per_pos_total": 8.0,
+          "vllm:kv_offload_load_bytes_total": 3902755874.0,
+          "vllm:kv_offload_load_time_total": 0.5917309522628784,
+          "vllm:kv_offload_load_size_count": 1.0,
+          "vllm:kv_offload_load_size_sum": 3902755874.0,
+          "vllm:kv_offload_store_bytes_total": 0.0,
+          "vllm:kv_offload_store_time_total": 0.0,
+          "vllm:kv_offload_store_size_count": 0.0,
+          "vllm:kv_offload_store_size_sum": 0.0
+        }
+      }
+    ]
+  },
+  "lifecycle": {
+    "artifact": "benchmark-results/ram-prefix-20261011/lifecycle-01/summary.json",
+    "all_pass": true,
+    "batches": [
+      {
+        "name": "parallel-shared",
+        "ttft_seconds": [
+          4.936,
+          5.32,
+          5.321,
+          5.321
+        ],
+        "computed_tokens": 980.0,
+        "ram_hits": 20096.0,
+        "pass": true
+      },
+      {
+        "name": "parallel-independent",
+        "ttft_seconds": [
+          0.772,
+          0.488,
+          1.045,
+          0.698
+        ],
+        "computed_tokens": 516.0,
+        "ram_hits": 7680.0,
+        "pass": true
+      }
+    ],
+    "tests": [
+      {
+        "stream_done": true,
+        "name": "cold",
+        "http_status": 200,
+        "seconds": 14.602,
+        "first_output_seconds": 14.44,
+        "usage": {
+          "prompt_tokens": 20307,
+          "total_tokens": 20315,
+          "completion_tokens": 8,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "SUNDIAL-482",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 20307.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          50,
+          12821,
+          6014,
+          12,
+          19,
+          23,
+          17,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "natural-ram-reuse",
+        "http_status": 200,
+        "seconds": 0.523,
+        "first_output_seconds": 0.366,
+        "usage": {
+          "prompt_tokens": 20307,
+          "total_tokens": 20315,
+          "completion_tokens": 8,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "SUNDIAL-482",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 211.0,
+        "ram_hits": 20096.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 451793954.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          50,
+          12821,
+          6014,
+          12,
+          19,
+          23,
+          17,
+          248046
+        ],
+        "same_tokens_as_cold": true
+      },
+      {
+        "stream_done": true,
+        "name": "branch-0-cold",
+        "http_status": 200,
+        "seconds": 19.765,
+        "first_output_seconds": 19.553,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "SUNDIAL-482 BRANCH0",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 20341.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          50,
+          12821,
+          6014,
+          12,
+          19,
+          23,
+          17,
+          18235,
+          40549,
+          15,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "branch-0-ram",
+        "http_status": 200,
+        "seconds": 1.996,
+        "first_output_seconds": 1.918,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "SUNDIAL-482 BRANCH0",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 245.0,
+        "ram_hits": 20096.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 451793954.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          50,
+          12821,
+          6014,
+          12,
+          19,
+          23,
+          17,
+          18235,
+          40549,
+          15,
+          248046
+        ],
+        "same_tokens_as_cold": true
+      },
+      {
+        "stream_done": true,
+        "name": "branch-1-cold",
+        "http_status": 200,
+        "seconds": 14.724,
+        "first_output_seconds": 14.511,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "SUNDIAL-482 BRANCH1",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 20341.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          50,
+          12821,
+          6014,
+          12,
+          19,
+          23,
+          17,
+          18235,
+          40549,
+          16,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "branch-1-ram",
+        "http_status": 200,
+        "seconds": 0.614,
+        "first_output_seconds": 0.396,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "SUNDIAL-482 BRANCH1",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 245.0,
+        "ram_hits": 20096.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 451793954.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          50,
+          12821,
+          6014,
+          12,
+          19,
+          23,
+          17,
+          18235,
+          40549,
+          16,
+          248046
+        ],
+        "same_tokens_as_cold": true
+      },
+      {
+        "stream_done": true,
+        "name": "branch-2-cold",
+        "http_status": 200,
+        "seconds": 14.755,
+        "first_output_seconds": 14.542,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "SUNDIAL-482 BRANCH2",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 20341.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          50,
+          12821,
+          6014,
+          12,
+          19,
+          23,
+          17,
+          18235,
+          40549,
+          17,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "branch-2-ram",
+        "http_status": 200,
+        "seconds": 0.594,
+        "first_output_seconds": 0.382,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "SUNDIAL-482 BRANCH2",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 245.0,
+        "ram_hits": 20096.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 451793954.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          50,
+          12821,
+          6014,
+          12,
+          19,
+          23,
+          17,
+          18235,
+          40549,
+          17,
+          248046
+        ],
+        "same_tokens_as_cold": true
+      },
+      {
+        "stream_done": true,
+        "name": "branch-3-cold",
+        "http_status": 200,
+        "seconds": 14.797,
+        "first_output_seconds": 14.582,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "SUNDIAL-482 BRANCH3",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 20341.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          50,
+          12821,
+          6014,
+          12,
+          19,
+          23,
+          17,
+          18235,
+          40549,
+          18,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "branch-3-ram",
+        "http_status": 200,
+        "seconds": 0.583,
+        "first_output_seconds": 0.368,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "SUNDIAL-482 BRANCH3",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 245.0,
+        "ram_hits": 20096.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 451793954.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          50,
+          12821,
+          6014,
+          12,
+          19,
+          23,
+          17,
+          18235,
+          40549,
+          18,
+          248046
+        ],
+        "same_tokens_as_cold": true
+      },
+      {
+        "stream_done": true,
+        "name": "parallel-shared-0",
+        "http_status": 200,
+        "seconds": 6.071,
+        "first_output_seconds": 4.936,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "SUNDIAL-482 BRANCH0",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 245.0,
+        "ram_hits": 20096.0,
+        "gpu_hits": 60288.0,
+        "load_bytes": 451793954.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          50,
+          12821,
+          6014,
+          12,
+          19,
+          23,
+          17,
+          18235,
+          40549,
+          15,
+          248046
+        ],
+        "same_tokens_as_cold": true,
+        "metric_scope": "overlaps parallel requests; see batch counters"
+      },
+      {
+        "stream_done": true,
+        "name": "parallel-shared-1",
+        "http_status": 200,
+        "seconds": 6.309,
+        "first_output_seconds": 5.32,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "SUNDIAL-482 BRANCH1",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 980.0,
+        "ram_hits": 20096.0,
+        "gpu_hits": 60288.0,
+        "load_bytes": 451793954.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          50,
+          12821,
+          6014,
+          12,
+          19,
+          23,
+          17,
+          18235,
+          40549,
+          16,
+          248046
+        ],
+        "same_tokens_as_cold": true,
+        "metric_scope": "overlaps parallel requests; see batch counters"
+      },
+      {
+        "stream_done": true,
+        "name": "parallel-shared-2",
+        "http_status": 200,
+        "seconds": 6.309,
+        "first_output_seconds": 5.321,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "SUNDIAL-482 BRANCH2",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 980.0,
+        "ram_hits": 20096.0,
+        "gpu_hits": 60288.0,
+        "load_bytes": 451793954.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          50,
+          12821,
+          6014,
+          12,
+          19,
+          23,
+          17,
+          18235,
+          40549,
+          17,
+          248046
+        ],
+        "same_tokens_as_cold": true,
+        "metric_scope": "overlaps parallel requests; see batch counters"
+      },
+      {
+        "stream_done": true,
+        "name": "parallel-shared-3",
+        "http_status": 200,
+        "seconds": 6.309,
+        "first_output_seconds": 5.321,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "SUNDIAL-482 BRANCH3",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 980.0,
+        "ram_hits": 20096.0,
+        "gpu_hits": 60288.0,
+        "load_bytes": 451793954.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          50,
+          12821,
+          6014,
+          12,
+          19,
+          23,
+          17,
+          18235,
+          40549,
+          18,
+          248046
+        ],
+        "same_tokens_as_cold": true,
+        "metric_scope": "overlaps parallel requests; see batch counters"
+      },
+      {
+        "stream_done": true,
+        "name": "independent-0-cold",
+        "http_status": 200,
+        "seconds": 1.68,
+        "first_output_seconds": 1.576,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "INDIGO-500",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 2049.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          5078,
+          58451,
+          12,
+          20,
+          15,
+          15,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "independent-1-cold",
+        "http_status": 200,
+        "seconds": 1.574,
+        "first_output_seconds": 1.471,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "INDIGO-501",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 2049.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          5078,
+          58451,
+          12,
+          20,
+          15,
+          16,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "independent-2-cold",
+        "http_status": 200,
+        "seconds": 1.576,
+        "first_output_seconds": 1.476,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "INDIGO-502",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 2049.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          5078,
+          58451,
+          12,
+          20,
+          15,
+          17,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "independent-3-cold",
+        "http_status": 200,
+        "seconds": 1.58,
+        "first_output_seconds": 1.477,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "INDIGO-503",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 2049.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          5078,
+          58451,
+          12,
+          20,
+          15,
+          18,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "parallel-independent-0",
+        "http_status": 200,
+        "seconds": 1.055,
+        "first_output_seconds": 0.772,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "INDIGO-500",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 387.0,
+        "ram_hits": 7680.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 768962696.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          5078,
+          58451,
+          12,
+          20,
+          15,
+          15,
+          248046
+        ],
+        "same_tokens_as_cold": true,
+        "metric_scope": "overlaps parallel requests; see batch counters"
+      },
+      {
+        "stream_done": true,
+        "name": "parallel-independent-1",
+        "http_status": 200,
+        "seconds": 0.78,
+        "first_output_seconds": 0.488,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "INDIGO-501",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 129.0,
+        "ram_hits": 7680.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 768962696.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          5078,
+          58451,
+          12,
+          20,
+          15,
+          16,
+          248046
+        ],
+        "same_tokens_as_cold": true,
+        "metric_scope": "overlaps parallel requests; see batch counters"
+      },
+      {
+        "stream_done": true,
+        "name": "parallel-independent-2",
+        "http_status": 200,
+        "seconds": 1.206,
+        "first_output_seconds": 1.045,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "INDIGO-502",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 516.0,
+        "ram_hits": 7680.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 768962696.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          5078,
+          58451,
+          12,
+          20,
+          15,
+          17,
+          248046
+        ],
+        "same_tokens_as_cold": true,
+        "metric_scope": "overlaps parallel requests; see batch counters"
+      },
+      {
+        "stream_done": true,
+        "name": "parallel-independent-3",
+        "http_status": 200,
+        "seconds": 0.975,
+        "first_output_seconds": 0.698,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "INDIGO-503",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 258.0,
+        "ram_hits": 7680.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 768962696.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          5078,
+          58451,
+          12,
+          20,
+          15,
+          18,
+          248046
+        ],
+        "same_tokens_as_cold": true,
+        "metric_scope": "overlaps parallel requests; see batch counters"
+      },
+      {
+        "stream_done": true,
+        "name": "turn-0",
+        "http_status": 200,
+        "seconds": 0.589,
+        "first_output_seconds": 0.375,
+        "usage": {
+          "prompt_tokens": 20338,
+          "total_tokens": 20348,
+          "completion_tokens": 10,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "SUNDIAL-482TURN0",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 242.0,
+        "ram_hits": 20096.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 451793954.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          50,
+          12821,
+          6014,
+          12,
+          19,
+          23,
+          17,
+          15834,
+          15,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "turn-1",
+        "http_status": 200,
+        "seconds": 0.752,
+        "first_output_seconds": 0.59,
+        "usage": {
+          "prompt_tokens": 20371,
+          "total_tokens": 20381,
+          "completion_tokens": 10,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "SUNDIAL-482TURN1",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 275.0,
+        "ram_hits": 20096.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 451793954.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          50,
+          12821,
+          6014,
+          12,
+          19,
+          23,
+          17,
+          15834,
+          16,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "turn-2",
+        "http_status": 200,
+        "seconds": 0.523,
+        "first_output_seconds": 0.361,
+        "usage": {
+          "prompt_tokens": 20404,
+          "total_tokens": 20414,
+          "completion_tokens": 10,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "SUNDIAL-482TURN2",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 180.0,
+        "ram_hits": 20224.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 453621794.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          50,
+          12821,
+          6014,
+          12,
+          19,
+          23,
+          17,
+          15834,
+          17,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "after-cancellation",
+        "http_status": 200,
+        "seconds": 0.519,
+        "first_output_seconds": 0.36,
+        "usage": {
+          "prompt_tokens": 20307,
+          "total_tokens": 20315,
+          "completion_tokens": 8,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "SUNDIAL-482",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 211.0,
+        "ram_hits": 20096.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 451793954.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          50,
+          12821,
+          6014,
+          12,
+          19,
+          23,
+          17,
+          248046
+        ],
+        "same_tokens_as_cold": true,
+        "cancelled_after_tokens": 64
+      },
+      {
+        "stream_done": true,
+        "name": "evict-0",
+        "http_status": 200,
+        "seconds": 0.72,
+        "first_output_seconds": 0.62,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-700",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          15,
+          15,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-1",
+        "http_status": 200,
+        "seconds": 0.733,
+        "first_output_seconds": 0.629,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-701",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          15,
+          16,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-2",
+        "http_status": 200,
+        "seconds": 0.734,
+        "first_output_seconds": 0.631,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-702",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          15,
+          17,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-3",
+        "http_status": 200,
+        "seconds": 0.733,
+        "first_output_seconds": 0.629,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-703",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          15,
+          18,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-4",
+        "http_status": 200,
+        "seconds": 0.786,
+        "first_output_seconds": 0.683,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-704",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          15,
+          19,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-5",
+        "http_status": 200,
+        "seconds": 0.733,
+        "first_output_seconds": 0.631,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-705",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          15,
+          20,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-6",
+        "http_status": 200,
+        "seconds": 0.737,
+        "first_output_seconds": 0.635,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-706",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          15,
+          21,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-7",
+        "http_status": 200,
+        "seconds": 0.732,
+        "first_output_seconds": 0.63,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-707",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          15,
+          22,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-8",
+        "http_status": 200,
+        "seconds": 0.741,
+        "first_output_seconds": 0.637,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-708",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          15,
+          23,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-9",
+        "http_status": 200,
+        "seconds": 0.735,
+        "first_output_seconds": 0.631,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-709",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          15,
+          24,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-10",
+        "http_status": 200,
+        "seconds": 0.732,
+        "first_output_seconds": 0.633,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-710",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          16,
+          15,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-11",
+        "http_status": 200,
+        "seconds": 0.736,
+        "first_output_seconds": 0.631,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-711",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          16,
+          16,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-12",
+        "http_status": 200,
+        "seconds": 0.735,
+        "first_output_seconds": 0.633,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-712",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          16,
+          17,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-13",
+        "http_status": 200,
+        "seconds": 0.732,
+        "first_output_seconds": 0.63,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-713",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          16,
+          18,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-14",
+        "http_status": 200,
+        "seconds": 0.739,
+        "first_output_seconds": 0.634,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-714",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          16,
+          19,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-15",
+        "http_status": 200,
+        "seconds": 0.739,
+        "first_output_seconds": 0.632,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-715",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          16,
+          20,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-16",
+        "http_status": 200,
+        "seconds": 0.735,
+        "first_output_seconds": 0.632,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-716",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          16,
+          21,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-17",
+        "http_status": 200,
+        "seconds": 0.735,
+        "first_output_seconds": 0.631,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-717",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          16,
+          22,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-18",
+        "http_status": 200,
+        "seconds": 0.734,
+        "first_output_seconds": 0.631,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-718",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          16,
+          23,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-19",
+        "http_status": 200,
+        "seconds": 0.736,
+        "first_output_seconds": 0.632,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-719",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          16,
+          24,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-20",
+        "http_status": 200,
+        "seconds": 0.735,
+        "first_output_seconds": 0.632,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-720",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          17,
+          15,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-21",
+        "http_status": 200,
+        "seconds": 0.74,
+        "first_output_seconds": 0.634,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-721",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          17,
+          16,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-22",
+        "http_status": 200,
+        "seconds": 0.735,
+        "first_output_seconds": 0.632,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-722",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          17,
+          17,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-23",
+        "http_status": 200,
+        "seconds": 0.734,
+        "first_output_seconds": 0.63,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-723",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          17,
+          18,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-24",
+        "http_status": 200,
+        "seconds": 0.733,
+        "first_output_seconds": 0.63,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-724",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          17,
+          19,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-25",
+        "http_status": 200,
+        "seconds": 0.735,
+        "first_output_seconds": 0.632,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-725",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          17,
+          20,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-26",
+        "http_status": 200,
+        "seconds": 0.734,
+        "first_output_seconds": 0.632,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-726",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          17,
+          21,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-27",
+        "http_status": 200,
+        "seconds": 0.735,
+        "first_output_seconds": 0.632,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-727",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          17,
+          22,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-28",
+        "http_status": 200,
+        "seconds": 0.731,
+        "first_output_seconds": 0.629,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-728",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          17,
+          23,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-29",
+        "http_status": 200,
+        "seconds": 0.739,
+        "first_output_seconds": 0.635,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-729",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          17,
+          24,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-30",
+        "http_status": 200,
+        "seconds": 0.733,
+        "first_output_seconds": 0.63,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-730",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          18,
+          15,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-31",
+        "http_status": 200,
+        "seconds": 0.735,
+        "first_output_seconds": 0.632,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-731",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          18,
+          16,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-32",
+        "http_status": 200,
+        "seconds": 0.736,
+        "first_output_seconds": 0.63,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-732",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          18,
+          17,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-33",
+        "http_status": 200,
+        "seconds": 0.734,
+        "first_output_seconds": 0.631,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-733",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          18,
+          18,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-34",
+        "http_status": 200,
+        "seconds": 0.732,
+        "first_output_seconds": 0.629,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-734",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          18,
+          19,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-35",
+        "http_status": 200,
+        "seconds": 0.739,
+        "first_output_seconds": 0.636,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-735",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          18,
+          20,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-36",
+        "http_status": 200,
+        "seconds": 0.735,
+        "first_output_seconds": 0.628,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-736",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          18,
+          21,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-37",
+        "http_status": 200,
+        "seconds": 0.732,
+        "first_output_seconds": 0.629,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-737",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          18,
+          22,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-38",
+        "http_status": 200,
+        "seconds": 0.734,
+        "first_output_seconds": 0.63,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-738",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          18,
+          23,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-39",
+        "http_status": 200,
+        "seconds": 0.735,
+        "first_output_seconds": 0.632,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-739",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          18,
+          24,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-40",
+        "http_status": 200,
+        "seconds": 0.736,
+        "first_output_seconds": 0.63,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-740",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          19,
+          15,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-41",
+        "http_status": 200,
+        "seconds": 0.737,
+        "first_output_seconds": 0.633,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-741",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          19,
+          16,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-42",
+        "http_status": 200,
+        "seconds": 0.733,
+        "first_output_seconds": 0.63,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-742",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          19,
+          17,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-43",
+        "http_status": 200,
+        "seconds": 0.739,
+        "first_output_seconds": 0.635,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-743",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          19,
+          18,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-44",
+        "http_status": 200,
+        "seconds": 0.731,
+        "first_output_seconds": 0.628,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-744",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          19,
+          19,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-45",
+        "http_status": 200,
+        "seconds": 0.733,
+        "first_output_seconds": 0.629,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-745",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          19,
+          20,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-46",
+        "http_status": 200,
+        "seconds": 0.735,
+        "first_output_seconds": 0.632,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-746",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          19,
+          21,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-47",
+        "http_status": 200,
+        "seconds": 0.737,
+        "first_output_seconds": 0.63,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-747",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          19,
+          22,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-48",
+        "http_status": 200,
+        "seconds": 0.731,
+        "first_output_seconds": 0.628,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-748",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          19,
+          23,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-49",
+        "http_status": 200,
+        "seconds": 0.731,
+        "first_output_seconds": 0.629,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-749",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          19,
+          24,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-50",
+        "http_status": 200,
+        "seconds": 0.731,
+        "first_output_seconds": 0.63,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-750",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          20,
+          15,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-51",
+        "http_status": 200,
+        "seconds": 0.732,
+        "first_output_seconds": 0.63,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-751",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          20,
+          16,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-52",
+        "http_status": 200,
+        "seconds": 0.734,
+        "first_output_seconds": 0.631,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-752",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          20,
+          17,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-53",
+        "http_status": 200,
+        "seconds": 0.731,
+        "first_output_seconds": 0.629,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-753",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          20,
+          18,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-54",
+        "http_status": 200,
+        "seconds": 0.735,
+        "first_output_seconds": 0.631,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-754",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          20,
+          19,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-55",
+        "http_status": 200,
+        "seconds": 0.734,
+        "first_output_seconds": 0.631,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-755",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          20,
+          20,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-56",
+        "http_status": 200,
+        "seconds": 0.735,
+        "first_output_seconds": 0.631,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-756",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          20,
+          21,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-57",
+        "http_status": 200,
+        "seconds": 0.737,
+        "first_output_seconds": 0.633,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-757",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          20,
+          22,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-58",
+        "http_status": 200,
+        "seconds": 0.733,
+        "first_output_seconds": 0.63,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-758",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          20,
+          23,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-59",
+        "http_status": 200,
+        "seconds": 0.741,
+        "first_output_seconds": 0.633,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-759",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          20,
+          24,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-60",
+        "http_status": 200,
+        "seconds": 0.738,
+        "first_output_seconds": 0.632,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-760",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          21,
+          15,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-61",
+        "http_status": 200,
+        "seconds": 0.734,
+        "first_output_seconds": 0.631,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-761",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          21,
+          16,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-62",
+        "http_status": 200,
+        "seconds": 0.735,
+        "first_output_seconds": 0.63,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-762",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          21,
+          17,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "evict-63",
+        "http_status": 200,
+        "seconds": 0.742,
+        "first_output_seconds": 0.636,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-763",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          21,
+          18,
+          248046
+        ]
+      },
+      {
+        "stream_done": true,
+        "name": "newest-after-eviction",
+        "http_status": 200,
+        "seconds": 0.334,
+        "first_output_seconds": 0.232,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "IVORY-763",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 128.0,
+        "ram_hits": 384.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 170306594.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          2990,
+          7280,
+          12,
+          22,
+          21,
+          18,
+          248046
+        ],
+        "same_tokens_as_cold": true
+      },
+      {
+        "stream_done": true,
+        "name": "oldest-after-eviction",
+        "http_status": 200,
+        "seconds": 14.737,
+        "first_output_seconds": 14.578,
+        "usage": {
+          "prompt_tokens": 20307,
+          "total_tokens": 20315,
+          "completion_tokens": 8,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "SUNDIAL-482",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 20307.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          50,
+          12821,
+          6014,
+          12,
+          19,
+          23,
+          17,
+          248046
+        ],
+        "same_tokens_as_cold": true
+      }
+    ]
+  },
+  "warm_parallel": {
+    "artifact": "benchmark-results/ram-prefix-20261011/parallel-repeat-01/summary.json",
+    "all_pass": true,
+    "batches": [
+      {
+        "name": "parallel-shared-warm-0",
+        "ttft_seconds": [
+          1.27,
+          1.269,
+          1.026,
+          1.271
+        ],
+        "computed_tokens": 980.0,
+        "ram_hits": 20096.0,
+        "pass": true
+      },
+      {
+        "name": "parallel-shared-warm-1",
+        "ttft_seconds": [
+          1.017,
+          1.256,
+          1.255,
+          1.255
+        ],
+        "computed_tokens": 980.0,
+        "ram_hits": 20096.0,
+        "pass": true
+      },
+      {
+        "name": "parallel-shared-warm-2",
+        "ttft_seconds": [
+          1.017,
+          1.263,
+          1.259,
+          1.263
+        ],
+        "computed_tokens": 980.0,
+        "ram_hits": 20096.0,
+        "pass": true
+      }
+    ],
+    "tests": [
+      {
+        "stream_done": true,
+        "name": "parallel-shared-warm-0-0",
+        "http_status": 200,
+        "seconds": 2.255,
+        "first_output_seconds": 1.27,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "SUNDIAL-482 BRANCH0",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 980.0,
+        "ram_hits": 20096.0,
+        "gpu_hits": 60288.0,
+        "load_bytes": 451793954.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          50,
+          12821,
+          6014,
+          12,
+          19,
+          23,
+          17,
+          18235,
+          40549,
+          15,
+          248046
+        ],
+        "same_tokens_as_cold": true,
+        "metric_scope": "overlaps parallel requests; see batch counters"
+      },
+      {
+        "stream_done": true,
+        "name": "parallel-shared-warm-0-1",
+        "http_status": 200,
+        "seconds": 2.257,
+        "first_output_seconds": 1.269,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "SUNDIAL-482 BRANCH1",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 980.0,
+        "ram_hits": 20096.0,
+        "gpu_hits": 60288.0,
+        "load_bytes": 451793954.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          50,
+          12821,
+          6014,
+          12,
+          19,
+          23,
+          17,
+          18235,
+          40549,
+          16,
+          248046
+        ],
+        "same_tokens_as_cold": true,
+        "metric_scope": "overlaps parallel requests; see batch counters"
+      },
+      {
+        "stream_done": true,
+        "name": "parallel-shared-warm-0-2",
+        "http_status": 200,
+        "seconds": 2.02,
+        "first_output_seconds": 1.026,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "SUNDIAL-482 BRANCH2",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 245.0,
+        "ram_hits": 20096.0,
+        "gpu_hits": 60288.0,
+        "load_bytes": 451793954.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          50,
+          12821,
+          6014,
+          12,
+          19,
+          23,
+          17,
+          18235,
+          40549,
+          17,
+          248046
+        ],
+        "same_tokens_as_cold": true,
+        "metric_scope": "overlaps parallel requests; see batch counters"
+      },
+      {
+        "stream_done": true,
+        "name": "parallel-shared-warm-0-3",
+        "http_status": 200,
+        "seconds": 2.255,
+        "first_output_seconds": 1.271,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "SUNDIAL-482 BRANCH3",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 980.0,
+        "ram_hits": 20096.0,
+        "gpu_hits": 60288.0,
+        "load_bytes": 451793954.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          50,
+          12821,
+          6014,
+          12,
+          19,
+          23,
+          17,
+          18235,
+          40549,
+          18,
+          248046
+        ],
+        "same_tokens_as_cold": true,
+        "metric_scope": "overlaps parallel requests; see batch counters"
+      },
+      {
+        "stream_done": true,
+        "name": "parallel-shared-warm-1-0",
+        "http_status": 200,
+        "seconds": 2.009,
+        "first_output_seconds": 1.017,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "SUNDIAL-482 BRANCH0",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 245.0,
+        "ram_hits": 20096.0,
+        "gpu_hits": 60288.0,
+        "load_bytes": 451793954.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          50,
+          12821,
+          6014,
+          12,
+          19,
+          23,
+          17,
+          18235,
+          40549,
+          15,
+          248046
+        ],
+        "same_tokens_as_cold": true,
+        "metric_scope": "overlaps parallel requests; see batch counters"
+      },
+      {
+        "stream_done": true,
+        "name": "parallel-shared-warm-1-1",
+        "http_status": 200,
+        "seconds": 2.242,
+        "first_output_seconds": 1.256,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "SUNDIAL-482 BRANCH1",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 980.0,
+        "ram_hits": 20096.0,
+        "gpu_hits": 60288.0,
+        "load_bytes": 451793954.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          50,
+          12821,
+          6014,
+          12,
+          19,
+          23,
+          17,
+          18235,
+          40549,
+          16,
+          248046
+        ],
+        "same_tokens_as_cold": true,
+        "metric_scope": "overlaps parallel requests; see batch counters"
+      },
+      {
+        "stream_done": true,
+        "name": "parallel-shared-warm-1-2",
+        "http_status": 200,
+        "seconds": 2.242,
+        "first_output_seconds": 1.255,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "SUNDIAL-482 BRANCH2",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 980.0,
+        "ram_hits": 20096.0,
+        "gpu_hits": 60288.0,
+        "load_bytes": 451793954.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          50,
+          12821,
+          6014,
+          12,
+          19,
+          23,
+          17,
+          18235,
+          40549,
+          17,
+          248046
+        ],
+        "same_tokens_as_cold": true,
+        "metric_scope": "overlaps parallel requests; see batch counters"
+      },
+      {
+        "stream_done": true,
+        "name": "parallel-shared-warm-1-3",
+        "http_status": 200,
+        "seconds": 2.242,
+        "first_output_seconds": 1.255,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "SUNDIAL-482 BRANCH3",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 980.0,
+        "ram_hits": 20096.0,
+        "gpu_hits": 60288.0,
+        "load_bytes": 451793954.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          50,
+          12821,
+          6014,
+          12,
+          19,
+          23,
+          17,
+          18235,
+          40549,
+          18,
+          248046
+        ],
+        "same_tokens_as_cold": true,
+        "metric_scope": "overlaps parallel requests; see batch counters"
+      },
+      {
+        "stream_done": true,
+        "name": "parallel-shared-warm-2-0",
+        "http_status": 200,
+        "seconds": 2.013,
+        "first_output_seconds": 1.017,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "SUNDIAL-482 BRANCH0",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 245.0,
+        "ram_hits": 20096.0,
+        "gpu_hits": 60288.0,
+        "load_bytes": 451793954.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          50,
+          12821,
+          6014,
+          12,
+          19,
+          23,
+          17,
+          18235,
+          40549,
+          15,
+          248046
+        ],
+        "same_tokens_as_cold": true,
+        "metric_scope": "overlaps parallel requests; see batch counters"
+      },
+      {
+        "stream_done": true,
+        "name": "parallel-shared-warm-2-1",
+        "http_status": 200,
+        "seconds": 2.251,
+        "first_output_seconds": 1.263,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "SUNDIAL-482 BRANCH1",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 980.0,
+        "ram_hits": 20096.0,
+        "gpu_hits": 60288.0,
+        "load_bytes": 451793954.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          50,
+          12821,
+          6014,
+          12,
+          19,
+          23,
+          17,
+          18235,
+          40549,
+          16,
+          248046
+        ],
+        "same_tokens_as_cold": true,
+        "metric_scope": "overlaps parallel requests; see batch counters"
+      },
+      {
+        "stream_done": true,
+        "name": "parallel-shared-warm-2-2",
+        "http_status": 200,
+        "seconds": 2.246,
+        "first_output_seconds": 1.259,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "SUNDIAL-482 BRANCH2",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 980.0,
+        "ram_hits": 20096.0,
+        "gpu_hits": 60288.0,
+        "load_bytes": 451793954.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          50,
+          12821,
+          6014,
+          12,
+          19,
+          23,
+          17,
+          18235,
+          40549,
+          17,
+          248046
+        ],
+        "same_tokens_as_cold": true,
+        "metric_scope": "overlaps parallel requests; see batch counters"
+      },
+      {
+        "stream_done": true,
+        "name": "parallel-shared-warm-2-3",
+        "http_status": 200,
+        "seconds": 2.25,
+        "first_output_seconds": 1.263,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "SUNDIAL-482 BRANCH3",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 980.0,
+        "ram_hits": 20096.0,
+        "gpu_hits": 60288.0,
+        "load_bytes": 451793954.0,
+        "preemptions": 0.0,
+        "token_ids": [
+          50,
+          12821,
+          6014,
+          12,
+          19,
+          23,
+          17,
+          18235,
+          40549,
+          18,
+          248046
+        ],
+        "same_tokens_as_cold": true,
+        "metric_scope": "overlaps parallel requests; see batch counters"
+      }
+    ]
+  },
+  "smoke": {
+    "artifact": "benchmark-results/ram-prefix-20261011/smoke-01/20261011T221722Z-smoke/summary.json",
+    "all_pass": true,
+    "tests": [
+      {
+        "stream_done": true,
+        "name": "text",
+        "http_status": 200,
+        "seconds": 1.768,
+        "first_output_seconds": 0.205,
+        "usage": {
+          "prompt_tokens": 28,
+          "total_tokens": 91,
+          "completion_tokens": 63,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "A compressor pumps a refrigerant gas through coils, raising its pressure and temperature. This hot gas releases heat to the surrounding room air as it condenses into a liquid. The liquid then expands in the interior coils, absorbing heat from the fridge's contents and turning back into a cold gas to repeat the cycle.",
+        "tool_calls": [],
+        "smoke_pass": true,
+        "reasoning_present": false,
+        "token_ids_recorded": false
+      },
+      {
+        "stream_done": true,
+        "name": "reasoning",
+        "http_status": 200,
+        "seconds": 2.616,
+        "first_output_seconds": 0.248,
+        "usage": {
+          "prompt_tokens": 57,
+          "total_tokens": 186,
+          "completion_tokens": 129,
+          "completion_tokens_details": {
+            "reasoning_tokens": 55
+          }
+        },
+        "finish_reason": "stop",
+        "content": "\n\n**17 \u00d7 19 = 323**\n\n**Calculation:** I used the distributive property by rewriting 19 as (20 \u2212 1):\n\n17 \u00d7 19 = 17 \u00d7 (20 \u2212 1) = 340 \u2212 17 = **323**",
+        "tool_calls": [],
+        "smoke_pass": true,
+        "reasoning_present": true,
+        "token_ids_recorded": false
+      },
+      {
+        "stream_done": true,
+        "name": "vision",
+        "http_status": 200,
+        "seconds": 0.523,
+        "first_output_seconds": 0.472,
+        "usage": {
+          "prompt_tokens": 428,
+          "total_tokens": 432,
+          "completion_tokens": 4,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "Red, blue",
+        "tool_calls": [],
+        "smoke_pass": true,
+        "reasoning_present": false,
+        "token_ids_recorded": false
+      },
+      {
+        "stream_done": true,
+        "name": "tools",
+        "http_status": 200,
+        "seconds": 1.391,
+        "first_output_seconds": 0.664,
+        "usage": {
+          "prompt_tokens": 324,
+          "total_tokens": 375,
+          "completion_tokens": 51,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "tool_calls",
+        "content": "",
+        "tool_calls": [
+          {
+            "name": "report_health",
+            "arguments": "{\"status\": \"ok\", \"model\": \"RedHatAI/Qwen3.8-27B-INT4\"}"
+          }
+        ],
+        "smoke_pass": true,
+        "reasoning_present": false,
+        "token_ids_recorded": false
+      }
+    ]
+  },
+  "interpretation": [
+    "RAM restore is demonstrated after successful GPU-only prefix resets by zero GPU hits, positive external hits/load bytes, a short recomputed tail, and identical generated token IDs.",
+    "Natural reuse also passes without reset: active_only removes idle GPU prefix metadata while preserving shared live-request references.",
+    "Parallel per-request metric windows overlap; use aggregate batch counters. Live requests can share GPU blocks during a batch.",
+    "First B4 shared-history shape took 4.936\u20135.321 seconds; three warmed repetitions took 1.017\u20131.271 seconds.",
+    "Sixty-four independent 512-token histories exceed the RAM budget through fixed-size recurrent checkpoints; newest history restores from RAM while old 20K history recomputes correctly.",
+    "Pinned-memory transfer microbenchmark measures bare contiguous copies; end-to-end restores additionally reconstruct KVarN side buffers and schedule model work."
+  ]
+}

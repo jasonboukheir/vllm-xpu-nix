@@ -99,7 +99,9 @@ vLLM and native kernel release; an older native library cannot read its records.
 - Prefill token budget: 2,048; GPU memory utilization: 0.96, with the other
   vLLM workers disabled. See the release notes for the measured memory budget.
 - At most two 448×448 images; no video.
-- No prefix caching or XPU graphs.
+- Local prefix caching is supported for this BF16 Qwen3.5 compact K4V2
+  TP1/PP1 profile. See [prefix-cache sizing](kvarn-prefix-cache.md).
+- No XPU graphs.
 - Bundled MTP: one or two draft tokens; two recommended.
 
 The options above do not configure all these serving limits. The scheduler's
@@ -112,8 +114,8 @@ profile, [xpu-v1.9.0 qualification](releases/xpu-v1.9.0.md) for the K4V2
 target release, and [xpu-v1.10.0 qualification](releases/xpu-v1.10.0.md) for the
 MTP draft-cache comparison and CPU draft-metadata fix. Configuration acceptance alone does not establish GPU
 correctness, quality or performance. Higher concurrency, larger images and
-other models need their own qualification. DFlash, video/audio, prefix caching
-and graph/V2 serving remain outside this combination.
+other models need their own qualification. DFlash, video/audio, distributed
+KV connectors/events and graph/V2 serving remain outside this combination.
 
 ## Rollback
 

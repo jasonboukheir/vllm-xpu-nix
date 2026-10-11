@@ -195,7 +195,9 @@ let
             records are 26,880 bytes instead of 35,072 bytes: 23.36% smaller.
             Other model allocations remain separate. Reducing value precision
             is lossy; consult the paired release measurements before selecting
-            this option for its additional context capacity.
+            this option for its additional context capacity. Local prefix
+            caching is supported for Qwen3.5 with BF16 compute, TP1/PP1 and
+            eager V1 execution; see docs/kvarn-prefix-cache.md for sizing.
           Tighter KV is the headroom that lets concurrent agentic
           sessions accumulate context without evicting.
         '';
@@ -255,7 +257,8 @@ let
             Qwen3.6-35B-A3B (the model card's recommendation).
           - `eagle` / `eagle3` — separate draft model.
           For KVarN use `method = "mtp"` and `num_speculative_tokens = 2`
-          with BF16 compute, eager execution and no prefix cache. The B70
+          with BF16 compute and eager execution. Compact K4V2 supports local
+          prefix caching on the qualified Qwen3.5 TP1/PP1 profile. The B70
           serving profile uses up to four active requests and two bounded
           images; see docs/kvarn-beta.md for the full configuration and
           release qualification. One draft token is also supported.

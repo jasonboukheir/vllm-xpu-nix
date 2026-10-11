@@ -1,0 +1,847 @@
+{
+  "execution": "source overlay on the installed xpu-v1.12.0 native dependency closure; separate from installed xpu-v1.12.1 qualification",
+  "source_base": "ef92dc5600af64103c01f97e3300b81c3a1083ee",
+  "patch_sha256": "4358191bc1cbe6338031d0318626d95bb8e6e15ee49d068542ea099b13c50807",
+  "candidate": "candidate-03",
+  "max_model_len": 262144,
+  "shared_attention_tokens": 263040,
+  "recurrent_usable_blocks": 20,
+  "extra_checkpoint_blocks": 4,
+  "cpu_tests": {
+    "cache_and_scheduler": 350,
+    "capacity": 223,
+    "platform_guards": 73,
+    "total_passed": 646
+  },
+  "isolated_ttft": [
+    {
+      "prompt_tokens": 512,
+      "ttft_s": [
+        2.029646957293153,
+        0.36639231629669666,
+        0.373924792278558
+      ],
+      "prefill_computed_tokens": [
+        512.0,
+        256.0,
+        256.0
+      ],
+      "same_output_tokens": [
+        true,
+        true,
+        true
+      ],
+      "all_isolated": true
+    },
+    {
+      "prompt_tokens": 2048,
+      "ttft_s": [
+        1.4403790342621505,
+        0.3782874164171517,
+        0.3757883389480412
+      ],
+      "prefill_computed_tokens": [
+        2048.0,
+        256.0,
+        256.0
+      ],
+      "same_output_tokens": [
+        true,
+        true,
+        true
+      ],
+      "all_isolated": true
+    },
+    {
+      "prompt_tokens": 8192,
+      "ttft_s": [
+        5.623554011806846,
+        0.408627662807703,
+        0.40735244611278176
+      ],
+      "prefill_computed_tokens": [
+        8192.0,
+        256.0,
+        256.0
+      ],
+      "same_output_tokens": [
+        true,
+        true,
+        true
+      ],
+      "all_isolated": true
+    },
+    {
+      "prompt_tokens": 20307,
+      "ttft_s": [
+        14.403141968883574,
+        0.32164167193695903,
+        0.32007030211389065
+      ],
+      "prefill_computed_tokens": [
+        20307.0,
+        211.0,
+        211.0
+      ],
+      "same_output_tokens": [
+        true,
+        true,
+        true
+      ],
+      "all_isolated": true
+    }
+  ],
+  "conversation_checks": {
+    "all_pass": true,
+    "tests": [
+      {
+        "name": "cold",
+        "first_output_seconds": 14.109,
+        "usage": {
+          "prompt_tokens": 20307,
+          "total_tokens": 20315,
+          "completion_tokens": 8,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 20307.0,
+        "preemptions": 0.0
+      },
+      {
+        "name": "warm",
+        "first_output_seconds": 0.31,
+        "usage": {
+          "prompt_tokens": 20307,
+          "total_tokens": 20315,
+          "completion_tokens": 8,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 211.0,
+        "preemptions": 0.0,
+        "same_tokens_as_cold": true
+      },
+      {
+        "name": "branch-0-cold-control",
+        "first_output_seconds": 14.151,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 20341.0,
+        "preemptions": 0.0
+      },
+      {
+        "name": "branch-0-shared",
+        "first_output_seconds": 0.322,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 245.0,
+        "preemptions": 0.0,
+        "same_tokens_as_cold": true
+      },
+      {
+        "name": "branch-1-cold-control",
+        "first_output_seconds": 14.18,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 20341.0,
+        "preemptions": 0.0
+      },
+      {
+        "name": "branch-1-shared",
+        "first_output_seconds": 0.325,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 245.0,
+        "preemptions": 0.0,
+        "same_tokens_as_cold": true
+      },
+      {
+        "name": "branch-2-cold-control",
+        "first_output_seconds": 14.192,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 20341.0,
+        "preemptions": 0.0
+      },
+      {
+        "name": "branch-2-shared",
+        "first_output_seconds": 0.325,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 245.0,
+        "preemptions": 0.0,
+        "same_tokens_as_cold": true
+      },
+      {
+        "name": "branch-3-cold-control",
+        "first_output_seconds": 14.221,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 20341.0,
+        "preemptions": 0.0
+      },
+      {
+        "name": "branch-3-shared",
+        "first_output_seconds": 0.323,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 245.0,
+        "preemptions": 0.0,
+        "same_tokens_as_cold": true
+      },
+      {
+        "name": "parallel-0",
+        "first_output_seconds": 5.467,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 980.0,
+        "preemptions": 0.0,
+        "same_tokens_as_cold": true,
+        "metric_scope": "overlaps other parallel requests"
+      },
+      {
+        "name": "parallel-1",
+        "first_output_seconds": 5.079,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 245.0,
+        "preemptions": 0.0,
+        "same_tokens_as_cold": true,
+        "metric_scope": "overlaps other parallel requests"
+      },
+      {
+        "name": "parallel-2",
+        "first_output_seconds": 5.474,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 980.0,
+        "preemptions": 0.0,
+        "same_tokens_as_cold": true,
+        "metric_scope": "overlaps other parallel requests"
+      },
+      {
+        "name": "parallel-3",
+        "first_output_seconds": 5.466,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 980.0,
+        "preemptions": 0.0,
+        "same_tokens_as_cold": true,
+        "metric_scope": "overlaps other parallel requests"
+      },
+      {
+        "name": "after-cancellation",
+        "first_output_seconds": 0.32,
+        "usage": {
+          "prompt_tokens": 20307,
+          "total_tokens": 20315,
+          "completion_tokens": 8,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 211.0,
+        "preemptions": 0.0,
+        "same_tokens_as_cold": true,
+        "cancelled_after_tokens": 65
+      },
+      {
+        "name": "evict-0",
+        "first_output_seconds": 1.492,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 2049.0,
+        "preemptions": 0.0
+      },
+      {
+        "name": "evict-1",
+        "first_output_seconds": 1.41,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 2049.0,
+        "preemptions": 0.0
+      },
+      {
+        "name": "evict-2",
+        "first_output_seconds": 1.411,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 2049.0,
+        "preemptions": 0.0
+      },
+      {
+        "name": "evict-3",
+        "first_output_seconds": 1.412,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 2049.0,
+        "preemptions": 0.0
+      },
+      {
+        "name": "evict-4",
+        "first_output_seconds": 1.412,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 2049.0,
+        "preemptions": 0.0
+      },
+      {
+        "name": "evict-5",
+        "first_output_seconds": 1.414,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 2049.0,
+        "preemptions": 0.0
+      },
+      {
+        "name": "evict-6",
+        "first_output_seconds": 1.418,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 2049.0,
+        "preemptions": 0.0
+      },
+      {
+        "name": "evict-7",
+        "first_output_seconds": 1.416,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 2049.0,
+        "preemptions": 0.0
+      },
+      {
+        "name": "evict-8",
+        "first_output_seconds": 1.415,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 2049.0,
+        "preemptions": 0.0
+      },
+      {
+        "name": "evict-9",
+        "first_output_seconds": 1.419,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 2049.0,
+        "preemptions": 0.0
+      },
+      {
+        "name": "evict-10",
+        "first_output_seconds": 1.418,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 2049.0,
+        "preemptions": 0.0
+      },
+      {
+        "name": "evict-11",
+        "first_output_seconds": 1.42,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 2049.0,
+        "preemptions": 0.0
+      },
+      {
+        "name": "evict-12",
+        "first_output_seconds": 1.419,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 2049.0,
+        "preemptions": 0.0
+      },
+      {
+        "name": "evict-13",
+        "first_output_seconds": 1.42,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 2049.0,
+        "preemptions": 0.0
+      },
+      {
+        "name": "evict-14",
+        "first_output_seconds": 1.418,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 2049.0,
+        "preemptions": 0.0
+      },
+      {
+        "name": "evict-15",
+        "first_output_seconds": 1.42,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 2049.0,
+        "preemptions": 0.0
+      },
+      {
+        "name": "evict-16",
+        "first_output_seconds": 1.42,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 2049.0,
+        "preemptions": 0.0
+      },
+      {
+        "name": "evict-17",
+        "first_output_seconds": 1.418,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 2049.0,
+        "preemptions": 0.0
+      },
+      {
+        "name": "evict-18",
+        "first_output_seconds": 1.421,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 2049.0,
+        "preemptions": 0.0
+      },
+      {
+        "name": "evict-19",
+        "first_output_seconds": 1.422,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 2049.0,
+        "preemptions": 0.0
+      },
+      {
+        "name": "after-eviction",
+        "first_output_seconds": 14.253,
+        "usage": {
+          "prompt_tokens": 20307,
+          "total_tokens": 20315,
+          "completion_tokens": 8,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 20307.0,
+        "preemptions": 0.0,
+        "same_tokens_as_cold": true
+      }
+    ]
+  },
+  "parallel_checks": {
+    "all_pass": true,
+    "responses": 32,
+    "all_token_ids_match_cold_controls": true,
+    "batches": [
+      {
+        "kind": "shared",
+        "repeat": 0,
+        "ttft_s": [
+          1.203,
+          0.952,
+          1.203,
+          1.204
+        ],
+        "all_pass": true,
+        "computed_tokens": 980.0,
+        "all_cached": true
+      },
+      {
+        "kind": "shared",
+        "repeat": 1,
+        "ttft_s": [
+          0.949,
+          1.208,
+          1.203,
+          1.202
+        ],
+        "all_pass": true,
+        "computed_tokens": 980.0,
+        "all_cached": true
+      },
+      {
+        "kind": "shared",
+        "repeat": 2,
+        "ttft_s": [
+          0.951,
+          1.204,
+          1.2,
+          1.2
+        ],
+        "all_pass": true,
+        "computed_tokens": 980.0,
+        "all_cached": true
+      },
+      {
+        "kind": "independent",
+        "repeat": 0,
+        "ttft_s": [
+          0.484,
+          0.554,
+          0.55,
+          0.551
+        ],
+        "all_pass": true,
+        "computed_tokens": 516.0,
+        "all_cached": true
+      },
+      {
+        "kind": "independent",
+        "repeat": 1,
+        "ttft_s": [
+          0.541,
+          0.475,
+          0.548,
+          0.541
+        ],
+        "all_pass": true,
+        "computed_tokens": 516.0,
+        "all_cached": true
+      },
+      {
+        "kind": "independent",
+        "repeat": 2,
+        "ttft_s": [
+          0.469,
+          0.546,
+          0.542,
+          0.546
+        ],
+        "all_pass": true,
+        "computed_tokens": 516.0,
+        "all_cached": true
+      }
+    ]
+  },
+  "long_context": {
+    "tests": [
+      {
+        "stream_done": true,
+        "name": "full-context-0",
+        "http_status": 200,
+        "seconds": 379.379,
+        "first_output_seconds": 378.844,
+        "usage": {
+          "prompt_tokens": 262015,
+          "total_tokens": 262027,
+          "completion_tokens": 12,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "SUNDIAL-482, Red, Blue",
+        "reasoning": "",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 262015.0,
+        "preemptions": 0.0,
+        "same_tokens_as_cold": true
+      },
+      {
+        "stream_done": true,
+        "name": "full-context-1",
+        "http_status": 200,
+        "seconds": 1.784,
+        "first_output_seconds": 1.245,
+        "usage": {
+          "prompt_tokens": 262015,
+          "total_tokens": 262027,
+          "completion_tokens": 12,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "SUNDIAL-482, Red, Blue",
+        "reasoning": "",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 255.0,
+        "preemptions": 0.0,
+        "same_tokens_as_cold": true
+      },
+      {
+        "stream_done": true,
+        "name": "full-context-2",
+        "http_status": 200,
+        "seconds": 1.809,
+        "first_output_seconds": 1.274,
+        "usage": {
+          "prompt_tokens": 262015,
+          "total_tokens": 262027,
+          "completion_tokens": 12,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "SUNDIAL-482, Red, Blue",
+        "reasoning": "",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 255.0,
+        "preemptions": 0.0,
+        "same_tokens_as_cold": true
+      }
+    ],
+    "all_pass": true
+  },
+  "exact_context_limit": {
+    "stream_done": true,
+    "name": "exact-limit",
+    "http_status": 200,
+    "seconds": 1.686,
+    "first_output_seconds": 1.686,
+    "usage": {
+      "prompt_tokens": 262143,
+      "total_tokens": 262144,
+      "completion_tokens": 1,
+      "completion_tokens_details": {
+        "reasoning_tokens": 0
+      }
+    },
+    "finish_reason": "length",
+    "content": "S",
+    "reasoning": "",
+    "tool_calls": [],
+    "pass": true
+  },
+  "earlier_smoke": "Text, reasoning, two images and tool-call inspection passed on candidate-01.",
+  "final_service_state": {
+    "base_url": "http://127.0.0.1:18000/v1",
+    "model": "sunny-chat",
+    "health_http_status": 200,
+    "running_requests": 0,
+    "waiting_requests": 0,
+    "preemptions": 0,
+    "errored_requests": 0,
+    "production_service": "inactive/dead",
+    "candidate_left_running": true
+  },
+  "source_commit": "81dc387cf9a80e88468b7f77f7df8dfb71939921"
+}

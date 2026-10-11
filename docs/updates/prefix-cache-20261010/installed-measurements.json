@@ -1,0 +1,919 @@
+{
+  "execution": "installed Nix package, no source overlay",
+  "package": {
+    "drvPath": "/nix/store/xzbadm3drmzjnfzsmzwqh8hab5zy0csw-python3.12-vllm-xpu-0.31.0+unstable.2026.10.11.g81dc387.drv",
+    "outputs": {
+      "out": "/nix/store/5bif1qvx074mkx55nqlrq5zjv7xk3kb7-python3.12-vllm-xpu-0.31.0+unstable.2026.10.11.g81dc387"
+    }
+  },
+  "max_model_len": 262144,
+  "shared_attention_tokens": 263040,
+  "recurrent_usable_blocks": 20,
+  "extra_checkpoint_blocks": 4,
+  "installed_cpu_tests_passed": 529,
+  "isolated_ttft": [
+    {
+      "prompt_tokens": 512,
+      "ttft_s": [
+        0.5619352241046727,
+        0.367886901833117,
+        0.3644132330082357
+      ],
+      "prefill_computed_tokens": [
+        512.0,
+        256.0,
+        256.0
+      ],
+      "same_output_tokens": [
+        true,
+        true,
+        true
+      ],
+      "all_isolated": true
+    },
+    {
+      "prompt_tokens": 2048,
+      "ttft_s": [
+        1.4456703262403607,
+        0.37330090487375855,
+        0.3749235603027046
+      ],
+      "prefill_computed_tokens": [
+        2048.0,
+        256.0,
+        256.0
+      ],
+      "same_output_tokens": [
+        true,
+        true,
+        true
+      ],
+      "all_isolated": true
+    },
+    {
+      "prompt_tokens": 8192,
+      "ttft_s": [
+        5.625926872715354,
+        0.4174164291471243,
+        0.4094052780419588
+      ],
+      "prefill_computed_tokens": [
+        8192.0,
+        256.0,
+        256.0
+      ],
+      "same_output_tokens": [
+        true,
+        true,
+        true
+      ],
+      "all_isolated": true
+    },
+    {
+      "prompt_tokens": 20307,
+      "ttft_s": [
+        14.259015207644552,
+        0.31887640804052353,
+        0.3163135312497616
+      ],
+      "prefill_computed_tokens": [
+        20307.0,
+        211.0,
+        211.0
+      ],
+      "same_output_tokens": [
+        true,
+        true,
+        true
+      ],
+      "all_isolated": true
+    }
+  ],
+  "conversation_checks": {
+    "all_pass": true,
+    "tests": [
+      {
+        "name": "cold",
+        "first_output_seconds": 14.112,
+        "usage": {
+          "prompt_tokens": 20307,
+          "total_tokens": 20315,
+          "completion_tokens": 8,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 20307.0,
+        "preemptions": 0.0
+      },
+      {
+        "name": "warm",
+        "first_output_seconds": 0.32,
+        "usage": {
+          "prompt_tokens": 20307,
+          "total_tokens": 20315,
+          "completion_tokens": 8,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 211.0,
+        "preemptions": 0.0,
+        "same_tokens_as_cold": true
+      },
+      {
+        "name": "branch-0-cold-control",
+        "first_output_seconds": 14.143,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 20341.0,
+        "preemptions": 0.0
+      },
+      {
+        "name": "branch-0-shared",
+        "first_output_seconds": 0.324,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 245.0,
+        "preemptions": 0.0,
+        "same_tokens_as_cold": true
+      },
+      {
+        "name": "branch-1-cold-control",
+        "first_output_seconds": 14.165,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 20341.0,
+        "preemptions": 0.0
+      },
+      {
+        "name": "branch-1-shared",
+        "first_output_seconds": 0.327,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 245.0,
+        "preemptions": 0.0,
+        "same_tokens_as_cold": true
+      },
+      {
+        "name": "branch-2-cold-control",
+        "first_output_seconds": 14.193,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 20341.0,
+        "preemptions": 0.0
+      },
+      {
+        "name": "branch-2-shared",
+        "first_output_seconds": 0.33,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 245.0,
+        "preemptions": 0.0,
+        "same_tokens_as_cold": true
+      },
+      {
+        "name": "branch-3-cold-control",
+        "first_output_seconds": 14.214,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 20341.0,
+        "preemptions": 0.0
+      },
+      {
+        "name": "branch-3-shared",
+        "first_output_seconds": 0.322,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 245.0,
+        "preemptions": 0.0,
+        "same_tokens_as_cold": true
+      },
+      {
+        "name": "parallel-0",
+        "first_output_seconds": 4.262,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 245.0,
+        "preemptions": 0.0,
+        "same_tokens_as_cold": true,
+        "metric_scope": "overlaps other parallel requests"
+      },
+      {
+        "name": "parallel-1",
+        "first_output_seconds": 4.665,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 980.0,
+        "preemptions": 0.0,
+        "same_tokens_as_cold": true,
+        "metric_scope": "overlaps other parallel requests"
+      },
+      {
+        "name": "parallel-2",
+        "first_output_seconds": 4.666,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 980.0,
+        "preemptions": 0.0,
+        "same_tokens_as_cold": true,
+        "metric_scope": "overlaps other parallel requests"
+      },
+      {
+        "name": "parallel-3",
+        "first_output_seconds": 4.666,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 980.0,
+        "preemptions": 0.0,
+        "same_tokens_as_cold": true,
+        "metric_scope": "overlaps other parallel requests"
+      },
+      {
+        "name": "after-cancellation",
+        "first_output_seconds": 0.317,
+        "usage": {
+          "prompt_tokens": 20307,
+          "total_tokens": 20315,
+          "completion_tokens": 8,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 211.0,
+        "preemptions": 0.0,
+        "same_tokens_as_cold": true,
+        "cancelled_after_tokens": 64
+      },
+      {
+        "name": "evict-0",
+        "first_output_seconds": 1.396,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 2049.0,
+        "preemptions": 0.0
+      },
+      {
+        "name": "evict-1",
+        "first_output_seconds": 1.41,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 2049.0,
+        "preemptions": 0.0
+      },
+      {
+        "name": "evict-2",
+        "first_output_seconds": 1.409,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 2049.0,
+        "preemptions": 0.0
+      },
+      {
+        "name": "evict-3",
+        "first_output_seconds": 1.413,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 2049.0,
+        "preemptions": 0.0
+      },
+      {
+        "name": "evict-4",
+        "first_output_seconds": 1.409,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 2049.0,
+        "preemptions": 0.0
+      },
+      {
+        "name": "evict-5",
+        "first_output_seconds": 1.413,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 2049.0,
+        "preemptions": 0.0
+      },
+      {
+        "name": "evict-6",
+        "first_output_seconds": 1.421,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 2049.0,
+        "preemptions": 0.0
+      },
+      {
+        "name": "evict-7",
+        "first_output_seconds": 1.412,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 2049.0,
+        "preemptions": 0.0
+      },
+      {
+        "name": "evict-8",
+        "first_output_seconds": 1.413,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 2049.0,
+        "preemptions": 0.0
+      },
+      {
+        "name": "evict-9",
+        "first_output_seconds": 1.415,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 2049.0,
+        "preemptions": 0.0
+      },
+      {
+        "name": "evict-10",
+        "first_output_seconds": 1.418,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 2049.0,
+        "preemptions": 0.0
+      },
+      {
+        "name": "evict-11",
+        "first_output_seconds": 1.418,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 2049.0,
+        "preemptions": 0.0
+      },
+      {
+        "name": "evict-12",
+        "first_output_seconds": 1.418,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 2049.0,
+        "preemptions": 0.0
+      },
+      {
+        "name": "evict-13",
+        "first_output_seconds": 1.417,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 2049.0,
+        "preemptions": 0.0
+      },
+      {
+        "name": "evict-14",
+        "first_output_seconds": 1.415,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 2049.0,
+        "preemptions": 0.0
+      },
+      {
+        "name": "evict-15",
+        "first_output_seconds": 1.42,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 2049.0,
+        "preemptions": 0.0
+      },
+      {
+        "name": "evict-16",
+        "first_output_seconds": 1.418,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 2049.0,
+        "preemptions": 0.0
+      },
+      {
+        "name": "evict-17",
+        "first_output_seconds": 1.421,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 2049.0,
+        "preemptions": 0.0
+      },
+      {
+        "name": "evict-18",
+        "first_output_seconds": 1.417,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 2049.0,
+        "preemptions": 0.0
+      },
+      {
+        "name": "evict-19",
+        "first_output_seconds": 1.417,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 2049.0,
+        "preemptions": 0.0
+      },
+      {
+        "name": "after-eviction",
+        "first_output_seconds": 14.253,
+        "usage": {
+          "prompt_tokens": 20307,
+          "total_tokens": 20315,
+          "completion_tokens": 8,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "pass": true,
+        "computed_tokens": 20307.0,
+        "preemptions": 0.0,
+        "same_tokens_as_cold": true
+      }
+    ]
+  },
+  "parallel_checks": {
+    "all_pass": true,
+    "responses": 32,
+    "all_token_ids_match_cold_controls": true,
+    "batches": [
+      {
+        "kind": "shared",
+        "repeat": 0,
+        "ttft_s": [
+          1.199,
+          1.197,
+          0.94,
+          1.198
+        ],
+        "all_pass": true,
+        "computed_tokens": 980.0,
+        "all_cached": true
+      },
+      {
+        "kind": "shared",
+        "repeat": 1,
+        "ttft_s": [
+          0.952,
+          1.207,
+          1.203,
+          1.203
+        ],
+        "all_pass": true,
+        "computed_tokens": 980.0,
+        "all_cached": true
+      },
+      {
+        "kind": "shared",
+        "repeat": 2,
+        "ttft_s": [
+          1.2,
+          0.947,
+          1.199,
+          1.206
+        ],
+        "all_pass": true,
+        "computed_tokens": 980.0,
+        "all_cached": true
+      },
+      {
+        "kind": "independent",
+        "repeat": 0,
+        "ttft_s": [
+          0.495,
+          0.562,
+          0.563,
+          0.562
+        ],
+        "all_pass": true,
+        "computed_tokens": 516.0,
+        "all_cached": true
+      },
+      {
+        "kind": "independent",
+        "repeat": 1,
+        "ttft_s": [
+          0.548,
+          0.472,
+          0.545,
+          0.548
+        ],
+        "all_pass": true,
+        "computed_tokens": 516.0,
+        "all_cached": true
+      },
+      {
+        "kind": "independent",
+        "repeat": 2,
+        "ttft_s": [
+          0.48,
+          0.545,
+          0.546,
+          0.546
+        ],
+        "all_pass": true,
+        "computed_tokens": 516.0,
+        "all_cached": true
+      }
+    ]
+  },
+  "long_context": {
+    "tests": [
+      {
+        "stream_done": true,
+        "name": "full-context-0",
+        "http_status": 200,
+        "seconds": 379.447,
+        "first_output_seconds": 379.205,
+        "usage": {
+          "prompt_tokens": 262015,
+          "total_tokens": 262027,
+          "completion_tokens": 12,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "SUNDIAL-482, Red, Blue",
+        "reasoning": "",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 262015.0,
+        "preemptions": 0.0,
+        "same_tokens_as_cold": true
+      },
+      {
+        "stream_done": true,
+        "name": "full-context-1",
+        "http_status": 200,
+        "seconds": 1.868,
+        "first_output_seconds": 1.345,
+        "usage": {
+          "prompt_tokens": 262015,
+          "total_tokens": 262027,
+          "completion_tokens": 12,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "SUNDIAL-482, Red, Blue",
+        "reasoning": "",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 255.0,
+        "preemptions": 0.0,
+        "same_tokens_as_cold": true
+      },
+      {
+        "stream_done": true,
+        "name": "full-context-2",
+        "http_status": 200,
+        "seconds": 1.755,
+        "first_output_seconds": 1.228,
+        "usage": {
+          "prompt_tokens": 262015,
+          "total_tokens": 262027,
+          "completion_tokens": 12,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "content": "SUNDIAL-482, Red, Blue",
+        "reasoning": "",
+        "tool_calls": [],
+        "pass": true,
+        "computed_tokens": 255.0,
+        "preemptions": 0.0,
+        "same_tokens_as_cold": true
+      }
+    ],
+    "all_pass": true
+  },
+  "exact_context_limit": {
+    "stream_done": true,
+    "name": "exact-limit",
+    "http_status": 200,
+    "seconds": 1.691,
+    "first_output_seconds": 1.691,
+    "usage": {
+      "prompt_tokens": 262143,
+      "total_tokens": 262144,
+      "completion_tokens": 1,
+      "completion_tokens_details": {
+        "reasoning_tokens": 0
+      }
+    },
+    "finish_reason": "length",
+    "content": "S",
+    "reasoning": "",
+    "tool_calls": [],
+    "pass": true
+  },
+  "smoke": [
+    {
+      "stream_done": true,
+      "name": "text",
+      "http_status": 200,
+      "seconds": 3.083,
+      "first_output_seconds": 1.572,
+      "usage": {
+        "prompt_tokens": 28,
+        "total_tokens": 91,
+        "completion_tokens": 63,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "content": "A compressor pumps a refrigerant gas through coils, raising its pressure and temperature. This hot gas releases heat to the surrounding room air as it condenses into a liquid. The liquid then expands in the interior coils, absorbing heat from the fridge's contents and turning back into a cold gas to repeat the cycle.",
+      "reasoning": "",
+      "tool_calls": [],
+      "smoke_pass": true
+    },
+    {
+      "stream_done": true,
+      "name": "reasoning",
+      "http_status": 200,
+      "seconds": 2.564,
+      "first_output_seconds": 0.26,
+      "usage": {
+        "prompt_tokens": 57,
+        "total_tokens": 186,
+        "completion_tokens": 129,
+        "completion_tokens_details": {
+          "reasoning_tokens": 55
+        }
+      },
+      "finish_reason": "stop",
+      "content": "\n\n**17 \u00d7 19 = 323**\n\n**Calculation:** I used the distributive property by rewriting 19 as (20 \u2212 1):\n\n17 \u00d7 19 = 17 \u00d7 (20 \u2212 1) = 340 \u2212 17 = **323**",
+      "reasoning": "The user wants me to calculate 17 \u00d7 19 and briefly explain how I did it.\n\n17 \u00d7 19 = 17 \u00d7 (20 - 1) = 340 - 17 = 323\n",
+      "tool_calls": [],
+      "smoke_pass": true
+    },
+    {
+      "stream_done": true,
+      "name": "vision",
+      "http_status": 200,
+      "seconds": 1.158,
+      "first_output_seconds": 1.111,
+      "usage": {
+        "prompt_tokens": 428,
+        "total_tokens": 432,
+        "completion_tokens": 4,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "content": "Red, blue",
+      "reasoning": "",
+      "tool_calls": [],
+      "smoke_pass": true
+    },
+    {
+      "stream_done": true,
+      "name": "tools",
+      "http_status": 200,
+      "seconds": 1.478,
+      "first_output_seconds": 0.777,
+      "usage": {
+        "prompt_tokens": 324,
+        "total_tokens": 375,
+        "completion_tokens": 51,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "finish_reason": "tool_calls",
+      "content": "",
+      "reasoning": "",
+      "tool_calls": [
+        {
+          "name": "report_health",
+          "arguments": "{\"status\": \"ok\", \"model\": \"RedHatAI/Qwen3.8-27B-INT4\"}"
+        }
+      ],
+      "smoke_pass": true
+    }
+  ]
+}

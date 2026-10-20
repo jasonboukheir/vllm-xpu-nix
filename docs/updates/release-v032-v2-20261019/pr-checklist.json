@@ -1,8 +1,8 @@
 {
   "skill": "vllm/.agents/skills/pr-checklist/SKILL.md",
-  "scope": "private-fork draft review requested by maintainer; not upstream submission or production approval",
+  "scope": "Maintainer-requested private-fork release after two independent PR reviews and follow-up qualification; not an upstream submission.",
   "design_fit": {
-    "status": "two initial reviews received; implemented fixes await re-review",
+    "status": "Two initial reviews addressed; exact-package follow-up qualification completed.",
     "points": [
       "Five feature/fix commits on frozen v0.32; kernels unchanged.",
       "High complexity: retained KVarN feature touches scheduler, cache ownership, V2 and offload paths.",
@@ -11,7 +11,7 @@
     ]
   },
   "testing": {
-    "status": "partial; blockers explicit",
+    "status": "Final exact-package release gates passed",
     "passed": [
       "source regressions and paired native checks",
       "608 packaging tests",
@@ -22,13 +22,13 @@
       "review fixes: 949 cases passed, two existing-fixture failures repaired and both rerun successfully; 48 offline cases deselected",
       "479 offloading scheduler/config cases after replay-boundary repair",
       "real Nix module draft-root evaluation and synthetic HF cache garbage collection",
-      "K1 DFlash text/reasoning/two-image/tool smoke and four-way RAM/decode progress with positive acceptance"
+      "K1 DFlash text/reasoning/two-image/tool smoke and four-way RAM/decode progress with positive acceptance",
+      "c0722c9 installed K2 full/exact-context, lifecycle, eviction, cancellation, mixed images and both RAM overlap gates",
+      "Matched stable MTP2 versus K2 performance reviewed independently"
     ],
     "pending": [
-      "long-prefill scheduling and 1024-token cold/restored equality failures; isolated restore also diverges",
-      "matched DFlash versus stable performance",
-      "full profile, lifecycle and exact context",
-      "long-idle reproduction"
+      "Natural overnight idle reproduction",
+      "Operator system switch and post-switch API checks"
     ],
     "ci": "B70/model qualification runs locally; no upstream CI claim"
   },
@@ -40,9 +40,9 @@
   },
   "pr_contents": {
     "template": "upstream Overview/Claims/Validation/Details/checklist retained",
-    "disclosure": "AI-assisted by Codex; two initial reviews received, review fixes await approval",
+    "disclosure": "AI assistance: Codex; two reviews received and findings addressed; maintainer requested completion.",
     "duplicate_check": "No matching current fork PR. Older paused PRs retained and linked. Open upstream KVarN46812 identified; this is local integration review on released0.32, not duplicate upstream submission."
   },
-  "publication": "Draft/WIP; do not merge,publish stable refs,or repin host before qualification and requested review",
+  "publication": "User requested finishing the runbook, superseding the draft-only checkpoint; publish the qualified release and commit the host pin, leaving system switch to operator.",
   "review_dispositions": "review-disposition.json"
 }

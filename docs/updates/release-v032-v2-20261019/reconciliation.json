@@ -1,5 +1,5 @@
 {
-  "status": "complete inventory coverage; replay authorized",
+  "status": "complete inventory coverage, minimized replay and installed V2/DFlash2 qualification",
   "kernel_decision": "retain exact existing seven-commit stack on unchanged compatible base",
   "vllm_decision": "retain four distinct correctness fixes; adapt and fold v05-v08 into KVarN feature including V2/DFlash lifecycle; preserve upstream checkpoint and alignment changes",
   "rows": [
@@ -13,7 +13,7 @@
       "upstream_evidence": "audits/v01-3ecc9a1d4dcf.md",
       "fold_into": null,
       "new_sha": "d8d41a655d47faba309a5fe5c98f08c0333ef51c",
-      "validation": "Source/native checks passed; first exact-package V2 control passed; DFlash seven-proposal capacity failed; draft review and remaining qualification pending"
+      "validation": "Source/native regression evidence retained; exact installed K2 full-context, lifecycle, overlap and matched performance pass; see finish-serving-validation.json and finish-performance-review.json."
     },
     {
       "repo": "vllm",
@@ -25,7 +25,7 @@
       "upstream_evidence": "audits/v02-490bf7e42287.md",
       "fold_into": null,
       "new_sha": "1214f2058ad9c91790f87c92f6fec6b3ad312430",
-      "validation": "Source/native checks passed; first exact-package V2 control passed; DFlash seven-proposal capacity failed; draft review and remaining qualification pending"
+      "validation": "Source/native regression evidence retained; exact installed K2 full-context, lifecycle, overlap and matched performance pass; see finish-serving-validation.json and finish-performance-review.json."
     },
     {
       "repo": "vllm",
@@ -37,7 +37,7 @@
       "upstream_evidence": "audits/v03-41ab2f188262.md",
       "fold_into": null,
       "new_sha": "549d6509e7adcad95c54a634148f1aa1e25e3875",
-      "validation": "Source/native checks passed; first exact-package V2 control passed; DFlash seven-proposal capacity failed; draft review and remaining qualification pending"
+      "validation": "Source/native regression evidence retained; exact installed K2 full-context, lifecycle, overlap and matched performance pass; see finish-serving-validation.json and finish-performance-review.json."
     },
     {
       "repo": "vllm",
@@ -49,7 +49,7 @@
       "upstream_evidence": "audits/v04-1e1d1471b770.md",
       "fold_into": null,
       "new_sha": "49f42db4285d3ebfa25f0b0a3cde413afa7442a5",
-      "validation": "Source/native checks passed; first exact-package V2 control passed; DFlash seven-proposal capacity failed; draft review and remaining qualification pending"
+      "validation": "Source/native regression evidence retained; exact installed K2 full-context, lifecycle, overlap and matched performance pass; see finish-serving-validation.json and finish-performance-review.json."
     },
     {
       "repo": "vllm",
@@ -60,8 +60,8 @@
       "disposition": "ADAPT",
       "upstream_evidence": "audits/v05-ef92dc5600af.md",
       "fold_into": null,
-      "new_sha": "057a78d9776491cf17e263c5ac75103c53673b69",
-      "validation": "Source/native checks passed; first exact-package V2 control passed; DFlash seven-proposal capacity failed; draft review and remaining qualification pending"
+      "new_sha": "c0722c98d0fa1588eaf748cc9f7ef69ca3c32245",
+      "validation": "Source/native regression evidence retained; exact installed K2 full-context, lifecycle, overlap and matched performance pass; see finish-serving-validation.json and finish-performance-review.json."
     },
     {
       "repo": "vllm",
@@ -72,8 +72,8 @@
       "disposition": "ADAPT",
       "upstream_evidence": "audits/v06-81dc387cf9a8.md",
       "fold_into": "v05",
-      "new_sha": "057a78d9776491cf17e263c5ac75103c53673b69",
-      "validation": "Source/native checks passed; first exact-package V2 control passed; DFlash seven-proposal capacity failed; draft review and remaining qualification pending"
+      "new_sha": "c0722c98d0fa1588eaf748cc9f7ef69ca3c32245",
+      "validation": "Source/native regression evidence retained; exact installed K2 full-context, lifecycle, overlap and matched performance pass; see finish-serving-validation.json and finish-performance-review.json."
     },
     {
       "repo": "vllm",
@@ -84,8 +84,8 @@
       "disposition": "ADAPT",
       "upstream_evidence": "audits/v07-a76fbb1ce06d.md",
       "fold_into": "v05",
-      "new_sha": "057a78d9776491cf17e263c5ac75103c53673b69",
-      "validation": "Source/native checks passed; first exact-package V2 control passed; DFlash seven-proposal capacity failed; draft review and remaining qualification pending"
+      "new_sha": "c0722c98d0fa1588eaf748cc9f7ef69ca3c32245",
+      "validation": "Source/native regression evidence retained; exact installed K2 full-context, lifecycle, overlap and matched performance pass; see finish-serving-validation.json and finish-performance-review.json."
     },
     {
       "repo": "vllm",
@@ -96,8 +96,8 @@
       "disposition": "ADAPT",
       "upstream_evidence": "audits/v08-dcba4007ef6a.md",
       "fold_into": "v05",
-      "new_sha": "057a78d9776491cf17e263c5ac75103c53673b69",
-      "validation": "Source/native checks passed; first exact-package V2 control passed; DFlash seven-proposal capacity failed; draft review and remaining qualification pending"
+      "new_sha": "c0722c98d0fa1588eaf748cc9f7ef69ca3c32245",
+      "validation": "Source/native regression evidence retained; exact installed K2 full-context, lifecycle, overlap and matched performance pass; see finish-serving-validation.json and finish-performance-review.json."
     },
     {
       "repo": "vllm-xpu-kernels",
@@ -109,7 +109,7 @@
       "upstream_evidence": "audits/k01-dcbbeac2f245.md",
       "fold_into": null,
       "new_sha": "dcbbeac2f2453948471569de43a33ded09fae0f8",
-      "validation": "Source audit recorded; candidate runtime qualification pending"
+      "validation": "Source/native regression evidence retained; exact installed K2 full-context, lifecycle, overlap and matched performance pass; see finish-serving-validation.json and finish-performance-review.json."
     },
     {
       "repo": "vllm-xpu-kernels",
@@ -121,7 +121,7 @@
       "upstream_evidence": "audits/k02-7a1af6693963.md",
       "fold_into": null,
       "new_sha": "7a1af6693963e91b3e63c119501ce5ea8fbfa955",
-      "validation": "Source audit recorded; candidate runtime qualification pending"
+      "validation": "Source/native regression evidence retained; exact installed K2 full-context, lifecycle, overlap and matched performance pass; see finish-serving-validation.json and finish-performance-review.json."
     },
     {
       "repo": "vllm-xpu-kernels",
@@ -133,7 +133,7 @@
       "upstream_evidence": "audits/k03-2322b830903a.md",
       "fold_into": null,
       "new_sha": "2322b830903a4a0d0d8e4c113b7e2acc5c7967cb",
-      "validation": "Source audit recorded; candidate runtime qualification pending"
+      "validation": "Source/native regression evidence retained; exact installed K2 full-context, lifecycle, overlap and matched performance pass; see finish-serving-validation.json and finish-performance-review.json."
     },
     {
       "repo": "vllm-xpu-kernels",
@@ -145,7 +145,7 @@
       "upstream_evidence": "audits/k04-7bc80d1569be.md",
       "fold_into": null,
       "new_sha": "7bc80d1569bedeb8f4adceb43524fbc1b4d07516",
-      "validation": "Source audit recorded; candidate runtime qualification pending"
+      "validation": "Source/native regression evidence retained; exact installed K2 full-context, lifecycle, overlap and matched performance pass; see finish-serving-validation.json and finish-performance-review.json."
     },
     {
       "repo": "vllm-xpu-kernels",
@@ -157,7 +157,7 @@
       "upstream_evidence": "audits/k05-c75a699930db.md",
       "fold_into": null,
       "new_sha": "c75a699930db98a3c77e4d6498892734e624b3a5",
-      "validation": "Source audit recorded; candidate runtime qualification pending"
+      "validation": "Source/native regression evidence retained; exact installed K2 full-context, lifecycle, overlap and matched performance pass; see finish-serving-validation.json and finish-performance-review.json."
     },
     {
       "repo": "vllm-xpu-kernels",
@@ -169,7 +169,7 @@
       "upstream_evidence": "audits/k06-2e7f76c799e3.md",
       "fold_into": null,
       "new_sha": "2e7f76c799e3c8b68b4ae93d8c3e8eb65a525454",
-      "validation": "Source audit recorded; candidate runtime qualification pending"
+      "validation": "Source/native regression evidence retained; exact installed K2 full-context, lifecycle, overlap and matched performance pass; see finish-serving-validation.json and finish-performance-review.json."
     },
     {
       "repo": "vllm-xpu-kernels",
@@ -181,7 +181,7 @@
       "upstream_evidence": "audits/k07-dbb684f4c9b3.md",
       "fold_into": null,
       "new_sha": "dbb684f4c9b38a8b3bbf52bda0c490ee47049221",
-      "validation": "Source audit recorded; candidate runtime qualification pending"
+      "validation": "Source/native regression evidence retained; exact installed K2 full-context, lifecycle, overlap and matched performance pass; see finish-serving-validation.json and finish-performance-review.json."
     }
   ],
   "candidate_source_tip": "057a78d9776491cf17e263c5ac75103c53673b69",

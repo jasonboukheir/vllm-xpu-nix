@@ -1,9 +1,9 @@
 {
-  "status": "Review fixes implemented; K1 DFlash startup and smoke pass; measured four-way RAM/decode overlap passes; long-prefill overlap and long-output determinism need follow-up; full-profile qualification pending",
+  "status": "completed for final V2/DFlash2 K2 profile",
   "profiles": [
     "xpu-v1.12.2 V1 MTP2 baseline",
     "v0.32 V2 no speculation",
-    "v0.32 V2 DFlash2; final proposal count pending capacity/performance qualification"
+    "v0.32 V2 DFlash2 K2, utilization0.98, competing-prefill threshold1024"
   ],
   "preserved_settings": {
     "target_revision": "bf08f3dbd9a324e53956920aad378a1f1b6dd24a",
@@ -20,11 +20,7 @@
   },
   "performance": {
     "harness": "benchmark-results/release-v032-v2-20261019/baseline-performance/benchmark_http.py",
-    "existing_baseline": "baseline-performance.json",
-    "missing_context_baseline": [
-      4096,
-      16384
-    ],
+    "existing_baseline": "finish-performance-review.json",
     "concurrency": [
       1,
       2
@@ -53,24 +49,22 @@
     "parsed text/reasoning/tool outputs; do not execute synthetic tool call",
     "two-image red-before-blue check including full-context restores",
     "real external hit/load bytes and small recomputed suffix after local GPU cache reset",
-    "token equality across cold/restored prefixes",
+    "Exact cold/restored equality for structured/retrieval cases; free-form reproducibility characterized against repeated cold controls and stable1.12.2.",
     "cancellation/eviction/reuse and overlapping four-request work",
     "262143 input plus1 output; deferred save flush and healthy next request"
   ],
   "instrumentation": "explicit qualification launcher flag enables local dev endpoints and request logs; record and match compared runs; keep private raw logs",
   "idle_follow_up": "natural overnight same-process direct/gateway/UI timings; short probes did not reproduce symptom",
   "harness_adaptations": [
-    "v0.32 cache_salt validation rejects slash-containing output paths; adapted RAM harnesses use output basename as salt; checks unchanged"
+    "v0.32 cache_salt validation rejects slash-containing output paths; adapted RAM harnesses use output basename as salt; checks unchanged",
+    "Add a1024-output structured-sequence stress prompt with all original overlap/equality checks plus numeric-sequence correctness; preserve the original freeform failure."
   ],
   "remaining": [
-    "Resolve long-prefill scheduling and 1024-token cold/restored equality failures; isolated RAM restore also diverged. Trace scheduling and compare fixed-batch cold/GPU-hit/RAM-hit controls, with and without speculation.",
-    "matched stable baseline with qualification instrumentation and4K/16K prompts",
-    "DFlash full-context/cache/concurrency/cancellation/eviction checks",
-    "review and release decision",
-    "coordinated refs and host pin after review and qualification"
+    "Operator rebuild/switch and post-switch API checks",
+    "natural overnight same-process direct/gateway/UI timings; short probes did not reproduce symptom"
   ],
   "overlap_ram_gate": {
-    "status": "Fourth RAM-hit request alongside three decodes PASSED on057a78d; separate long-prefill timing/output-equality stress case FAILED; see review-serving-validation.json",
+    "status": "Both gates pass on c0722c9 K2; retained historical K1 failures and their follow-up are documented separately.",
     "decode_scenario": "Start three independent long decodes, wait for content from each, then submit a fourth request with a primed RAM prefix after GPU-local cache reset.",
     "proof": [
       "Fourth request emits content before any of the first three finishes",
@@ -81,11 +75,16 @@
     "prefill_scenario": "A RAM-hit request must advance while an unrelated long prefill is still in progress.",
     "capacity": "Keep aggregate histories within attention capacity; four bounded recurrent/draft slots do not imply four maximum-length contexts."
   },
-  "capacity_projection": "dflash-capacity-breakdown.json; only one proposal fits the recorded K7 usable budget; exact-package K1 startup passed, see review-serving-validation.json",
+  "capacity_projection": "Final measured K2 allocation and capacity in finish-serving-validation.json; earlier K7-at0.96 failure remains historical evidence.",
   "review_scope_passed": [
-    "K1 DFlash startup with262K configured context and four slots",
-    "Text/reasoning/two-image/parsed-tool smoke",
-    "Measured four-way decode+RAM restore with8064hit tokens,179recomputed tokens,matching118output tokens and zero preemptions",
-    "Positive DFlash acceptance in mixed workload"
+    "smoke",
+    "four_way_ram_restore",
+    "ram_restore_during_long_prefill",
+    "full_context",
+    "exact_limit",
+    "lifecycle",
+    "mixed_image_prefill",
+    "four_way_mixed_requests",
+    "cancellation_beyond_cache_flush"
   ]
 }

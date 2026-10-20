@@ -1,22 +1,18 @@
 # Current fork delta and removal tradeoffs
 
-For **xpu-v1.12.0**, vLLM has **five commits** on upstream v0.31.0
-`db9527a46873454610df6dbedf79a36d6bf1a7f6`, and kernels have **seven commits**
-on the official source for wheel 0.1.15.4,
-`ddf336d86e3c8602888572a3502f951abd51df12`. The kernel wheel has no matching
-Git tag; its release-branch source mapping is recorded in the audit. Both fork
-mains are published; installed native and actual Brutus foreground
-qualification passed, including full-context and near-full-capacity requests.
+For **xpu-v1.13.0**, vLLM has **five commits** on upstream v0.32.0
+`5df63a7203cdb9328d824a27b682e77c7b9928be`. Kernels retain **seven commits**
+on the frozen official source for wheel 0.1.15.4,
+`ddf336d86e3c8602888572a3502f951abd51df12`, matching vLLM's exact dependency.
+The wheel has no matching Git tag; its released-wheel/source mapping is recorded
+in the audit. The four independent correctness fixes remain separate; KVarN,
+RAM prefix retention and their V2/DFlash lifecycle port form one feature commit.
 
-This refresh removes the local early dispatcher-pruning optimization and
-replaces our ragged-MTP production fix with upstream #600, retaining independent
-regressions. Together they reduce the native production diff by 173 changed
-lines across four files. The previous release passed the real Brutus profile;
-that does not prove every retained patch is indispensable. Distinguish required custom functionality, correctness guards,
-optional supported configurations, regression tests and unmeasured optimizations.
-The earlier 27 commits were audited and consolidated; the registry workaround
-and its revert disappeared together. Squashing more commits would not reduce
-the actual maintenance delta.
+All eight previous vLLM commits and all seven unchanged kernel commits were
+reviewed. The [reconciliation map](updates/release-v032-v2-20261019/reconciliation.json)
+records ownership and retained behavior. Installed source equivalence, native
+references, synthetic serving checks and matched performance have separate
+evidence; whole-profile gains do not establish an isolated gain for every patch.
 
 GDN is Qwen's recurrent-attention component. Several small fixes address its
 metadata, scheduling and state handling independently of KVarN quantization.
@@ -25,11 +21,11 @@ metadata, scheduling and state handling independently of KVarN quantization.
 
 | Commit | Purpose | Removal consequence / retention strength |
 | --- | --- | --- |
-| [3ecc9a1d4d](https://git.sunnycareboo.com/jasonbk/vllm/commit/3ecc9a1d4dcf6ce530bc61a45af9bdabf7e450d6) | Trim padded GDN metadata | Pass only live request indices to the native kernel, keeping speculative rollback columns intact. Upstream still forwards padded indices to exact-size native checks. This is a metadata compatibility safeguard; it is not proof that every eager request needs it. |
-| [490bf7e422](https://git.sunnycareboo.com/jasonbk/vllm/commit/490bf7e42287a65f1d7dfa83ab8100e36d8f006b) | Qwen GDN scheduling and mixed batches | Keep non-final prefills on the 64-token arithmetic grid and select the paired native mixed-batch path. Removing it restores scheduler-dependent arithmetic choices. The mixed-batch portion and kernel 7bc80d1 must be changed together. |
-| [41ab2f1882](https://git.sunnycareboo.com/jasonbk/vllm/commit/41ab2f188262a62e747f126f319f57d56dea9cc4) | Functional, row-stable XPU residual RMSNorm | Preserve a non-mutating, fixed-reduction-tree helper and the optional scoped request-stability caller. The current RedHat MTP/vision profile does not activate that policy. Removable if we explicitly retire that behavior; passing helper tests does not make whole-model AEON invariance pass. |
-| [1e1d1471b7](https://git.sunnycareboo.com/jasonbk/vllm/commit/1e1d1471b77014e3a54c7da59b3cf42487ceeaf4) | Explicit FP16/BF16 KV-cache names | The native writer rejects these literal names. Translate only its argument to auto after checking all four tensor dtypes; retain the explicit engine setting so checkpoint FP8 metadata cannot override it. Optional for the current all-K4V2 setup, needed for explicit unquantized cache/draft configurations. |
-| [ef92dc5600](https://git.sunnycareboo.com/jasonbk/vllm/commit/ef92dc5600af64103c01f97e3300b81c3a1083ee) | KVarN integration, K4V2, MTP and cache ownership | Supplies the custom backend, compact layouts, separate attention/recurrent pools, target/draft ownership, capacity accounting, exact committed-history metadata, flush/materialization and reset handling. Upstream v0.31 has no equivalent KVarN feature. The replay preserves its new checkpoint, allocator, DCP/TP and MTP annotation behavior; it adapts the spec-aware block-size API and drops an obsolete failure-loop assertion. Removing this loses the requested cache configuration; it must match kernel dbb684f. |
+| [d8d41a655d](https://git.sunnycareboo.com/jasonbk/vllm/commit/d8d41a655d47faba309a5fe5c98f08c0333ef51c) | Trim padded GDN metadata | Pass only live request indices to the native kernel, keeping speculative rollback columns intact. Upstream still forwards padded indices to exact-size native checks. This is a metadata compatibility safeguard; it is not proof that every eager request needs it. |
+| [1214f2058a](https://git.sunnycareboo.com/jasonbk/vllm/commit/1214f2058ad9c91790f87c92f6fec6b3ad312430) | Qwen GDN scheduling and mixed batches | Keep eligible text-only, non-speculative Mamba-none prefills on the 64-token arithmetic grid and select the paired native mixed-batch path. Aligned-cache mode already follows cache-block boundaries. Removing it restores scheduler-dependent arithmetic choices. The mixed-batch portion and kernel 7bc80d1 must be changed together. |
+| [549d6509e7](https://git.sunnycareboo.com/jasonbk/vllm/commit/549d6509e7adcad95c54a634148f1aa1e25e3875) | Functional, row-stable XPU residual RMSNorm | Preserve a non-mutating, fixed-reduction-tree helper and the optional scoped request-stability caller. The current RedHat DFlash/vision profile does not activate that policy. Removable if we explicitly retire that behavior; passing helper tests does not make whole-model AEON invariance pass. |
+| [49f42db428](https://git.sunnycareboo.com/jasonbk/vllm/commit/49f42db4285d3ebfa25f0b0a3cde413afa7442a5) | Explicit FP16/BF16 KV-cache names | The native writer rejects these literal names. Translate only its argument to auto after checking all four tensor dtypes; retain the explicit engine setting so checkpoint FP8 metadata cannot override it. Required for the explicit BF16 DFlash cache; retained for other unquantized-cache configurations. |
+| [c0722c98d0](https://git.sunnycareboo.com/jasonbk/vllm/commit/c0722c98d0fa1588eaf748cc9f7ef69ca3c32245) | KVarN integration, RAM prefixes and V1/V2 cache ownership | Supplies the custom backend, compact layouts, separate attention/recurrent pools, target/draft ownership, capacity accounting, exact committed-history metadata, flush/materialization and reset handling. Upstream v0.32 has no equivalent KVarN feature. The replay preserves upstream checkpoint proofs and aligned strides, adds independent BF16 draft pools and bounded native verification, and retains per-pool async admission and RAM replay-window ownership. Removing this loses the requested cache configuration; it must match kernel dbb684f. |
 
 ## XPU kernels: seven commits
 
@@ -38,7 +34,7 @@ metadata, scheduling and state handling independently of KVarN quantization.
 | [dcbbeac](https://git.sunnycareboo.com/jasonbk/vllm-xpu-kernels/commit/dcbbeac2f2453948471569de43a33ded09fae0f8) | Deterministic oneDNN W4A16 matmul | Requests deterministic accumulation for the model’s INT4 projections. Upstream uses the same oneDNN path without that setting. Can be dropped only by accepting a different reproducibility policy or an equivalent replacement; no current on/off speed benefit was measured. |
 | [7a1af66](https://git.sunnycareboo.com/jasonbk/vllm-xpu-kernels/commit/7a1af6693963e91b3e63c119501ce5ea8fbfa955) | Use untiled GDN convolution prefill | Avoids the tiled route implicated in historical fresh-state corruption/repeated punctuation. The selected upstream source retains that route unchanged. Remove when a corrected tiled path is shown to work on the supported model/toolchain, rather than reinstating it incidentally. |
 | [2322b83](https://git.sunnycareboo.com/jasonbk/vllm-xpu-kernels/commit/2322b830903a4a0d0d8e4c113b7e2acc5c7967cb) | Order fresh-state GDN output reads | Adds a workgroup barrier before fresh-state output computation reads values written by other subgroups. Other upstream barriers do not cover that producer/consumer boundary. Keep the ordering fix or replace it with equivalent synchronization. |
-| [7bc80d1](https://git.sunnycareboo.com/jasonbk/vllm-xpu-kernels/commit/7bc80d1569bedeb8f4adceb43524fbc1b4d07516) | Keep cached-decode arithmetic in mixed batches | Separates eligible ordinary decode requests from prefill requests inside GDN, preserving their standalone arithmetic path. It is paired with vLLM 490bf7e422 and adds the trailing native flag that caller uses. Removing only this side breaks that interface; removing both abandons the retained arithmetic policy. |
+| [7bc80d1](https://git.sunnycareboo.com/jasonbk/vllm-xpu-kernels/commit/7bc80d1569bedeb8f4adceb43524fbc1b4d07516) | Keep cached-decode arithmetic in mixed batches | Separates eligible ordinary decode requests from prefill requests inside GDN, preserving their standalone arithmetic path. It is paired with vLLM 1214f2058a and adds the trailing native flag that caller uses. Removing only this side breaks that interface; removing both abandons the retained arithmetic policy. |
 | [c75a699](https://git.sunnycareboo.com/jasonbk/vllm-xpu-kernels/commit/c75a699930db98a3c77e4d6498892734e624b3a5) | Shortened-query rollback/storage regressions | Test-only residual: upstream #600 now supplies the native ragged-query implementation. Keep local coverage of acceptance beyond current query length, interleaved storage guards and bitwise state continuation. |
 | [2e7f76c](https://git.sunnycareboo.com/jasonbk/vllm-xpu-kernels/commit/2e7f76c799e3c8b68b4ae93d8c3e8eb65a525454) | Native FlashAttention replay/reference tests | Test-only: five native cases check independent numerical references and replay while rejecting fallback. Removing it changes no serving behavior. It reduces regression coverage, so upstreaming or retaining the small test delta is preferable to deleting it solely to reduce commit count. |
 | [dbb684f](https://git.sunnycareboo.com/jasonbk/vllm-xpu-kernels/commit/dbb684f4c9b38a8b3bbf52bda0c490ee47049221) | Native KVarN/K4V2 attention kernels | Supplies the paired quantized record writers/readers, packing, scatter, decode and bounded materialization kernels. Removing it makes the vLLM KVarN feature unavailable. The folded reducer and resident-load optimizations are separately reviewable, not inherently inseparable from K4V2. |
@@ -79,15 +75,19 @@ and narrow build gates passed. The ragged-MTP production fix is now upstream-own
 Optional request-stability and explicit unquantized-cache support remain
 supported; removing them would be a deliberate scope reduction. The test-only
 commits can be upstreamed without changing serving. The folded reducer merits
-more skepticism than the essential KVarN record ABI. V2/DFlash2 still needs the
-KVarN cache ownership/history lifecycle port; it is not a runtime flag flip.
+more skepticism than the essential KVarN record ABI. The V2/DFlash2 port
+now carries target, recurrent and draft ownership through allocation, rejected
+proposals, context boundaries and RAM transfers. The existing fused DFlash2
+grouped-convolution path remains CUDA-only; enabling it on XPU is a separate
+optimization requiring numerical and serving measurements.
 
 Current per-change evidence and disposition mapping are in
-[the v0.31 audit](updates/release-v031-20261010/reconciliation.md), with a
-[performance review](updates/release-v031-20261010/performance-review.md).
+[the v0.32 reconciliation](updates/release-v032-v2-20261019/reconciliation.json),
+with [serving qualification](updates/release-v032-v2-20261019/finish-serving-validation.json)
+and a [matched performance review](updates/release-v032-v2-20261019/finish-performance-review.json).
+The [release manifest](releases/xpu-v1.13.0.json) identifies the exact pair and profile.
 
-Full per-commit evidence and the original KEEP/DROP/ADAPT map are preserved in
-[the published audit archive](https://git.sunnycareboo.com/jasonbk/vllm-xpu-nix/src/commit/8c72895340deafef77998a579335d078800626ab/docs/updates/release-v030-20260922).
-The [prior release notes](releases/xpu-v1.11.0.md) distinguish actual Brutus passes from
-optional AEON/NaN limitations and unmeasured performance comparisons.
-Issue #17 remains paused; no V2/DFlash support or speedup is implied.
+Earlier evidence remains in the [v0.31 audit](updates/release-v031-20261010/reconciliation.md)
+and [published v0.30 audit archive](https://git.sunnycareboo.com/jasonbk/vllm-xpu-nix/src/commit/8c72895340deafef77998a579335d078800626ab/docs/updates/release-v030-20260922).
+Optional AEON stability and controlled per-kernel optimization claims remain
+separate from the qualified RedHat V2/DFlash2 profile.

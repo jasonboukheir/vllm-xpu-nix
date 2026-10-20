@@ -1,0 +1,182 @@
+{
+  "schema": 1,
+  "release": "xpu-v1.13.0",
+  "previous_release": "xpu-v1.12.2",
+  "prepared_utc": "2026-10-20T13:53:44.798110+00:00",
+  "qualification_status": "passed exact installed Brutus V2/DFlash2 profile; operator system switch remains separate",
+  "version_policy": "Minor release for upstream vLLM0.32 and compatible Model Runner V2/DFlash2 support; user requested the combined work as1.13.",
+  "sources": {
+    "vllm": {
+      "repository": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm.git",
+      "upstream_label": "v0.32.0",
+      "upstream_commit": "5df63a7203cdb9328d824a27b682e77c7b9928be",
+      "commit": "c0722c98d0fa1588eaf748cc9f7ef69ca3c32245",
+      "fork_commit_count": 5,
+      "locked": {
+        "lastModified": 1792502818,
+        "narHash": "sha256-rIRP7DTadoWo5chjANEbaeQOCdQv5mEVoSgLqqFkDQo=",
+        "ref": "refs/tags/xpu-v1.13.0",
+        "rev": "c0722c98d0fa1588eaf748cc9f7ef69ca3c32245",
+        "revCount": 22938,
+        "type": "git",
+        "url": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm.git"
+      },
+      "release_branch": "refs/heads/releases/xpu-v1.13.0",
+      "release_tag": "refs/tags/xpu-v1.13.0"
+    },
+    "vllm-xpu-kernels": {
+      "repository": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm-xpu-kernels.git",
+      "upstream_label": "release/0.1.15.4 (frozen released-wheel source)",
+      "upstream_commit": "ddf336d86e3c8602888572a3502f951abd51df12",
+      "commit": "dbb684f4c9b38a8b3bbf52bda0c490ee47049221",
+      "fork_commit_count": 7,
+      "locked": {
+        "lastModified": 1791620554,
+        "narHash": "sha256-v+vBY8x3L8cILKz4j12dVV3Ar4Fk4Gj4vTDkr5tpOZg=",
+        "ref": "refs/tags/xpu-v1.13.0",
+        "rev": "dbb684f4c9b38a8b3bbf52bda0c490ee47049221",
+        "revCount": 392,
+        "submodules": true,
+        "type": "git",
+        "url": "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm-xpu-kernels.git"
+      },
+      "release_branch": "refs/heads/releases/xpu-v1.13.0",
+      "release_tag": "refs/tags/xpu-v1.13.0",
+      "unchanged_from": "xpu-v1.12.2"
+    }
+  },
+  "qualified_package": {
+    "drvPath": "/nix/store/fvjnfnky2qk3jbidy8c4jn9bi75aymrv-python3.12-vllm-xpu-0.32.0+unstable.2026.10.20.gc0722c9.drv",
+    "outPath": "/nix/store/abyydgnrgglvviif8193zanhw6j1swch-python3.12-vllm-xpu-0.32.0+unstable.2026.10.20.gc0722c9",
+    "kernels": {
+      "derivation": "/nix/store/76463fj10nb2a4yssrya3wcz9r68pcqq-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f.drv",
+      "output": "/nix/store/vl22cdzf3wbclwy9zsfgac1mv6jb5dl9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f",
+      "registered_deriver": "/nix/store/3icxwpv5pba6jlxn6r9mkl2gjgrvz3i9-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.gdbb684f.drv"
+    },
+    "host_override": {
+      "path": "/home/jasonbk/.config/nix/hosts/brutus/services/vllm-xpu/package.nix",
+      "sha256": "7ac223d83a815c55976851aa1181187ae81aa8d9ae17f0c5a1fabed9e5779b95",
+      "withTorchvision": true,
+      "aotDevices": [
+        "bmg"
+      ],
+      "unchanged": true
+    },
+    "runtime_source_equivalence": "../updates/release-v032-v2-20261019/finish-installed-source-equivalence.json"
+  },
+  "profile": {
+    "model": "RedHatAI/Qwen3.8-27B-INT4",
+    "revision": "bf08f3dbd9a324e53956920aad378a1f1b6dd24a",
+    "runner": "V2",
+    "dtype": "bfloat16",
+    "weights": "W4A16 compressed-tensors",
+    "kv_cache_dtype": "kvarn_k4v2_g128_compact",
+    "speculative_config": {
+      "method": "dflash",
+      "num_speculative_tokens": 2,
+      "model": "syvai/Qwen3.8-27B-DFlash2-W4A16",
+      "revision": "4d30ec736ffc6b8688dc2ae2b502d9b48bdec279",
+      "kv_cache_dtype": "bfloat16"
+    },
+    "max_model_len": 262144,
+    "max_num_seqs": 4,
+    "max_num_batched_tokens": 2048,
+    "gpu_memory_utilization": 0.98,
+    "long_prefill_token_threshold": 1024,
+    "enforce_eager": true,
+    "prefix_caching": true,
+    "kv_transfer_config": {
+      "kv_connector": "OffloadingConnector",
+      "kv_connector_extra_config": {
+        "cpu_bytes_to_use": 8589934592,
+        "gpu_cache_policy": "active_only",
+        "offload_prompt_only": false,
+        "spec_name": "IndependentCPUOffloadingSpec"
+      },
+      "kv_role": "kv_both"
+    },
+    "limit_mm_per_prompt": {
+      "image": 2,
+      "video": 0
+    },
+    "mm_processor_kwargs": {
+      "max_pixels": 200704,
+      "min_pixels": 200704
+    },
+    "reasoning_parser": "qwen3",
+    "tool_call_parser": "qwen3_xml",
+    "tensor_parallel_size": 1,
+    "pipeline_parallel_size": 1
+  },
+  "capacity": {
+    "attention_physical_blocks": 2118,
+    "attention_usable_blocks": 2117,
+    "attention_capacity_tokens": 270976,
+    "attention_allocated_bytes": 3643637760,
+    "recurrent_physical_blocks": 17,
+    "recurrent_usable_blocks": 16,
+    "recurrent_allocated_bytes": 2650472448,
+    "draft_physical_blocks": 201,
+    "draft_usable_blocks": 200,
+    "draft_allocated_bytes": 526909440,
+    "max_concurrent_requests": 4,
+    "cpu_cache_bytes": 8589934592,
+    "interpretation": "Shared attention capacity supports one full 262144-token context; four bounded request slots do not imply four maximum-length contexts."
+  },
+  "changes": [
+    "Refresh vLLM to0.32.0 while preserving the exact compatible0.1.15.4 native kernel stack.",
+    "Port KVarN independent target/recurrent/draft pools and bounded RAM prefix storage to Model Runner V2.",
+    "Use pinned W4A16 DFlash2 with two proposals and independent BF16 sliding draft KV.",
+    "Fix per-pool async reservations, physical-block override semantics, group-aware MoRIIO zeroing and device-selected metadata fences.",
+    "Retain draft RAM pages at the recurrent replay boundary and preserve context-ceiling cache-only forwarding.",
+    "Update required Python dependencies and protect external draft snapshots during HF cache garbage collection.",
+    "Use the existing1024-token competing-prefill cap and0.98 GPU budget to preserve262K context and four request slots."
+  ],
+  "evidence": {
+    "serving": "../updates/release-v032-v2-20261019/finish-serving-validation.json",
+    "performance": "../updates/release-v032-v2-20261019/finish-performance-review.json",
+    "reproducibility": "../updates/release-v032-v2-20261019/finish-reproducibility.json",
+    "source_and_packaging": "../updates/release-v032-v2-20261019/review-validation.json",
+    "native_and_original_source": "../updates/release-v032-v2-20261019/source-validation.json",
+    "review_dispositions": "../updates/release-v032-v2-20261019/review-disposition.json",
+    "audit_reconciliation": "../updates/release-v032-v2-20261019/reconciliation.json"
+  },
+  "checks": {
+    "serving_all_pass": true,
+    "nix": {
+      "passed": [
+        "unit-tests",
+        "hf-cache-draft-roots",
+        "formatting",
+        "kernel-lib-cache-identity",
+        "kernel-glue-cache-identity",
+        "kernel-build-parallelism"
+      ],
+      "outputs": [
+        "/nix/store/1619sp63kdijbgh32vd2p9y8kmxv3bdc-vllm-xpu-nix-unit-tests",
+        "/nix/store/x93h326bcmh7wfjmdrjfi34wvnv2149r-hf-cache-draft-roots",
+        "/nix/store/80riswgr448r3jkga0bqq54babxk3krr-vllm-xpu-nix-formatting",
+        "/nix/store/binj41m90g7j1kqkgxikv7cyg4wlbwd4-kernel-lib-cache-identity.json",
+        "/nix/store/c1wi7vb2rp9i5zhq31vfajn6r6qslx3k-kernel-glue-cache-identity.json",
+        "/nix/store/jcfvrqivqv5ii05df6wzv6c36hrp9gzq-kernel-build-parallelism"
+      ],
+      "log_sha256": "b083e59a9193f2ee009eb2525a77a446a446b83051219f60299d949d98bc6f9b",
+      "unit_tests": 608,
+      "unit_test_files": 45
+    },
+    "runtime_and_tests_identical_to_review_head": "057a78d9776491cf17e263c5ac75103c53673b69",
+    "source_test_scope": "949 pass in expanded run, two existing-fixture failures repaired and both rerun pass;48 offline cases deselected.479 offloading scheduler/config tests pass. Counts overlap; not additive.",
+    "native_scope": "108 bounded target cases pass,36 long cases deselected;10 draft-attention FP32 reference cases pass with8 replays each.",
+    "source_limitations": "Full mypy/pre-commit and CUDA hardware not claimed; pinned native lint/local hooks used.",
+    "unrelated_locks_unchanged": true,
+    "release_derivation_matches_tested_package": true
+  },
+  "known_limits": [
+    "Targeted synthetic qualification and three benchmark repeats per workload; no broad model-quality claim.",
+    "Free-form output can differ across cold, RAM-restored and differently batched execution, including stable1.12.2. Structured/retrieval cases retain exact checks.",
+    "Four active request slots share270976 attention tokens; four maximum-length contexts do not fit.",
+    "Other GPU model workers are disabled in this profile.",
+    "Natural roughly day-long idle latency remains an open direct-API/gateway/UI follow-up; no fix claimed.",
+    "Existing fused grouped-convolution XPU optimization remains deferred."
+  ]
+}

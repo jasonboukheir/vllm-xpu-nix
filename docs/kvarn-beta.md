@@ -61,8 +61,15 @@ storing four unrelated full idle histories in RAM does not allow all four to
 run at once. Active requests can share physical pages for a common prefix.
 
 See the [exact Nix arguments and installed measurements](kvarn-prefix-cache.md#ram-prefix-storage).
-Qualification uses 8 GiB with BF16 Qwen3.5, compact K4V2 for target and draft,
+The xpu-v1.12.2 qualification uses 8 GiB with BF16 Qwen3.5, compact K4V2 for target and draft,
 TP1/PP1, eager V1 and MTP2. Weights and native kernels are unchanged.
+
+V2 DFlash2 uses the same bounded RAM arena, adding the independent BF16 draft
+window at the recurrent replay boundary. Packed committed history and FP16 sinks
+are retained; the recent non-sink FP16 window is rebuilt as tokens are computed.
+Free-form cold and restored generations are not guaranteed to be bitwise equal.
+Use the [xpu-v1.13.0 manifest](releases/xpu-v1.13.0.json) for this profile's
+capacity and qualification results.
 
 ## Choose the cache format
 
@@ -121,19 +128,38 @@ vLLM and native kernel release; an older native library cannot read its records.
 - Model: `RedHatAI/Qwen3.8-27B-INT4`, revision
   `bf08f3dbd9a324e53956920aad378a1f1b6dd24a` (Qwen3.5 architecture).
 - BF16 compute, compressed-tensors W4A16 weights.
-- Up to four active requests, TP1/PP1, V1 runner, eager execution.
+- Up to four active requests, TP1/PP1, V2 runner, eager execution.
 - Maximum combined input/output context follows the model limit and available
   KV-cache capacity. This profile configures 262,144 tokens; there is no separate
   128K KVarN MTP ceiling. Concurrent requests share the available KV pool.
-- Prefill token budget: 2,048; GPU memory utilization: 0.96, with the other
-  vLLM workers disabled. See the release notes for the measured memory budget.
+- Prefill token budget: 2,048; competing-prefill threshold: 1,024.
+  GPU memory utilization: 0.98, with the other vLLM workers disabled.
 - At most two 448×448 images; no video.
 - Local prefix caching is supported for this BF16 Qwen3.5 compact K4V2
   TP1/PP1 profile. See [prefix-cache sizing](kvarn-prefix-cache.md).
-- RAM prefix storage is supported for this profile with MTP2;
+- RAM prefix storage is supported for this profile with DFlash2;
   see [the RAM-cache configuration](kvarn-prefix-cache.md#ram-prefix-storage).
 - No XPU graphs.
-- Bundled MTP: one or two draft tokens; two recommended.
+- External DFlash2: two proposals with a separate BF16 sliding draft cache.
+
+Set the target cache to compact K4V2 and configure the pinned drafter:
+
+```nix
+extraEnvironment.VLLM_USE_V2_MODEL_RUNNER = "1";
+speculativeConfig = {
+  method = "dflash";
+  num_speculative_tokens = 2;
+  model = "syvai/Qwen3.8-27B-DFlash2-W4A16";
+  revision = "4d30ec736ffc6b8688dc2ae2b502d9b48bdec279";
+  kv_cache_dtype = "bfloat16";
+};
+```
+
+The measured shared attention capacity is 270,976 tokens. Four request slots
+share that capacity; they do not allow four maximum-length contexts.
+See the [release manifest](releases/xpu-v1.13.0.json) and
+[matched performance comparison](updates/release-v032-v2-20261019/finish-performance-review.json).
+The preceding xpu-v1.12.2 release retains the V1 MTP2 recipe at utilization 0.96.
 
 The options above do not configure all these serving limits. The scheduler's
 `maxNumSeqs` controls concurrency; KVarN MTP does not impose an additional
@@ -145,12 +171,12 @@ profile, [xpu-v1.9.0 qualification](releases/xpu-v1.9.0.md) for the K4V2
 target release, and [xpu-v1.10.0 qualification](releases/xpu-v1.10.0.md) for the
 MTP draft-cache comparison and CPU draft-metadata fix. Configuration acceptance alone does not establish GPU
 correctness, quality or performance. Higher concurrency, larger images and
-other models need their own qualification. DFlash, video/audio, distributed
-KV connectors/events and graph/V2 serving remain outside this combination.
+other models need their own qualification. Video/audio, distributed
+KV connectors/events and graph execution remain outside this combination.
 
 ## Rollback
 
-Set `speculativeConfig = null` to disable MTP. Set `kvCacheDtype = "bfloat16"`
+Set `speculativeConfig = null` to disable speculation. Set `kvCacheDtype = "bfloat16"`
 for an explicit BF16 KV control, with a context limit that fits its larger
 cache. `kvCacheDtype = "auto"` follows the checkpoint's cache metadata; this
 RedHat checkpoint embeds an FP8 KV default.

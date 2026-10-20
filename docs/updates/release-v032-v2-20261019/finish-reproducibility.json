@@ -1,0 +1,152 @@
+{
+  "scope": "Three isolated cold requests and three RAM restores; fixed seed17, 8247 prompt tokens, 256 generated tokens. Free-form generation reproducibility diagnostic, not task-quality evaluation.",
+  "runs": {
+    "finish-baseline-01": {
+      "package": "/nix/store/aja19mdns76j5pw27dlirzzmpjfwgf2j-python3.12-vllm-xpu-0.31.0+unstable.2026.10.11.gdcba400",
+      "profile": "baseline",
+      "rows": [
+        {
+          "name": "cold-0",
+          "output_tokens": 256,
+          "first_difference_from_cold": null,
+          "ram_hit_tokens": 0.0,
+          "load_bytes": 0,
+          "computed_tokens": 8247.0
+        },
+        {
+          "name": "cold-1",
+          "output_tokens": 256,
+          "first_difference_from_cold": null,
+          "ram_hit_tokens": 0.0,
+          "load_bytes": 0,
+          "computed_tokens": 8247.0
+        },
+        {
+          "name": "cold-2",
+          "output_tokens": 256,
+          "first_difference_from_cold": null,
+          "ram_hit_tokens": 0.0,
+          "load_bytes": 0,
+          "computed_tokens": 8247.0
+        },
+        {
+          "name": "ram-3",
+          "output_tokens": 256,
+          "first_difference_from_cold": 20,
+          "ram_hit_tokens": 8064.0,
+          "load_bytes": 279976994.0,
+          "computed_tokens": 183.0
+        },
+        {
+          "name": "ram-4",
+          "output_tokens": 256,
+          "first_difference_from_cold": 20,
+          "ram_hit_tokens": 8064.0,
+          "load_bytes": 279976994.0,
+          "computed_tokens": 183.0
+        },
+        {
+          "name": "ram-5",
+          "output_tokens": 256,
+          "first_difference_from_cold": 20,
+          "ram_hit_tokens": 8064.0,
+          "load_bytes": 279976994.0,
+          "computed_tokens": 183.0
+        }
+      ],
+      "pairwise_first_difference": {
+        "cold-0:cold-1": null,
+        "cold-0:cold-2": null,
+        "cold-0:ram-3": 20,
+        "cold-0:ram-4": 20,
+        "cold-0:ram-5": 20,
+        "cold-1:cold-2": null,
+        "cold-1:ram-3": 20,
+        "cold-1:ram-4": 20,
+        "cold-1:ram-5": 20,
+        "cold-2:ram-3": 20,
+        "cold-2:ram-4": 20,
+        "cold-2:ram-5": 20,
+        "ram-3:ram-4": null,
+        "ram-3:ram-5": null,
+        "ram-4:ram-5": null
+      },
+      "private_summary_sha256": "2ce8726814b258a81a8dffdde37530a4c5d89f39915d6ca7169546f6714d2d65"
+    },
+    "finish-dflash-k1-01": {
+      "package": "/nix/store/v8n3dvbjyprak6n8kkza1qfhlchcl27n-python3.12-vllm-xpu-0.32.0+unstable.2026.10.20.g057a78d",
+      "profile": "v2-dflash",
+      "rows": [
+        {
+          "name": "cold-0",
+          "output_tokens": 256,
+          "first_difference_from_cold": null,
+          "ram_hit_tokens": 0.0,
+          "load_bytes": 0,
+          "computed_tokens": 8247.0
+        },
+        {
+          "name": "cold-1",
+          "output_tokens": 256,
+          "first_difference_from_cold": 20,
+          "ram_hit_tokens": 0.0,
+          "load_bytes": 0,
+          "computed_tokens": 8247.0
+        },
+        {
+          "name": "cold-2",
+          "output_tokens": 256,
+          "first_difference_from_cold": 20,
+          "ram_hit_tokens": 0.0,
+          "load_bytes": 0,
+          "computed_tokens": 8247.0
+        },
+        {
+          "name": "ram-3",
+          "output_tokens": 256,
+          "first_difference_from_cold": 20,
+          "ram_hit_tokens": 8064.0,
+          "load_bytes": 313638944.0,
+          "computed_tokens": 183.0
+        },
+        {
+          "name": "ram-4",
+          "output_tokens": 256,
+          "first_difference_from_cold": 20,
+          "ram_hit_tokens": 8064.0,
+          "load_bytes": 313638944.0,
+          "computed_tokens": 183.0
+        },
+        {
+          "name": "ram-5",
+          "output_tokens": 256,
+          "first_difference_from_cold": 20,
+          "ram_hit_tokens": 8064.0,
+          "load_bytes": 313638944.0,
+          "computed_tokens": 183.0
+        }
+      ],
+      "pairwise_first_difference": {
+        "cold-0:cold-1": 20,
+        "cold-0:cold-2": 20,
+        "cold-0:ram-3": 20,
+        "cold-0:ram-4": 20,
+        "cold-0:ram-5": 20,
+        "cold-1:cold-2": 103,
+        "cold-1:ram-3": 103,
+        "cold-1:ram-4": 103,
+        "cold-1:ram-5": 103,
+        "cold-2:ram-3": 115,
+        "cold-2:ram-4": 115,
+        "cold-2:ram-5": 115,
+        "ram-3:ram-4": null,
+        "ram-3:ram-5": null,
+        "ram-4:ram-5": null
+      },
+      "private_summary_sha256": "14ac263fbaa2ad13fc471bbdab2717bf364d827ce83c6846391c772ac54ba47f"
+    }
+  },
+  "conclusion": "Stable v1.12.2 cold runs agree with each other but differ from its RAM restores at token21. Candidate cold runs also differ from each other; its three RAM restores agree. The earlier free-form cold/RAM equality failure does not identify a new RAM corruption defect.",
+  "qualification_policy": "Retain the failed long-output assertion as evidence. Require expected-result retrieval/copy/vision/tool checks, cache transfer and boundary proofs; do not claim universal bitwise generation equivalence.",
+  "representation": "RAM preserves packed committed pages plus the FP16 sink; recent non-sink FP16 residency is not serialized, in either release."
+}

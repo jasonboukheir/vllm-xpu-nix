@@ -207,12 +207,12 @@
     }
   },
   "candidate_source_tips": {
-    "vllm": "057a78d9776491cf17e263c5ac75103c53673b69",
+    "vllm": "c0722c98d0fa1588eaf748cc9f7ef69ca3c32245",
     "vllm-xpu-kernels": "dbb684f4c9b38a8b3bbf52bda0c490ee47049221"
   },
-  "stage": "review fixes and loaded follow-up repair implemented; exact candidate built; K1 smoke and four-way RAM overlap passed; long-prefill/output-equivalence and full release qualification remain open; draft PRs retained",
+  "stage": "Exact installed V2/DFlash2 qualification passed; coordinated release publication and host handoff recorded by release refs and host commit.",
   "published_integration_tips": {
-    "vllm": "06edb20b68bcd36956499f04dc2ca67d0727d93e",
+    "vllm": "c0722c98d0fa1588eaf748cc9f7ef69ca3c32245",
     "vllm-xpu-kernels": "dbb684f4c9b38a8b3bbf52bda0c490ee47049221"
   },
   "review_branches": {
@@ -232,5 +232,6 @@
     "ref": "refs/heads/backup/main-pre-qualification-20261020T0453",
     "commit": "06edb20b68bcd36956499f04dc2ca67d0727d93e",
     "remote_verified": true
-  }
+  },
+  "completion_evidence": "../../releases/xpu-v1.13.0.json"
 }

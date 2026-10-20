@@ -256,8 +256,9 @@ let
             drafter, model-aware fast path. Use this for
             Qwen3.6-35B-A3B (the model card's recommendation).
           - `eagle` / `eagle3` — separate draft model.
-          For KVarN use `method = "mtp"` and `num_speculative_tokens = 2`
-          with BF16 compute and eager execution. Compact K4V2 supports local
+          For KVarN with Model Runner V1 use `method = "mtp"` and
+          `num_speculative_tokens = 2` with BF16 compute and eager execution.
+          Compact K4V2 supports local
           prefix caching on the qualified Qwen3.5 TP1/PP1 profile. The B70
           serving profile uses up to four active requests and two bounded
           images; see docs/kvarn-beta.md for the full configuration and
@@ -268,10 +269,12 @@ let
           draft follows the target format. The earlier xpu-v1.9.0 profile
           used `kv_cache_dtype = "kvarn_k4v4_g128_compact"` instead.
           Consult the release measurements for the exact tested pairing.
-          The v0.32 candidate also admits V2 DFlash2 with compact K4V2 target
-          KV, BF16 sliding-window draft KV, and one to seven proposals. This
-          path is still undergoing capacity and serving qualification; seven
-          proposals do not fit the current Brutus context/concurrency profile.
+          Model Runner V2 supports DFlash2 with compact K4V2 target KV and
+          BF16 sliding-window draft KV. The xpu-v1.13.0 Brutus profile uses
+          two proposals, GPU memory utilization 0.98 and a competing-prefill
+          threshold of 1024. One to seven proposals are admitted, but each
+          count requires capacity and serving qualification; seven did not
+          fit the measured Brutus profile at GPU memory utilization 0.96.
           External Hub drafts are retained by cache GC. Branch/tag revisions
           conservatively retain all cached snapshots of that draft repository.
           Use absolute or explicit `./` / `../` paths for local drafts; bare

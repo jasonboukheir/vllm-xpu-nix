@@ -1,0 +1,3042 @@
+{
+  "source_commit": "c0722c98d0fa1588eaf748cc9f7ef69ca3c32245",
+  "package": "/nix/store/abyydgnrgglvviif8193zanhw6j1swch-python3.12-vllm-xpu-0.32.0+unstable.2026.10.20.gc0722c9",
+  "qualified_utc": "2026-10-20T13:53:44.760223+00:00",
+  "profile": {
+    "model": "RedHatAI/Qwen3.8-27B-INT4",
+    "revision": "bf08f3dbd9a324e53956920aad378a1f1b6dd24a",
+    "runner": "V2",
+    "dtype": "bfloat16",
+    "weights": "W4A16 compressed-tensors",
+    "kv_cache_dtype": "kvarn_k4v2_g128_compact",
+    "speculative_config": {
+      "method": "dflash",
+      "num_speculative_tokens": 2,
+      "model": "syvai/Qwen3.8-27B-DFlash2-W4A16",
+      "revision": "4d30ec736ffc6b8688dc2ae2b502d9b48bdec279",
+      "kv_cache_dtype": "bfloat16"
+    },
+    "max_model_len": 262144,
+    "max_num_seqs": 4,
+    "max_num_batched_tokens": 2048,
+    "gpu_memory_utilization": 0.98,
+    "long_prefill_token_threshold": 1024,
+    "enforce_eager": true,
+    "prefix_caching": true,
+    "kv_transfer_config": {
+      "kv_connector": "OffloadingConnector",
+      "kv_connector_extra_config": {
+        "cpu_bytes_to_use": 8589934592,
+        "gpu_cache_policy": "active_only",
+        "offload_prompt_only": false,
+        "spec_name": "IndependentCPUOffloadingSpec"
+      },
+      "kv_role": "kv_both"
+    },
+    "limit_mm_per_prompt": {
+      "image": 2,
+      "video": 0
+    },
+    "mm_processor_kwargs": {
+      "max_pixels": 200704,
+      "min_pixels": 200704
+    },
+    "reasoning_parser": "qwen3",
+    "tool_call_parser": "qwen3_xml",
+    "tensor_parallel_size": 1,
+    "pipeline_parallel_size": 1
+  },
+  "launch": {
+    "argv": [
+      "/nix/store/abyydgnrgglvviif8193zanhw6j1swch-python3.12-vllm-xpu-0.32.0+unstable.2026.10.20.gc0722c9/bin/vllm",
+      "serve",
+      "RedHatAI/Qwen3.8-27B-INT4",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "18000",
+      "--served-model-name",
+      "sunny-chat",
+      "--dtype",
+      "bfloat16",
+      "--gpu-memory-utilization",
+      "0.98",
+      "--revision",
+      "bf08f3dbd9a324e53956920aad378a1f1b6dd24a",
+      "--quantization",
+      "compressed-tensors",
+      "--kv-cache-dtype",
+      "kvarn_k4v2_g128_compact",
+      "--max-model-len",
+      "262144",
+      "--max-num-seqs",
+      "4",
+      "--enforce-eager",
+      "--reasoning-parser",
+      "qwen3",
+      "--enable-auto-tool-choice",
+      "--tool-call-parser",
+      "qwen3_xml",
+      "--limit-mm-per-prompt",
+      "{\"image\":2,\"video\":0}",
+      "--enable-prefix-caching",
+      "--kv-transfer-config",
+      "{\"kv_connector\":\"OffloadingConnector\",\"kv_connector_extra_config\":{\"cpu_bytes_to_use\":8589934592,\"gpu_cache_policy\":\"active_only\",\"offload_prompt_only\":false,\"spec_name\":\"IndependentCPUOffloadingSpec\"},\"kv_role\":\"kv_both\"}",
+      "--max-num-batched-tokens",
+      "2048",
+      "--mm-processor-kwargs",
+      "{\"max_pixels\":200704,\"min_pixels\":200704}",
+      "--speculative-config",
+      "{\"method\": \"dflash\", \"num_speculative_tokens\": 2, \"model\": \"syvai/Qwen3.8-27B-DFlash2-W4A16\", \"revision\": \"4d30ec736ffc6b8688dc2ae2b502d9b48bdec279\", \"kv_cache_dtype\": \"bfloat16\"}",
+      "--enable-log-requests",
+      "--long-prefill-token-threshold",
+      "1024"
+    ],
+    "manifest_sha256": "5307169b89c4b3d9c96902d3be18f953dc2b808976db531fdd39bdcacf7b524c",
+    "qualification_instrumentation": true,
+    "port": 18000,
+    "persistent_runtime_cache": true,
+    "model_cache_offline": true,
+    "production_chat": "user-stopped",
+    "embedding_and_stt": "disabled"
+  },
+  "capacity": {
+    "attention_physical_blocks": 2118,
+    "attention_usable_blocks": 2117,
+    "attention_capacity_tokens": 270976,
+    "attention_allocated_bytes": 3643637760,
+    "recurrent_physical_blocks": 17,
+    "recurrent_usable_blocks": 16,
+    "recurrent_allocated_bytes": 2650472448,
+    "draft_physical_blocks": 201,
+    "draft_usable_blocks": 200,
+    "draft_allocated_bytes": 526909440,
+    "max_concurrent_requests": 4,
+    "cpu_cache_bytes": 8589934592,
+    "interpretation": "Shared attention capacity supports one full 262144-token context; four bounded request slots do not imply four maximum-length contexts."
+  },
+  "smoke": {
+    "all_pass": true,
+    "tests": [
+      {
+        "stream_done": true,
+        "name": "text",
+        "http_status": 200,
+        "seconds": 3.222,
+        "first_output_seconds": 2.0,
+        "usage": {
+          "prompt_tokens": 28,
+          "total_tokens": 91,
+          "completion_tokens": 63,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "smoke_pass": true
+      },
+      {
+        "stream_done": true,
+        "name": "reasoning",
+        "http_status": 200,
+        "seconds": 2.392,
+        "first_output_seconds": 0.304,
+        "usage": {
+          "prompt_tokens": 57,
+          "total_tokens": 186,
+          "completion_tokens": 129,
+          "completion_tokens_details": {
+            "reasoning_tokens": 55
+          }
+        },
+        "finish_reason": "stop",
+        "smoke_pass": true
+      },
+      {
+        "stream_done": true,
+        "name": "vision",
+        "http_status": 200,
+        "seconds": 1.015,
+        "first_output_seconds": 0.926,
+        "usage": {
+          "prompt_tokens": 428,
+          "total_tokens": 432,
+          "completion_tokens": 4,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "smoke_pass": true
+      },
+      {
+        "stream_done": true,
+        "name": "tools",
+        "http_status": 200,
+        "seconds": 1.336,
+        "first_output_seconds": 0.714,
+        "usage": {
+          "prompt_tokens": 324,
+          "total_tokens": 375,
+          "completion_tokens": 51,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "tool_calls",
+        "smoke_pass": true
+      }
+    ],
+    "artifact_sha256": "e93360e428f910241a100bb28cee0ae9c4f4d1450dac77e0b0c3d5664fc077ed"
+  },
+  "four_way_ram_restore": {
+    "checks": {
+      "fourth_emits_before_background_finishes": true,
+      "all_four_progress_in_common_interval": true,
+      "four_running": true,
+      "ram_hit": true,
+      "load_bytes": true,
+      "no_gpu_hit": true,
+      "bounded_recompute": true,
+      "no_preemption": true,
+      "restored_tokens_match": true,
+      "background_labels": true,
+      "positive_draft_acceptance": true
+    },
+    "all_pass": true,
+    "common_progress_seconds": 2.442275189998327,
+    "fourth_ttft_seconds": 0.44263153697829694,
+    "scope": "Three decodes plus a fourth RAM restore; long-prefill overlap separate",
+    "metric_deltas": {
+      "external_prefix_cache_hits_total": 8064.0,
+      "kv_offload_load_bytes_total": 314621984.0,
+      "num_preemptions_total": 0.0,
+      "prefix_cache_hits_total": 0.0,
+      "request_prefill_kv_computed_tokens_sum": 179.0,
+      "spec_decode_num_accepted_tokens_total": 234.0,
+      "spec_decode_num_draft_tokens_total": 350.0
+    },
+    "artifact_sha256": "04054d2e172756d5407252ee88be23dc5c1f644463aedec2b275ee50f3381eac"
+  },
+  "ram_restore_during_long_prefill": {
+    "checks": {
+      "restore_starts_before_long_prefill_finishes": true,
+      "restore_advances_across_long_prefill_completion": true,
+      "two_running": true,
+      "ram_hit": true,
+      "load_bytes": true,
+      "no_gpu_hit": true,
+      "bounded_restore_recompute": true,
+      "no_preemptions": true,
+      "restored_tokens_match": true,
+      "long_output": true,
+      "structured_sequence": true,
+      "positive_draft_acceptance": true
+    },
+    "all_pass": true,
+    "restore_progress_before_long_first_content_seconds": 20.081006126012653,
+    "restore_progress_after_long_first_content_seconds": 15.188105015986366,
+    "metric_deltas": {
+      "external_prefix_cache_hits_total": 8064.0,
+      "kv_offload_load_bytes_total": 314621984.0,
+      "num_preemptions_total": 0.0,
+      "prefix_cache_hits_total": 0.0,
+      "request_prefill_kv_computed_tokens_sum": 33004.0,
+      "spec_decode_num_accepted_tokens_total": 759.0,
+      "spec_decode_num_draft_tokens_total": 760.0
+    },
+    "artifact_sha256": "8bfaa55b2b6a108b76783c3cd0891ee182cdbaa2665537175247eeeb9b2c8168"
+  },
+  "full_context": {
+    "all_pass": true,
+    "tests": [
+      {
+        "name": "cold",
+        "http_status": 200,
+        "stream_done": true,
+        "ttft_seconds": 384.0472839300055,
+        "seconds": 384.77081873701536,
+        "usage": {
+          "prompt_tokens": 262015,
+          "total_tokens": 262027,
+          "completion_tokens": 12,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "gpu_hit_tokens": 0.0,
+        "ram_hit_tokens": 0.0,
+        "load_bytes": 0.0,
+        "store_bytes": 3727736864.0,
+        "computed_tokens": 262015.0,
+        "preemptions": 0.0,
+        "pass": true,
+        "output_tokens_sha256": "b77de6fc5ebe5049044176d3da533986f5d6a10762d3d90885f409aeecbfb1f7",
+        "returned_token_count": 12,
+        "ordered_red_blue": true
+      },
+      {
+        "name": "ram-0",
+        "http_status": 200,
+        "stream_done": true,
+        "ttft_seconds": 2.5603969230141956,
+        "seconds": 3.249556622002274,
+        "usage": {
+          "prompt_tokens": 262015,
+          "total_tokens": 262027,
+          "completion_tokens": 12,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "gpu_hit_tokens": 0.0,
+        "ram_hit_tokens": 261760.0,
+        "load_bytes": 3724296224.0,
+        "store_bytes": 0.0,
+        "computed_tokens": 255.0,
+        "preemptions": 0.0,
+        "pass": true,
+        "same_tokens_as_cold": true,
+        "output_tokens_sha256": "b77de6fc5ebe5049044176d3da533986f5d6a10762d3d90885f409aeecbfb1f7",
+        "returned_token_count": 12,
+        "ordered_red_blue": true
+      },
+      {
+        "name": "ram-1",
+        "http_status": 200,
+        "stream_done": true,
+        "ttft_seconds": 1.6004591319942847,
+        "seconds": 2.296659220010042,
+        "usage": {
+          "prompt_tokens": 262015,
+          "total_tokens": 262027,
+          "completion_tokens": 12,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "gpu_hit_tokens": 0.0,
+        "ram_hit_tokens": 261760.0,
+        "load_bytes": 3724296224.0,
+        "store_bytes": 0.0,
+        "computed_tokens": 255.0,
+        "preemptions": 0.0,
+        "pass": true,
+        "same_tokens_as_cold": true,
+        "output_tokens_sha256": "b77de6fc5ebe5049044176d3da533986f5d6a10762d3d90885f409aeecbfb1f7",
+        "returned_token_count": 12,
+        "ordered_red_blue": true
+      }
+    ],
+    "artifact_sha256": "67df474d36066fa8ac33510b0f600a5ef10a5162f93aac81b28d8ad29d046049"
+  },
+  "exact_limit": {
+    "all_pass": true,
+    "tests": [
+      {
+        "stream_done": true,
+        "name": "exact-limit",
+        "http_status": 200,
+        "seconds": 2.194,
+        "first_output_seconds": 2.194,
+        "usage": {
+          "prompt_tokens": 262143,
+          "total_tokens": 262144,
+          "completion_tokens": 1,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "length",
+        "computed_tokens": 383.0,
+        "ram_hit_tokens": 261760.0,
+        "gpu_hit_tokens": 0.0,
+        "load_bytes": 3724296224.0,
+        "preemptions": 0.0,
+        "pass": true,
+        "output_tokens_sha256": "2e826489cf9b9ae4387d7d0ff1c53e20764bab885bb8bcc36bad62c2f7dd97b1",
+        "returned_token_count": 1
+      },
+      {
+        "stream_done": true,
+        "name": "exact-limit-ram-repeat",
+        "http_status": 200,
+        "seconds": 1.568,
+        "first_output_seconds": 1.568,
+        "usage": {
+          "prompt_tokens": 262143,
+          "total_tokens": 262144,
+          "completion_tokens": 1,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "length",
+        "computed_tokens": 255.0,
+        "ram_hit_tokens": 261888.0,
+        "gpu_hit_tokens": 0.0,
+        "load_bytes": 3726016544.0,
+        "preemptions": 0.0,
+        "pass": true,
+        "same_tokens_as_previous": true,
+        "output_tokens_sha256": "2e826489cf9b9ae4387d7d0ff1c53e20764bab885bb8bcc36bad62c2f7dd97b1",
+        "returned_token_count": 1
+      }
+    ],
+    "artifact_sha256": "cda0debb9a117eefade325be10b49fbf8e1e1035426e68309a738478109d9474",
+    "deferred_store_flush_checks": [
+      {
+        "stream_done": true,
+        "name": "flush-0",
+        "http_status": 200,
+        "seconds": 0.241,
+        "first_output_seconds": 0.153,
+        "usage": {
+          "prompt_tokens": 15,
+          "total_tokens": 18,
+          "completion_tokens": 3,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true
+      },
+      {
+        "stream_done": true,
+        "name": "flush-1",
+        "http_status": 200,
+        "seconds": 0.234,
+        "first_output_seconds": 0.145,
+        "usage": {
+          "prompt_tokens": 15,
+          "total_tokens": 18,
+          "completion_tokens": 3,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true
+      }
+    ]
+  },
+  "lifecycle": {
+    "all_pass": true,
+    "tests": [
+      {
+        "stream_done": true,
+        "name": "cold",
+        "http_status": 200,
+        "seconds": 14.665,
+        "first_output_seconds": 14.497,
+        "usage": {
+          "prompt_tokens": 20307,
+          "total_tokens": 20315,
+          "completion_tokens": 8,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 20307.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "7ebc01602d72381c38b868cb38091e2c3a3f538765a9e6aaa78d693aa419f2ef",
+        "returned_token_count": 8
+      },
+      {
+        "stream_done": true,
+        "name": "natural-ram-reuse",
+        "http_status": 200,
+        "seconds": 0.487,
+        "first_output_seconds": 0.346,
+        "usage": {
+          "prompt_tokens": 20307,
+          "total_tokens": 20315,
+          "completion_tokens": 8,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 211.0,
+        "ram_hits": 20096.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 476332064.0,
+        "preemptions": 0.0,
+        "same_tokens_as_cold": true,
+        "output_tokens_sha256": "7ebc01602d72381c38b868cb38091e2c3a3f538765a9e6aaa78d693aa419f2ef",
+        "returned_token_count": 8
+      },
+      {
+        "stream_done": true,
+        "name": "branch-0-cold",
+        "http_status": 200,
+        "seconds": 17.95,
+        "first_output_seconds": 17.735,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 20341.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "809a03e3ac1808a5ef3d40fe2da194af3e73432ee41bd062b42dd9cc89c73b74",
+        "returned_token_count": 11
+      },
+      {
+        "stream_done": true,
+        "name": "branch-0-ram",
+        "http_status": 200,
+        "seconds": 0.784,
+        "first_output_seconds": 0.59,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 245.0,
+        "ram_hits": 20096.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 476332064.0,
+        "preemptions": 0.0,
+        "same_tokens_as_cold": true,
+        "output_tokens_sha256": "809a03e3ac1808a5ef3d40fe2da194af3e73432ee41bd062b42dd9cc89c73b74",
+        "returned_token_count": 11
+      },
+      {
+        "stream_done": true,
+        "name": "branch-1-cold",
+        "http_status": 200,
+        "seconds": 14.744,
+        "first_output_seconds": 14.528,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 20341.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "734e77d37db1526d9f38bba0628ea2c8ed2690fb93f1473f9eeea5b6b2c89bfb",
+        "returned_token_count": 11
+      },
+      {
+        "stream_done": true,
+        "name": "branch-1-ram",
+        "http_status": 200,
+        "seconds": 0.585,
+        "first_output_seconds": 0.392,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 245.0,
+        "ram_hits": 20096.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 476332064.0,
+        "preemptions": 0.0,
+        "same_tokens_as_cold": true,
+        "output_tokens_sha256": "734e77d37db1526d9f38bba0628ea2c8ed2690fb93f1473f9eeea5b6b2c89bfb",
+        "returned_token_count": 11
+      },
+      {
+        "stream_done": true,
+        "name": "branch-2-cold",
+        "http_status": 200,
+        "seconds": 14.749,
+        "first_output_seconds": 14.527,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 20341.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "b8fc90357c6f7a99c7e3aabc50fb3a34cce16bc28b4c70f23313a9b7e16fea61",
+        "returned_token_count": 11
+      },
+      {
+        "stream_done": true,
+        "name": "branch-2-ram",
+        "http_status": 200,
+        "seconds": 0.557,
+        "first_output_seconds": 0.363,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 245.0,
+        "ram_hits": 20096.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 476332064.0,
+        "preemptions": 0.0,
+        "same_tokens_as_cold": true,
+        "output_tokens_sha256": "b8fc90357c6f7a99c7e3aabc50fb3a34cce16bc28b4c70f23313a9b7e16fea61",
+        "returned_token_count": 11
+      },
+      {
+        "stream_done": true,
+        "name": "branch-3-cold",
+        "http_status": 200,
+        "seconds": 14.74,
+        "first_output_seconds": 14.523,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 20341.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "1a126b60d2c8dd6dcb6e0aefcdbdf14a2bec986d883f56ac2b9e8e34d0a5c4bb",
+        "returned_token_count": 11
+      },
+      {
+        "stream_done": true,
+        "name": "branch-3-ram",
+        "http_status": 200,
+        "seconds": 0.55,
+        "first_output_seconds": 0.353,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 245.0,
+        "ram_hits": 20096.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 476332064.0,
+        "preemptions": 0.0,
+        "same_tokens_as_cold": true,
+        "output_tokens_sha256": "1a126b60d2c8dd6dcb6e0aefcdbdf14a2bec986d883f56ac2b9e8e34d0a5c4bb",
+        "returned_token_count": 11
+      },
+      {
+        "stream_done": true,
+        "name": "parallel-shared-0",
+        "http_status": 200,
+        "seconds": 1.226,
+        "first_output_seconds": 0.394,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 245.0,
+        "ram_hits": 20096.0,
+        "gpu_hits": 60288.0,
+        "load_bytes": 476332064.0,
+        "preemptions": 0.0,
+        "same_tokens_as_cold": true,
+        "metric_scope": "overlaps parallel requests; see batch counters",
+        "output_tokens_sha256": "809a03e3ac1808a5ef3d40fe2da194af3e73432ee41bd062b42dd9cc89c73b74",
+        "returned_token_count": 11
+      },
+      {
+        "stream_done": true,
+        "name": "parallel-shared-1",
+        "http_status": 200,
+        "seconds": 1.298,
+        "first_output_seconds": 0.966,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 980.0,
+        "ram_hits": 20096.0,
+        "gpu_hits": 60288.0,
+        "load_bytes": 476332064.0,
+        "preemptions": 0.0,
+        "same_tokens_as_cold": true,
+        "metric_scope": "overlaps parallel requests; see batch counters",
+        "output_tokens_sha256": "734e77d37db1526d9f38bba0628ea2c8ed2690fb93f1473f9eeea5b6b2c89bfb",
+        "returned_token_count": 11
+      },
+      {
+        "stream_done": true,
+        "name": "parallel-shared-2",
+        "http_status": 200,
+        "seconds": 1.299,
+        "first_output_seconds": 0.966,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 980.0,
+        "ram_hits": 20096.0,
+        "gpu_hits": 60288.0,
+        "load_bytes": 476332064.0,
+        "preemptions": 0.0,
+        "same_tokens_as_cold": true,
+        "metric_scope": "overlaps parallel requests; see batch counters",
+        "output_tokens_sha256": "b8fc90357c6f7a99c7e3aabc50fb3a34cce16bc28b4c70f23313a9b7e16fea61",
+        "returned_token_count": 11
+      },
+      {
+        "stream_done": true,
+        "name": "parallel-shared-3",
+        "http_status": 200,
+        "seconds": 1.304,
+        "first_output_seconds": 0.971,
+        "usage": {
+          "prompt_tokens": 20341,
+          "total_tokens": 20352,
+          "completion_tokens": 11,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 980.0,
+        "ram_hits": 20096.0,
+        "gpu_hits": 60288.0,
+        "load_bytes": 476332064.0,
+        "preemptions": 0.0,
+        "same_tokens_as_cold": true,
+        "metric_scope": "overlaps parallel requests; see batch counters",
+        "output_tokens_sha256": "1a126b60d2c8dd6dcb6e0aefcdbdf14a2bec986d883f56ac2b9e8e34d0a5c4bb",
+        "returned_token_count": 11
+      },
+      {
+        "stream_done": true,
+        "name": "independent-0-cold",
+        "http_status": 200,
+        "seconds": 1.547,
+        "first_output_seconds": 1.455,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 2049.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "02065450658ab2b3da308cc6d25b4810784cfa753fe096959bb375bf6b996c34",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "independent-1-cold",
+        "http_status": 200,
+        "seconds": 1.549,
+        "first_output_seconds": 1.451,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 2049.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "e6d65a201e530577bf55752c636d9f4b87357f684849e5dcdd3ed113b7cb714f",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "independent-2-cold",
+        "http_status": 200,
+        "seconds": 1.548,
+        "first_output_seconds": 1.454,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 2049.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "19c36c1223482c8a5c087d77075aa1a55c237ec4fb37e586a0673b5510539a67",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "independent-3-cold",
+        "http_status": 200,
+        "seconds": 1.545,
+        "first_output_seconds": 1.454,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 2049.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "bcc3d4ca73a18eb3353ed581b650761ff4d18637867401aff093dd2d86f9241a",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "parallel-independent-0",
+        "http_status": 200,
+        "seconds": 0.694,
+        "first_output_seconds": 0.389,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 129.0,
+        "ram_hits": 7680.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 917700736.0,
+        "preemptions": 0.0,
+        "same_tokens_as_cold": true,
+        "metric_scope": "overlaps parallel requests; see batch counters",
+        "output_tokens_sha256": "02065450658ab2b3da308cc6d25b4810784cfa753fe096959bb375bf6b996c34",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "parallel-independent-1",
+        "http_status": 200,
+        "seconds": 0.738,
+        "first_output_seconds": 0.63,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 516.0,
+        "ram_hits": 7680.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 917700736.0,
+        "preemptions": 0.0,
+        "same_tokens_as_cold": true,
+        "metric_scope": "overlaps parallel requests; see batch counters",
+        "output_tokens_sha256": "e6d65a201e530577bf55752c636d9f4b87357f684849e5dcdd3ed113b7cb714f",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "parallel-independent-2",
+        "http_status": 200,
+        "seconds": 0.738,
+        "first_output_seconds": 0.63,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 516.0,
+        "ram_hits": 7680.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 917700736.0,
+        "preemptions": 0.0,
+        "same_tokens_as_cold": true,
+        "metric_scope": "overlaps parallel requests; see batch counters",
+        "output_tokens_sha256": "19c36c1223482c8a5c087d77075aa1a55c237ec4fb37e586a0673b5510539a67",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "parallel-independent-3",
+        "http_status": 200,
+        "seconds": 0.737,
+        "first_output_seconds": 0.629,
+        "usage": {
+          "prompt_tokens": 2049,
+          "total_tokens": 2056,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 516.0,
+        "ram_hits": 7680.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 917700736.0,
+        "preemptions": 0.0,
+        "same_tokens_as_cold": true,
+        "metric_scope": "overlaps parallel requests; see batch counters",
+        "output_tokens_sha256": "bcc3d4ca73a18eb3353ed581b650761ff4d18637867401aff093dd2d86f9241a",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "turn-0",
+        "http_status": 200,
+        "seconds": 0.538,
+        "first_output_seconds": 0.353,
+        "usage": {
+          "prompt_tokens": 20338,
+          "total_tokens": 20348,
+          "completion_tokens": 10,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 242.0,
+        "ram_hits": 20096.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 476332064.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "89cb21075bb5bb63411e00989e353ad60cf336c2d3eefe9b9417c0d97606090b",
+        "returned_token_count": 10
+      },
+      {
+        "stream_done": true,
+        "name": "turn-1",
+        "http_status": 200,
+        "seconds": 0.678,
+        "first_output_seconds": 0.534,
+        "usage": {
+          "prompt_tokens": 20371,
+          "total_tokens": 20381,
+          "completion_tokens": 10,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 275.0,
+        "ram_hits": 20096.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 476332064.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "c7cdd47a31438613fe8a4f171fd54474cd793a2600cc356cc51c86a2c3633ccb",
+        "returned_token_count": 10
+      },
+      {
+        "stream_done": true,
+        "name": "turn-2",
+        "http_status": 200,
+        "seconds": 0.482,
+        "first_output_seconds": 0.34,
+        "usage": {
+          "prompt_tokens": 20404,
+          "total_tokens": 20414,
+          "completion_tokens": 10,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 180.0,
+        "ram_hits": 20224.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 478052384.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "2fad4a29eb37aaafe75f3a61484c7ed4ceaa1dd12ddfbcb9af8b30de412452f0",
+        "returned_token_count": 10
+      },
+      {
+        "stream_done": true,
+        "name": "after-cancellation",
+        "http_status": 200,
+        "seconds": 0.452,
+        "first_output_seconds": 0.312,
+        "usage": {
+          "prompt_tokens": 20307,
+          "total_tokens": 20315,
+          "completion_tokens": 8,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 83.0,
+        "ram_hits": 20224.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 478052384.0,
+        "preemptions": 0.0,
+        "same_tokens_as_cold": true,
+        "cancelled_after_tokens": 64,
+        "output_tokens_sha256": "7ebc01602d72381c38b868cb38091e2c3a3f538765a9e6aaa78d693aa419f2ef",
+        "returned_token_count": 8
+      },
+      {
+        "stream_done": true,
+        "name": "evict-0",
+        "http_status": 200,
+        "seconds": 0.559,
+        "first_output_seconds": 0.471,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "6cc23b6d907706a7874e3f66ff3b8b6b979527c5481919bfafe6ef00f6a4a502",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-1",
+        "http_status": 200,
+        "seconds": 0.579,
+        "first_output_seconds": 0.486,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "fc0f419d033485295c5b1c52c53da12fac5edf972c4bd2cbb9f84b5530e36121",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-2",
+        "http_status": 200,
+        "seconds": 0.58,
+        "first_output_seconds": 0.486,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "d124371a70dbb7b3403183ac3cde8867830fbdb61f5b917fb396daa8fa10c434",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-3",
+        "http_status": 200,
+        "seconds": 0.582,
+        "first_output_seconds": 0.492,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "bef8c79f3042871bfe6e21ea8158cd380db55aa6db67e185052da4753f89c1c5",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-4",
+        "http_status": 200,
+        "seconds": 0.576,
+        "first_output_seconds": 0.487,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "70e7e843453d45562b0fd3c291aa1f421e92e524297810f5bd8dd0cde68afc31",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-5",
+        "http_status": 200,
+        "seconds": 0.613,
+        "first_output_seconds": 0.519,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "fda77ea570e0d9d81eec12e5aa8158e7da043b5ba3671776fcd42a1ae07b6039",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-6",
+        "http_status": 200,
+        "seconds": 0.581,
+        "first_output_seconds": 0.489,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "8a8b4a2b8247478cfd7ffa41dd455163ca7d5ed01d1a63397a56a7ca57452765",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-7",
+        "http_status": 200,
+        "seconds": 0.577,
+        "first_output_seconds": 0.489,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "7ec025244ff274c9a0f87f323864a3082ab9cfea601888badcfd3efcd1fb2ff4",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-8",
+        "http_status": 200,
+        "seconds": 0.58,
+        "first_output_seconds": 0.488,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "5a59face58946c9d35f6b57dfdaec75c21902f643627a4db0b75a82da1e83969",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-9",
+        "http_status": 200,
+        "seconds": 0.578,
+        "first_output_seconds": 0.488,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "0214fe219bb035b0696a2ae99f94e799417488122b87c27e8b538a9aa563f28d",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-10",
+        "http_status": 200,
+        "seconds": 0.577,
+        "first_output_seconds": 0.484,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "8ad2e5d8e2a838442c800d380ed8b0b0a7d95f461eb5facbb87c80f2068041b1",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-11",
+        "http_status": 200,
+        "seconds": 0.578,
+        "first_output_seconds": 0.488,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "0b207d91397314ca6533a401b103d199dc24001bc604939056086182b204f1fc",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-12",
+        "http_status": 200,
+        "seconds": 0.574,
+        "first_output_seconds": 0.485,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "5d0b3a5b91553c9f1df2956b7d06f7e4a2ffae64057cf90c398fb86cc188fb48",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-13",
+        "http_status": 200,
+        "seconds": 0.579,
+        "first_output_seconds": 0.486,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "7535b7c33b6e00e38806966a0ae80637dfc1d61e3f39d3309e9465ea3d103845",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-14",
+        "http_status": 200,
+        "seconds": 0.576,
+        "first_output_seconds": 0.486,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "258840f89d128b3a995517e4afb2ac02b17729f20046b68b9ac4361a533076e7",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-15",
+        "http_status": 200,
+        "seconds": 0.579,
+        "first_output_seconds": 0.486,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "71359fd936dbffed9e70c7fb4551f9c24fd7fd785044d9dbb689b319e567f2e2",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-16",
+        "http_status": 200,
+        "seconds": 0.578,
+        "first_output_seconds": 0.488,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "ded22cbaad29dee9af72dd76911ddd734d19057ff0cc4d841d8af1e5e9260800",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-17",
+        "http_status": 200,
+        "seconds": 0.578,
+        "first_output_seconds": 0.488,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "ff6451648282ee17c16bb76618fad87deaf0e8a92b42628946ae44294fc3b8f7",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-18",
+        "http_status": 200,
+        "seconds": 0.579,
+        "first_output_seconds": 0.485,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "a4ee61afd1a41d5e3f65e360ed0174c3d31f38e32f5a738821bbcdea0c96cf2c",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-19",
+        "http_status": 200,
+        "seconds": 0.577,
+        "first_output_seconds": 0.484,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "7c2e579b8cd7bde206bc7e8d464599b77695684bb223170b7dce603b1dd82680",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-20",
+        "http_status": 200,
+        "seconds": 0.576,
+        "first_output_seconds": 0.487,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "fd1163bf9028d3f9dd65b08e9007b1df6809c380e2b6c43c8c78f702b35e0e83",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-21",
+        "http_status": 200,
+        "seconds": 0.577,
+        "first_output_seconds": 0.487,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "2cece548091baa7eb3081c8937a2e13207f6d50cc42c4060d8d0c5e9cec9fc64",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-22",
+        "http_status": 200,
+        "seconds": 0.577,
+        "first_output_seconds": 0.486,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "672df01ee85a9fd05ba7c2ec05bcda7a409b18376c3bdd326dafc02916fa4298",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-23",
+        "http_status": 200,
+        "seconds": 0.582,
+        "first_output_seconds": 0.488,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "de3059cc89a770785b8bbf94c915eeefd7247dc6a3705f474a6822c273bb28e7",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-24",
+        "http_status": 200,
+        "seconds": 0.575,
+        "first_output_seconds": 0.484,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "7fc73087b90fd86cee4eb54966496fce5b29eae07583787547f987b0e88a2b69",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-25",
+        "http_status": 200,
+        "seconds": 0.582,
+        "first_output_seconds": 0.485,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "490240b57782c492a3fa55270e17f248a6c834842c8861a58bb879ef8e896cc8",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-26",
+        "http_status": 200,
+        "seconds": 0.58,
+        "first_output_seconds": 0.487,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "c2e5d682ba3a3e05179d0678d87d8cf71890027724bea4d1c200a34edf008a18",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-27",
+        "http_status": 200,
+        "seconds": 0.581,
+        "first_output_seconds": 0.489,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "84144496182f515f3c726f45cb2e93aba4c4d4c0890e01a6a8831d5797b104ed",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-28",
+        "http_status": 200,
+        "seconds": 0.58,
+        "first_output_seconds": 0.487,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "b932d3bde7aa8bd6ad3f777bbec14526107ed14a3c353ac6b872d1a7225fd10c",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-29",
+        "http_status": 200,
+        "seconds": 0.576,
+        "first_output_seconds": 0.483,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "a0518c54bb84d1aabb17423224e504bf2b56bea65a967955b30783da01eb8a9f",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-30",
+        "http_status": 200,
+        "seconds": 0.579,
+        "first_output_seconds": 0.489,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "96dc92e0364ebbcca592dc92ba857a9901770017e2bdcf7e3f0fcfc495bcf30c",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-31",
+        "http_status": 200,
+        "seconds": 0.579,
+        "first_output_seconds": 0.49,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "4657607fad8f82933476655a080937b216c3e1bde4ee3110e9824ec1139f6f66",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-32",
+        "http_status": 200,
+        "seconds": 0.573,
+        "first_output_seconds": 0.483,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "3e6c8dee615af5b30c9dbe0677855c98c9154a40260bdc0ed6e7666a9b2ec58b",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-33",
+        "http_status": 200,
+        "seconds": 0.582,
+        "first_output_seconds": 0.491,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "705882c88a1d0f3e451128c284fb2bf17f1292a400024bf1a1d4ebf62191c69f",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-34",
+        "http_status": 200,
+        "seconds": 0.577,
+        "first_output_seconds": 0.487,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "b6a6f2792ca6b227fa2459c7c770d271e801064e83be09e355e198cbc7bafbe5",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-35",
+        "http_status": 200,
+        "seconds": 0.576,
+        "first_output_seconds": 0.486,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "c3520607bef9c943b1886be44d18880142e692fbd9a6133291e3cd28f5af3869",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-36",
+        "http_status": 200,
+        "seconds": 0.575,
+        "first_output_seconds": 0.485,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "cf3221dfc8c998f9770931c1d70444349c2bfa142dc2f9f8042b3eef1fde70bd",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-37",
+        "http_status": 200,
+        "seconds": 0.574,
+        "first_output_seconds": 0.485,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "1b09bea7f15ec312118836298794c5a584856b5568bf3e796fa5ef05c9626557",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-38",
+        "http_status": 200,
+        "seconds": 0.575,
+        "first_output_seconds": 0.485,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "5ab51d41c2d54fc8122f8e6ed510880bcc44d0f376b22c810a7629f4dbecc3f1",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-39",
+        "http_status": 200,
+        "seconds": 0.578,
+        "first_output_seconds": 0.487,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "cf434a67dbd139b3243dacba9e7e2aae361ef97135bf97d9b2e092f2e1d3204c",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-40",
+        "http_status": 200,
+        "seconds": 0.576,
+        "first_output_seconds": 0.49,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "1a63f2f696e42264bdcb874ad1425adbda5ac32f42887eeceb741b90398068ad",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-41",
+        "http_status": 200,
+        "seconds": 0.578,
+        "first_output_seconds": 0.487,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "377bb93866d97d02ce6289e8c18dc939c151c30f695dbf7bead79e29fc0c3256",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-42",
+        "http_status": 200,
+        "seconds": 0.579,
+        "first_output_seconds": 0.488,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "e8eff5149a0b5a7e54e463da2fccebfd6beb08b55849339ef0f9ee3e277526e9",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-43",
+        "http_status": 200,
+        "seconds": 0.578,
+        "first_output_seconds": 0.487,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "ba20ed34357993510ea149904c1c8d91d576bf46d76575d3b73fe3fe89eb79bd",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-44",
+        "http_status": 200,
+        "seconds": 0.575,
+        "first_output_seconds": 0.486,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "ba86bcd41a16cb3ee65929b808e4997ce09b482afb458363eba3a7c149c69098",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-45",
+        "http_status": 200,
+        "seconds": 0.578,
+        "first_output_seconds": 0.485,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "afb630d908bb973c214f8dddaf4d67692961055fa46b12bee70da495264ba86a",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-46",
+        "http_status": 200,
+        "seconds": 0.572,
+        "first_output_seconds": 0.483,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "ae360ff3f07bd95338f79f6eca3458b68d0ce880fd6f08888a460654afab2ff6",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-47",
+        "http_status": 200,
+        "seconds": 0.575,
+        "first_output_seconds": 0.485,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "e7ac32caef3fce2a7c27d7f70dca2fc60ff5d177fe939f6d7f3b8d1b50617bdc",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-48",
+        "http_status": 200,
+        "seconds": 0.575,
+        "first_output_seconds": 0.484,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "4bd35c2a6ed91e4b43ae9336fd451421e7e2b6dde0d94b137039995cf578bba1",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-49",
+        "http_status": 200,
+        "seconds": 0.577,
+        "first_output_seconds": 0.488,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "aaeb59d3eb79fec27016ebfcda7b12260d0f1542baf6981d2fc24f8d48b9e6ea",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-50",
+        "http_status": 200,
+        "seconds": 0.575,
+        "first_output_seconds": 0.486,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "dffd6eb501353168dce12046e924e13ec1be4e69cc586b34e5968a6dbec1b0be",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-51",
+        "http_status": 200,
+        "seconds": 0.574,
+        "first_output_seconds": 0.485,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "dbd4f3af18c479d4720aed37cc17b7e6ead782104756c027d89368fe3051c348",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-52",
+        "http_status": 200,
+        "seconds": 0.574,
+        "first_output_seconds": 0.484,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "58c99908fa3bd96b1985a5ac5c5b6be453051ac2c83b02d42d192872f31ae980",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-53",
+        "http_status": 200,
+        "seconds": 0.583,
+        "first_output_seconds": 0.494,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "4b98e098125d551ab1901aaa329e24fbddf1e9077e76918bc9347d842b5f21ad",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-54",
+        "http_status": 200,
+        "seconds": 0.574,
+        "first_output_seconds": 0.485,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "6078524c92c046601646dddf9e7498de59ce2a1370104ffe41f54cd29a8d76ca",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-55",
+        "http_status": 200,
+        "seconds": 0.575,
+        "first_output_seconds": 0.486,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "f1647f010f378e9abb3f2c8c681ea3e418803716887607d6dc01b88c39c6434b",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-56",
+        "http_status": 200,
+        "seconds": 0.573,
+        "first_output_seconds": 0.484,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "da66eafdb12b5d223cf7814aa542123f662bf379cce27eea498071a9db09707d",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-57",
+        "http_status": 200,
+        "seconds": 0.576,
+        "first_output_seconds": 0.491,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "692fb5e30173da80a94f1787f8a4023e30485387738997c0180cae2e6301c980",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-58",
+        "http_status": 200,
+        "seconds": 0.576,
+        "first_output_seconds": 0.488,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "bf4a6f4fdbaab6c6f2e60b60027a9de9b7107b65b98bdcea85c89486af3e88b0",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-59",
+        "http_status": 200,
+        "seconds": 0.578,
+        "first_output_seconds": 0.488,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "39e8485091e32671b1374b5ab80e7d21d3df4d601afb35002d502a5b40ac0019",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-60",
+        "http_status": 200,
+        "seconds": 0.578,
+        "first_output_seconds": 0.487,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "35abc2bcc9e9ef3e2cc30e98862bed43f4d7dd4ebbc08ae1d0476f0f7cafe0f7",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-61",
+        "http_status": 200,
+        "seconds": 0.576,
+        "first_output_seconds": 0.487,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "30206365b0714d858939238591e1a7d671116f502696a5b353969ad928de8c13",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-62",
+        "http_status": 200,
+        "seconds": 0.575,
+        "first_output_seconds": 0.486,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "a9cc59fd3d2b512f26f3c6903c29911dede2199170cae1a3f49538e987a0d3a2",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "evict-63",
+        "http_status": 200,
+        "seconds": 0.578,
+        "first_output_seconds": 0.489,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 512.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "output_tokens_sha256": "90be78cb588fadf057920f1da585351cf8c37858d0976dd2336942a43a5b100a",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "newest-after-eviction",
+        "http_status": 200,
+        "seconds": 0.311,
+        "first_output_seconds": 0.219,
+        "usage": {
+          "prompt_tokens": 512,
+          "total_tokens": 519,
+          "completion_tokens": 7,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 128.0,
+        "ram_hits": 384.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 177324064.0,
+        "preemptions": 0.0,
+        "same_tokens_as_cold": true,
+        "output_tokens_sha256": "90be78cb588fadf057920f1da585351cf8c37858d0976dd2336942a43a5b100a",
+        "returned_token_count": 7
+      },
+      {
+        "stream_done": true,
+        "name": "oldest-after-eviction",
+        "http_status": 200,
+        "seconds": 14.678,
+        "first_output_seconds": 14.507,
+        "usage": {
+          "prompt_tokens": 20307,
+          "total_tokens": 20315,
+          "completion_tokens": 8,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop",
+        "pass": true,
+        "computed_tokens": 20307.0,
+        "ram_hits": 0.0,
+        "gpu_hits": 0.0,
+        "load_bytes": 0.0,
+        "preemptions": 0.0,
+        "same_tokens_as_cold": true,
+        "output_tokens_sha256": "7ebc01602d72381c38b868cb38091e2c3a3f538765a9e6aaa78d693aa419f2ef",
+        "returned_token_count": 8
+      }
+    ],
+    "artifact_sha256": "f34fa538bb900ebf14c8d843fb0edb8266eee47f9a85bab688dcb7339e43e11a",
+    "parallel_batches": [
+      {
+        "name": "parallel-shared",
+        "ttft_seconds": [
+          0.394,
+          0.966,
+          0.966,
+          0.971
+        ],
+        "computed_tokens": 980.0,
+        "ram_hits": 20096.0,
+        "pass": true
+      },
+      {
+        "name": "parallel-independent",
+        "ttft_seconds": [
+          0.389,
+          0.63,
+          0.63,
+          0.629
+        ],
+        "computed_tokens": 516.0,
+        "ram_hits": 7680.0,
+        "pass": true
+      }
+    ]
+  },
+  "mixed_image_prefill": {
+    "all_pass": true,
+    "tests": [
+      {
+        "stream_done": true,
+        "name": "mixed-essay",
+        "http_status": 200,
+        "seconds": 20.282,
+        "first_output_seconds": 0.325,
+        "usage": {
+          "prompt_tokens": 64,
+          "total_tokens": 704,
+          "completion_tokens": 640,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "length",
+        "check_pass": true
+      },
+      {
+        "stream_done": true,
+        "name": "mixed-code",
+        "http_status": 200,
+        "seconds": 15.966,
+        "first_output_seconds": 0.321,
+        "usage": {
+          "prompt_tokens": 60,
+          "total_tokens": 572,
+          "completion_tokens": 512,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "length",
+        "check_pass": true
+      },
+      {
+        "stream_done": true,
+        "name": "mixed-math",
+        "http_status": 200,
+        "seconds": 13.032,
+        "first_output_seconds": 0.207,
+        "usage": {
+          "prompt_tokens": 63,
+          "total_tokens": 383,
+          "completion_tokens": 320,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "length",
+        "check_pass": true
+      },
+      {
+        "stream_done": true,
+        "name": "mixed-long",
+        "http_status": 200,
+        "seconds": 16.258,
+        "first_output_seconds": 6.203,
+        "usage": {
+          "prompt_tokens": 8191,
+          "total_tokens": 8639,
+          "completion_tokens": 448,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "length",
+        "check_pass": true
+      }
+    ],
+    "artifact_sha256": "f514d3a57dd973181f5cecbc41c5cedaf9605b79b5b3ae6bac195b38fb928c70",
+    "peak_running": 4.0
+  },
+  "four_way_mixed_requests": {
+    "all_pass": true,
+    "tests": [
+      {
+        "stream_done": true,
+        "name": "r0-essay",
+        "http_status": 200,
+        "seconds": 13.8,
+        "first_output_seconds": 0.434,
+        "usage": {
+          "prompt_tokens": 49,
+          "total_tokens": 689,
+          "completion_tokens": 640,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "length",
+        "check_pass": true
+      },
+      {
+        "stream_done": true,
+        "name": "r0-code",
+        "http_status": 200,
+        "seconds": 9.489,
+        "first_output_seconds": 0.434,
+        "usage": {
+          "prompt_tokens": 46,
+          "total_tokens": 558,
+          "completion_tokens": 512,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "length",
+        "check_pass": true
+      },
+      {
+        "stream_done": true,
+        "name": "r0-vision",
+        "http_status": 200,
+        "seconds": 10.575,
+        "first_output_seconds": 0.62,
+        "usage": {
+          "prompt_tokens": 449,
+          "total_tokens": 897,
+          "completion_tokens": 448,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "length",
+        "check_pass": true
+      },
+      {
+        "stream_done": true,
+        "name": "r0-math",
+        "http_status": 200,
+        "seconds": 6.765,
+        "first_output_seconds": 0.185,
+        "usage": {
+          "prompt_tokens": 49,
+          "total_tokens": 369,
+          "completion_tokens": 320,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "length",
+        "check_pass": true
+      },
+      {
+        "stream_done": true,
+        "name": "r1-essay",
+        "http_status": 200,
+        "seconds": 13.356,
+        "first_output_seconds": 0.276,
+        "usage": {
+          "prompt_tokens": 49,
+          "total_tokens": 689,
+          "completion_tokens": 640,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "length",
+        "check_pass": true
+      },
+      {
+        "stream_done": true,
+        "name": "r1-code",
+        "http_status": 200,
+        "seconds": 9.192,
+        "first_output_seconds": 0.316,
+        "usage": {
+          "prompt_tokens": 46,
+          "total_tokens": 558,
+          "completion_tokens": 512,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "length",
+        "check_pass": true
+      },
+      {
+        "stream_done": true,
+        "name": "r1-vision",
+        "http_status": 200,
+        "seconds": 10.414,
+        "first_output_seconds": 0.548,
+        "usage": {
+          "prompt_tokens": 449,
+          "total_tokens": 897,
+          "completion_tokens": 448,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "length",
+        "check_pass": true
+      },
+      {
+        "stream_done": true,
+        "name": "r1-math",
+        "http_status": 200,
+        "seconds": 6.573,
+        "first_output_seconds": 0.319,
+        "usage": {
+          "prompt_tokens": 49,
+          "total_tokens": 369,
+          "completion_tokens": 320,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "length",
+        "check_pass": true
+      },
+      {
+        "stream_done": true,
+        "name": "r2-essay",
+        "http_status": 200,
+        "seconds": 13.273,
+        "first_output_seconds": 0.281,
+        "usage": {
+          "prompt_tokens": 49,
+          "total_tokens": 689,
+          "completion_tokens": 640,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "length",
+        "check_pass": true
+      },
+      {
+        "stream_done": true,
+        "name": "r2-code",
+        "http_status": 200,
+        "seconds": 9.137,
+        "first_output_seconds": 0.319,
+        "usage": {
+          "prompt_tokens": 46,
+          "total_tokens": 558,
+          "completion_tokens": 512,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "length",
+        "check_pass": true
+      },
+      {
+        "stream_done": true,
+        "name": "r2-vision",
+        "http_status": 200,
+        "seconds": 10.336,
+        "first_output_seconds": 0.537,
+        "usage": {
+          "prompt_tokens": 449,
+          "total_tokens": 897,
+          "completion_tokens": 448,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "length",
+        "check_pass": true
+      },
+      {
+        "stream_done": true,
+        "name": "r2-math",
+        "http_status": 200,
+        "seconds": 6.55,
+        "first_output_seconds": 0.319,
+        "usage": {
+          "prompt_tokens": 49,
+          "total_tokens": 369,
+          "completion_tokens": 320,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "length",
+        "check_pass": true
+      }
+    ],
+    "artifact_sha256": "16e379c57fdad481b5f6e0261cfe02715f6e21619334c808013754024ff9fbd6",
+    "peak_running": 4.0,
+    "seconds": 40.50570599900675,
+    "mtp_counter_deltas": {
+      "spec_decode_num_drafts_total": 2267.0,
+      "spec_decode_num_draft_tokens_total": 4534.0,
+      "spec_decode_num_accepted_tokens_total": 3486.0
+    }
+  },
+  "source_checks": {
+    "runtime_and_tests_identical_to": "057a78d9776491cf17e263c5ac75103c53673b69",
+    "reused_evidence": [
+      "review-validation.json",
+      "source-validation.json"
+    ],
+    "equivalence": "finish-installed-source-equivalence.json",
+    "documentation": "Pinned markdownlint-cli2 v0.21.0 passed with native NixOS Node",
+    "limits": "Focused source checks; full mypy/pre-commit and CUDA hardware validation not claimed."
+  },
+  "nix_checks": {
+    "passed": [
+      "unit-tests",
+      "hf-cache-draft-roots",
+      "formatting",
+      "kernel-lib-cache-identity",
+      "kernel-glue-cache-identity",
+      "kernel-build-parallelism"
+    ],
+    "outputs": [
+      "/nix/store/1619sp63kdijbgh32vd2p9y8kmxv3bdc-vllm-xpu-nix-unit-tests",
+      "/nix/store/x93h326bcmh7wfjmdrjfi34wvnv2149r-hf-cache-draft-roots",
+      "/nix/store/80riswgr448r3jkga0bqq54babxk3krr-vllm-xpu-nix-formatting",
+      "/nix/store/binj41m90g7j1kqkgxikv7cyg4wlbwd4-kernel-lib-cache-identity.json",
+      "/nix/store/c1wi7vb2rp9i5zhq31vfajn6r6qslx3k-kernel-glue-cache-identity.json",
+      "/nix/store/jcfvrqivqv5ii05df6wzv6c36hrp9gzq-kernel-build-parallelism"
+    ],
+    "log_sha256": "b083e59a9193f2ee009eb2525a77a446a446b83051219f60299d949d98bc6f9b",
+    "unit_tests": 608,
+    "unit_test_files": 45
+  },
+  "performance": "finish-performance-review.json",
+  "reproducibility": "finish-reproducibility.json",
+  "historical_failed_diagnostics": {
+    "seven_proposals": "dflash-capacity-startup.json: does not fit at 0.96",
+    "one_proposal_long_prefill_and_freeform_identity": "review-serving-validation.json: preserved as failed; not rewritten as success",
+    "resolution": "Existing 1024-token competing-prefill cap passes overlap timing; a 1024-output structured sequence passes exact restored-token equality and sequence correctness. Cold/RAM freeform differences also reproduce on stable1.12.2; universal bitwise identity is not an established contract."
+  },
+  "scope": "Targeted synthetic correctness, boundary, lifecycle and matched performance qualification of this exact B70 profile; broad model-quality evaluation and natural overnight idle latency remain outside the demonstrated result.",
+  "all_pass": true,
+  "cancellation_beyond_cache_flush": {
+    "passed": true,
+    "cancelled_after_tokens": 3073,
+    "max_tokens": 4096,
+    "completion_counter_delta_during_cancel": {
+      "stop": 0.0,
+      "length": 0.0,
+      "abort": 0.0,
+      "error": 0.0,
+      "repetition": 0.0
+    },
+    "server_generated_tokens_during_cancel": 3073.0,
+    "matching_server_abort": true,
+    "scheduler_returned_idle": true,
+    "fresh_json_semantics_passed": true,
+    "repeated_baseline_output_passed": true,
+    "artifact_sha256": "9baea51cbaa10879c051bb0ba29d19383c46cb3c967428a7434038f1cb2b93b7"
+  }
+}

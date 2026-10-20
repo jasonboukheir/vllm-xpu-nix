@@ -1,5 +1,5 @@
 {
-  "status": "review fixes ready for re-review; release qualification incomplete",
+  "status": "Review findings addressed and final release qualification passed",
   "source_pr": "https://git.sunnycareboo.com/jasonbk/vllm/pulls/3",
   "packaging_branch": "candidate/xpu-v1.13.0",
   "evidence_entry_points": [
@@ -13,7 +13,11 @@
     "review-disposition.json",
     "review-validation.json",
     "review-serving-validation.json",
-    "dflash-capacity-breakdown.json"
+    "dflash-capacity-breakdown.json",
+    "finish-serving-validation.json",
+    "finish-performance-review.json",
+    "finish-reproducibility.json",
+    "finish-installed-source-equivalence.json"
   ],
   "review_priorities": [
     "upstream v0.32 checkpoint proofs, aligned page strides and allocation flags",
@@ -23,12 +27,12 @@
     "DFlash quantization mappings, runtime proposal bounds and rejected/context-ceiling slots",
     "Nix dependency pins and external draft HF cache roots"
   ],
-  "review_scope": "Review both PRs without changing their branches or the host; report actionable file/line findings and validation gaps.",
-  "completed_build": "057a78d exact Brutus package built; all 65 changed runtime Python files match",
-  "main_blocker": "K1 starts and passes smoke plus four-way RAM/decode overlap. Separate long-prefill progress and 1024-token cold/restored equality checks failed; isolated RAM restore also diverged. Full-profile correctness and matched performance remain open.",
+  "review_scope": "Historical draft review completed; source checkpoint base stays frozen. Release publication uses source main and coordinated immutable refs.",
+  "completed_build": "c0722c9 exact Brutus package;65 changed runtime files match installed source",
+  "main_blocker": null,
   "idle_follow_up": "Reported10-15s after roughly a day idle remains open; natural direct/gateway/UI measurements needed.",
-  "stable_release": "xpu-v1.12.2 unchanged",
-  "publication": "No merge, stable publication or host repin before requested review and qualification.",
+  "stable_release": "xpu-v1.13.0",
+  "publication": "User requested finishing the runbook, superseding the draft-only checkpoint; publish the qualified release and commit the host pin, leaving system switch to operator.",
   "native_reference_reproduction": {
     "script": "dflash-native-reference.py",
     "kernel_checkout_sibling": "vllm-xpu-kernels at dbb684f4c9b38a8b3bbf52bda0c490ee47049221",

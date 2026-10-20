@@ -210,7 +210,7 @@
     "vllm": "ec1477a0386deba74512cc4068288040a57d6fe3",
     "vllm-xpu-kernels": "dbb684f4c9b38a8b3bbf52bda0c490ee47049221"
   },
-  "stage": "user-requested draft PR review; source review branch published, packaging review branch prepared; DFlash capacity/performance qualification incomplete; no stable refs or host pin changed",
+  "stage": "user-requested draft PRs open and cross-linked; DFlash capacity/performance qualification incomplete; no stable refs or host pin changed",
   "published_integration_tips": {
     "vllm": "06edb20b68bcd36956499f04dc2ca67d0727d93e",
     "vllm-xpu-kernels": "dbb684f4c9b38a8b3bbf52bda0c490ee47049221"
@@ -224,7 +224,8 @@
     },
     "packaging": {
       "head": "candidate/xpu-v1.13.0",
-      "base": "main"
+      "base": "main",
+      "pull_request": "https://git.sunnycareboo.com/jasonbk/vllm-xpu-nix/pulls/20"
     }
   },
   "qualification_recovery_ref": {

@@ -30,5 +30,6 @@
     "kernel_checkout_sibling": "vllm-xpu-kernels at dbb684f4c9b38a8b3bbf52bda0c490ee47049221",
     "environment": "Exact first Brutus package recorded in packaging-validation.json",
     "output": "JSON beside script; copy into scratch directory for rerun."
-  }
+  },
+  "packaging_pr": "https://git.sunnycareboo.com/jasonbk/vllm-xpu-nix/pulls/20"
 }

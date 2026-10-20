@@ -146,6 +146,8 @@ Set the target cache to compact K4V2 and configure the pinned drafter:
 
 ```nix
 extraEnvironment.VLLM_USE_V2_MODEL_RUNNER = "1";
+gpuMemoryUtilization = 0.98;
+extraArgs = [ "--long-prefill-token-threshold" "1024" ];
 speculativeConfig = {
   method = "dflash";
   num_speculative_tokens = 2;
@@ -157,6 +159,11 @@ speculativeConfig = {
 
 The measured shared attention capacity is 270,976 tokens. Four request slots
 share that capacity; they do not allow four maximum-length contexts.
+This is 11.6% less shared attention capacity than the preceding profile's
+306,688 tokens. The final two-proposal profile also varies across isolated
+cold repeats at temperature zero with a fixed seed; deterministic text replay
+is not a supported guarantee. See the
+[post-release review](updates/release-v032-v2-20261019/post-release-review.md).
 See the [release manifest](releases/xpu-v1.13.0.json) and
 [matched performance comparison](updates/release-v032-v2-20261019/finish-performance-review.json).
 The preceding xpu-v1.12.2 release retains the V1 MTP2 recipe at utilization 0.96.

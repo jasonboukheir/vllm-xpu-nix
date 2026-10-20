@@ -1,0 +1,130 @@
+{
+  "release": "xpu-v1.13.0",
+  "source_commit": "c0722c98d0fa1588eaf748cc9f7ef69ca3c32245",
+  "host_pin_commit": "ac02f115",
+  "host_idle_followup_commit": "eb028ada",
+  "repeatability": {
+    "rows": [
+      {
+        "name": "cold-0",
+        "output_tokens": 256,
+        "first_difference_from_cold": null,
+        "ram_hit_tokens": 0.0,
+        "load_bytes": 0,
+        "computed_tokens": 8247.0
+      },
+      {
+        "name": "cold-1",
+        "output_tokens": 256,
+        "first_difference_from_cold": 20,
+        "ram_hit_tokens": 0.0,
+        "load_bytes": 0,
+        "computed_tokens": 8247.0
+      },
+      {
+        "name": "cold-2",
+        "output_tokens": 256,
+        "first_difference_from_cold": 210,
+        "ram_hit_tokens": 0.0,
+        "load_bytes": 0,
+        "computed_tokens": 8247.0
+      },
+      {
+        "name": "ram-3",
+        "output_tokens": 256,
+        "first_difference_from_cold": 20,
+        "ram_hit_tokens": 8064.0,
+        "load_bytes": 314621984.0,
+        "computed_tokens": 183.0
+      },
+      {
+        "name": "ram-4",
+        "output_tokens": 256,
+        "first_difference_from_cold": 20,
+        "ram_hit_tokens": 8064.0,
+        "load_bytes": 314621984.0,
+        "computed_tokens": 183.0
+      },
+      {
+        "name": "ram-5",
+        "output_tokens": 256,
+        "first_difference_from_cold": 20,
+        "ram_hit_tokens": 8064.0,
+        "load_bytes": 314621984.0,
+        "computed_tokens": 183.0
+      }
+    ],
+    "pairwise_first_difference": {
+      "cold-0:cold-1": 20,
+      "cold-0:cold-2": 210,
+      "cold-0:ram-3": 20,
+      "cold-0:ram-4": 20,
+      "cold-0:ram-5": 20,
+      "cold-1:cold-2": 20,
+      "cold-1:ram-3": null,
+      "cold-1:ram-4": null,
+      "cold-1:ram-5": null,
+      "cold-2:ram-3": 20,
+      "cold-2:ram-4": 20,
+      "cold-2:ram-5": 20,
+      "ram-3:ram-4": null,
+      "ram-3:ram-5": null,
+      "ram-4:ram-5": null
+    }
+  },
+  "qsv_runtime_overlap": {
+    "checks": {
+      "fourth_emits_before_background_finishes": true,
+      "all_four_progress_in_common_interval": true,
+      "four_running": true,
+      "ram_hit": true,
+      "load_bytes": true,
+      "no_gpu_hit": true,
+      "bounded_recompute": true,
+      "no_preemption": true,
+      "restored_tokens_match": true,
+      "background_labels": true,
+      "positive_draft_acceptance": true
+    },
+    "all_pass": true,
+    "common_progress_seconds": 2.4857530430017505,
+    "fourth_ttft_seconds": 0.4432329119881615,
+    "scope": "Three decodes plus a fourth RAM restore; long-prefill overlap separate"
+  },
+  "qsv_restart": {
+    "passed": false,
+    "free_gib": 29.45,
+    "required_gib": 29.69
+  },
+  "amd_media": {
+    "short_sdr_and_hdr_probes_passed": true,
+    "dual_hdr_fps_per_stream_approximate": 24,
+    "input_fps": 30,
+    "host_reconfigured": false
+  },
+  "prefill_tradeoff": {
+    "0": {
+      "prefill_prompt_tokens": 16435,
+      "prefill_ttft_seconds": 11.890390387008665,
+      "decode_max_content_gap_seconds": 1.4827602010045666,
+      "decode_content_events_during_prefill": 12,
+      "decode_completion_seconds": 33.94885054099723,
+      "external_hits": 0.0,
+      "preemptions": 0.0,
+      "scope": "One cold sample per threshold; no statistical claim"
+    },
+    "1024": {
+      "prefill_prompt_tokens": 16435,
+      "prefill_ttft_seconds": 12.439580158010358,
+      "decode_max_content_gap_seconds": 0.8462128810060676,
+      "decode_content_events_during_prefill": 19,
+      "decode_completion_seconds": 34.63484267500462,
+      "external_hits": 0.0,
+      "preemptions": 0.0,
+      "scope": "One cold sample per threshold; no statistical claim"
+    }
+  },
+  "overnight_idle_fix_verified": false,
+  "production_switch_performed": false,
+  "outstanding": "GPU sharing policy awaits operator preference; no automatic media reassignment."
+}

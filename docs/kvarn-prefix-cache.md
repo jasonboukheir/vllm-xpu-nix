@@ -1,10 +1,19 @@
 # KVarN prefix caching on hybrid Qwen models
 
 Enable local prefix caching with `--enable-prefix-caching` for the qualified
-Qwen3.5 architecture, BF16 compute, compact K4V2, TP1/PP1, eager V1 profile.
+Qwen3.5 architecture, BF16 compute, compact K4V2, TP1/PP1, eager profile.
 The Brutus checkpoint is named `RedHatAI/Qwen3.8-27B-INT4`; its architecture is
-Qwen3.5. Bundled MTP with one or two draft tokens is accepted; the measured
-Brutus recipe uses two. See [the serving profile](kvarn-beta.md#serving-profile).
+Qwen3.5. The xpu-v1.13.0 Brutus recipe uses V2 and two DFlash2 proposals;
+xpu-v1.12.2 uses V1 and bundled MTP2.
+See [the serving profile](kvarn-beta.md#serving-profile).
+
+V2 DFlash2 retains a separate BF16 sliding draft window together with the target
+pages and recurrent checkpoint. Offload retention uses the same replay boundary
+as cache lookup, so a restored checkpoint has the draft pages needed for replay.
+The 8 GiB arena is shared by all three groups. Its measured GPU attention
+capacity is 270,976 tokens at utilization 0.98; recurrent and draft pools each
+reserve four request slots. See the [release manifest](releases/xpu-v1.13.0.json).
+The MTP sizing examples below describe the preceding V1 configuration.
 
 ## What occupies memory
 

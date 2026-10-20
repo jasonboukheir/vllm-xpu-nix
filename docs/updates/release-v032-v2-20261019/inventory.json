@@ -207,10 +207,10 @@
     }
   },
   "candidate_source_tips": {
-    "vllm": "ec1477a0386deba74512cc4068288040a57d6fe3",
+    "vllm": "057a78d9776491cf17e263c5ac75103c53673b69",
     "vllm-xpu-kernels": "dbb684f4c9b38a8b3bbf52bda0c490ee47049221"
   },
-  "stage": "user-requested draft PRs open and cross-linked; DFlash capacity/performance qualification incomplete; no stable refs or host pin changed",
+  "stage": "review fixes and loaded follow-up repair implemented; exact candidate built; K1 smoke and four-way RAM overlap passed; long-prefill/output-equivalence and full release qualification remain open; draft PRs retained",
   "published_integration_tips": {
     "vllm": "06edb20b68bcd36956499f04dc2ca67d0727d93e",
     "vllm-xpu-kernels": "dbb684f4c9b38a8b3bbf52bda0c490ee47049221"

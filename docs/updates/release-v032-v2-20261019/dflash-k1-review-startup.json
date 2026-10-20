@@ -1,0 +1,36 @@
+{
+  "source_commit": "2c9c76b17c233e3bced76258e959f4d77584745a",
+  "package": "/nix/store/ixxdw5dh976175l22lfdwgl08am57i2s-python3.12-vllm-xpu-0.32.0+unstable.2026.10.20.g2c9c76b",
+  "proposals": 1,
+  "context": 262144,
+  "max_num_seqs": 4,
+  "max_num_batched_tokens": 2048,
+  "startup_passed": true,
+  "profiled_cache_gib_rounded": 5.75,
+  "attention_capacity_tokens": 270208,
+  "pools": [
+    {
+      "type": "Mamba",
+      "physical_blocks": 13,
+      "usable_blocks": 12,
+      "allocated_bytes": 2014052352,
+      "max_request_blocks": 3
+    },
+    {
+      "type": "FullAttention",
+      "physical_blocks": 2112,
+      "usable_blocks": 2111,
+      "allocated_bytes": 3633315840,
+      "max_request_blocks": 2048
+    },
+    {
+      "type": "DraftSliding",
+      "physical_blocks": 201,
+      "usable_blocks": 200,
+      "allocated_bytes": 526909440,
+      "max_request_blocks": 50
+    }
+  ],
+  "manifest_sha256": "8f2147e00ee16a046e3c547bb10ef9c72663a631981b77aabaa159cf37b9cef8",
+  "scope": "Capacity/startup only; four recurrent/draft slots, about 1.03 aggregate full-length attention contexts. Serving correctness/performance separate."
+}

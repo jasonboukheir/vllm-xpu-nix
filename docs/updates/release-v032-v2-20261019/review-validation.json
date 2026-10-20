@@ -1,0 +1,81 @@
+{
+  "source": "057a78d9776491cf17e263c5ac75103c53673b69",
+  "source_tests": {
+    "original_review_head_scheduler_regression": "4 failed as expected (two/four slots, prefill/spec decode) when substituting ec1477a original scheduler/admission methods into corrected fixtures",
+    "expanded_run": {
+      "passed": 949,
+      "failed": 2,
+      "deselected": 48,
+      "seconds": 250.45,
+      "failure": "Both failures were a pre-existing aligned-prefix fixture missing block_size; fixed, rerun below",
+      "source": "2c9c76b17c233e3bced76258e959f4d77584745a"
+    },
+    "fixture_rerun": {
+      "passed": 2,
+      "failed": 0,
+      "seconds": 1.66,
+      "command": ".venv/bin/python ../source_python.py -m pytest -q tests/v1/core/test_prefix_caching.py::test_hybrid_mamba_retention_mtp_resend_of_aligned_prompt"
+    },
+    "scope": [
+      "test_scheduler.py",
+      "test_async_scheduler.py",
+      "test_kv_cache_utils.py",
+      "test_independent_kv_cache_pools.py",
+      "test_single_type_kv_cache_manager.py",
+      "test_moriio_hma_scheduler.py",
+      "test_kvarn.py",
+      "test_prefix_caching.py"
+    ],
+    "exclusions": "47 uncached multimodal-config cases failed offline in the preceding broad run (Invalid repository ID llava-hf/llava-1.5-7b-hf). The final keyword selection excludes those and one related case; no full-suite claim.",
+    "covered": [
+      "per-pool async admission at two/four slots",
+      "private/cached/shared/pinned/partial-COW/future-checkpoint reservation behavior",
+      "MoRIIO received versus recompute zeroing and global transfer group mapping",
+      "cuda:1 and xpu:1 event/stream selection plus ring reuse (mocked)",
+      "physical block override and over-budget rejection",
+      "prefix-cache regression suite"
+    ],
+    "command": ".venv/bin/python ../source_python.py -m pytest -q tests/v1/core/test_scheduler.py tests/v1/core/test_async_scheduler.py tests/v1/core/test_kv_cache_utils.py tests/v1/core/test_independent_kv_cache_pools.py tests/v1/core/test_single_type_kv_cache_manager.py tests/v1/kv_connector/unit/test_moriio_hma_scheduler.py tests/quantization/test_kvarn.py tests/v1/core/test_prefix_caching.py -k \"not test_schedule_multimodal_requests and not test_schedule_partial_requests and not test_encoder_only_prompt_longer_than_budget_is_chunked and not test_same_step_duplicate_encoder_input_stays_cached and not test_no_mm_input_chunking and not test_ec_connector and not test_priority_scheduling_ec_connector and not test_eagle3_mm_encoder_cache_with_shift and not test_free_encoder_inputs and not test_unavailable_encoder_input and not test_encoder_cache\""
+  },
+  "nix_checks": {
+    "passed": [
+      "unit-tests",
+      "hf-cache-draft-roots",
+      "formatting"
+    ],
+    "outputs": [
+      "/nix/store/l1krkaa3ri0rq0rg28pi4afij6h1bxgp-vllm-xpu-nix-unit-tests",
+      "/nix/store/kn7c150ggbhia7xhqycqz8a0vizv1dd6-hf-cache-draft-roots",
+      "/nix/store/z1v9pqw46szvxmvl134838z4rg4l18g3-vllm-xpu-nix-formatting"
+    ],
+    "unit_cases_passed": 608,
+    "unit_files": 45,
+    "source": "057a78d9776491cf17e263c5ac75103c53673b69"
+  },
+  "lint": {
+    "ruff": "Pinned 0.14 lint and format passed on all 16 changed Python files",
+    "local_hooks": "Seven applicable hooks passed in complete source environment",
+    "limitations": "Automatic pre-commit setup failed because generic node cannot execute on NixOS. Bare virtualenv hooks lacked regex; complete dependency environment passed. Full mypy/pre-commit suite not claimed."
+  },
+  "private_log_sha256": {
+    "reservation-original.log": "9b8da372c332678e1cb3b3369748b20f167088122467cfef2a6fedfc474e0664",
+    "focused-final.log": "9db5f34c67d727113c91d3f3a5ed80351bc0f1999d9386cb4d9ee444518ec86d",
+    "prefix-fixture-final.log": "1e95ba040bd6090e9041476c66515f0ec0e5bb87aced059dc17c54969feea4ef",
+    "local-hooks.json": "dcd20e81fdcf58d01acf6abc621519892b90d7cf4927b94cd1362f18fe846909",
+    "packaging-final-test.log": "099539c3639fb7108b7b2c399380d0f06e46631fe43c9e0e62d2d5c9298fec06",
+    "nix-final.log": "c371c26f08a4277655dee9b1e6119e97147df9baee5933fc987113350390349e",
+    "replay-boundary-final.log": "4725e684d3af00400807bd59e0fd41552616047160bcd46bb8eb737135bbd19e",
+    "replay-boundary-original.log": "39a80059285ecddff98c4e7a809402d6c56dcfc8c29114d10b41c939f274238c",
+    "nix-boundary.log": "816a5b01f9f1242977f4986ebf4692314a8ef496ee5fecafb45b339fcd342cdd",
+    "packaging-boundary-test.log": "af71ed7f346913c802880bbff08ddcc57e2241d8473c94aacf3c82ff2d1aae74"
+  },
+  "exact_package": "review-final-installed-source-equivalence.json",
+  "serving": "review-serving-validation.json: K1 startup/smoke and measured four-way RAM gate pass; long-prefill timing and1024-token equality stress case fail and remain explicit follow-up",
+  "offloading_replay_tests": {
+    "passed": 479,
+    "failed": 0,
+    "seconds": 109.47,
+    "command": ".venv/bin/python ../source_python.py -m pytest -q tests/v1/kv_connector/unit/offloading_connector/test_scheduler.py tests/v1/kv_connector/unit/offloading_connector/test_config.py",
+    "reproducer": "Both sparse replay tests fail with the original _build_store_jobs method from 2c9c76b; corrected fixtures and remaining methods unchanged."
+  }
+}

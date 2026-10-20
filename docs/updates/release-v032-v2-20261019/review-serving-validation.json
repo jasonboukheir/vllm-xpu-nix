@@ -1,0 +1,179 @@
+{
+  "source_commit": "057a78d9776491cf17e263c5ac75103c53673b69",
+  "package": "/nix/store/v8n3dvbjyprak6n8kkza1qfhlchcl27n-python3.12-vllm-xpu-0.32.0+unstable.2026.10.20.g057a78d",
+  "profile": {
+    "runner": "V2",
+    "proposals": 1,
+    "max_model_len": 262144,
+    "max_num_seqs": 4,
+    "max_num_batched_tokens": 2048,
+    "target_kv": "kvarn_k4v2_g128_compact",
+    "draft_kv": "BF16 sliding2048",
+    "RAM_bytes": 8589934592,
+    "GPU_retention": "active_only"
+  },
+  "startup": {
+    "passed": true,
+    "attention_capacity_tokens": 270208,
+    "recurrent_usable_pages": 12,
+    "draft_usable_pages": 200,
+    "manifest_sha256": "778c6291c9e029826982bb1957a668fad2531bc416740325cfefb7db4e752909"
+  },
+  "smoke": {
+    "all_pass": true,
+    "tests": [
+      {
+        "name": "text",
+        "passed": true,
+        "http_status": 200,
+        "finish_reason": "stop"
+      },
+      {
+        "name": "reasoning",
+        "passed": true,
+        "http_status": 200,
+        "finish_reason": "stop"
+      },
+      {
+        "name": "vision",
+        "passed": true,
+        "http_status": 200,
+        "finish_reason": "stop"
+      },
+      {
+        "name": "tools",
+        "passed": true,
+        "http_status": 200,
+        "finish_reason": "tool_calls"
+      }
+    ],
+    "artifact_sha256": "02bf253ce7c63f843f9332cce025b52d4ad491139181e0968b95d275137ec248"
+  },
+  "four_way_ram_restore": {
+    "checks": {
+      "fourth_emits_before_background_finishes": true,
+      "all_four_progress_in_common_interval": true,
+      "four_running": true,
+      "ram_hit": true,
+      "load_bytes": true,
+      "no_gpu_hit": true,
+      "bounded_recompute": true,
+      "no_preemption": true,
+      "restored_tokens_match": true,
+      "background_labels": true,
+      "positive_draft_acceptance": true
+    },
+    "all_pass": true,
+    "common_progress_seconds": 2.9579929519968573,
+    "fourth_ttft_seconds": 0.48019872498116456,
+    "scope": "Three decodes plus a fourth RAM restore; long-prefill overlap separate",
+    "metric_deltas": {
+      "external_prefix_cache_hits_total": 8064.0,
+      "kv_offload_load_bytes_total": 313638944.0,
+      "prefix_cache_hits_total": 0.0,
+      "request_prefill_kv_computed_tokens_sum": 179.0,
+      "num_preemptions_total": 0.0,
+      "spec_decode_num_accepted_tokens_total": 206.0,
+      "spec_decode_num_draft_tokens_total": 251.0
+    },
+    "artifact_sha256": {
+      "summary.json": "db36bf0f2aef87303be06bcc40c7a96d185ff4b1d284dd0898b37f6da3f2839a",
+      "decode-1.json": "df95ae1ca64d161459677b7dc0c2858bf6ebce52f8e5e99d62eee986e61e17b5",
+      "decode-2.json": "bf682af34058ecb5e051e58dbb8f586a0c6918ee9c926c52a0e73a07384754f1",
+      "decode-0.json": "e536593b8800ac7d562bd1a53269a48acbcf383c4d2054d29fc3884a874e533d",
+      "scheduler-samples.json": "269c7ec310a82acd3dba0a3528164f100d744b5a2bf96d5f16cf585e9dce2185",
+      "fourth-ram-restore.json": "ea244906d7905025f160f6661642c41337f0d19ace995da0d346acee052fe032",
+      "cold-reference.json": "637c24c865fe055554d81e895389788602a13bbfe17738668396d857dad54a1f"
+    },
+    "content_events_in_common_interval": {
+      "fourth-ram-restore": 59,
+      "decode-0": 59,
+      "decode-1": 59,
+      "decode-2": 60
+    },
+    "four_running_samples_in_common_interval": 53,
+    "restored_output_tokens": 118
+  },
+  "RAM_restore_during_long_prefill": {
+    "checks": {
+      "restore_starts_before_long_prefill_finishes": false,
+      "restore_advances_across_long_prefill_completion": false,
+      "two_running": false,
+      "ram_hit": true,
+      "load_bytes": true,
+      "no_gpu_hit": true,
+      "bounded_restore_recompute": true,
+      "no_preemptions": true,
+      "restored_tokens_match": false,
+      "long_output": true,
+      "positive_draft_acceptance": true
+    },
+    "all_pass": false,
+    "restore_progress_before_long_first_content_seconds": -0.00046829599887132645,
+    "restore_progress_after_long_first_content_seconds": 26.667154865979683,
+    "metric_deltas": {
+      "external_prefix_cache_hits_total": 8064.0,
+      "kv_offload_load_bytes_total": 313638944.0,
+      "prefix_cache_hits_total": 0.0,
+      "request_prefill_kv_computed_tokens_sum": 32998.0,
+      "num_preemptions_total": 0.0,
+      "spec_decode_num_accepted_tokens_total": 493.0,
+      "spec_decode_num_draft_tokens_total": 646.0
+    },
+    "artifact_sha256": {
+      "long-prefill.json": "ae5187528661024dc9cc3e2dbfb58c4eb8b5021a84b8c9beffad8ddf634da05e",
+      "summary.json": "0b0e8578a3a54acdff7b5279643507abc2635b52e3ce9a2b6aba4bfc6402ab98",
+      "scheduler-samples.json": "fe972b15247d0985e505da0a4c1201c4aa6567da01c8c783744ca27e351809ab",
+      "ram-during-prefill.json": "758a0f7c6ecf77f93860fbdac9a9ad2c198985bad853428f637dabf6ecf7d6a9",
+      "cold-reference.json": "7b5af6805144659717ea6666260896d3f19bbc0583a704f455667be03221d9b5"
+    },
+    "long_prompt_tokens": 32815,
+    "restored_output_tokens": 1024,
+    "restore_computed_tokens": 183.0,
+    "analysis": {
+      "timing": "Consistent with scheduler budget/alignment policy: K1 leaves 2047 target slots, rounded to 1920 at a 128-token boundary. The remaining 127 slots leave only 126 after the waiting request draft slot, below one aligned chunk. long_prefill_token_threshold=0 disables the fairness cap. Exact per-step batch membership was not traced.",
+      "first_output_difference_one_based": 21,
+      "qualification": "Timing and cold/restored token equality both failed; neither is waived.",
+      "follow_up": "Trace per-step scheduling and compare explicit fairness settings; independently compare repeated cold, GPU-hit and RAM-hit outputs with fixed batch composition, then with speculation disabled, before attributing the divergence."
+    }
+  },
+  "reproduced_before_replay_fix": {
+    "source": "2c9c76b17c233e3bced76258e959f4d77584745a",
+    "four_way": "Four streams overlapped but fourth request had zero RAM hits/load bytes and recomputed8243 tokens; correctly failed gate",
+    "sequential_20k": "Zero RAM hits/load bytes and20307 recomputed tokens after GPU-local reset; output tokens matched but RAM gate failed"
+  },
+  "harnesses": {
+    "smoke": "benchmark-results/release-v031-20261010/retained-service-harness/smoke.py",
+    "four_way": "build-dev/release-v032-v2-20261019/review-round-01/ram_overlap.py --require-speculation --output <private-output>",
+    "prefill": "build-dev/release-v032-v2-20261019/review-round-01/ram_prefill_overlap.py --require-speculation --output <private-output>",
+    "sha256": {
+      "ram_overlap.py": "d306def2d09520a63cf69b3f7f3153fa1c18e5951766e457251d9097443e0dbf",
+      "ram_prefill_overlap.py": "46ed11a15749d1a9a3fe5380451f546040ef0a20369954db45c7bb0fa687066b",
+      "isolated_restore.py": "b6c293c954b5b4c07041a17cbd7bdca6101b2debadb005cd5c756bd63453e7a4"
+    },
+    "isolated_restore": "build-dev/release-v032-v2-20261019/review-round-01/isolated_restore.py --output <private-output>"
+  },
+  "limits": [
+    "Synthetic checks, one run of each; no performance speedup claim",
+    "Acceptance counters are aggregate across the measured workload, not isolated to the restore request",
+    "Configured262K context retained; full/exact-context, cancellation/eviction and matched stable performance comparison remain pending",
+    "Natural overnight idle latency remains unqualified",
+    "Raw prompts, responses and service logs retained privately"
+  ],
+  "isolated_long_output_restore": {
+    "matches_cold": false,
+    "matches_concurrent": false,
+    "first_cold_difference": 20,
+    "first_concurrent_difference": 103,
+    "ram_hit_tokens": 8064.0,
+    "load_bytes": 313638944.0,
+    "computed_tokens": 183.0,
+    "first_difference_indexing": "zero-based",
+    "artifact_sha256": {
+      "isolated-restore.json": "d5718e892d342c95be1a38395660bae67509dfac72cbf4ff0e0dc4107fb86b37",
+      "summary.json": "4eaad27ed3e3020471df60da6cff48ae1864a88886072e432a28d09499dcaf84"
+    },
+    "scope": "Repeat the same 1024-token restored request without another request running; no new cold reference",
+    "interpretation": "Removing concurrent prefill did not restore token equality. This does not distinguish cache-state errors from numerical or speculative execution variance."
+  }
+}

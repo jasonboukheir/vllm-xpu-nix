@@ -60,7 +60,7 @@
       "disposition": "ADAPT",
       "upstream_evidence": "audits/v05-ef92dc5600af.md",
       "fold_into": null,
-      "new_sha": "ec1477a0386deba74512cc4068288040a57d6fe3",
+      "new_sha": "057a78d9776491cf17e263c5ac75103c53673b69",
       "validation": "Source/native checks passed; first exact-package V2 control passed; DFlash seven-proposal capacity failed; draft review and remaining qualification pending"
     },
     {
@@ -72,7 +72,7 @@
       "disposition": "ADAPT",
       "upstream_evidence": "audits/v06-81dc387cf9a8.md",
       "fold_into": "v05",
-      "new_sha": "ec1477a0386deba74512cc4068288040a57d6fe3",
+      "new_sha": "057a78d9776491cf17e263c5ac75103c53673b69",
       "validation": "Source/native checks passed; first exact-package V2 control passed; DFlash seven-proposal capacity failed; draft review and remaining qualification pending"
     },
     {
@@ -84,7 +84,7 @@
       "disposition": "ADAPT",
       "upstream_evidence": "audits/v07-a76fbb1ce06d.md",
       "fold_into": "v05",
-      "new_sha": "ec1477a0386deba74512cc4068288040a57d6fe3",
+      "new_sha": "057a78d9776491cf17e263c5ac75103c53673b69",
       "validation": "Source/native checks passed; first exact-package V2 control passed; DFlash seven-proposal capacity failed; draft review and remaining qualification pending"
     },
     {
@@ -96,7 +96,7 @@
       "disposition": "ADAPT",
       "upstream_evidence": "audits/v08-dcba4007ef6a.md",
       "fold_into": "v05",
-      "new_sha": "ec1477a0386deba74512cc4068288040a57d6fe3",
+      "new_sha": "057a78d9776491cf17e263c5ac75103c53673b69",
       "validation": "Source/native checks passed; first exact-package V2 control passed; DFlash seven-proposal capacity failed; draft review and remaining qualification pending"
     },
     {
@@ -184,6 +184,7 @@
       "validation": "Source audit recorded; candidate runtime qualification pending"
     }
   ],
-  "candidate_source_tip": "06edb20b68bcd36956499f04dc2ca67d0727d93e",
-  "source_main_publication": "verified exact lease push; kernel tip retained"
+  "candidate_source_tip": "057a78d9776491cf17e263c5ac75103c53673b69",
+  "source_main_publication": "verified exact lease push; kernel tip retained",
+  "initial_published_source_tip": "06edb20b68bcd36956499f04dc2ca67d0727d93e"
 }

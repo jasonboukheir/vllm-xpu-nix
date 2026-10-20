@@ -1,0 +1,219 @@
+{
+  "scope": "Capacity projection; startup, acceptance and performance not established",
+  "geometry_source_commit": "ec1477a0386deba74512cc4068288040a57d6fe3",
+  "input_sha256": {
+    "target_config": "5498b42f9ea96d2669709c177e29122997ce14786a7530fe1ea1b340e535776c",
+    "draft_config": "7cc608bfc20ad2d40ad2b2ceb26f320f783b4b506e511e09f1bbdea69d73426b",
+    "manifest": "1407e5542dd034efdd6020bef7aa02dedfabc5e86830e677ba98b62438b2a525",
+    "startup_record": "958e40ff67796cb7aabda7c0e070ca07e7be137417a2fca0b46e3f8ae5860e51"
+  },
+  "context": 262144,
+  "max_num_seqs": 4,
+  "block_size": 128,
+  "concurrent_batches": 2,
+  "max_num_batched_tokens": 2048,
+  "mamba_cache_mode": "align",
+  "recurrent_extra_checkpoints": 0,
+  "available_usable_gib": 5.61,
+  "available_budget_is_rounded": true,
+  "budget_limitation": "K7 profile reused for projection; K1 may profile differently. Null pages are additional to usable bytes. Four recurrent/draft slots do not imply four maximum-length attention contexts.",
+  "largest_projected_proposal_count": 1,
+  "counts": [
+    {
+      "proposals": 1,
+      "pools": {
+        "target_attention": {
+          "page_bytes": 1720320,
+          "usable_pages": 2048,
+          "usable_bytes": 3523215360,
+          "null_bytes": 1720320
+        },
+        "recurrent": {
+          "page_bytes": 154927104,
+          "usable_pages": 12,
+          "usable_bytes": 1859125248,
+          "null_bytes": 154927104
+        },
+        "draft_sliding": {
+          "page_bytes": 2621440,
+          "usable_pages": 200,
+          "usable_bytes": 524288000,
+          "null_bytes": 2621440
+        }
+      },
+      "usable_bytes": 5906628608,
+      "null_bytes": 159268864,
+      "gross_bytes": 6065897472,
+      "usable_gib": 5.5009765625,
+      "fits_recorded_usable_budget": true
+    },
+    {
+      "proposals": 2,
+      "pools": {
+        "target_attention": {
+          "page_bytes": 1720320,
+          "usable_pages": 2048,
+          "usable_bytes": 3523215360,
+          "null_bytes": 1720320
+        },
+        "recurrent": {
+          "page_bytes": 155910144,
+          "usable_pages": 16,
+          "usable_bytes": 2494562304,
+          "null_bytes": 155910144
+        },
+        "draft_sliding": {
+          "page_bytes": 2621440,
+          "usable_pages": 200,
+          "usable_bytes": 524288000,
+          "null_bytes": 2621440
+        }
+      },
+      "usable_bytes": 6542065664,
+      "null_bytes": 160251904,
+      "gross_bytes": 6702317568,
+      "usable_gib": 6.0927734375,
+      "fits_recorded_usable_budget": false
+    },
+    {
+      "proposals": 3,
+      "pools": {
+        "target_attention": {
+          "page_bytes": 1720320,
+          "usable_pages": 2048,
+          "usable_bytes": 3523215360,
+          "null_bytes": 1720320
+        },
+        "recurrent": {
+          "page_bytes": 156893184,
+          "usable_pages": 20,
+          "usable_bytes": 3137863680,
+          "null_bytes": 156893184
+        },
+        "draft_sliding": {
+          "page_bytes": 2621440,
+          "usable_pages": 200,
+          "usable_bytes": 524288000,
+          "null_bytes": 2621440
+        }
+      },
+      "usable_bytes": 7185367040,
+      "null_bytes": 161234944,
+      "gross_bytes": 7346601984,
+      "usable_gib": 6.69189453125,
+      "fits_recorded_usable_budget": false
+    },
+    {
+      "proposals": 4,
+      "pools": {
+        "target_attention": {
+          "page_bytes": 1720320,
+          "usable_pages": 2048,
+          "usable_bytes": 3523215360,
+          "null_bytes": 1720320
+        },
+        "recurrent": {
+          "page_bytes": 157876224,
+          "usable_pages": 24,
+          "usable_bytes": 3789029376,
+          "null_bytes": 157876224
+        },
+        "draft_sliding": {
+          "page_bytes": 2621440,
+          "usable_pages": 200,
+          "usable_bytes": 524288000,
+          "null_bytes": 2621440
+        }
+      },
+      "usable_bytes": 7836532736,
+      "null_bytes": 162217984,
+      "gross_bytes": 7998750720,
+      "usable_gib": 7.29833984375,
+      "fits_recorded_usable_budget": false
+    },
+    {
+      "proposals": 5,
+      "pools": {
+        "target_attention": {
+          "page_bytes": 1720320,
+          "usable_pages": 2048,
+          "usable_bytes": 3523215360,
+          "null_bytes": 1720320
+        },
+        "recurrent": {
+          "page_bytes": 158859264,
+          "usable_pages": 28,
+          "usable_bytes": 4448059392,
+          "null_bytes": 158859264
+        },
+        "draft_sliding": {
+          "page_bytes": 2621440,
+          "usable_pages": 200,
+          "usable_bytes": 524288000,
+          "null_bytes": 2621440
+        }
+      },
+      "usable_bytes": 8495562752,
+      "null_bytes": 163201024,
+      "gross_bytes": 8658763776,
+      "usable_gib": 7.912109375,
+      "fits_recorded_usable_budget": false
+    },
+    {
+      "proposals": 6,
+      "pools": {
+        "target_attention": {
+          "page_bytes": 1720320,
+          "usable_pages": 2048,
+          "usable_bytes": 3523215360,
+          "null_bytes": 1720320
+        },
+        "recurrent": {
+          "page_bytes": 159842304,
+          "usable_pages": 32,
+          "usable_bytes": 5114953728,
+          "null_bytes": 159842304
+        },
+        "draft_sliding": {
+          "page_bytes": 2621440,
+          "usable_pages": 200,
+          "usable_bytes": 524288000,
+          "null_bytes": 2621440
+        }
+      },
+      "usable_bytes": 9162457088,
+      "null_bytes": 164184064,
+      "gross_bytes": 9326641152,
+      "usable_gib": 8.533203125,
+      "fits_recorded_usable_budget": false
+    },
+    {
+      "proposals": 7,
+      "pools": {
+        "target_attention": {
+          "page_bytes": 1720320,
+          "usable_pages": 2048,
+          "usable_bytes": 3523215360,
+          "null_bytes": 1720320
+        },
+        "recurrent": {
+          "page_bytes": 160825344,
+          "usable_pages": 36,
+          "usable_bytes": 5789712384,
+          "null_bytes": 160825344
+        },
+        "draft_sliding": {
+          "page_bytes": 2621440,
+          "usable_pages": 200,
+          "usable_bytes": 524288000,
+          "null_bytes": 2621440
+        }
+      },
+      "usable_bytes": 9837215744,
+      "null_bytes": 165167104,
+      "gross_bytes": 10002382848,
+      "usable_gib": 9.16162109375,
+      "fits_recorded_usable_budget": false
+    }
+  ]
+}

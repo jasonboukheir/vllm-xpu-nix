@@ -1,5 +1,5 @@
 {
-  "status": "draft review; release qualification incomplete",
+  "status": "review fixes ready for re-review; release qualification incomplete",
   "source_pr": "https://git.sunnycareboo.com/jasonbk/vllm/pulls/3",
   "packaging_branch": "candidate/xpu-v1.13.0",
   "evidence_entry_points": [
@@ -9,7 +9,11 @@
     "packaging-validation.json",
     "source-validation.json",
     "audits/v05-v2-integration.md",
-    "audits/performance-v2-idle.md"
+    "audits/performance-v2-idle.md",
+    "review-disposition.json",
+    "review-validation.json",
+    "review-serving-validation.json",
+    "dflash-capacity-breakdown.json"
   ],
   "review_priorities": [
     "upstream v0.32 checkpoint proofs, aligned page strides and allocation flags",
@@ -20,8 +24,8 @@
     "Nix dependency pins and external draft HF cache roots"
   ],
   "review_scope": "Review both PRs without changing their branches or the host; report actionable file/line findings and validation gaps.",
-  "completed_build": "ec1477a exact Brutus package built; all64 changed runtime Python files match",
-  "main_blocker": "Seven proposals require9.16GiB cache versus5.61GiB available; smaller widths need serving/performance qualification at unchanged context/concurrency.",
+  "completed_build": "057a78d exact Brutus package built; all 65 changed runtime Python files match",
+  "main_blocker": "K1 starts and passes smoke plus four-way RAM/decode overlap. Separate long-prefill progress and 1024-token cold/restored equality checks failed; isolated RAM restore also diverged. Full-profile correctness and matched performance remain open.",
   "idle_follow_up": "Reported10-15s after roughly a day idle remains open; natural direct/gateway/UI measurements needed.",
   "stable_release": "xpu-v1.12.2 unchanged",
   "publication": "No merge, stable publication or host repin before requested review and qualification.",

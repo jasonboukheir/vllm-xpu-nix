@@ -1,0 +1,105 @@
+{
+  "reviewed_source": "ec1477a0386deba74512cc4068288040a57d6fe3",
+  "reviewed_packaging": "7eaa4db14892f6e6de4cee32c6d0106adec19b9c",
+  "source_recovery_ref": "refs/heads/backup/review-xpu-v1.13.0-before-comments-20261020",
+  "findings": [
+    {
+      "review": "https://git.sunnycareboo.com/jasonbk/vllm/pulls/3#issuecomment-483",
+      "topic": "cross-pool async reservation",
+      "disposition": "fixed",
+      "details": "Per-pool prefill/decode tuples; aligned recurrent future-growth cap only credits unique private pages, excluding fine-grained checkpoints and pending copies. Two/four-slot prefill/spec-decode regression fails on reviewed head."
+    },
+    {
+      "review": "https://git.sunnycareboo.com/jasonbk/vllm/pulls/3#issuecomment-483",
+      "topic": "num_gpu_blocks_override semantics",
+      "disposition": "fixed",
+      "details": "Physical full-attention block counts including null; preserve bounded recurrent/draft pools; reject requests exceeding profiled memory."
+    },
+    {
+      "review": "https://git.sunnycareboo.com/jasonbk/vllm/pulls/3#issuecomment-483",
+      "topic": "64-token arithmetic grid scope",
+      "disposition": "clarified",
+      "details": "Intentional XPU text-only/no-spec/Mamba-none scope; align mode already block-aligns. Recorded in the owning feature commit message."
+    },
+    {
+      "review": "https://git.sunnycareboo.com/jasonbk/vllm/pulls/3#issuecomment-483",
+      "topic": "native batch-limit literal",
+      "disposition": "fixed",
+      "details": "Scratch capacities and native verification chunking share _KVARN_NATIVE_MAX_BATCH."
+    },
+    {
+      "review": "https://git.sunnycareboo.com/jasonbk/vllm/pulls/3#issuecomment-486",
+      "topic": "MoRIIO grouped zeroing",
+      "disposition": "fixed",
+      "details": "Filter received destination pages only in the matching global attention group; preserve local recompute and other groups, including filtered transfer-group mappings."
+    },
+    {
+      "review": "https://git.sunnycareboo.com/jasonbk/vllm/pulls/3#issuecomment-486",
+      "topic": "CUDA/XPU metadata fences",
+      "disposition": "fixed",
+      "details": "Choose Event and explicit device current stream from metadata device; mocked cuda:1/xpu:1 ring-generation tests. CUDA hardware was not exercised."
+    },
+    {
+      "review": "https://git.sunnycareboo.com/jasonbk/vllm-xpu-nix/pulls/20#issuecomment-484",
+      "topic": "four-way RAM overlap gate",
+      "disposition": "fixed and rerun",
+      "details": "After per-pool admission and the additional replay-boundary fix, actual four-way RAM/decode progress passes with external hits/load bytes, matching tokens and zero preemptions. A separate long-prefill/1024-output-token stress case remains open and is not counted as passing."
+    },
+    {
+      "review": "https://git.sunnycareboo.com/jasonbk/vllm-xpu-nix/pulls/20#issuecomment-484",
+      "topic": "immutable kernel ref",
+      "disposition": "withdrawn",
+      "details": "No change: locked rolling inputs are the documented candidate stage; immutable coordinated refs follow qualification/review."
+    },
+    {
+      "review": "https://git.sunnycareboo.com/jasonbk/vllm-xpu-nix/pulls/20#issuecomment-484",
+      "topic": "Python override version guards",
+      "disposition": "implemented",
+      "details": "Assert pinned nixpkgs versions remain older than all three overrides, with explicit review-needed diagnostics."
+    },
+    {
+      "review": "https://git.sunnycareboo.com/jasonbk/vllm-xpu-nix/pulls/20#issuecomment-484",
+      "topic": "relative draft paths",
+      "disposition": "fixed",
+      "details": "Exclude absolute, ./ and ../ paths; document conservative Hub interpretation of ambiguous models/dflash and bare IDs."
+    },
+    {
+      "review": "https://git.sunnycareboo.com/jasonbk/vllm-xpu-nix/pulls/20#issuecomment-484",
+      "topic": "Tokenizers wheel platform",
+      "disposition": "implemented",
+      "details": "Restrict metadata to x86_64-linux."
+    },
+    {
+      "review": "https://git.sunnycareboo.com/jasonbk/vllm-xpu-nix/pulls/20#issuecomment-484",
+      "topic": "DFlash option description",
+      "disposition": "implemented",
+      "details": "Document V2, compact K4V2 target, BF16 sliding draft KV, proposal bounds, and pending qualification/capacity limits."
+    },
+    {
+      "review": "https://git.sunnycareboo.com/jasonbk/vllm-xpu-nix/pulls/20#issuecomment-484",
+      "topic": "per-pool capacity breakdown",
+      "disposition": "implemented",
+      "details": "Reproducible byte calculator and K1\u2013K7 projections; only K1 fits the recorded rounded usable budget. Exact-package K1 startup subsequently passed; see review-serving-validation.json."
+    },
+    {
+      "review": "https://git.sunnycareboo.com/jasonbk/vllm-xpu-nix/pulls/20#issuecomment-487",
+      "topic": "symbolic draft revisions",
+      "disposition": "fixed",
+      "details": "Serving branch/tag unchanged; GC uses null to retain all cached snapshots unless revision is a lowercase 40-character SHA."
+    },
+    {
+      "review": "https://git.sunnycareboo.com/jasonbk/vllm-xpu-nix/pulls/20#issuecomment-487",
+      "topic": "single-component Hub IDs",
+      "disposition": "fixed",
+      "details": "Root gpt2-style IDs; evaluate actual Nix module and execute GC retention/deletion against a synthetic cache."
+    }
+  ],
+  "fixed_source": "057a78d9776491cf17e263c5ac75103c53673b69",
+  "additional_fixture_repair": "Existing hybrid aligned-prefix test SimpleNamespace lacked scheduler.block_size; both shared/independent cases pass after completing the fixture.",
+  "additional_loaded_fix": {
+    "finding": "Sparse RAM draft window did not cover the earlier recurrent speculative replay checkpoint",
+    "reproduced_at": "2c9c76b17c233e3bced76258e959f4d77584745a",
+    "fixed_at": "057a78d9776491cf17e263c5ac75103c53673b69",
+    "details": "Use the GPU coordinator replay-boundary rule for offloading retention; preserve separate draft volatility handling. Both aligned and unaligned roundtrip tests fail with the original store method and pass after the fix. All 479 offloading scheduler/config tests pass."
+  }
+}

@@ -1,5 +1,5 @@
 {
-  "status": "draft PR review; review-head package built; V2 control passed; seven-proposal DFlash startup fails capacity on two starts; smaller-proposal qualification pending",
+  "status": "Review fixes implemented; K1 DFlash startup and smoke pass; measured four-way RAM/decode overlap passes; long-prefill overlap and long-output determinism need follow-up; full-profile qualification pending",
   "profiles": [
     "xpu-v1.12.2 V1 MTP2 baseline",
     "v0.32 V2 no speculation",
@@ -63,10 +63,29 @@
     "v0.32 cache_salt validation rejects slash-containing output paths; adapted RAM harnesses use output basename as salt; checks unchanged"
   ],
   "remaining": [
-    "loaded smaller-width DFlash functional and positive-acceptance checks",
+    "Resolve long-prefill scheduling and 1024-token cold/restored equality failures; isolated RAM restore also diverged. Trace scheduling and compare fixed-batch cold/GPU-hit/RAM-hit controls, with and without speculation.",
     "matched stable baseline with qualification instrumentation and4K/16K prompts",
     "DFlash full-context/cache/concurrency/cancellation/eviction checks",
     "review and release decision",
     "coordinated refs and host pin after review and qualification"
+  ],
+  "overlap_ram_gate": {
+    "status": "Fourth RAM-hit request alongside three decodes PASSED on057a78d; separate long-prefill timing/output-equality stress case FAILED; see review-serving-validation.json",
+    "decode_scenario": "Start three independent long decodes, wait for content from each, then submit a fourth request with a primed RAM prefix after GPU-local cache reset.",
+    "proof": [
+      "Fourth request emits content before any of the first three finishes",
+      "All four advance during a common interval; retain SSE progress timestamps and running/waiting gauges",
+      "Attribute positive external-hit tokens and load bytes to the fourth request, with zero GPU hits and bounded suffix recomputation",
+      "No preemptions; correct isolated outputs and restored-token equality; positive DFlash acceptance"
+    ],
+    "prefill_scenario": "A RAM-hit request must advance while an unrelated long prefill is still in progress.",
+    "capacity": "Keep aggregate histories within attention capacity; four bounded recurrent/draft slots do not imply four maximum-length contexts."
+  },
+  "capacity_projection": "dflash-capacity-breakdown.json; only one proposal fits the recorded K7 usable budget; exact-package K1 startup passed, see review-serving-validation.json",
+  "review_scope_passed": [
+    "K1 DFlash startup with262K configured context and four slots",
+    "Text/reasoning/two-image/parsed-tool smoke",
+    "Measured four-way decode+RAM restore with8064hit tokens,179recomputed tokens,matching118output tokens and zero preemptions",
+    "Positive DFlash acceptance in mixed workload"
   ]
 }

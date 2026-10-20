@@ -1,0 +1,34 @@
+{
+  "status": "draft review; release qualification incomplete",
+  "source_pr": "https://git.sunnycareboo.com/jasonbk/vllm/pulls/3",
+  "packaging_branch": "candidate/xpu-v1.13.0",
+  "evidence_entry_points": [
+    "inventory.json",
+    "reconciliation.json",
+    "qualification-plan.json",
+    "packaging-validation.json",
+    "source-validation.json",
+    "audits/v05-v2-integration.md",
+    "audits/performance-v2-idle.md"
+  ],
+  "review_priorities": [
+    "upstream v0.32 checkpoint proofs, aligned page strides and allocation flags",
+    "independent target/recurrent/draft pool ownership and recycled/null pages",
+    "RAM saves before zeroing/COW; restores before metadata consumption",
+    "native row-to-request mapping, causal bounds and shared scratch lifetime",
+    "DFlash quantization mappings, runtime proposal bounds and rejected/context-ceiling slots",
+    "Nix dependency pins and external draft HF cache roots"
+  ],
+  "review_scope": "Review both PRs without changing their branches or the host; report actionable file/line findings and validation gaps.",
+  "completed_build": "ec1477a exact Brutus package built; all64 changed runtime Python files match",
+  "main_blocker": "Seven proposals require9.16GiB cache versus5.61GiB available; smaller widths need serving/performance qualification at unchanged context/concurrency.",
+  "idle_follow_up": "Reported10-15s after roughly a day idle remains open; natural direct/gateway/UI measurements needed.",
+  "stable_release": "xpu-v1.12.2 unchanged",
+  "publication": "No merge, stable publication or host repin before requested review and qualification.",
+  "native_reference_reproduction": {
+    "script": "dflash-native-reference.py",
+    "kernel_checkout_sibling": "vllm-xpu-kernels at dbb684f4c9b38a8b3bbf52bda0c490ee47049221",
+    "environment": "Exact first Brutus package recorded in packaging-validation.json",
+    "output": "JSON beside script; copy into scratch directory for rerun."
+  }
+}

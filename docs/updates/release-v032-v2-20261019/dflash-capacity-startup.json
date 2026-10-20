@@ -1,0 +1,17 @@
+{
+  "package": "/nix/store/gnnq4wygxv7k0mqqb71v0giz6cqcnm4b-python3.12-vllm-xpu-0.32.0+unstable.2026.10.20.g06edb20",
+  "source_commit": "06edb20b68bcd36956499f04dc2ca67d0727d93e",
+  "profile": "V2 DFlash2 seven proposals;262144 context;max_num_seqs4;gpu_util0.96",
+  "result": "startup rejected for insufficient KV memory",
+  "required_gib": 9.16,
+  "available_gib": 5.61,
+  "model_loaded_gib": 18.73,
+  "stage": "same failure on initial and warm persistent-cache starts",
+  "manifest_sha256": "44268c502f338528a7ac57319b4b196c4aa2da016a3289c7538ab3affda741f3",
+  "adjustment_under_review": "tune proposal count while retaining context/concurrency/precision/cache budgets; runtime DFlash2 convolution and selector already derive dimensions from configured count",
+  "attempts": [
+    "v2-dflash-01",
+    "v2-dflash-02"
+  ],
+  "next": "Qualify smaller proposal count; preserve262144 context,max_num_seqs4,and existing cache/precision settings. No final proposal-count or performance decision yet."
+}

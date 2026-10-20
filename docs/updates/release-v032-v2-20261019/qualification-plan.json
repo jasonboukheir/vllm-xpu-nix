@@ -1,0 +1,72 @@
+{
+  "status": "draft PR review; review-head package built; V2 control passed; seven-proposal DFlash startup fails capacity on two starts; smaller-proposal qualification pending",
+  "profiles": [
+    "xpu-v1.12.2 V1 MTP2 baseline",
+    "v0.32 V2 no speculation",
+    "v0.32 V2 DFlash2; final proposal count pending capacity/performance qualification"
+  ],
+  "preserved_settings": {
+    "target_revision": "bf08f3dbd9a324e53956920aad378a1f1b6dd24a",
+    "draft_revision": "4d30ec736ffc6b8688dc2ae2b502d9b48bdec279",
+    "target_kv": "kvarn_k4v2_g128_compact",
+    "draft_kv": "bfloat16 sliding2048",
+    "max_model_len": 262144,
+    "max_num_seqs": 4,
+    "max_num_batched_tokens": 2048,
+    "cpu_cache_bytes": 8589934592,
+    "gpu_cache_policy": "active_only",
+    "images": "two448x448",
+    "execution": "eager TP1/PP1"
+  },
+  "performance": {
+    "harness": "benchmark-results/release-v032-v2-20261019/baseline-performance/benchmark_http.py",
+    "existing_baseline": "baseline-performance.json",
+    "missing_context_baseline": [
+      4096,
+      16384
+    ],
+    "concurrency": [
+      1,
+      2
+    ],
+    "repeats": 3,
+    "output_tokens": 512,
+    "notes": [
+      "Freeze exact prompts/tokenizer counts for all arms",
+      "Prime each actual process before timing",
+      "Do not benchmark while package builds or unrelated GPU jobs run",
+      "Compare per-workload trajectories; greedy output can vary at concurrency2",
+      "Require measured speedup; no performance claim from config acceptance"
+    ]
+  },
+  "correctness_harnesses": [
+    "retained-service-harness/smoke.py",
+    "retained-service-harness/mixed_prefill.py",
+    "ram-prefix-20261011/ram-proof.py --tokens20307",
+    "retained-service-harness/overlap_requests.py (speculative arms only)",
+    "ram-prefix-20261011/ram-lifecycle.py --eviction-histories64",
+    "retained-service-harness/cancel_reuse.py",
+    "ram-prefix-20261011/ram-proof.py with saved262015-token two-image request; skip duplicate cold control",
+    "ram-prefix-20261011/exact-limit.py with newly tested full-context salted request"
+  ],
+  "correctness_requirements": [
+    "parsed text/reasoning/tool outputs; do not execute synthetic tool call",
+    "two-image red-before-blue check including full-context restores",
+    "real external hit/load bytes and small recomputed suffix after local GPU cache reset",
+    "token equality across cold/restored prefixes",
+    "cancellation/eviction/reuse and overlapping four-request work",
+    "262143 input plus1 output; deferred save flush and healthy next request"
+  ],
+  "instrumentation": "explicit qualification launcher flag enables local dev endpoints and request logs; record and match compared runs; keep private raw logs",
+  "idle_follow_up": "natural overnight same-process direct/gateway/UI timings; short probes did not reproduce symptom",
+  "harness_adaptations": [
+    "v0.32 cache_salt validation rejects slash-containing output paths; adapted RAM harnesses use output basename as salt; checks unchanged"
+  ],
+  "remaining": [
+    "loaded smaller-width DFlash functional and positive-acceptance checks",
+    "matched stable baseline with qualification instrumentation and4K/16K prompts",
+    "DFlash full-context/cache/concurrency/cancellation/eviction checks",
+    "review and release decision",
+    "coordinated refs and host pin after review and qualification"
+  ]
+}

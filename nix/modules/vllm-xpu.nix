@@ -842,12 +842,32 @@ in
         enable = true;
         home = cfg.sharedHfCache;
         group = cfg.sharedHfCacheGroup;
-        roots = lib.mapAttrsToList (name: inst: {
-          source = "vllm-xpu.${name}";
-          type = "model";
-          repo = inst.model;
-          revision = inst.revision;
-        }) enabledInstances;
+        roots = lib.concatLists (
+          lib.mapAttrsToList (
+            name: inst:
+            let
+              draft = if inst.speculativeConfig == null then { } else inst.speculativeConfig;
+              draftModel = draft.model or null;
+              isHfDraft =
+                builtins.isString draftModel
+                && builtins.match "[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+" draftModel != null;
+            in
+            [
+              {
+                source = "vllm-xpu.${name}";
+                type = "model";
+                repo = inst.model;
+                revision = inst.revision;
+              }
+            ]
+            ++ lib.optional isHfDraft {
+              source = "vllm-xpu.${name}.draft";
+              type = "model";
+              repo = draftModel;
+              revision = draft.revision or null;
+            }
+          ) enabledInstances
+        );
       };
     })
     (lib.mkIf (enabledInstances != { }) {

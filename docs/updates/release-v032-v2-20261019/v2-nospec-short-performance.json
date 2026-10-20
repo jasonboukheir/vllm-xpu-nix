@@ -1,0 +1,594 @@
+{
+  "schema": "brutus-short-http-perf-v1",
+  "status": "completed",
+  "started_at_utc": "2026-10-20T04:43:13.207170+00:00",
+  "arguments": {
+    "base_url": "http://127.0.0.1:18000",
+    "model": "sunny-chat",
+    "profile_label": "v2-nospec-01",
+    "server_manifest": "benchmark-results/release-v032-v2-20261019/v2-nospec-01/manifest.json",
+    "output": "benchmark-results/release-v032-v2-20261019/v2-nospec-01-short-performance",
+    "workloads": "benchmark-results/release-v032-v2-20261019/baseline-performance/workloads.json",
+    "concurrency": "1,2",
+    "repeats": 3,
+    "max_tokens": 512,
+    "warmup_tokens": 64,
+    "request_timeout": 600.0,
+    "max_seconds": 1800.0
+  },
+  "harness_sha256": "6a17326a3b5cae053ebc6f311dd657541f92fb067e4e04609df4c753dbfa3a17",
+  "workloads_sha256": "1138b4e15f54f34eb11fbe839f077c8763bbfeee3028faa8ff3e75dc4c81e28c",
+  "server_manifest_sha256": "71d32c2c890688885b33bc1475c224f91365555cf18b6b096403c724d8ad361a",
+  "phases": [
+    {
+      "concurrency": 1,
+      "phase": "warmup",
+      "timing_evidence_valid": true,
+      "elapsed_s": 4.758391985000344,
+      "batches": [
+        {
+          "requests": [
+            "c1-warmup-00-english"
+          ],
+          "overlapping_decode_delivery_s": null
+        },
+        {
+          "requests": [
+            "c1-warmup-01-reasoning"
+          ],
+          "overlapping_decode_delivery_s": null
+        }
+      ],
+      "request_ids": [
+        "c1-warmup-00-english",
+        "c1-warmup-01-reasoning"
+      ],
+      "phase_output_tokens_per_s_including_batch_gaps": 26.899843561330886,
+      "statistics": {
+        "ttft_s": {
+          "n": 2,
+          "median": 0.3999786659987876,
+          "p95": 0.4620296600041911,
+          "min": 0.33792767199338414,
+          "max": 0.4620296600041911
+        },
+        "decode_output_tokens_per_s": {
+          "n": 2,
+          "median": 32.017531239148454,
+          "p95": 32.49103599151994,
+          "min": 31.54402648677697,
+          "max": 32.49103599151994
+        },
+        "end_to_end_output_tokens_per_s": {
+          "n": 2,
+          "median": 27.06477768014321,
+          "p95": 28.106595755985246,
+          "min": 26.02295960430117,
+          "max": 28.106595755985246
+        },
+        "mean_delivery_time_per_output_token_s": {
+          "n": 2,
+          "median": 0.031239721531626796,
+          "p95": 0.03170172331738286,
+          "min": 0.03077771974587074,
+          "max": 0.03170172331738286
+        },
+        "elapsed_s": {
+          "n": 2,
+          "median": 2.3682061409926973,
+          "p95": 2.45936668899958,
+          "min": 2.2770455929858144,
+          "max": 2.45936668899958
+        }
+      },
+      "by_workload": {
+        "english": {
+          "ttft_s": {
+            "n": 1,
+            "median": 0.4620296600041911,
+            "p95": 0.4620296600041911,
+            "min": 0.4620296600041911,
+            "max": 0.4620296600041911
+          },
+          "decode_output_tokens_per_s": {
+            "n": 1,
+            "median": 31.54402648677697,
+            "p95": 31.54402648677697,
+            "min": 31.54402648677697,
+            "max": 31.54402648677697
+          },
+          "elapsed_s": {
+            "n": 1,
+            "median": 2.45936668899958,
+            "p95": 2.45936668899958,
+            "min": 2.45936668899958,
+            "max": 2.45936668899958
+          }
+        },
+        "reasoning": {
+          "ttft_s": {
+            "n": 1,
+            "median": 0.33792767199338414,
+            "p95": 0.33792767199338414,
+            "min": 0.33792767199338414,
+            "max": 0.33792767199338414
+          },
+          "decode_output_tokens_per_s": {
+            "n": 1,
+            "median": 32.49103599151994,
+            "p95": 32.49103599151994,
+            "min": 32.49103599151994,
+            "max": 32.49103599151994
+          },
+          "elapsed_s": {
+            "n": 1,
+            "median": 2.2770455929858144,
+            "p95": 2.2770455929858144,
+            "min": 2.2770455929858144,
+            "max": 2.2770455929858144
+          }
+        }
+      },
+      "speculative_and_server_metrics": {
+        "available": true,
+        "deltas": {
+          "vllm:generation_tokens_total": 128.0,
+          "vllm:inter_token_latency_seconds_sum": 3.9364039259962738,
+          "vllm:num_preemptions_total": 0.0,
+          "vllm:request_success_total": 2.0,
+          "vllm:inter_token_latency_seconds_count": 126.0
+        },
+        "missing_samples": [],
+        "counter_resets": [],
+        "counter_scope_consistent": true,
+        "expected_generation_tokens": 128,
+        "expected_successful_requests": 2,
+        "observed_generation_tokens": 128.0,
+        "observed_successful_requests": 2.0,
+        "speculation_evidence_valid": false,
+        "acceptance_rate": null,
+        "mean_acceptance_length_including_bonus_convention": null,
+        "accepted_per_position_over_drafts": null,
+        "server_engine_output_event_interval_mean_s": 0.031241300999970426,
+        "note": "Counter deltas are phase-wide, not attributable to individual requests."
+      }
+    },
+    {
+      "concurrency": 1,
+      "phase": "measured",
+      "timing_evidence_valid": true,
+      "elapsed_s": 97.47898503401666,
+      "batches": [
+        {
+          "requests": [
+            "c1-measured-00-english"
+          ],
+          "overlapping_decode_delivery_s": null
+        },
+        {
+          "requests": [
+            "c1-measured-01-reasoning"
+          ],
+          "overlapping_decode_delivery_s": null
+        },
+        {
+          "requests": [
+            "c1-measured-02-english"
+          ],
+          "overlapping_decode_delivery_s": null
+        },
+        {
+          "requests": [
+            "c1-measured-03-reasoning"
+          ],
+          "overlapping_decode_delivery_s": null
+        },
+        {
+          "requests": [
+            "c1-measured-04-english"
+          ],
+          "overlapping_decode_delivery_s": null
+        },
+        {
+          "requests": [
+            "c1-measured-05-reasoning"
+          ],
+          "overlapping_decode_delivery_s": null
+        }
+      ],
+      "request_ids": [
+        "c1-measured-00-english",
+        "c1-measured-01-reasoning",
+        "c1-measured-02-english",
+        "c1-measured-03-reasoning",
+        "c1-measured-04-english",
+        "c1-measured-05-reasoning"
+      ],
+      "phase_output_tokens_per_s_including_batch_gaps": 31.51448488028453,
+      "statistics": {
+        "ttft_s": {
+          "n": 6,
+          "median": 0.17010357198887505,
+          "p95": 0.18639797100331634,
+          "min": 0.13800050498684868,
+          "max": 0.18639797100331634
+        },
+        "decode_output_tokens_per_s": {
+          "n": 6,
+          "median": 31.794861807194614,
+          "p95": 31.880257674297834,
+          "min": 31.688936529237324,
+          "max": 31.880257674297834
+        },
+        "end_to_end_output_tokens_per_s": {
+          "n": 6,
+          "median": 31.558299042445174,
+          "p95": 31.587708525883084,
+          "min": 31.38783744092433,
+          "max": 31.587708525883084
+        },
+        "mean_delivery_time_per_output_token_s": {
+          "n": 6,
+          "median": 0.03145162278475101,
+          "p95": 0.03155675480233819,
+          "min": 0.031367375076337904,
+          "max": 0.03155675480233819
+        },
+        "elapsed_s": {
+          "n": 6,
+          "median": 16.223945599485887,
+          "p95": 16.31205083700479,
+          "min": 16.208836408011848,
+          "max": 16.31205083700479
+        }
+      },
+      "by_workload": {
+        "english": {
+          "ttft_s": {
+            "n": 3,
+            "median": 0.17998666799394414,
+            "p95": 0.18036158999893814,
+            "min": 0.16022047598380595,
+            "max": 0.18036158999893814
+          },
+          "decode_output_tokens_per_s": {
+            "n": 3,
+            "median": 31.81943551383553,
+            "p95": 31.880257674297834,
+            "min": 31.79509365251885,
+            "max": 31.880257674297834
+          },
+          "elapsed_s": {
+            "n": 3,
+            "median": 16.23202190597658,
+            "p95": 16.2398612590041,
+            "min": 16.208836408011848,
+            "max": 16.2398612590041
+          }
+        },
+        "reasoning": {
+          "ttft_s": {
+            "n": 3,
+            "median": 0.14106779301073402,
+            "p95": 0.18639797100331634,
+            "min": 0.13800050498684868,
+            "max": 0.18639797100331634
+          },
+          "decode_output_tokens_per_s": {
+            "n": 3,
+            "median": 31.789084352825423,
+            "p95": 31.79462996187038,
+            "min": 31.688936529237324,
+            "max": 31.79462996187038
+          },
+          "elapsed_s": {
+            "n": 3,
+            "median": 16.215869292995194,
+            "p95": 16.31205083700479,
+            "min": 16.210019561985973,
+            "max": 16.31205083700479
+          }
+        }
+      },
+      "speculative_and_server_metrics": {
+        "available": true,
+        "deltas": {
+          "vllm:generation_tokens_total": 3072.0,
+          "vllm:inter_token_latency_seconds_sum": 96.43079558305908,
+          "vllm:num_preemptions_total": 0.0,
+          "vllm:request_success_total": 6.0,
+          "vllm:inter_token_latency_seconds_count": 3066.0
+        },
+        "missing_samples": [],
+        "counter_resets": [],
+        "counter_scope_consistent": true,
+        "expected_generation_tokens": 3072,
+        "expected_successful_requests": 6,
+        "observed_generation_tokens": 3072.0,
+        "observed_successful_requests": 6.0,
+        "speculation_evidence_valid": false,
+        "acceptance_rate": null,
+        "mean_acceptance_length_including_bonus_convention": null,
+        "accepted_per_position_over_drafts": null,
+        "server_engine_output_event_interval_mean_s": 0.03145166196446806,
+        "note": "Counter deltas are phase-wide, not attributable to individual requests."
+      }
+    },
+    {
+      "concurrency": 2,
+      "phase": "warmup",
+      "timing_evidence_valid": true,
+      "elapsed_s": 2.3496781309950165,
+      "batches": [
+        {
+          "requests": [
+            "c2-warmup-00-english",
+            "c2-warmup-01-reasoning"
+          ],
+          "overlapping_decode_delivery_s": 1.9979977240145672
+        }
+      ],
+      "request_ids": [
+        "c2-warmup-00-english",
+        "c2-warmup-01-reasoning"
+      ],
+      "phase_output_tokens_per_s_including_batch_gaps": 54.47554637868461,
+      "statistics": {
+        "ttft_s": {
+          "n": 2,
+          "median": 0.3124703999928897,
+          "p95": 0.3381112449860666,
+          "min": 0.28682955499971285,
+          "max": 0.3381112449860666
+        },
+        "decode_output_tokens_per_s": {
+          "n": 2,
+          "median": 31.10983119727037,
+          "p95": 31.473396450626396,
+          "min": 30.746265943914345,
+          "max": 31.473396450626396
+        },
+        "end_to_end_output_tokens_per_s": {
+          "n": 2,
+          "median": 27.373932517757574,
+          "p95": 27.396433361447354,
+          "min": 27.35143167406779,
+          "max": 27.396433361447354
+        },
+        "mean_delivery_time_per_output_token_s": {
+          "n": 2,
+          "median": 0.03214857023022699,
+          "p95": 0.03252427471433914,
+          "min": 0.03177286574611485,
+          "max": 0.03252427471433914
+        },
+        "elapsed_s": {
+          "n": 2,
+          "median": 2.337992292494164,
+          "p95": 2.3399140769906808,
+          "min": 2.336070507997647,
+          "max": 2.3399140769906808
+        }
+      },
+      "by_workload": {
+        "english": {
+          "ttft_s": {
+            "n": 1,
+            "median": 0.28682955499971285,
+            "p95": 0.28682955499971285,
+            "min": 0.28682955499971285,
+            "max": 0.28682955499971285
+          },
+          "decode_output_tokens_per_s": {
+            "n": 1,
+            "median": 30.746265943914345,
+            "p95": 30.746265943914345,
+            "min": 30.746265943914345,
+            "max": 30.746265943914345
+          },
+          "elapsed_s": {
+            "n": 1,
+            "median": 2.336070507997647,
+            "p95": 2.336070507997647,
+            "min": 2.336070507997647,
+            "max": 2.336070507997647
+          }
+        },
+        "reasoning": {
+          "ttft_s": {
+            "n": 1,
+            "median": 0.3381112449860666,
+            "p95": 0.3381112449860666,
+            "min": 0.3381112449860666,
+            "max": 0.3381112449860666
+          },
+          "decode_output_tokens_per_s": {
+            "n": 1,
+            "median": 31.473396450626396,
+            "p95": 31.473396450626396,
+            "min": 31.473396450626396,
+            "max": 31.473396450626396
+          },
+          "elapsed_s": {
+            "n": 1,
+            "median": 2.3399140769906808,
+            "p95": 2.3399140769906808,
+            "min": 2.3399140769906808,
+            "max": 2.3399140769906808
+          }
+        }
+      },
+      "speculative_and_server_metrics": {
+        "available": true,
+        "deltas": {
+          "vllm:generation_tokens_total": 128.0,
+          "vllm:inter_token_latency_seconds_sum": 4.050981478008907,
+          "vllm:num_preemptions_total": 0.0,
+          "vllm:request_success_total": 2.0,
+          "vllm:inter_token_latency_seconds_count": 126.0
+        },
+        "missing_samples": [],
+        "counter_resets": [],
+        "counter_scope_consistent": true,
+        "expected_generation_tokens": 128,
+        "expected_successful_requests": 2,
+        "observed_generation_tokens": 128.0,
+        "observed_successful_requests": 2.0,
+        "speculation_evidence_valid": false,
+        "acceptance_rate": null,
+        "mean_acceptance_length_including_bonus_convention": null,
+        "accepted_per_position_over_drafts": null,
+        "server_engine_output_event_interval_mean_s": 0.03215064665086435,
+        "note": "Counter deltas are phase-wide, not attributable to individual requests."
+      }
+    },
+    {
+      "concurrency": 2,
+      "phase": "measured",
+      "timing_evidence_valid": true,
+      "elapsed_s": 50.68800167401787,
+      "batches": [
+        {
+          "requests": [
+            "c2-measured-00-english",
+            "c2-measured-01-reasoning"
+          ],
+          "overlapping_decode_delivery_s": 16.606003215012606
+        },
+        {
+          "requests": [
+            "c2-measured-02-english",
+            "c2-measured-03-reasoning"
+          ],
+          "overlapping_decode_delivery_s": 16.561578530992847
+        },
+        {
+          "requests": [
+            "c2-measured-04-english",
+            "c2-measured-05-reasoning"
+          ],
+          "overlapping_decode_delivery_s": 16.502603700006148
+        }
+      ],
+      "request_ids": [
+        "c2-measured-00-english",
+        "c2-measured-01-reasoning",
+        "c2-measured-02-english",
+        "c2-measured-03-reasoning",
+        "c2-measured-04-english",
+        "c2-measured-05-reasoning"
+      ],
+      "phase_output_tokens_per_s_including_batch_gaps": 60.60605860448972,
+      "statistics": {
+        "ttft_s": {
+          "n": 6,
+          "median": 0.23369884050043765,
+          "p95": 0.33032233599806204,
+          "min": 0.195003826986067,
+          "max": 0.33032233599806204
+        },
+        "decode_output_tokens_per_s": {
+          "n": 6,
+          "median": 30.741875715534178,
+          "p95": 30.8109721905479,
+          "min": 30.673953704805196,
+          "max": 30.8109721905479
+        },
+        "end_to_end_output_tokens_per_s": {
+          "n": 6,
+          "median": 30.378038536438332,
+          "p95": 30.421263732872724,
+          "min": 30.260674224562155,
+          "max": 30.421263732872724
+        },
+        "mean_delivery_time_per_output_token_s": {
+          "n": 6,
+          "median": 0.03252892550390848,
+          "p95": 0.032600948988305546,
+          "min": 0.03245597035418367,
+          "max": 0.032600948988305546
+        },
+        "elapsed_s": {
+          "n": 6,
+          "median": 16.854281074993196,
+          "p95": 16.919649449991994,
+          "min": 16.830333035992226,
+          "max": 16.919649449991994
+        }
+      },
+      "by_workload": {
+        "english": {
+          "ttft_s": {
+            "n": 3,
+            "median": 0.19820511498255655,
+            "p95": 0.21500985798775218,
+            "min": 0.195003826986067,
+            "max": 0.21500985798775218
+          },
+          "decode_output_tokens_per_s": {
+            "n": 3,
+            "median": 30.7193646437754,
+            "p95": 30.755098331629668,
+            "min": 30.673953704805196,
+            "max": 30.755098331629668
+          },
+          "elapsed_s": {
+            "n": 3,
+            "median": 16.832784019992687,
+            "p95": 16.854288764006924,
+            "min": 16.830333035992226,
+            "max": 16.854288764006924
+          }
+        },
+        "reasoning": {
+          "ttft_s": {
+            "n": 3,
+            "median": 0.2691795509890653,
+            "p95": 0.33032233599806204,
+            "min": 0.2523878230131231,
+            "max": 0.33032233599806204
+          },
+          "decode_output_tokens_per_s": {
+            "n": 3,
+            "median": 30.8031325643271,
+            "p95": 30.8109721905479,
+            "min": 30.728653099438684,
+            "max": 30.8109721905479
+          },
+          "elapsed_s": {
+            "n": 3,
+            "median": 16.88195879102568,
+            "p95": 16.919649449991994,
+            "min": 16.854273385979468,
+            "max": 16.919649449991994
+          }
+        }
+      },
+      "speculative_and_server_metrics": {
+        "available": true,
+        "deltas": {
+          "vllm:generation_tokens_total": 3072.0,
+          "vllm:inter_token_latency_seconds_sum": 99.71277263504453,
+          "vllm:num_preemptions_total": 0.0,
+          "vllm:request_success_total": 6.0,
+          "vllm:inter_token_latency_seconds_count": 3066.0
+        },
+        "missing_samples": [],
+        "counter_resets": [],
+        "counter_scope_consistent": true,
+        "expected_generation_tokens": 3072,
+        "expected_successful_requests": 6,
+        "observed_generation_tokens": 3072.0,
+        "observed_successful_requests": 6.0,
+        "speculation_evidence_valid": false,
+        "acceptance_rate": null,
+        "mean_acceptance_length_including_bonus_convention": null,
+        "accepted_per_position_over_drafts": null,
+        "server_engine_output_event_interval_mean_s": 0.03252210457764009,
+        "note": "Counter deltas are phase-wide, not attributable to individual requests."
+      }
+    }
+  ],
+  "note": "A performance screen, not full release qualification.",
+  "finished_at_utc": "2026-10-20T04:45:48.606658+00:00"
+}

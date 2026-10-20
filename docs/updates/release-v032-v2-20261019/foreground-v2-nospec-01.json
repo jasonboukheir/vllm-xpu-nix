@@ -1,0 +1,110 @@
+{
+  "profile": "V2 without speculation",
+  "package": "/nix/store/gnnq4wygxv7k0mqqb71v0giz6cqcnm4b-python3.12-vllm-xpu-0.32.0+unstable.2026.10.20.g06edb20",
+  "smoke": {
+    "text": true,
+    "reasoning": true,
+    "two_image_order": true,
+    "parsed_tool_call": true
+  },
+  "ram_prefix_proof": [
+    {
+      "name": "cold",
+      "http_status": 200,
+      "stream_done": true,
+      "ttft_seconds": 13.953100815007929,
+      "seconds": 14.188276431988925,
+      "usage": {
+        "prompt_tokens": 20307,
+        "total_tokens": 20315,
+        "completion_tokens": 8,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "gpu_hit_tokens": 0.0,
+      "ram_hit_tokens": 0.0,
+      "load_bytes": 0,
+      "store_bytes": 434143264.0,
+      "computed_tokens": 20307.0,
+      "preemptions": 0.0,
+      "pass": true
+    },
+    {
+      "name": "ram-0",
+      "http_status": 200,
+      "stream_done": true,
+      "ttft_seconds": 5.075830291985767,
+      "seconds": 5.309349321003538,
+      "usage": {
+        "prompt_tokens": 20307,
+        "total_tokens": 20315,
+        "completion_tokens": 8,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "gpu_hit_tokens": 0.0,
+      "ram_hit_tokens": 20224.0,
+      "load_bytes": 434143264.0,
+      "store_bytes": 0.0,
+      "computed_tokens": 83.0,
+      "preemptions": 0.0,
+      "pass": true,
+      "same_tokens_as_cold": true
+    },
+    {
+      "name": "ram-1",
+      "http_status": 200,
+      "stream_done": true,
+      "ttft_seconds": 0.3238746560236905,
+      "seconds": 0.5572609570226632,
+      "usage": {
+        "prompt_tokens": 20307,
+        "total_tokens": 20315,
+        "completion_tokens": 8,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "gpu_hit_tokens": 0.0,
+      "ram_hit_tokens": 20224.0,
+      "load_bytes": 434143264.0,
+      "store_bytes": 0.0,
+      "computed_tokens": 83.0,
+      "preemptions": 0.0,
+      "pass": true,
+      "same_tokens_as_cold": true
+    },
+    {
+      "name": "cold-control",
+      "http_status": 200,
+      "stream_done": true,
+      "ttft_seconds": 14.027488303981954,
+      "seconds": 14.264532596978825,
+      "usage": {
+        "prompt_tokens": 20307,
+        "total_tokens": 20315,
+        "completion_tokens": 8,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "gpu_hit_tokens": 0.0,
+      "ram_hit_tokens": 0.0,
+      "load_bytes": 0.0,
+      "store_bytes": 434143264.0,
+      "computed_tokens": 20307.0,
+      "preemptions": 0.0,
+      "pass": true,
+      "same_tokens_as_cold": true
+    }
+  ],
+  "first_restore_observation": "First RAM restore in newly started V2 process took5.08s, next0.324s. This did not follow natural long idle and does not diagnose reported day-idle delay. Load-time metric first dominates.",
+  "manifest_sha256": "71d32c2c890688885b33bc1475c224f91365555cf18b6b096403c724d8ad361a",
+  "remaining": "matched performance, DFlash, full-context/concurrency/lifecycle qualification"
+}

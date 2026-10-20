@@ -1,0 +1,42 @@
+{
+  "skill": "vllm/.agents/skills/pr-checklist/SKILL.md",
+  "scope": "private-fork draft review requested by maintainer; not upstream submission or production approval",
+  "design_fit": {
+    "status": "needs human review",
+    "points": [
+      "Five feature/fix commits on frozen v0.32; kernels unchanged.",
+      "High complexity: retained KVarN feature touches scheduler, cache ownership, V2 and offload paths.",
+      "Synchronous RAM transfer fences are deliberate correctness tradeoff; async sync-check not claimed.",
+      "Preserve V1 MTP fallback while targeting V2 for new DFlash functionality."
+    ]
+  },
+  "testing": {
+    "status": "partial; blockers explicit",
+    "passed": [
+      "source regressions and paired native checks",
+      "608 packaging tests",
+      "V2 no-spec smoke,RAM restore,short+4K/16K benchmarks",
+      "native draft attention CPU reference and replay",
+      "109 proposal guards;108 native target verification cases",
+      "review-head exact Brutus package build; all64 changed runtime files match installed source"
+    ],
+    "pending": [
+      "DFlash serving/acceptance/performance",
+      "full profile and exact context",
+      "long-idle reproduction"
+    ],
+    "ci": "B70/model qualification runs locally; no upstream CI claim"
+  },
+  "code_quality": {
+    "status": "focused checks passed",
+    "limitations": [
+      "full mypy/pre-commit suite not run; native pinned Ruff and applicable local hooks substituted"
+    ]
+  },
+  "pr_contents": {
+    "template": "upstream Overview/Claims/Validation/Details/checklist retained",
+    "disclosure": "AI-assisted by Codex; human review pending",
+    "duplicate_check": "No matching current fork PR. Older paused PRs retained and linked. Open upstream KVarN46812 identified; this is local integration review on released0.32, not duplicate upstream submission."
+  },
+  "publication": "Draft/WIP; do not merge,publish stable refs,or repin host before qualification and requested review"
+}

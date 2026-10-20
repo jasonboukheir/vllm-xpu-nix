@@ -1,0 +1,218 @@
+[
+  {
+    "kv_lengths": [
+      104
+    ],
+    "query_length": 8,
+    "batch": 1,
+    "query_heads": 32,
+    "kv_heads": 8,
+    "head_dim": 128,
+    "page_size": 64,
+    "window": [
+      2047,
+      2047
+    ],
+    "causal": false,
+    "reference": "CPU FP32",
+    "max_abs_error": 0.0020965933799743652,
+    "bitwise_replays": 8,
+    "native_only": true,
+    "passed": true
+  },
+  {
+    "kv_lengths": [
+      2048
+    ],
+    "query_length": 8,
+    "batch": 1,
+    "query_heads": 32,
+    "kv_heads": 8,
+    "head_dim": 128,
+    "page_size": 64,
+    "window": [
+      2047,
+      2047
+    ],
+    "causal": false,
+    "reference": "CPU FP32",
+    "max_abs_error": 0.0005474090576171875,
+    "bitwise_replays": 8,
+    "native_only": true,
+    "passed": true
+  },
+  {
+    "kv_lengths": [
+      2113
+    ],
+    "query_length": 8,
+    "batch": 1,
+    "query_heads": 32,
+    "kv_heads": 8,
+    "head_dim": 128,
+    "page_size": 64,
+    "window": [
+      2047,
+      2047
+    ],
+    "causal": false,
+    "reference": "CPU FP32",
+    "max_abs_error": 0.000514984130859375,
+    "bitwise_replays": 8,
+    "native_only": true,
+    "passed": true
+  },
+  {
+    "kv_lengths": [
+      4097
+    ],
+    "query_length": 8,
+    "batch": 1,
+    "query_heads": 32,
+    "kv_heads": 8,
+    "head_dim": 128,
+    "page_size": 64,
+    "window": [
+      2047,
+      2047
+    ],
+    "causal": false,
+    "reference": "CPU FP32",
+    "max_abs_error": 0.0005453675985336304,
+    "bitwise_replays": 8,
+    "native_only": true,
+    "passed": true
+  },
+  {
+    "kv_lengths": [
+      104,
+      2048,
+      2113,
+      4097
+    ],
+    "query_length": 8,
+    "batch": 4,
+    "query_heads": 32,
+    "kv_heads": 8,
+    "head_dim": 128,
+    "page_size": 64,
+    "window": [
+      2047,
+      2047
+    ],
+    "causal": false,
+    "reference": "CPU FP32",
+    "max_abs_error": 0.002443552017211914,
+    "bitwise_replays": 8,
+    "native_only": true,
+    "passed": true
+  },
+  {
+    "kv_lengths": [
+      104
+    ],
+    "query_length": 8,
+    "batch": 1,
+    "query_heads": 32,
+    "kv_heads": 8,
+    "head_dim": 128,
+    "page_size": 128,
+    "window": [
+      2047,
+      2047
+    ],
+    "causal": false,
+    "reference": "CPU FP32",
+    "max_abs_error": 0.0022957324981689453,
+    "bitwise_replays": 8,
+    "native_only": true,
+    "passed": true
+  },
+  {
+    "kv_lengths": [
+      2048
+    ],
+    "query_length": 8,
+    "batch": 1,
+    "query_heads": 32,
+    "kv_heads": 8,
+    "head_dim": 128,
+    "page_size": 128,
+    "window": [
+      2047,
+      2047
+    ],
+    "causal": false,
+    "reference": "CPU FP32",
+    "max_abs_error": 0.00046443939208984375,
+    "bitwise_replays": 8,
+    "native_only": true,
+    "passed": true
+  },
+  {
+    "kv_lengths": [
+      2113
+    ],
+    "query_length": 8,
+    "batch": 1,
+    "query_heads": 32,
+    "kv_heads": 8,
+    "head_dim": 128,
+    "page_size": 128,
+    "window": [
+      2047,
+      2047
+    ],
+    "causal": false,
+    "reference": "CPU FP32",
+    "max_abs_error": 0.000469207763671875,
+    "bitwise_replays": 8,
+    "native_only": true,
+    "passed": true
+  },
+  {
+    "kv_lengths": [
+      4097
+    ],
+    "query_length": 8,
+    "batch": 1,
+    "query_heads": 32,
+    "kv_heads": 8,
+    "head_dim": 128,
+    "page_size": 128,
+    "window": [
+      2047,
+      2047
+    ],
+    "causal": false,
+    "reference": "CPU FP32",
+    "max_abs_error": 0.0005167573690414429,
+    "bitwise_replays": 8,
+    "native_only": true,
+    "passed": true
+  },
+  {
+    "kv_lengths": [
+      104,
+      2048,
+      2113,
+      4097
+    ],
+    "query_length": 8,
+    "batch": 4,
+    "query_heads": 32,
+    "kv_heads": 8,
+    "head_dim": 128,
+    "page_size": 128,
+    "window": [
+      2047,
+      2047
+    ],
+    "causal": false,
+    "reference": "CPU FP32",
+    "max_abs_error": 0.002387702465057373,
+    "bitwise_replays": 8,
+    "native_only": true,
+    "passed": true
+  }
+]

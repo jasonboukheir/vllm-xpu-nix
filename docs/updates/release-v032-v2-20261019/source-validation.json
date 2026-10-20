@@ -1,0 +1,73 @@
+{
+  "source_tip": "06edb20b68bcd36956499f04dc2ca67d0727d93e",
+  "kernel_tip": "dbb684f4c9b38a8b3bbf52bda0c490ee47049221",
+  "runtime": "candidate Python source, retained installed native stack, rebuilt transformers5.16.1/tokenizers0.23.2/xgrammar0.2.8",
+  "scope": "pre-publication source and native ABI checks; not complete rebuilt-package serving qualification",
+  "checks": [
+    {
+      "log": "core-tests-03.log",
+      "sha256": "457d4e590ce38085598220326e37149b7b21250132cdacfb3254ad94591de808",
+      "result": "307 passed; 3 stale fixture failures resolved in kvarn-tests-02"
+    },
+    {
+      "log": "kvarn-tests-02.log",
+      "sha256": "12ad194565fc3e25f4bc2064aa28dd57b53a7789ccf5b38fc5e224936bc48571",
+      "result": "382 passed; 2 stale fixture failures resolved in v2-integration-tests-01"
+    },
+    {
+      "log": "v2-integration-tests-01.log",
+      "sha256": "31bce2ada9ec7d4475a25ce25b22c3e5fbc8404ea63045aed8123ce108757263",
+      "result": "82 passed"
+    },
+    {
+      "log": "draft-offload-tests-01.log",
+      "sha256": "e55a88f9b170bf497702b5f595804b35d3a0779a227631e2034ed6fe1d090120",
+      "result": "78 passed"
+    },
+    {
+      "log": "native-verify-01.log",
+      "sha256": "17112bcc18a87a0e55654d2efb6bc37e1b5e184c6abbbde39fa1fd9510835201",
+      "result": "72 passed, 24 deselected"
+    },
+    {
+      "log": "gdn-dflash-01.log",
+      "sha256": "d04b2e6a8f9a43ce76811513bcfe3a7493a7ea742c738e0ecd09023489d05a2f",
+      "result": "24 passed, 3 deselected"
+    },
+    {
+      "log": "offload-lifecycle-tests-01.log",
+      "sha256": "61b69f172651bda6e5a504a98a5cc451cebc1b9be5fd1b383325d8b5ebce377d",
+      "result": "651 passed, 14 skipped"
+    },
+    {
+      "log": "correctness-port-tests-01.log",
+      "sha256": "1b6a706a178ee06db7024efb5329f143412195c38f7320ef86c564e39430fdaf",
+      "result": "176 passed"
+    }
+  ],
+  "lint": "Pinned Ruff0.14.0 lint/format on105 Python files; six applicable local hooks passed; pip Ruff cannot execute on NixOS, native Nix tools substituted; full mypy/precommit suite not run",
+  "remaining": [
+    "loaded DFlash quantization and output quality",
+    "full profile cache/vision/concurrency/context qualification",
+    "matched performance measurements",
+    "coordinated stable refs and host pin",
+    "natural long-idle latency investigation"
+  ],
+  "review_source_tip": "ec1477a0386deba74512cc4068288040a57d6fe3",
+  "review_delta": "Runtime change from tested06edb20 is the proposal-count guard; new fixture covers four requests with independent physical page tables.",
+  "review_checks": [
+    {
+      "log": "proposal-guard-tests.log",
+      "result": "109 passed",
+      "sha256": "466c71c765f19c1a677726e152b3d2e5eaf2a61d46638d74076e873ce96342d1"
+    },
+    {
+      "log": "native-query4-tests-02.log",
+      "result": "108 passed,36 deselected",
+      "sha256": "382a0ff6c206d77284b6bfefff7c3cd881484cfbc7cc632e16e81ae8d199279b"
+    }
+  ],
+  "fixture_repair": "Initial four-request test extension retained a two-row page-table fixture and aborted; generalized physical pages, resident slots and metadata to actual batch size; all108 bounded-history native cases passed afterward.",
+  "review_lint": "Pinned Ruff0.14.0 lint/format and git diff --check pass for changed files; existing hook limitations remain.",
+  "subsequent_package_build": "Both source_tip and review_source_tip built successfully; see packaging-validation.json. Serving evidence remains separately scoped."
+}

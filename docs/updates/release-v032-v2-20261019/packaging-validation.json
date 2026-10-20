@@ -1,0 +1,31 @@
+{
+  "status": "passed",
+  "candidate_package": "/nix/store/gnnq4wygxv7k0mqqb71v0giz6cqcnm4b-python3.12-vllm-xpu-0.32.0+unstable.2026.10.20.g06edb20",
+  "realized_derivation": "/nix/store/rswv5n3v6y6yx4ib64c1faczzinfqskm-python3.12-vllm-xpu-0.32.0+unstable.2026.10.20.g06edb20.drv",
+  "checks": [
+    "formatting",
+    "unit-tests",
+    "kernel-build-parallelism",
+    "kernel-glue-cache-identity",
+    "kernel-lib-cache-identity"
+  ],
+  "outputs": [
+    "/nix/store/8sx9nxdp157z07dwxydzha29rn38pm8z-vllm-xpu-nix-unit-tests",
+    "/nix/store/jcfvrqivqv5ii05df6wzv6c36hrp9gzq-kernel-build-parallelism",
+    "/nix/store/c1wi7vb2rp9i5zhq31vfajn6r6qslx3k-kernel-glue-cache-identity.json",
+    "/nix/store/binj41m90g7j1kqkgxikv7cyg4wlbwd4-kernel-lib-cache-identity.json"
+  ],
+  "unit_test_files": 45,
+  "unit_tests_passed": 608,
+  "log_sha256": "bc3ce115f925d81ccac5741a98751b02356f0d1c1abec1509599d9047aa8e9fc",
+  "scope": "Nix packaging checks; foreground serving qualification recorded separately",
+  "review_head_build": {
+    "status": "passed",
+    "source_commit": "ec1477a0386deba74512cc4068288040a57d6fe3",
+    "package": "/nix/store/r1f7rr667yjfmaqpy5hm5y6rdzvm5wkl-python3.12-vllm-xpu-0.32.0+unstable.2026.10.20.gec1477a",
+    "realized_derivation": "/nix/store/yifibj553vka5njxir0ml7kxzii0iv75-python3.12-vllm-xpu-0.32.0+unstable.2026.10.20.gec1477a.drv",
+    "installed_source_equivalence": "review-installed-source-equivalence.json",
+    "runtime_files_identical": 64,
+    "serving_qualification": "pending; prior serving evidence is explicitly scoped to 06edb20"
+  }
+}

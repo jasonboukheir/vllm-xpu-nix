@@ -1,0 +1,235 @@
+{
+  "run_id": "release-v032-v2-20261019",
+  "prepared_utc": "2026-10-20T03:42:52.659367+00:00",
+  "candidate_release": "xpu-v1.13.0",
+  "scope": "vLLM 0.32, Model Runner V2, KVarN and RAM prefix caching, DFlash2 on Qwen3.8; full qualification before stable publication and host repin",
+  "baseline_release": "xpu-v1.12.2",
+  "maintenance": {
+    "user_stopped_chat": true,
+    "authorized": true,
+    "observed_chat": "inactive/dead",
+    "observed_embedding": "inactive/dead",
+    "restore_policy": "Preserve user-stopped state; operator performs final system rebuild"
+  },
+  "repos": {
+    "vllm": {
+      "path": "/home/jasonbk/Projects/vllm",
+      "old_base": "db9527a46873454610df6dbedf79a36d6bf1a7f6",
+      "old_tip": "dcba4007ef6af8ba143d2794c194c36b58397339",
+      "expected_remote": "dcba4007ef6af8ba143d2794c194c36b58397339",
+      "target": "5df63a7203cdb9328d824a27b682e77c7b9928be",
+      "target_label": "v0.32.0",
+      "commits": [
+        {
+          "id": "v01",
+          "sha": "3ecc9a1d4dcf6ce530bc61a45af9bdabf7e450d6",
+          "parent": "db9527a46873454610df6dbedf79a36d6bf1a7f6",
+          "subject": "fix(xpu): strip graph padding from GDN index tensors",
+          "patch_id": "bf72801d5ce616733d6a1102ec4605bcc310276e",
+          "audit_file": "audits/v01-3ecc9a1d4dcf.md",
+          "audit_status": "reconciled",
+          "disposition": "KEEP"
+        },
+        {
+          "id": "v02",
+          "sha": "490bf7e42287a65f1d7dfa83ab8100e36d8f006b",
+          "parent": "3ecc9a1d4dcf6ce530bc61a45af9bdabf7e450d6",
+          "subject": "fix(xpu): stabilize Qwen GDN prefill and mixed scheduling",
+          "patch_id": "0bbcec3e7a743f3225630ec71c38af4f3e72ea98",
+          "audit_file": "audits/v02-490bf7e42287.md",
+          "audit_status": "reconciled",
+          "disposition": "ADAPT"
+        },
+        {
+          "id": "v03",
+          "sha": "41ab2f188262a62e747f126f319f57d56dea9cc4",
+          "parent": "490bf7e42287a65f1d7dfa83ab8100e36d8f006b",
+          "subject": "fix(xpu): preserve functional batch-invariant residual RMSNorm",
+          "patch_id": "b19479b47e1d751c7ca2d336ab440780db34855b",
+          "audit_file": "audits/v03-41ab2f188262.md",
+          "audit_status": "reconciled",
+          "disposition": "KEEP"
+        },
+        {
+          "id": "v04",
+          "sha": "1e1d1471b77014e3a54c7da59b3cf42487ceeaf4",
+          "parent": "41ab2f188262a62e747f126f319f57d56dea9cc4",
+          "subject": "fix(xpu): accept explicit unquantized KV cache dtypes",
+          "patch_id": "6f704ef6d098637584d969bf3fe2b27a26615957",
+          "audit_file": "audits/v04-1e1d1471b770.md",
+          "audit_status": "reconciled",
+          "disposition": "KEEP"
+        },
+        {
+          "id": "v05",
+          "sha": "ef92dc5600af64103c01f97e3300b81c3a1083ee",
+          "parent": "1e1d1471b77014e3a54c7da59b3cf42487ceeaf4",
+          "subject": "feat(xpu): add KVarN cache with compact K4V2 and bundled MTP",
+          "patch_id": "290100fa6d31ee21d5135de299d6c5fdfa1906d1",
+          "audit_file": "audits/v05-ef92dc5600af.md",
+          "audit_status": "reconciled",
+          "disposition": "ADAPT"
+        },
+        {
+          "id": "v06",
+          "sha": "81dc387cf9a80e88468b7f77f7df8dfb71939921",
+          "parent": "ef92dc5600af64103c01f97e3300b81c3a1083ee",
+          "subject": "fix(xpu): enable retained Qwen K4V2 prefix caching",
+          "patch_id": "d1c35a4d162f503115014338d4ba9e6ff8081f53",
+          "audit_file": "audits/v06-81dc387cf9a8.md",
+          "audit_status": "reconciled",
+          "disposition": "ADAPT"
+        },
+        {
+          "id": "v07",
+          "sha": "a76fbb1ce06d50159978786f70daf44c27847ddd",
+          "parent": "81dc387cf9a80e88468b7f77f7df8dfb71939921",
+          "subject": "Cache idle KVarN hybrid prefixes in bounded host memory",
+          "patch_id": "9644dd93acbbfb190393ddeca564abe94b08422f",
+          "audit_file": "audits/v07-a76fbb1ce06d.md",
+          "audit_status": "reconciled",
+          "disposition": "ADAPT"
+        },
+        {
+          "id": "v08",
+          "sha": "dcba4007ef6af8ba143d2794c194c36b58397339",
+          "parent": "a76fbb1ce06d50159978786f70daf44c27847ddd",
+          "subject": "Keep offloaded MTP prefix pages complete at the context limit",
+          "patch_id": "5fc6315431d387490d0bb735c07334c55b1e4d51",
+          "audit_file": "audits/v08-dcba4007ef6a.md",
+          "audit_status": "reconciled",
+          "disposition": "ADAPT"
+        }
+      ]
+    },
+    "vllm-xpu-kernels": {
+      "path": "/home/jasonbk/Projects/vllm-xpu-kernels",
+      "old_base": "ddf336d86e3c8602888572a3502f951abd51df12",
+      "old_tip": "dbb684f4c9b38a8b3bbf52bda0c490ee47049221",
+      "expected_remote": "dbb684f4c9b38a8b3bbf52bda0c490ee47049221",
+      "target": "ddf336d86e3c8602888572a3502f951abd51df12",
+      "target_label": "release/0.1.15.4 (retained frozen source)",
+      "commits": [
+        {
+          "id": "k01",
+          "sha": "dcbbeac2f2453948471569de43a33ded09fae0f8",
+          "parent": "ddf336d86e3c8602888572a3502f951abd51df12",
+          "subject": "fix(onednn): make W4A16 matmul deterministic",
+          "patch_id": "7ea50ac3b0ceb331108743cc12894af0bd2fce23",
+          "audit_file": "audits/k01-dcbbeac2f245.md",
+          "audit_status": "reconciled",
+          "disposition": "KEEP"
+        },
+        {
+          "id": "k02",
+          "sha": "7a1af6693963e91b3e63c119501ce5ea8fbfa955",
+          "parent": "dcbbeac2f2453948471569de43a33ded09fae0f8",
+          "subject": "fix(gdn): disable unstable tiled causal-convolution prefill",
+          "patch_id": "f7fd14e5d76964b1426c46ae21f46913f227194d",
+          "audit_file": "audits/k02-7a1af6693963.md",
+          "audit_status": "reconciled",
+          "disposition": "KEEP"
+        },
+        {
+          "id": "k03",
+          "sha": "2322b830903a4a0d0d8e4c113b7e2acc5c7967cb",
+          "parent": "7a1af6693963e91b3e63c119501ce5ea8fbfa955",
+          "subject": "fix(gdn): order fresh-state prefill output reads",
+          "patch_id": "be4c0310f7f161dda8916d4d75bfd15db795f471",
+          "audit_file": "audits/k03-2322b830903a.md",
+          "audit_status": "reconciled",
+          "disposition": "KEEP"
+        },
+        {
+          "id": "k04",
+          "sha": "7bc80d1569bedeb8f4adceb43524fbc1b4d07516",
+          "parent": "2322b830903a4a0d0d8e4c113b7e2acc5c7967cb",
+          "subject": "fix(gdn): preserve cached decode arithmetic in mixed batches",
+          "patch_id": "21d478c5a5c87f2f04d87acf4cb3b4a0e21e8672",
+          "audit_file": "audits/k04-7bc80d1569be.md",
+          "audit_status": "reconciled",
+          "disposition": "KEEP"
+        },
+        {
+          "id": "k05",
+          "sha": "c75a699930db98a3c77e4d6498892734e624b3a5",
+          "parent": "7bc80d1569bedeb8f4adceb43524fbc1b4d07516",
+          "subject": "test(gdn): preserve shortened-query rollback and storage guards",
+          "patch_id": "8ff0d6efd5b31d2320987b2995329a9841856343",
+          "audit_file": "audits/k05-c75a699930db.md",
+          "audit_status": "reconciled",
+          "disposition": "KEEP"
+        },
+        {
+          "id": "k06",
+          "sha": "2e7f76c799e3c8b68b4ae93d8c3e8eb65a525454",
+          "parent": "c75a699930db98a3c77e4d6498892734e624b3a5",
+          "subject": "test(attn): cover native FlashAttention replay determinism",
+          "patch_id": "43a970403358d0f0303a73a99af6367d7a0e5012",
+          "audit_file": "audits/k06-2e7f76c799e3.md",
+          "audit_status": "reconciled",
+          "disposition": "KEEP"
+        },
+        {
+          "id": "k07",
+          "sha": "dbb684f4c9b38a8b3bbf52bda0c490ee47049221",
+          "parent": "2e7f76c799e3c8b68b4ae93d8c3e8eb65a525454",
+          "subject": "feat(attn): add native KVarN cache and compact K4V2 attention",
+          "patch_id": "4ff4c3eb11770280350fa8f4739b6edee6cacff4",
+          "audit_file": "audits/k07-dbb684f4c9b3.md",
+          "audit_status": "reconciled",
+          "disposition": "KEEP"
+        }
+      ]
+    }
+  },
+  "excluded_kernel_release": {
+    "tag": "v0.1.16.1",
+    "commit": "8b95ea665de4c737f99d5aa9b76d9f23c9a0d10f",
+    "reason": "vLLM v0.32.0 requirements/xpu.txt pins vllm_xpu_kernels==0.1.15.4; retain existing exact released-wheel source base"
+  },
+  "host_unrelated_staged_paths": [
+    "hosts/brutus/graphics.nix",
+    "hosts/brutus/nixarr/default.nix"
+  ],
+  "additional_work": {
+    "idle_first_request_latency": {
+      "reported": "10\u201315 seconds for first small-prompt request after roughly a day idle, including Open WebUI",
+      "status": "open; natural overnight case not reproduced",
+      "requirement": "Locate delay using direct API versus Bifrost/Open WebUI timing; distinguish queue/prefill, restart, JIT, paging, device wake-up and frontend delay. Preserve privacy of raw traces.",
+      "evidence": "baseline-idle-probes.json",
+      "observations": [
+        "Same service process previously remained up across long idle; no observed daily JIT cache expiration or reload",
+        "Direct baseline first content 0.354 seconds after149 seconds idle; 0.183 seconds after514 seconds idle",
+        "No major-fault/swap evidence in those short probes; Open WebUI/Bifrost path still requires matched natural-idle measurement"
+      ],
+      "follow_up": "Record same-process direct API and frontend first-content latency after natural long idle, with queue/prefill metrics, process start time and cache/page-fault activity; do not substitute restart/cache-clear or add a masking keepalive"
+    }
+  },
+  "candidate_source_tips": {
+    "vllm": "ec1477a0386deba74512cc4068288040a57d6fe3",
+    "vllm-xpu-kernels": "dbb684f4c9b38a8b3bbf52bda0c490ee47049221"
+  },
+  "stage": "user-requested draft PR review; source review branch published, packaging review branch prepared; DFlash capacity/performance qualification incomplete; no stable refs or host pin changed",
+  "published_integration_tips": {
+    "vllm": "06edb20b68bcd36956499f04dc2ca67d0727d93e",
+    "vllm-xpu-kernels": "dbb684f4c9b38a8b3bbf52bda0c490ee47049221"
+  },
+  "review_branches": {
+    "vllm": {
+      "head": "candidate/xpu-v1.13.0",
+      "base": "review/upstream-v0.32.0",
+      "base_commit": "5df63a7203cdb9328d824a27b682e77c7b9928be",
+      "pull_request": "https://git.sunnycareboo.com/jasonbk/vllm/pulls/3"
+    },
+    "packaging": {
+      "head": "candidate/xpu-v1.13.0",
+      "base": "main"
+    }
+  },
+  "qualification_recovery_ref": {
+    "ref": "refs/heads/backup/main-pre-qualification-20261020T0453",
+    "commit": "06edb20b68bcd36956499f04dc2ca67d0727d93e",
+    "remote_verified": true
+  }
+}

@@ -1,0 +1,326 @@
+{
+  "source_commit": "06edb20b68bcd36956499f04dc2ca67d0727d93e",
+  "runtime_files": [
+    {
+      "file": "vllm/_custom_ops.py",
+      "sha256": "753e4aad53babe4597d0afa7f563e5320436bd412d937e8b36ecf23d6dc323c9",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/_xpu_ops.py",
+      "sha256": "d8fbd5a029b744568f3d56a1cb9af27fefad6bb9a4895aaf8a3238e8723f23b3",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/config/cache.py",
+      "sha256": "38de0de36642c75a3e9e3ef46200ab348790b3019371865dd910a63c71fdb729",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/config/compilation.py",
+      "sha256": "aba5487d69d26cb6acc56acbe840d9722736a3c53e255367b0aeca4a86daa134",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/config/vllm.py",
+      "sha256": "0112126cb4250c072ae22639a2ef1aaaee37433293afb022fdb81b398ceac185",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/canonical_mapping.py",
+      "sha256": "94d63aa9d87f5692a6ed49df08c05bbfb9d5b642ca6e7129e25131eb494a03e2",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/config.py",
+      "sha256": "a004177395725084f58dc685118414a90b8fa7f58defa0743be1a54bebfc45ab",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py",
+      "sha256": "817825d81b443b9da7f05bc68589a4545d8a24b4cd67e09471cf16811ab469bf",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/worker.py",
+      "sha256": "6a9d88784aad4b35997e1777dda67665d3af78eb266293d066145ce1563062ab",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/distributed/kv_transfer/kv_connector/v1/offloading_connector.py",
+      "sha256": "dd8ab9474403df209da209faa3eb0adfb2641b98dbdeed1592980a6cfbaf4567",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/distributed/kv_transfer/kv_connector/v1/ssm_conv_transfer_utils.py",
+      "sha256": "b6b19cde8f983f5ed13a1bf6b3c65180ebd935e75cf8449f7b1de6eee9004698",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/forward_context.py",
+      "sha256": "f1c5dfb588e2b140b0e59b4c6973649cb00a947be67fc580ae3047e40ff7e25b",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/model_executor/determinism/batch_invariant.py",
+      "sha256": "2a091c884259f04c8e08e5d6ad37b4d166e9a5e97c7b4aa489afd977ed462d8e",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/model_executor/determinism/request_stable_linear.py",
+      "sha256": "48294624da872e92465835201257f2b25a2b3aef9561d029d22d96c19dda439c",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/model_executor/layers/attention/attention.py",
+      "sha256": "a9ff3322638f768bf59ccb0ba4021def398b378162a21b6517b1c5a1dedd6e8c",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/model_executor/layers/attention/static_sink_attention.py",
+      "sha256": "39649423e68834759d2c15d1d4c90204bee52f02b857171fd3c948a4475ad717",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/model_executor/layers/layernorm.py",
+      "sha256": "d7d3ba7405fc68d54fafd678f187cc78a793b5f2080a2705c3e02cfba706297e",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/model_executor/layers/linear.py",
+      "sha256": "912a906fc4919da2fe807d45e49510b272dd707433393a3d9eb51acb7a0da23b",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/model_executor/layers/logits_processor.py",
+      "sha256": "8cc7d11104247e4e3d33bb57d9f061949ff9d738432fc72c3dad71179ce3cde2",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/model_executor/layers/mamba/gdn/qwen_gdn_linear_attn.py",
+      "sha256": "f53395a309e10c170f8dfba7b65440b142884c97cc9ed8bce722fa7ec51a6768",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/model_executor/layers/quantization/kvarn/__init__.py",
+      "sha256": "bc03141c4f213f6310d2340f65ddba418caf9392a540fd639885f5711066aa47",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/model_executor/layers/quantization/kvarn/config.py",
+      "sha256": "6d6c910ff6973354df8fdf0df7df9da7ccc4be9857b2436477cd7c9a4d2fd570",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/model_executor/layers/quantization/kvarn/sinkhorn.py",
+      "sha256": "a2aa1e35d8ef2618f87358c419ee8081ecb678641a0f8532add3b30b1360ea64",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/model_executor/models/config.py",
+      "sha256": "d84e56f831730965b0c9241d73b9f2ebe33287074c4fea836648f266987444ef",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/model_executor/models/qwen3_dflash.py",
+      "sha256": "9befa1e5bfb18f66b043028567ab83707a693c2d7ce07e6aedd94edc3c4c3571",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/platforms/cuda.py",
+      "sha256": "e6e1b832569d139fd7483ef504d69c81fa464ec3e1a85389a0624ba1e7593041",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/platforms/interface.py",
+      "sha256": "9c2387925e637c132f48002c7c1a145ed3312ec4091ec7e25b3f076fcc20a112",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/platforms/xpu.py",
+      "sha256": "94b2aa88e6b9249d2526b32ff1a32a78092d1a72ad89a22a3f4d42592e2c52c4",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/utils/torch_utils.py",
+      "sha256": "0019b3998e056f2b5962d560785c1fbcaa92e9a22d4c759ace9423f939e8569a",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/v1/attention/backend.py",
+      "sha256": "0d9f08a6c24eb31382386eac572f9844f3699b91c5bc269d1ce58c21e7327e3e",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/v1/attention/backends/gdn_attn.py",
+      "sha256": "190c80277f78d794ee3c7f59ca81ba38fc27f1cb6d20275102ce62e313745538",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/v1/attention/backends/kvarn_attn.py",
+      "sha256": "dfac138dbdf4412fccde0859862418061d8041e6348f91c604ffb1dab11303ba",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/v1/attention/backends/registry.py",
+      "sha256": "63cbd9555664fd7077f3d9a757e45740469d7aa9449e157b63d7e81b61186cf2",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/v1/attention/backends/utils.py",
+      "sha256": "1df5c87c9d8d1b7fe4376e6beb7fbbb7490adcce393f082983220fb2ca79fc13",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/v1/attention/ops/kvarn_decode.py",
+      "sha256": "f376f9850fc5ac5de5077c582b038fc540685e2297bd83387ff5961243057a25",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/v1/attention/ops/kvarn_store.py",
+      "sha256": "1a143520f3733535ec9e6882a11bcaf2f07f2e0fae2803cb31512e5502aff980",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/v1/attention/ops/triton_kvarn_decode.py",
+      "sha256": "e910c5fec94c4d7985afcca0a2e023cb2e5de7953beff4cbc1a96bb280f91b3b",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/v1/attention/ops/triton_kvarn_sinkhorn.py",
+      "sha256": "a1d0215e375ebec8bee1f80b8f53cc5551297b75f67543e23bfb7187ef9a570a",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/v1/core/block_pool.py",
+      "sha256": "33a15b18a0b14f8f79c38b7bc458cbafe840c11d5f665fed82b06cfbc43100c8",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/v1/core/kv_cache_coordinator.py",
+      "sha256": "839ac0ea5fbffd2c9d29058b16be114513f8281d58173387c51e9eb32731092c",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/v1/core/kv_cache_manager.py",
+      "sha256": "e143bde885a1fd3bb5096947ac21b9f82fcc748b09e935c5951d3a34de2fda5f",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/v1/core/kv_cache_utils.py",
+      "sha256": "ba1c47fa2ba86802072a480b5b54ed132f972cbcd71d0976b12c1fa7363ea825",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/v1/core/sched/output.py",
+      "sha256": "ea42485134af123475119a3e30fe862b1f9d5d35cf12f92e8a38a8a0f8b4c1cd",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/v1/core/sched/scheduler.py",
+      "sha256": "a9c14ad09a1eb1667fb230279f6be9d46af919b68d1e76ca88b1ec2dfa4dfcea",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/v1/core/single_type_kv_cache_manager.py",
+      "sha256": "ba67d32484afdd4a87fef91b2eaf2272802b5dbffdbfcfb2c0e0028c02c4d304",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/v1/kv_cache_interface.py",
+      "sha256": "85da445a39b3a5209df2c0399ecc4db2cc080cbc00767f9dcf92f62fe958cf02",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/v1/kv_offload/config.py",
+      "sha256": "0c72025797371f3deb31c32e5153d63e4100d5320f03242a27579174b511bfa3",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/v1/kv_offload/cpu/byte_pool.py",
+      "sha256": "87b4495afaf7092b0d10342f7b0b951d5bc2d573b10558a12fa810d5aa7db24a",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/v1/kv_offload/cpu/independent.py",
+      "sha256": "5e5fba937e195c3d0216792e33fd0d41f87119b09bc1e3e5cac869112f9197da",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/v1/kv_offload/factory.py",
+      "sha256": "f0728253e6c2180b84a5074b0f76e52619ccb9656aee20e8035896398adc01af",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/v1/spec_decode/dflash.py",
+      "sha256": "5f5bfa45acaf381b97c5ed14d760f5755dd08b3f9179f50beaf9ec9c583e441c",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/v1/spec_decode/gemma4.py",
+      "sha256": "df27e131aecfe357b4e001143e6e7a58497a137702ebbae1b115de172ad4a7c9",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/v1/spec_decode/llm_base_proposer.py",
+      "sha256": "c2ba39c65b8dd059bee131b1bb34214a69df42309888bccca1edef465b2edead",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/v1/spec_decode/step3p5.py",
+      "sha256": "7951801e87adff7cc430acedabcaa825ebc38a864b2800545624d3695fa0e6c9",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/v1/worker/cpu_model_runner.py",
+      "sha256": "b1ed91540873d402464835c7c8ec84c156d6f977078617679ba4591224ccff97",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/v1/worker/gpu/kv_connector.py",
+      "sha256": "3c7ea6daae1e0c6e6e568501ed2101f3d8f2a09a3099fc8d85371a8f7ff46e98",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/v1/worker/gpu/model_runner.py",
+      "sha256": "a10290c97dda7593ca33b96276602b2b9659e1a6de533693e3c3f75263bb27ba",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/v1/worker/gpu/spec_decode/dflash/speculator.py",
+      "sha256": "877d7d266b794cc809a80a50c71c0e41fd3576858effdadbd7746af98cd85016",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/v1/worker/gpu/warmup.py",
+      "sha256": "8b0b1dd32d3a74bb5b6e84640b916f57ee48920234e232f8cd104343ecedf857",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/v1/worker/gpu_model_runner.py",
+      "sha256": "29255b2180c05f1f32616542c0b38281c4d52811643c74fbd414fede7a1c2d52",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/v1/worker/gpu_worker.py",
+      "sha256": "57ec1aceb8fff9e8066391361360a1f5a357c37984b0a7d85110d2498c88cef8",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/v1/worker/ubatch_utils.py",
+      "sha256": "7afa126c239e0b52c0ba69669bf95f78438ad391d51c9e2bba4e857ad333ab26",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/v1/worker/utils.py",
+      "sha256": "7874d7e324bed120c86e9ee93d7201d022eac2bcedf0e92861c9790a933c19a9",
+      "installed_identical": true
+    },
+    {
+      "file": "vllm/v1/worker/xpu_worker.py",
+      "sha256": "8fc6f11b76a0874f13431bc789bb9e5ada84e63a2192e44b96b8f44e19497cbd",
+      "installed_identical": true
+    }
+  ],
+  "all_identical": true
+}

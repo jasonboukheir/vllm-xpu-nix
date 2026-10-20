@@ -1,0 +1,28 @@
+{
+  "result": "passed",
+  "checks": [
+    "external draft pinned root retained",
+    "local draft not added",
+    "disabled instance excluded"
+  ],
+  "evaluated_roots": [
+    {
+      "repo": "RedHatAI/Qwen3.8-27B-INT4",
+      "revision": "bf08f3dbd9a324e53956920aad378a1f1b6dd24a",
+      "source": "vllm-xpu.chat",
+      "type": "model"
+    },
+    {
+      "repo": "syvai/Qwen3.8-27B-DFlash2-W4A16",
+      "revision": "4d30ec736ffc6b8688dc2ae2b502d9b48bdec279",
+      "source": "vllm-xpu.chat.draft",
+      "type": "model"
+    },
+    {
+      "repo": "example/target",
+      "revision": null,
+      "source": "vllm-xpu.local",
+      "type": "model"
+    }
+  ]
+}

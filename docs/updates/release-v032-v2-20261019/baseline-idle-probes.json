@@ -1,0 +1,218 @@
+[
+  {
+    "started_utc": "2026-10-20T03:57:18.317445+00:00",
+    "idle_since_last_known_request_s": 148.76543545722961,
+    "prior_request": "last baseline benchmark",
+    "process_before": [
+      {
+        "pid": 651863,
+        "start_ticks": 19724858,
+        "minor_faults": 1151503,
+        "major_faults": 5065,
+        "vmrss": "2564380 kB",
+        "vmswap": "0 kB"
+      },
+      {
+        "pid": 652261,
+        "start_ticks": 19727953,
+        "minor_faults": 2556818,
+        "major_faults": 4765561,
+        "vmrss": "4185280 kB",
+        "vmswap": "0 kB"
+      }
+    ],
+    "headers_s": 0.026369994011474773,
+    "first_sse_s": 0.35400978301186115,
+    "first_content_s": 0.3540525230055209,
+    "usage": {
+      "prompt_tokens": 21,
+      "total_tokens": 32,
+      "completion_tokens": 11,
+      "completion_tokens_details": {
+        "reasoning_tokens": 0
+      }
+    },
+    "elapsed_s": 0.7194335749954917,
+    "process_after": [
+      {
+        "pid": 651863,
+        "start_ticks": 19724858,
+        "minor_faults": 1151503,
+        "major_faults": 5065,
+        "vmrss": "2564380 kB",
+        "vmswap": "0 kB"
+      },
+      {
+        "pid": 652261,
+        "start_ticks": 19727953,
+        "minor_faults": 2556827,
+        "major_faults": 4765561,
+        "vmrss": "4185284 kB",
+        "vmswap": "0 kB"
+      }
+    ],
+    "finished_epoch": 1792468639.0378332
+  },
+  {
+    "started_utc": "2026-10-20T03:57:19.038015+00:00",
+    "idle_since_last_known_request_s": 0.0001914501190185547,
+    "prior_request": "same probe",
+    "process_before": [
+      {
+        "pid": 651863,
+        "start_ticks": 19724858,
+        "minor_faults": 1151503,
+        "major_faults": 5065,
+        "vmrss": "2564380 kB",
+        "vmswap": "0 kB"
+      },
+      {
+        "pid": 652261,
+        "start_ticks": 19727953,
+        "minor_faults": 2556827,
+        "major_faults": 4765561,
+        "vmrss": "4185284 kB",
+        "vmswap": "0 kB"
+      }
+    ],
+    "headers_s": 0.0197265479946509,
+    "first_sse_s": 0.2070064790023025,
+    "first_content_s": 0.20704053199733607,
+    "usage": {
+      "prompt_tokens": 21,
+      "total_tokens": 32,
+      "completion_tokens": 11,
+      "completion_tokens_details": {
+        "reasoning_tokens": 0
+      }
+    },
+    "elapsed_s": 0.601624256989453,
+    "process_after": [
+      {
+        "pid": 651863,
+        "start_ticks": 19724858,
+        "minor_faults": 1151503,
+        "major_faults": 5065,
+        "vmrss": "2564380 kB",
+        "vmswap": "0 kB"
+      },
+      {
+        "pid": 652261,
+        "start_ticks": 19727953,
+        "minor_faults": 2556827,
+        "major_faults": 4765561,
+        "vmrss": "4185284 kB",
+        "vmswap": "0 kB"
+      }
+    ],
+    "finished_epoch": 1792468639.640237
+  },
+  {
+    "started_utc": "2026-10-20T04:05:53.882375+00:00",
+    "idle_since_last_known_request_s": 514.242157459259,
+    "prior_request": "same probe",
+    "process_before": [
+      {
+        "pid": 651863,
+        "start_ticks": 19724858,
+        "minor_faults": 1151505,
+        "major_faults": 5069,
+        "vmrss": "2537628 kB",
+        "vmswap": "0 kB"
+      },
+      {
+        "pid": 652261,
+        "start_ticks": 19727953,
+        "minor_faults": 2556909,
+        "major_faults": 4765561,
+        "vmrss": "4093464 kB",
+        "vmswap": "0 kB"
+      }
+    ],
+    "headers_s": 0.0273200309893582,
+    "first_sse_s": 0.18317430099705234,
+    "first_content_s": 0.18321729198214598,
+    "usage": {
+      "prompt_tokens": 21,
+      "total_tokens": 32,
+      "completion_tokens": 11,
+      "completion_tokens_details": {
+        "reasoning_tokens": 0
+      }
+    },
+    "elapsed_s": 0.5311037209758069,
+    "process_after": [
+      {
+        "pid": 651863,
+        "start_ticks": 19724858,
+        "minor_faults": 1151510,
+        "major_faults": 5079,
+        "vmrss": "2537928 kB",
+        "vmswap": "0 kB"
+      },
+      {
+        "pid": 652261,
+        "start_ticks": 19727953,
+        "minor_faults": 2556945,
+        "major_faults": 4765648,
+        "vmrss": "4096668 kB",
+        "vmswap": "0 kB"
+      }
+    ],
+    "finished_epoch": 1792469154.4142249
+  },
+  {
+    "started_utc": "2026-10-20T04:05:54.414503+00:00",
+    "idle_since_last_known_request_s": 0.0002899169921875,
+    "prior_request": "same probe",
+    "process_before": [
+      {
+        "pid": 651863,
+        "start_ticks": 19724858,
+        "minor_faults": 1151510,
+        "major_faults": 5079,
+        "vmrss": "2537928 kB",
+        "vmswap": "0 kB"
+      },
+      {
+        "pid": 652261,
+        "start_ticks": 19727953,
+        "minor_faults": 2556945,
+        "major_faults": 4765648,
+        "vmrss": "4096668 kB",
+        "vmswap": "0 kB"
+      }
+    ],
+    "headers_s": 0.01100279000820592,
+    "first_sse_s": 0.16618918100721203,
+    "first_content_s": 0.16622386599192396,
+    "usage": {
+      "prompt_tokens": 21,
+      "total_tokens": 32,
+      "completion_tokens": 11,
+      "completion_tokens_details": {
+        "reasoning_tokens": 0
+      }
+    },
+    "elapsed_s": 0.49257833100273274,
+    "process_after": [
+      {
+        "pid": 651863,
+        "start_ticks": 19724858,
+        "minor_faults": 1151510,
+        "major_faults": 5079,
+        "vmrss": "2537928 kB",
+        "vmswap": "0 kB"
+      },
+      {
+        "pid": 652261,
+        "start_ticks": 19727953,
+        "minor_faults": 2556946,
+        "major_faults": 4765648,
+        "vmrss": "4096672 kB",
+        "vmswap": "0 kB"
+      }
+    ],
+    "finished_epoch": 1792469154.907645
+  }
+]

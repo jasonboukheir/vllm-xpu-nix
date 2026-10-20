@@ -387,6 +387,10 @@
           };
 
           checks = {
+            hf-cache-draft-roots = import ./nix/tests/hf-cache-draft-roots.nix {
+              inherit pkgs nixpkgs;
+            };
+
             kernel-build-parallelism = import ./nix/tests/kernel-build-parallelism.nix {
               inherit pkgs;
               library = vllm-xpu-kernels-unstable.kernelLibraries.attn-kernels-xe-2;

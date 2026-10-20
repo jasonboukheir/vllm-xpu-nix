@@ -18,29 +18,36 @@ pkgs.python312Packages.overrideScope (
     torchvision = torchvision-xpu;
 
     # vLLM 0.32 requires these versions ahead of the pinned nixpkgs set.
-    transformers = pyPrev.transformers.overridePythonAttrs (oldAttrs: rec {
-      version = "5.16.1";
-      src = pkgs.fetchPypi {
-        pname = "transformers";
-        inherit version;
-        hash = "sha256-F7DqxybdxV6ErFiUYGPgxtN/0ADEVrWB8FDqD06CKGk=";
-      };
-      doCheck = false;
-    });
+    transformers =
+      assert pkgs.lib.assertMsg (pkgs.lib.versionOlder pyPrev.transformers.version "5.16.1")
+        "nixpkgs transformers has caught up; review the vLLM 0.32 override";
+      pyPrev.transformers.overridePythonAttrs (oldAttrs: rec {
+        version = "5.16.1";
+        src = pkgs.fetchPypi {
+          pname = "transformers";
+          inherit version;
+          hash = "sha256-F7DqxybdxV6ErFiUYGPgxtN/0ADEVrWB8FDqD06CKGk=";
+        };
+        doCheck = false;
+      });
 
-    tokenizers = pyFinal.buildPythonPackage {
-      pname = "tokenizers";
-      version = "0.23.2";
-      format = "wheel";
-      src = pkgs.fetchurl {
-        url = "https://files.pythonhosted.org/packages/2c/ca/ca6b93c7820df123b2662a9469e8facc826ccc94e98fdd0d615f6431e73a/tokenizers-0.23.2-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl";
-        hash = "sha256-QcL4TRckSbTa25zcUI4+NkB2YTw1sW527P5Hpg0eMwU=";
+    tokenizers =
+      assert pkgs.lib.assertMsg (pkgs.lib.versionOlder pyPrev.tokenizers.version "0.23.2")
+        "nixpkgs tokenizers has caught up; review the vLLM 0.32 override";
+      pyFinal.buildPythonPackage {
+        pname = "tokenizers";
+        version = "0.23.2";
+        format = "wheel";
+        src = pkgs.fetchurl {
+          url = "https://files.pythonhosted.org/packages/2c/ca/ca6b93c7820df123b2662a9469e8facc826ccc94e98fdd0d615f6431e73a/tokenizers-0.23.2-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl";
+          hash = "sha256-QcL4TRckSbTa25zcUI4+NkB2YTw1sW527P5Hpg0eMwU=";
+        };
+        nativeBuildInputs = [ pkgs.autoPatchelfHook ];
+        buildInputs = [ pkgs.stdenv.cc.cc.lib ];
+        dependencies = [ pyFinal.huggingface-hub ];
+        pythonImportsCheck = [ "tokenizers" ];
+        meta.platforms = [ "x86_64-linux" ];
       };
-      nativeBuildInputs = [ pkgs.autoPatchelfHook ];
-      buildInputs = [ pkgs.stdenv.cc.cc.lib ];
-      dependencies = [ pyFinal.huggingface-hub ];
-      pythonImportsCheck = [ "tokenizers" ];
-    };
 
     oss-harmony = pyFinal.buildPythonPackage rec {
       pname = "oss-harmony";
@@ -106,25 +113,28 @@ pkgs.python312Packages.overrideScope (
     };
 
     # vLLM 0.32 pins xgrammar 0.2.8; nixpkgs still packages 0.1.33.
-    xgrammar = pyPrev.xgrammar.overridePythonAttrs (oldAttrs: rec {
-      version = "0.2.8";
-      src = pkgs.fetchFromGitHub {
-        owner = "mlc-ai";
-        repo = "xgrammar";
-        tag = "v${version}";
-        fetchSubmodules = true;
-        hash = "sha256-Ff/CLdSjq8ammfci+Eu9hY4433e7csf8EeGu2X9B2rI=";
-      };
-      patches = [ ];
-      build-system = (oldAttrs.build-system or [ ]) ++ [
-        pyPrev.apache-tvm-ffi
-        pyPrev.setuptools-scm
-      ];
-      dependencies = (oldAttrs.dependencies or [ ]) ++ [ pyPrev.apache-tvm-ffi ];
-      # nixpkgs 0.1.33's disabled test paths no longer exist in 0.2.8.
-      # Keep the import check while upstream's renamed suite is repackaged.
-      doCheck = false;
-    });
+    xgrammar =
+      assert pkgs.lib.assertMsg (pkgs.lib.versionOlder pyPrev.xgrammar.version "0.2.8")
+        "nixpkgs xgrammar has caught up; review the vLLM 0.32 override";
+      pyPrev.xgrammar.overridePythonAttrs (oldAttrs: rec {
+        version = "0.2.8";
+        src = pkgs.fetchFromGitHub {
+          owner = "mlc-ai";
+          repo = "xgrammar";
+          tag = "v${version}";
+          fetchSubmodules = true;
+          hash = "sha256-Ff/CLdSjq8ammfci+Eu9hY4433e7csf8EeGu2X9B2rI=";
+        };
+        patches = [ ];
+        build-system = (oldAttrs.build-system or [ ]) ++ [
+          pyPrev.apache-tvm-ffi
+          pyPrev.setuptools-scm
+        ];
+        dependencies = (oldAttrs.dependencies or [ ]) ++ [ pyPrev.apache-tvm-ffi ];
+        # nixpkgs 0.1.33's disabled test paths no longer exist in 0.2.8.
+        # Keep the import check while upstream's renamed suite is repackaged.
+        doCheck = false;
+      });
 
     # PyTorch 2.13 Inductor invokes openssl while these packages exercise
     # torch.compile in their test suites. Keep the tool local to the consumers

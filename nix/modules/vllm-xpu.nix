@@ -268,6 +268,14 @@ let
           draft follows the target format. The earlier xpu-v1.9.0 profile
           used `kv_cache_dtype = "kvarn_k4v4_g128_compact"` instead.
           Consult the release measurements for the exact tested pairing.
+          The v0.32 candidate also admits V2 DFlash2 with compact K4V2 target
+          KV, BF16 sliding-window draft KV, and one to seven proposals. This
+          path is still undergoing capacity and serving qualification; seven
+          proposals do not fit the current Brutus context/concurrency profile.
+          External Hub drafts are retained by cache GC. Branch/tag revisions
+          conservatively retain all cached snapshots of that draft repository.
+          Use absolute or explicit `./` / `../` paths for local drafts; bare
+          names and `owner/name` strings are treated as potential Hub IDs.
           KVarN does not support graphs.
           For graph-enabled configurations outside KVarN, the K value
           (`num_speculative_tokens`) must match
@@ -848,9 +856,10 @@ in
             let
               draft = if inst.speculativeConfig == null then { } else inst.speculativeConfig;
               draftModel = draft.model or null;
+              draftRevision = draft.revision or null;
+              repoPart = "[A-Za-z0-9_]([A-Za-z0-9_.-]*[A-Za-z0-9_])?";
               isHfDraft =
-                builtins.isString draftModel
-                && builtins.match "[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+" draftModel != null;
+                builtins.isString draftModel && builtins.match "(${repoPart}/)?${repoPart}" draftModel != null;
             in
             [
               {
@@ -864,7 +873,11 @@ in
               source = "vllm-xpu.${name}.draft";
               type = "model";
               repo = draftModel;
-              revision = draft.revision or null;
+              revision =
+                if builtins.isString draftRevision && builtins.match "[0-9a-f]{40}" draftRevision != null then
+                  draftRevision
+                else
+                  null;
             }
           ) enabledInstances
         );

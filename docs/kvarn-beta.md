@@ -123,7 +123,7 @@ task benchmark reports matching accuracy. The padded `kvarn_k4v2_g128` preset
 does not provide the compact format's savings. Compact K4V2 requires the paired
 vLLM and native kernel release; an older native library cannot read its records.
 
-## Serving profile
+## Release qualification profile
 
 - Model: `RedHatAI/Qwen3.8-27B-INT4`, revision
   `bf08f3dbd9a324e53956920aad378a1f1b6dd24a` (Qwen3.5 architecture).
@@ -146,6 +146,8 @@ Set the target cache to compact K4V2 and configure the pinned drafter:
 
 ```nix
 extraEnvironment.VLLM_USE_V2_MODEL_RUNNER = "1";
+gpuMemoryUtilization = 0.98;
+extraArgs = [ "--long-prefill-token-threshold" "1024" ];
 speculativeConfig = {
   method = "dflash";
   num_speculative_tokens = 2;
@@ -157,9 +159,22 @@ speculativeConfig = {
 
 The measured shared attention capacity is 270,976 tokens. Four request slots
 share that capacity; they do not allow four maximum-length contexts.
+This is 11.6% less shared attention capacity than the preceding profile's
+306,688 tokens. The final two-proposal profile also varies across isolated
+cold repeats at temperature zero with a fixed seed; deterministic text replay
+is not a supported guarantee. See the
+[post-release review](updates/release-v032-v2-20261019/post-release-review.md).
 See the [release manifest](releases/xpu-v1.13.0.json) and
 [matched performance comparison](updates/release-v032-v2-20261019/finish-performance-review.json).
 The preceding xpu-v1.12.2 release retains the V1 MTP2 recipe at utilization 0.96.
+
+Brutus subsequently selected a 131,072-token combined context and utilization
+0.93 to leave more B70 memory for Jellyfin. That host profile keeps the same
+models, two DFlash2 proposals and four request slots, with a measured shared
+attention capacity of 149,888 tokens. It passed startup and inference checks
+with two Intel QSV SDR transcodes already running. See the
+[shared-GPU qualification](updates/release-v032-v2-20261019/shared-gpu-host-profile.json).
+Reducing context alone does not reduce the utilization-based cache budget.
 
 The options above do not configure all these serving limits. The scheduler's
 `maxNumSeqs` controls concurrency; KVarN MTP does not impose an additional

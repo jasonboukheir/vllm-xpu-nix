@@ -126,5 +126,7 @@
   },
   "overnight_idle_fix_verified": false,
   "production_switch_performed": false,
-  "outstanding": "GPU sharing policy awaits operator preference; no automatic media reassignment."
+  "outstanding": "Natural overnight idle observation and HDR/subtitle/media-codec qualification remain open. Host sharing choice implemented locally; operator system switch pending.",
+  "host_shared_gpu_followup_commit": "d93ce45a",
+  "host_shared_gpu_followup": "shared-gpu-host-profile.json"
 }

@@ -64,19 +64,37 @@ maintained approximately real-time progress and used about 247 MiB of VRAM each.
 
 Restarting the released profile with both transcodes already running failed:
 29.45 GiB was free, below its 29.69 GiB startup requirement. Starting chat first
-therefore does not qualify arbitrary restart order. The host needs a separate
-GPU for media or an explicit operational restriction before concurrent service
-use. These synthetic SDR checks do not cover HDR, subtitles or all codecs.
+therefore does not qualify arbitrary restart order. That profile requires a
+lower chat budget, a separate media GPU or a restriction on restart order.
+These synthetic SDR checks do not cover HDR, subtitles or all codecs.
 
 The spare AMD GPU passed short hardware decode/encode and HDR10-to-SDR
 VA-API/Vulkan probes. Two simultaneous synthetic 4K HDR10/30 fps to 1080p
 H.264 tone-mapped streams sustained about 24 fps each, below real time for
 that input. vLLM passed device initialization while those jobs used the other
 GPU and finished startup after the media probes had been stopped.
-Jellyfin's host configuration has not been moved: choosing media throughput,
-chat capacity, or a restriction on restarting chat during transcodes needs an
-operator decision. Raw media commands, progress and logs are retained under
+Jellyfin's host configuration has not been moved. Raw media commands,
+progress and logs are retained under
 `build-dev/release-v032-v2-20261019/review-round-01/`.
+
+The operator subsequently chose to give Jellyfin more B70 memory by reducing
+chat context. Host commit `d93ce45a` sets a combined limit of 131,072 tokens
+and utilization 0.93 while retaining the released package, four request slots
+and Syvai DFlash2 K2. The budget falls from 29.69 to 28.18 GiB, leaving about
+2.12 GiB outside it for media and other GPU allocations. The measured shared
+attention pool holds 149,888 tokens. This is a planning budget, not an enforced
+GPU memory partition.
+
+With both Intel SDR transcodes already running, the new profile completed
+startup, a 130,943-token two-image request and two matching RAM restores,
+two exact 131,072-token boundary requests, and four-way decode/RAM restore.
+No preemptions occurred, draft acceptance was positive, and both media probes
+maintained approximately real-time progress. The first long RAM restore took
+7.034 seconds to first content and the second 1.117 seconds; this check does
+not establish overnight latency or a speedup. The host system evaluated and
+its argv/environment matched the tested profile apart from recorded test
+overrides. See [the machine-readable evidence](shared-gpu-host-profile.json).
+No system switch or production start was performed.
 
 ## Idle delay and remaining measurements
 

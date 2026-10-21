@@ -96,6 +96,21 @@ its argv/environment matched the tested profile apart from recorded test
 overrides. See [the machine-readable evidence](shared-gpu-host-profile.json).
 No system switch or production start was performed.
 
+## Same-runner drafter comparison
+
+The [matched MTP/DFlash2 experiment](same-v2-drafter-comparison.md) holds the
+v1.13.0 base, Model Runner V2, 128K limit, 93% budget and proposal count fixed.
+DFlash2 decoded 9.5–31.7% faster across the measured workload/concurrency
+matrix, including 11.1–14.7% for the short prompts. This isolates the drafter
+choice from the earlier comparison's runner upgrade.
+
+V2 MTP with KVarN requires an experimental metadata compatibility patch;
+the unmodified release rejects that combination. Both benchmark profiles
+used the same private patched runtime. The exact unapplied patch, matched
+request hashes, counter checks and limitations are retained for review.
+This is separate from the shipped DFlash2 qualification and does not change
+the host recipe or establish production support for V2 MTP.
+
 ## Idle delay and remaining measurements
 
 Historical journals place most observed stalls in slow RAM-tier transfers,

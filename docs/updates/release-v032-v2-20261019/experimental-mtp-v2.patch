@@ -1,0 +1,53 @@
+--- a/vllm/platforms/xpu.py
++++ b/vllm/platforms/xpu.py
+@@ -87,8 +87,7 @@
+         scheduler = vllm_config.scheduler_config
+         parallel = vllm_config.parallel_config
+         bundled_mtp = (
+-            not vllm_config.use_v2_model_runner
+-            and cache_dtype in ("kvarn_k4v4_g128_compact", "kvarn_k4v2_g128_compact")
++            cache_dtype in ("kvarn_k4v4_g128_compact", "kvarn_k4v2_g128_compact")
+             and getattr(spec, "method", None) == "mtp"
+             and getattr(spec, "num_speculative_tokens", None) in (1, 2)
+             and (
+--- a/vllm/v1/worker/gpu/spec_decode/target_dependent_ar/speculator.py
++++ b/vllm/v1/worker/gpu/spec_decode/target_dependent_ar/speculator.py
+@@ -10,7 +10,7 @@
+ from vllm.forward_context import BatchDescriptor, set_forward_context
+ from vllm.logger import init_logger
+ from vllm.triton_utils import tl, triton
+-from vllm.v1.worker.gpu.attn_utils import build_slot_mappings_by_layer
++from vllm.v1.worker.gpu.attn_utils import build_attn_metadata, build_slot_mappings_by_layer
+ from vllm.v1.worker.gpu.cudagraph_utils import BatchExecutionDescriptor
+ from vllm.v1.worker.gpu.dp_utils import DPSyncState, dispatch_cg_and_sync_dp
+ from vllm.v1.worker.gpu.input_batch import InputBatch, InputBuffers
+@@ -272,6 +272,29 @@
+         )
+
+         self._prepare_eplb_forward(num_tokens)
++
++        if (
++            attn_metadata is not None
++            and self.method == "mtp"
++            and self.vllm_config.cache_config.cache_dtype.startswith("kvarn_")
++        ):
++            attn_metadata = build_attn_metadata(
++                attn_groups=self.attn_groups,
++                num_reqs=num_reqs,
++                num_tokens=input_batch.num_tokens,
++                query_start_loc_gpu=input_batch.query_start_loc,
++                query_start_loc_cpu=torch.from_numpy(input_batch.query_start_loc_np),
++                max_query_len=int(max_query_len),
++                seq_lens=input_batch.seq_lens,
++                max_seq_len=max_seq_len,
++                block_tables=[x[:num_reqs] for x in self.block_tables.input_block_tables],
++                slot_mappings=self.block_tables.slot_mappings[:, :input_batch.num_tokens],
++                kv_cache_config=self.kv_cache_config,
++                seq_lens_cpu_upper_bound=input_batch.seq_lens_cpu_upper_bound,
++                positions=input_batch.positions,
++                is_prefilling=torch.from_numpy(input_batch.is_prefilling_np),
++                req_idx=input_batch.idx_mapping_np,
++            )
+
+         self.on_prefill_begin(num_reqs)
+         if prefill_batch_desc.cg_mode == CUDAGraphMode.FULL:

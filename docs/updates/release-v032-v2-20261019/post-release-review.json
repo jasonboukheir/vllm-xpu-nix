@@ -128,5 +128,14 @@
   "production_switch_performed": false,
   "outstanding": "Natural overnight idle observation and HDR/subtitle/media-codec qualification remain open. Host sharing choice implemented locally; operator system switch pending.",
   "host_shared_gpu_followup_commit": "d93ce45a",
-  "host_shared_gpu_followup": "shared-gpu-host-profile.json"
+  "host_shared_gpu_followup": "shared-gpu-host-profile.json",
+  "same_v2_drafter_experiment": {
+    "report": "same-v2-drafter-comparison.md",
+    "evidence": "same-v2-drafter-comparison.json",
+    "unapplied_patch": "experimental-mtp-v2.patch",
+    "unmodified_release_supports_v2_mtp_kvarn": false,
+    "both_profiles_use_identical_experimental_patch": true,
+    "production_runtime_modified": false,
+    "separate_context_capacity_probe": "mtp-v2-context-probe.json"
+  }
 }

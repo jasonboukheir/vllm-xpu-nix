@@ -1,0 +1,200 @@
+{
+  "release": "xpu-v1.13.0",
+  "source_commit": "c0722c98d0fa1588eaf748cc9f7ef69ca3c32245",
+  "host_commit": "d93ce45a",
+  "package": "/nix/store/abyydgnrgglvviif8193zanhw6j1swch-python3.12-vllm-xpu-0.32.0+unstable.2026.10.20.gc0722c9",
+  "profile": {
+    "runner": "V2",
+    "proposals": 2,
+    "max_model_len": 131072,
+    "max_num_seqs": 4,
+    "gpu_memory_utilization": 0.93,
+    "max_num_batched_tokens": 2048,
+    "long_prefill_token_threshold": 1024,
+    "target_kv": "kvarn_k4v2_g128_compact",
+    "draft_model": "syvai/Qwen3.8-27B-DFlash2-W4A16",
+    "draft_revision": "4d30ec736ffc6b8688dc2ae2b502d9b48bdec279",
+    "draft_kv": "bfloat16",
+    "ram_bytes": 8589934592,
+    "gpu_retention": "active_only"
+  },
+  "startup": {
+    "passed_with_two_qsv_transcodes_running": true,
+    "free_gib": 29.45,
+    "budget_gib": 28.18,
+    "device_total_gib": 30.3,
+    "nominal_outside_budget_gib": 2.12,
+    "additional_headroom_gib": 1.51,
+    "attention_capacity_tokens": 149888,
+    "attention_allocated_bytes": 2016215040,
+    "recurrent_allocated_bytes": 2650472448,
+    "draft_allocated_bytes": 526909440,
+    "recurrent_slots": 4,
+    "draft_slots": 4
+  },
+  "full_context": {
+    "all_pass": true,
+    "label_and_both_image_colors_correct": true,
+    "tests": [
+      {
+        "name": "cold",
+        "usage": {
+          "prompt_tokens": 130943,
+          "total_tokens": 130955,
+          "completion_tokens": 12,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "ttft_seconds": 147.1579460729845,
+        "ram_hit_tokens": 0.0,
+        "computed_tokens": 130943.0,
+        "load_bytes": 0,
+        "preemptions": 0.0,
+        "pass": true
+      },
+      {
+        "name": "ram-0",
+        "usage": {
+          "prompt_tokens": 130943,
+          "total_tokens": 130955,
+          "completion_tokens": 12,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "ttft_seconds": 7.034303085994907,
+        "ram_hit_tokens": 130688.0,
+        "computed_tokens": 255.0,
+        "load_bytes": 1962688544.0,
+        "preemptions": 0.0,
+        "same_tokens_as_cold": true,
+        "pass": true
+      },
+      {
+        "name": "ram-1",
+        "usage": {
+          "prompt_tokens": 130943,
+          "total_tokens": 130955,
+          "completion_tokens": 12,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "ttft_seconds": 1.1168440169421956,
+        "ram_hit_tokens": 130688.0,
+        "computed_tokens": 255.0,
+        "load_bytes": 1962688544.0,
+        "preemptions": 0.0,
+        "same_tokens_as_cold": true,
+        "pass": true
+      }
+    ]
+  },
+  "exact_limit": {
+    "all_pass": true,
+    "tests": [
+      {
+        "name": "exact-limit",
+        "usage": {
+          "prompt_tokens": 131071,
+          "total_tokens": 131072,
+          "completion_tokens": 1,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "computed_tokens": 383.0,
+        "ram_hit_tokens": 130688.0,
+        "load_bytes": 1962688544.0,
+        "preemptions": 0.0,
+        "pass": true
+      },
+      {
+        "name": "exact-limit-ram-repeat",
+        "usage": {
+          "prompt_tokens": 131071,
+          "total_tokens": 131072,
+          "completion_tokens": 1,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "computed_tokens": 255.0,
+        "ram_hit_tokens": 130816.0,
+        "load_bytes": 1964408864.0,
+        "preemptions": 0.0,
+        "same_tokens_as_previous": true,
+        "pass": true
+      }
+    ]
+  },
+  "four_way_ram_restore": {
+    "checks": {
+      "fourth_emits_before_background_finishes": true,
+      "all_four_progress_in_common_interval": true,
+      "four_running": true,
+      "ram_hit": true,
+      "load_bytes": true,
+      "no_gpu_hit": true,
+      "bounded_recompute": true,
+      "no_preemption": true,
+      "restored_tokens_match": true,
+      "background_labels": true,
+      "positive_draft_acceptance": true
+    },
+    "all_pass": true,
+    "common_progress_seconds": 2.4271405310137197,
+    "fourth_ttft_seconds": 0.4930375490221195,
+    "scope": "Three decodes plus a fourth RAM restore; long-prefill overlap separate"
+  },
+  "media": {
+    "scope": "Two synthetic 4K HEVC SDR to 1080p H.264 Intel QSV streams using installed Jellyfin FFmpeg and configured driver environment; started before vLLM and remained active through all inference checks",
+    "streams": [
+      {
+        "frame": "12345",
+        "out_time": "00:07:02.600000",
+        "speed": "1x",
+        "drop_frames": "0"
+      },
+      {
+        "frame": "12345",
+        "out_time": "00:07:02.600000",
+        "speed": "1x",
+        "drop_frames": "0"
+      }
+    ]
+  },
+  "host_validation": {
+    "package_derivation": "/nix/store/fvjnfnky2qk3jbidy8c4jn9bi75aymrv-python3.12-vllm-xpu-0.32.0+unstable.2026.10.20.gc0722c9.drv",
+    "system_derivation": "/nix/store/sjjbdcm4nifpx3jknramqj6rg1jq66nj-nixos-system-brutus-26.05.20261015.26f4107.drv",
+    "serving_arguments_match": true,
+    "allowed_argument_differences": {
+      "--port": [
+        8000,
+        18000
+      ],
+      "--enable-log-requests": [
+        null,
+        true
+      ]
+    },
+    "environment_match_except_test_paths": true,
+    "max_input_tokens": 131072,
+    "swap_max": 0,
+    "production_switch_performed": false
+  },
+  "artifact_sha256": {
+    "full-context/summary.json": "ccb45f96c0f86f33b6321ff7ed104c9200e31247b407f448460500f50e728e15",
+    "exact-limit/summary.json": "b93bd438149bc8aec77cc7bf4d88562603513d9d9dee7815b265f1dc108b1eaf",
+    "four-way-ram/summary.json": "50445b8e61d89a30324a9a3bf6dc5160baf868eb08f236b4c11a99f34d616328"
+  },
+  "limitations": [
+    "Four request slots share 149888 attention tokens, not four full contexts",
+    "GPU utilization is a planning budget, not an enforced memory partition",
+    "HDR, subtitle burn-in and other media codecs remain unqualified",
+    "No new determinism or general performance guarantee; original release cold-repeat limitation remains",
+    "Natural overnight idle behavior remains unverified",
+    "Production services remain stopped; no system switch"
+  ]
+}

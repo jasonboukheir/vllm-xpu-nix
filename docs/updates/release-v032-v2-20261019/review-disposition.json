@@ -1,4 +1,5 @@
 {
+  "status": "Historical review of the intermediate K1 candidate; final K2 qualification supersedes open qualification items. See finish-serving-validation.json and post-release-review.md.",
   "reviewed_source": "ec1477a0386deba74512cc4068288040a57d6fe3",
   "reviewed_packaging": "7eaa4db14892f6e6de4cee32c6d0106adec19b9c",
   "source_recovery_ref": "refs/heads/backup/review-xpu-v1.13.0-before-comments-20261020",
@@ -43,7 +44,7 @@
       "review": "https://git.sunnycareboo.com/jasonbk/vllm-xpu-nix/pulls/20#issuecomment-484",
       "topic": "four-way RAM overlap gate",
       "disposition": "fixed and rerun",
-      "details": "After per-pool admission and the additional replay-boundary fix, actual four-way RAM/decode progress passes with external hits/load bytes, matching tokens and zero preemptions. A separate long-prefill/1024-output-token stress case remains open and is not counted as passing."
+      "details": "After per-pool admission and the additional replay-boundary fix, actual four-way RAM/decode progress passes with external hits/load bytes, matching tokens and zero preemptions. At this intermediate K1 review, the long-prefill/1024-output-token stress case remained open. The final K2 profile subsequently passed its structured-output version; the earlier free-form failure is retained in finish-reproducibility.json."
     },
     {
       "review": "https://git.sunnycareboo.com/jasonbk/vllm-xpu-nix/pulls/20#issuecomment-484",

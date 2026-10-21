@@ -1,0 +1,185 @@
+{
+  "experimental": true,
+  "base_package": "/nix/store/abyydgnrgglvviif8193zanhw6j1swch-python3.12-vllm-xpu-0.32.0+unstable.2026.10.20.gc0722c9",
+  "compatibility_patch": "experimental-mtp-v2.patch",
+  "compatibility_patch_sha256": "d67ae49e1e01431f6c7dc757a661e6962043672553f32ee94c4880fa1d52031d",
+  "profile": {
+    "runner": "V2",
+    "method": "mtp",
+    "proposals": 2,
+    "max_model_len": 196608,
+    "gpu_memory_utilization": 0.93,
+    "max_num_seqs": 4,
+    "target_and_draft_kv": "kvarn_k4v2_g128_compact",
+    "ram_bytes": 8589934592,
+    "gpu_retention": "active_only"
+  },
+  "startup": {
+    "passed_with_two_qsv_transcodes_running": true,
+    "attention_capacity_tokens": 226688,
+    "attention_allocated_bytes": 3238932480,
+    "recurrent_allocated_bytes": 2650472448,
+    "recurrent_slots": 4
+  },
+  "full_context": {
+    "all_pass": true,
+    "label_and_both_image_colors_correct": true,
+    "tests": [
+      {
+        "name": "cold",
+        "usage": {
+          "prompt_tokens": 196479,
+          "total_tokens": 196491,
+          "completion_tokens": 12,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "ttft_seconds": 263.6246529830387,
+        "computed_tokens": 196479.0,
+        "ram_hit_tokens": 0.0,
+        "gpu_hit_tokens": 0.0,
+        "load_bytes": 0,
+        "preemptions": 0.0,
+        "pass": true
+      },
+      {
+        "name": "ram-0",
+        "usage": {
+          "prompt_tokens": 196479,
+          "total_tokens": 196491,
+          "completion_tokens": 12,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "ttft_seconds": 2.5040810159989633,
+        "computed_tokens": 255.0,
+        "ram_hit_tokens": 196224.0,
+        "gpu_hit_tokens": 0.0,
+        "load_bytes": 2966901794.0,
+        "preemptions": 0.0,
+        "same_tokens_as_cold": true,
+        "pass": true
+      },
+      {
+        "name": "ram-1",
+        "usage": {
+          "prompt_tokens": 196479,
+          "total_tokens": 196491,
+          "completion_tokens": 12,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "ttft_seconds": 1.4451188939856365,
+        "computed_tokens": 255.0,
+        "ram_hit_tokens": 196224.0,
+        "gpu_hit_tokens": 0.0,
+        "load_bytes": 2966901794.0,
+        "preemptions": 0.0,
+        "same_tokens_as_cold": true,
+        "pass": true
+      }
+    ]
+  },
+  "exact_limit": {
+    "all_pass": true,
+    "tests": [
+      {
+        "name": "exact-limit",
+        "usage": {
+          "prompt_tokens": 196607,
+          "total_tokens": 196608,
+          "completion_tokens": 1,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "computed_tokens": 383.0,
+        "ram_hit_tokens": 196224.0,
+        "gpu_hit_tokens": 0.0,
+        "load_bytes": 2966901794.0,
+        "preemptions": 0.0,
+        "pass": true
+      },
+      {
+        "name": "exact-limit-ram-repeat",
+        "usage": {
+          "prompt_tokens": 196607,
+          "total_tokens": 196608,
+          "completion_tokens": 1,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "computed_tokens": 255.0,
+        "ram_hit_tokens": 196352.0,
+        "gpu_hit_tokens": 0.0,
+        "load_bytes": 2968729634.0,
+        "preemptions": 0.0,
+        "same_tokens_as_previous": true,
+        "pass": true
+      }
+    ],
+    "deferred_store_flush_checks_passed": true
+  },
+  "four_way_ram_restore": {
+    "checks": {
+      "fourth_emits_before_background_finishes": true,
+      "all_four_progress_in_common_interval": true,
+      "four_running": true,
+      "ram_hit": true,
+      "load_bytes": true,
+      "no_gpu_hit": true,
+      "bounded_recompute": true,
+      "no_preemption": true,
+      "restored_tokens_match": true,
+      "background_labels": true,
+      "positive_draft_acceptance": true
+    },
+    "all_pass": true,
+    "common_progress_seconds": 2.508347136026714,
+    "fourth_ttft_seconds": 0.5057917850208469
+  },
+  "media": {
+    "scope": "Two synthetic 4K HEVC SDR to 1080p H.264 Intel QSV streams; started before vLLM and remained active through all inference checks",
+    "streams": [
+      {
+        "frame": "15335",
+        "out_time": "00:08:45.066667",
+        "speed": "1x",
+        "drop_frames": "0"
+      },
+      {
+        "frame": "15334",
+        "out_time": "00:08:45.033333",
+        "speed": "1x",
+        "drop_frames": "0"
+      }
+    ],
+    "warning": "The looped synthetic input produced non-monotonic DTS warnings at the null muxer. This is a throughput probe, not an encoded-file integrity test.",
+    "dts_warning_counts": [
+      211,
+      211
+    ],
+    "exit_codes_after_requested_shutdown": [
+      255,
+      255
+    ]
+  },
+  "artifact_sha256": {
+    "manifest.json": "dc93bf17349e49da21c0a3b47e11665b238218899bc21d3be1fee16a552dffd2",
+    "full-context/summary.json": "59aac7ca160a9b221441cf344e4e999c4cce13778c3a1bf9362efd5486d02763",
+    "exact-limit/summary.json": "493ca813cca3a01450c8bddda32a454c48f0eaa158397c4f5eedcf4e13f9ecaa",
+    "four-way-ram/summary.json": "72af61648dc718b4e968c39a45b661318e896311c32c1a767589c86e46635a83"
+  },
+  "limitations": [
+    "Experimental MTP compatibility patch; not a shipped profile or full release qualification",
+    "Four slots share the attention pool; not four full 192K contexts",
+    "192K is the tested combined input/output limit, not the maximum possible capacity",
+    "HDR, subtitle burn-in and other media codecs were not tested",
+    "No natural overnight idle-latency conclusion",
+    "Host remains configured for released DFlash2 at 128K and 93%; no system switch"
+  ]
+}

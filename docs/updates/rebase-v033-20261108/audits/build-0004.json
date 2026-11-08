@@ -1,0 +1,53 @@
+{
+  "schema": 1,
+  "agent": "/root/audit_build_prebuilt",
+  "patch": "nix/patches/0004-skip-prebuilt-additional-libs.patch",
+  "patch_sha256": "45c1e47d947d2f576054096278825f0d8fe0ad4787b9536afcc3af73061ad873",
+  "disposition": "KEEP",
+  "selected_kernel_base": "ddf336d86e3c8602888572a3502f951abd51df12",
+  "selected_kernel_tip": "05d4536b2440db171741b5de5c148cdc834bd692",
+  "paired_vllm_target": "4ba787ec9959e566d3b587a796dff07673324da5",
+  "requirement": "Skip setuptools additional-library installation for DSOs supplied as Nix-built CMake IMPORTED targets. Their source subdirectories were not configured by CMake and have no install build directory.",
+  "upstream_coverage": {
+    "setup_py_blob_at_base_and_tip": "e841c754d353b39fb566e7c63b31ab70a845dab0",
+    "symbol": "setup.py::cmake_build_ext.build_extensions",
+    "evidence": "The selected upstream and final fork setup.py are identical. The additional_libraries loop unconditionally runs cmake --install with cwd=self.build_temp+file_path. It catches subprocess.CalledProcessError, but the missing cwd from imported targets raises FileNotFoundError before CMake can run. No per-library prebuilt-environment guard exists upstream.",
+    "non_equivalent_alternative": "VLLM_USE_PRECOMPILED uses a whole released wheel and skips building all extension modules. It does not preserve the Nix design of compiling glue against independently cached library derivations."
+  },
+  "packaging_callers": [
+    {
+      "path": "nix/vllm-xpu-kernels.nix",
+      "lines": "124-128,163-168",
+      "evidence": "Applies0001 before0004 and exports nonempty VLLM_XPU_PREBUILT_<NAME>_LIB paths conditionally for attention, GDN, MQA, MHC and grouped-GEMM split libraries."
+    },
+    {
+      "path": "nix/patches/0001-split-kernel-libs.patch",
+      "evidence": "Imported CMake targets replace add_subdirectory for each supplied library; setup.py forwards the same environment variables to CMake."
+    },
+    {
+      "path": "nix/vllm-xpu-kernels-compose.nix",
+      "evidence": "Composes native extension modules and verifies the FA2 DT_NEEDED/RPATH points to its selected split attention DSO; it does not require setuptools to reinstall those DSOs."
+    }
+  ],
+  "minimum_residual": "Keep the six-line presence check unchanged. Packaging supplies nonempty store paths only for selected split libraries; absent variables preserve upstream installation for ordinary builds.",
+  "dependencies": [
+    "nix/patches/0001-split-kernel-libs.patch",
+    "Nix split-library preBuild exports"
+  ],
+  "validation": [
+    {
+      "check": "git diff selected base..tip -- setup.py and blob comparison",
+      "result": "PASS; identical setup.py blob"
+    },
+    {
+      "check": "Export exact fork setup.py and CMakeLists.txt to mktemp; apply0001 with patch --batch --fuzz=0; dry-run0004 with patch --dry-run --batch --fuzz=0 -p1",
+      "result": "PASS;0004 hunk offset12, zero fuzz"
+    },
+    {
+      "check": "Apply0004 to temporary export and ast.parse patched setup.py with existing uv-created .venv/bin/python",
+      "result": "PASS"
+    }
+  ],
+  "limitations": "No native build, wheel installation or GPU/runtime test performed by this audit. Parent candidate build remains authoritative. Source worktrees and host services were not modified.",
+  "newer_kernel_scope": "v0.1.17 is not selected; broader compatibility review is in kernels-v017-compatibility.json. This verdict targets the frozen0.1.15.4 source pair."
+}

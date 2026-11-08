@@ -1,0 +1,46 @@
+{
+  "schema": 1,
+  "agent": "/root/audit_build_mhc",
+  "patch": "nix/patches/0006-forward-mhc-feature-flag.patch",
+  "patch_sha256": "8f2cba38bf161f7d557f3f1fce0b584c6beda21cb315a4b17ee39a4c5411de98",
+  "selected_kernel_base": "ddf336d86e3c8602888572a3502f951abd51df12",
+  "selected_kernel_tip": "05d4536b2440db171741b5de5c148cdc834bd692",
+  "paired_vllm_target": "4ba787ec9959e566d3b587a796dff07673324da5",
+  "disposition": "KEEP",
+  "requirement": "Propagate MHC_KERNELS_ENABLED from the setuptools environment to CMake so the split FA2 binding can disable MHC while base glue retains its prebuilt MHC library.",
+  "upstream_evidence": [
+    {
+      "path": "setup.py:187-202",
+      "finding": "Both the frozen upstream base and fork tip omit MHC_KERNELS_ENABLED from cmake_build_ext.configure's _kernel_options list. The existing loop forwards only listed options; setup.py's separate additional_libraries check does not set a CMake cache variable. The fork has no setup.py delta."
+    },
+    {
+      "path": "CMakeLists.txt:76-77,462-465,518-520",
+      "finding": "MHC_KERNELS_ENABLED defaults to ON. Its true branch adds csrc/xpu/mhc/xe_2 and defines VLLM_MHC_ENABLED. An OFF environment variable alone does not override CMake option defaults."
+    },
+    {
+      "path": "nix/mk-kernels.nix:344-398; nix/vllm-xpu-kernels.nix:74,125-129,166",
+      "finding": "Nix maps featureOptions booleans to ON/OFF environment values. Base glue selects MHC=true and imports the MHC library. FA2 binding selects MHC=false and withMhcLibrary=false. Its source projection in nix/lib/kernel-glue-src.nix excludes the MHC directory, so allowing the CMake default ON violates that projection and tries to configure an absent subtree."
+    },
+    {
+      "revision": "6a1ec18b69b00eaf67a457e0bdd40e72632feaae",
+      "path": "setup.py::_kernel_options",
+      "finding": "The separately investigated, unselected v0.1.17 also omits this option. Its setup.py changes do not provide an upstream replacement."
+    }
+  ],
+  "minimal_residual": "Retain the existing one-line addition to _kernel_options unchanged. It uses upstream's existing _is_enabled normalization and forwarding loop; no separate environment parser or CMake workaround is needed.",
+  "dependencies": [
+    "The Nix split-glue factory and source projection require FA2's MHC disablement.",
+    "Patch0001 supplies imported MHC targets when base glue enables the feature; patch0006 independently ensures the disabled FA2 component does not enter that target branch.",
+    "No vLLM runtime ABI or serving option changes are introduced."
+  ],
+  "validation": {
+    "dry_run": "PASS: patch --dry-run --fuzz=0 -p1 against setup.py exported from the exact selected fork tip; no offsets or fuzz reported.",
+    "temporary_application": "PASS: exact patch applied only to a temporary export under /tmp/v033-mhc-audit.J5emP4; source worktrees untouched.",
+    "option_forwarding": "PASS: executed AST-extracted upstream _is_enabled, _kernel_options assignment and forwarding loop without importing setup.py or native modules. Unpatched source emits no MHC argument for OFF/ON/0/FALSE; patched source emits OFF/ON/OFF/OFF respectively. Eight checked outcomes.",
+    "syntax": "PASS: patched setup.py compiled to a code object without execution.",
+    "native_build": "Not run by this audit; parent candidate build remains separate.",
+    "gpu": "Not used; no service operations or accelerator imports."
+  },
+  "removal_condition": "Remove when selected upstream setup.py forwards MHC_KERNELS_ENABLED (or an equivalent build interface demonstrably honors the same Nix disablement); successful patch application alone is not retention evidence.",
+  "performance_claim": "Build-feature correctness only; no runtime performance improvement claimed."
+}

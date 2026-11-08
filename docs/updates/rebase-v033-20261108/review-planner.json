@@ -1,0 +1,92 @@
+{
+  "schema": 1,
+  "reviewer": "/root/audit_vllm_kvarn",
+  "review_type": "Independent read-only review of the parent's resolved planner port",
+  "frozen_upstream": "4ba787ec9959e566d3b587a796dff07673324da5",
+  "old_fork_tip": "6b3d89e6e64f1e9c4f44c68c93af84e1504ef6f0",
+  "candidate_worktree": "/tmp/vllm-v033-20261108",
+  "reviewed_blobs": {
+    "vllm/v1/core/kv_cache_planning.py": "a580c457bc2a02ff6fb998d8594224e900f02e4c",
+    "vllm/v1/core/kv_cache_utils.py": "660f395d191744c6e4ff3addae0c7577ef209804"
+  },
+  "result": "No new blocking correctness defect found by static review for the supported TP1/PP1, eager XPU KVarN hybrid profile. Runtime and test qualification remain the parent's responsibility. Independent-pool PP and graph/custom-builder coverage must not be inferred from this review.",
+  "blocking_findings": [],
+  "nonblocking_findings": [
+    {
+      "id": "independent-pools-empty-pp-groups",
+      "classification": "Inherited unsupported-configuration limitation; not introduced by the port",
+      "symbols": [
+        "_project_kv_cache_groups_to_worker",
+        "_uses_independent_kvarn_pools",
+        "_get_kv_cache_bytes_per_block",
+        "_get_independent_kv_cache_config"
+      ],
+      "finding": "Upstream projection intentionally retains global group placeholders with empty layer_names. Independent-pool classification considers the preserved spec, so an empty local group still reaches per-group byte calculation. Block-outer layouts assert bytes_per_block > 0. In layer-outer layouts an attention-empty stage can produce bytes_per_quantum == 0; an empty aligned-Mamba checkpoint set can similarly produce checkpoint_bytes == 0. The old independent allocator has the same limitation.",
+      "scope": "The active XPU V2/specdecode/prefix profile is explicitly restricted to PP1 by the platform guard, so this is not a blocker for that host candidate. Generic upstream PP tests do not qualify independent-pool PP.",
+      "recommendation": "Keep the upstream projection fields and global group identity intact. Before supporting independent PP, specify zero-local-byte pool behavior and cross-rank capacity reconciliation, then cover empty attention/recurrent groups in both physical layouts. Do not restore the old local projection workaround as a purported fix."
+    },
+    {
+      "id": "independent-builder-scope",
+      "classification": "Explicit adapter boundary and qualification limitation",
+      "symbols": [
+        "get_kv_cache_configs",
+        "DefaultKVCacheConfigBuilder.get_kv_cache_config_from_groups",
+        "_get_independent_kv_cache_config"
+      ],
+      "finding": "Independent configurations deliberately use the module's bytes-based placement path rather than the builder's scalar block-count placement hook. A single bytes-per-block multiplier cannot represent fixed concurrent recurrent/sliding reserves plus elastic attention capacity. Upstream custom grouping remains in use, and ordinary custom placement/replanning remains untouched. Direct minimal graph profiling through the default builder is not independently qualified for these pools.",
+      "scope": "The deployed XPU KVarN recipe uses eager mode and the fork rejects its graph profile. The previous independent allocator also required fixed reserves and did not support a zero-byte graph-profiling allocation merely by setting a block override.",
+      "recommendation": "Retain the narrow adapter for this rebase. A future custom KVarN builder or graph-support effort needs a pool-aware placement contract and dedicated checks; do not treat ordinary upstream builder tests as coverage of that unsupported combination."
+    }
+  ],
+  "preserved_behaviors": [
+    {
+      "area": "Upstream architecture and drift",
+      "evidence": "The four-argument get_kv_cache_configs API, get_global_kv_cache_groups ownership, builder resolution, projection, estimate/autofit builder arguments, ordinary shared placement, ordinary rank convergence and final kv_tp_replicas assignment remain upstream-owned. The port does not restore the deleted utils planner or positional draft heuristics."
+    },
+    {
+      "area": "Global draft identity",
+      "evidence": "Global grouping still derives draft tags from KVCacheSpec.is_draft and gates EAGLE block-drop annotations through use_eagle_block_drop. Projection keeps is_eagle_group on empty worker projections, plus host_resident, enable_kv_transfer and role. The superseded local replace-based projection fix is absent."
+    },
+    {
+      "area": "Fixed reserves and null pages",
+      "evidence": "Each physical pool reserves its own null block. Mamba and sliding pools reserve max_num_seqs times physical_blocks_per_request before the remaining budget goes to full-attention groups. Admission/autofit uses the same concurrent bounded-pool reserve through _independent_pool_bytes_for_requests. Full-attention allocation preserves the old least-common-multiple token quantum across differing block sizes."
+    },
+    {
+      "area": "Physical capacity override",
+      "evidence": "Independent overrides require at least one physical block, subtract one attention null block when calculating usable attention bytes, retain bounded recurrent/sliding slots, include all per-pool null bytes and reject allocations exceeding profiled memory. The generic upstream scalar override path remains separate and unchanged."
+    },
+    {
+      "area": "Checkpoint retention",
+      "evidence": "Optional aligned recurrent checkpoints are allocated only without an override and without the independent CPU offloader, and only from spare budget after preserving one maximum-length attention request. This matches the old feature policy."
+    },
+    {
+      "area": "Per-pool convergence and tensor layout",
+      "evidence": "Independent workers converge each pool's block count separately and rebuild changed tensors from the actual pool count vector. The legacy num_blocks remains only the minimum compatibility scalar. Existing layout validation, interleaved block stride, padded page handling, pool_id assignment and physical pool topology checks remain."
+    },
+    {
+      "area": "Utils ownership",
+      "evidence": "Utils retains block/copy physical ownership, independent concurrency calculation, scheduler pool topology checks, pool capacity reporting and the shared physical-blocks-per-request helper. Planning-only policy and placement live in kv_cache_planning."
+    }
+  ],
+  "minimal_drift_assessment": "The chosen adaptation is appropriately narrow: upstream's ordinary placement body is retained verbatim and independent allocation is isolated in a new helper. No additional source change is requested by this review. The local tensor helper still has an unused shared-pool mode, but removing that small inherited branch is optional cleanup rather than a rebase requirement.",
+  "validation": {
+    "performed_by_reviewer": [
+      "Compared the selected planner/utils source against frozen v0.33.0 and the old final fork implementation.",
+      "Inspected new builder interfaces and engine/global-group call flow, active host recipe and XPU PP/graph guards.",
+      "Read the parent's first planning test log without executing tests or modifying the candidate."
+    ],
+    "observed_parent_log": {
+      "path": "/tmp/vllm-v033-planning-tests.log",
+      "first_run_result": "34 failed, 130 passed, 3 errors",
+      "interpretation": "Observed failures were fixture migration/harness gaps: missing supports_kv_cache_grouping in local SimpleNamespace fixtures, missing mocked use_dspark in upstream EAGLE cases, and missing caplog_vllm fixture. Parent is repairing the fixtures and rerunning. This initial log is not passing validation and is not evidence to weaken production builder behavior."
+    },
+    "not_performed": [
+      "No tests against the changing candidate by this reviewer.",
+      "No Nix/native build, GPU use, service operation, model evaluation or performance measurement."
+    ],
+    "required_before_gpu_handoff": [
+      "Parent's corrected planning/grouping/builder suites must pass, including local fixed reserves, physical overrides, null blocks, autofit and per-pool reconciliation coverage.",
+      "Keep independent PP, graph and custom-builder combinations outside the qualification claim unless separately implemented and checked."
+    ]
+  }
+}

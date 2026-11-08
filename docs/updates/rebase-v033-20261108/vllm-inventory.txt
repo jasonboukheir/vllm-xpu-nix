@@ -1,0 +1,5 @@
+5673b4bb84953d9f65b20f79b49ecbcd07432bd4 5df63a7203cdb9328d824a27b682e77c7b9928be fix(xpu): strip graph padding from GDN index tensors
+efddf8010f4b9d8c896b91aa4bfed3c5e7edc2a1 5673b4bb84953d9f65b20f79b49ecbcd07432bd4 fix(xpu): stabilize Qwen GDN prefill and mixed scheduling
+93b30581c4d0ca790e30fdad4a5e9854689b3837 efddf8010f4b9d8c896b91aa4bfed3c5e7edc2a1 fix(xpu): preserve functional batch-invariant residual RMSNorm
+5f58938759fcb527c2b6d99ce189aaf6df32c8a3 93b30581c4d0ca790e30fdad4a5e9854689b3837 fix(xpu): accept explicit unquantized KV cache dtypes
+6b3d89e6e64f1e9c4f44c68c93af84e1504ef6f0 5f58938759fcb527c2b6d99ce189aaf6df32c8a3 feat(xpu): integrate KVarN hybrid caching with V2 DFlash2

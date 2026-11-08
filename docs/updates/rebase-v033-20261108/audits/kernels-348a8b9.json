@@ -1,0 +1,90 @@
+{
+  "schema": 1,
+  "agent": "/root/audit_kernel_flash_tests",
+  "repository": "/home/jasonbk/Projects/vllm-xpu-kernels",
+  "commit": "348a8b91e4c301ff3c94b0fce68a4cda7a591bfc",
+  "parent": "7d72670ba22c67480a4805a2d418beb19f83d004",
+  "subject": "test(attn): cover native FlashAttention replay determinism",
+  "patch_id": "43a970403358d0f0303a73a99af6367d7a0e5012",
+  "old_base": "ddf336d86e3c8602888572a3502f951abd51df12",
+  "old_tip": "05d4536b2440db171741b5de5c148cdc834bd692",
+  "target_version": "0.1.15.4",
+  "target": "ddf336d86e3c8602888572a3502f951abd51df12",
+  "newer_kernel_investigated_not_selected": "6a1ec18b69b00eaf67a457e0bdd40e72632feaae",
+  "companion": {
+    "repository": "/home/jasonbk/Projects/vllm",
+    "old_base": "5df63a7203cdb9328d824a27b682e77c7b9928be",
+    "old_tip": "6b3d89e6e64f1e9c4f44c68c93af84e1504ef6f0",
+    "target_tag": "v0.33.0",
+    "target": "4ba787ec9959e566d3b587a796dff07673324da5"
+  },
+  "disposition": "KEEP",
+  "requirement": {
+    "behavior": "Retain native FlashAttention numerical-reference and bitwise replay coverage for model-shaped BF16 dense prefill, paged prefill and single-token paged decode. Replay identical inputs after unrelated same-shaped attention work and live allocator churn, rejecting fallback rather than allowing a reference fallback to mask a native regression.",
+    "workload": "Intel XPU native FA2; head dimension256,24 query heads,4 KV heads,page size64. Dense prefill lengths104,107,162; paged prefill162; decode query length1 and KV length162. These protect the KVarN first-chunk FA2 helper and ordinary BF16 control paths, not the custom quantized KVarN decode operator itself.",
+    "test_contract": "Five parameterized cases, each with a finite-output CPU FP32 attention reference (rtol0.01,atol0.02) and eight exact BF16-bit replay comparisons. Each repeat interleaves a decoy call and a live irregularly sized allocation, then clears the XPU caching allocator.",
+    "final_stack_effect": "Test-only delta. The sole affected file has blob46abaa4294185b050b2af831b370190db9d2db55 both at this commit and final fork tip; no subsequent repair, revert or overlap changes it.",
+    "performance_claim": "None. These checks establish neither service-wide deterministic text generation nor a speed improvement. Removing this commit changes no serving implementation but loses the replay regression coverage."
+  },
+  "upstream_coverage": [
+    {
+      "target": "ddf336d86e3c8602888572a3502f951abd51df12",
+      "paths": [
+        "tests/flash_attn/test_flash_attn_varlen_func.py::ref_paged_attn",
+        "tests/flash_attn/test_flash_attn_varlen_func.py",
+        "tests/flash_attn/test_mla_decode.py"
+      ],
+      "evidence": "The selected unchanged upstream base has broad dense/paged/decode numerical comparisons and sink/window regression checks. The local test reuses the existing independent reference helper instead of copying an oracle. Upstream has no equivalent test_flash_attn_determinism.py or combined native-only, exact model-head, eight-replay, interleaved-decoy and allocator-pressure contract.",
+      "coverage": "Partial numerical coverage; no replacement for the retained replay assertions. No old-to-selected upstream kernel change exists because the exact dependency remains0.1.15.4."
+    },
+    {
+      "commits": [
+        "09a289e408a80dc1e2936ceb66a194df4b9804ed",
+        "470c19fe019ddcf7c4783bd01884be0c7f53c74d",
+        "6f5935cfc219251cd4362df7d10ce837521f0ac3"
+      ],
+      "paths": [
+        "tests/flash_attn/test_flash_attn_varlen_func.py::test_spec_decode_varlen_graph_replay",
+        "tests/flash_attn/test_flash_attn_varlen_func.py::test_decode_sink_sliding_window_no_nan",
+        "tests/flash_attn/test_flash_attn_varlen_func.py::test_decode_with_paged_kv_unaligned_head_size",
+        "vllm_xpu_kernels/flash_attn_interface.py::_spec_decode_varlen_fwd"
+      ],
+      "evidence": "Newer0.1.17 adds graph-mode comparisons, changing ragged/padded speculative metadata, graph-vs-eager sink equality, and head-size72/80 accuracy. Those cover different shape/dispatch/failure contracts. Ragged graph replay checks numerical closeness and inactive-row zeros while inputs/metadata change; it does not test eight bitwise identical eager replays with same-shaped decoys and allocator churn. Sink graph equality is exact but is a different sink/window case. New attention optimizations therefore do not supersede this test-only delta even on the unselected newer base.",
+      "coverage": "Useful complementary upstream tests, not semantic duplication."
+    },
+    {
+      "target": "4ba787ec9959e566d3b587a796dff07673324da5",
+      "paths": [
+        "vllm/v1/attention/backends/fa_utils.py",
+        "vllm/v1/attention/backends/flash_attn.py",
+        "vllm/v1/attention/backends/kvarn_attn.py::_flash_varlen (old fork feature to port)"
+      ],
+      "evidence": "v0.33's XPU fa_utils route still obtains flash_attn_varlen_func from xpu_ops. Ordinary FlashAttention remains a consumer, and our KVarN first-chunk/materialized dense helper also calls this interface. The new multimodal-prefix composite and adaptive-verification work do not remove these native paths or make the replay requirement obsolete.",
+      "coverage": "Retained call-path relevance; tests remain independent of the vLLM commit replay."
+    }
+  ],
+  "minimum_residual": "Retain the existing223-line test file unchanged as a separate test-only commit. No serving source, schema, package dependency or native operator change is justified by this audit.",
+  "dependencies": [
+    {
+      "kind": "upstream helper and interface",
+      "description": "Uses tests.flash_attn.test_flash_attn_varlen_func.ref_paged_attn and vllm_xpu_kernels.flash_attn_interface.flash_attn_varlen_func; the reference helper and fallback hook exist at both inspected kernel bases. No dependency on another local kernel fix or custom KVarN schema is required."
+    },
+    {
+      "kind": "build coverage",
+      "description": "Qualification must compile the BF16 H256 dense causal and paged attention variants plus the Q24/KV4 decode shape. The autouse fallback rejection intentionally fails missing-variant builds instead of claiming native coverage. Brutus's existing host kernel overrides include H256 causal dense/paged and qgroup8,H256,page64 decode variants."
+    }
+  ],
+  "validation": {
+    "performed": [
+      "Inspected assigned full diff, parent and final-tip affected-file equality; confirmed test-only net effect.",
+      "Computed stable patch ID43a970403358d0f0303a73a99af6367d7a0e5012.",
+      "Compared selected and newer upstream attention suites and wrapper implementations; inspected v0.33 XPU FA call routing.",
+      "Parsed and compiled the assigned test source in memory using the uv-created candidate .venv/bin/python; PASS, no imports or device initialization."
+    ],
+    "deferred_gpu": [
+      "Run tests/flash_attn/test_flash_attn_determinism.py against the exact installed paired candidate after the user's GPU handoff: all five cases, eight replays each, with native fallback rejection enabled.",
+      "Run targeted upstream dense/paged reference cases for the qualified host variants; keep the native replay result separate from KVarN correctness, whole-model output repeatability and performance measurements."
+    ],
+    "limitations": "No runtime, native GPU, serving, timing or memory checks were performed in this read-only audit. Historical qualification in xpu-v1.13.0 is baseline evidence, not proof of the new v0.33 candidate."
+  }
+}

@@ -1,0 +1,170 @@
+{
+  "aiohttp": {
+    "version": "3.14.4",
+    "requires_dist": [
+      "aiohappyeyeballs>=2.5.0",
+      "aiosignal>=1.4.0",
+      "async-timeout<6.0,>=4.0; python_version < \"3.11\"",
+      "attrs>=17.3.0",
+      "frozenlist>=1.1.1",
+      "multidict<7.0,>=4.5",
+      "propcache>=0.2.0",
+      "typing_extensions>=4.4; python_version < \"3.13\"",
+      "yarl<2.0,>=1.25.1",
+      "aiodns>=3.3.0; (sys_platform != \"android\" and sys_platform != \"ios\") and extra == \"speedups\"",
+      "Brotli>=1.2; (platform_python_implementation == \"CPython\" and sys_platform != \"android\" and sys_platform != \"ios\") and extra == \"speedups\"",
+      "brotlicffi>=1.2; platform_python_implementation != \"CPython\" and extra == \"speedups\"",
+      "backports.zstd; (platform_python_implementation == \"CPython\" and python_version < \"3.14\" and sys_platform != \"android\" and sys_platform != \"ios\") and extra == \"speedups\""
+    ],
+    "files": [
+      {
+        "url": "https://files.pythonhosted.org/packages/2b/27/5e1f8446545be98e9416af59c396b1ed1f9f3294afb0a40ee3a709889273/aiohttp-3.14.4-py3-none-any.whl",
+        "sha256": "5c6758ba62aea282c537179cfc8474a90f2b5f7b089cc5ff66d8920d86a9bfdd",
+        "filename": "aiohttp-3.14.4-py3-none-any.whl",
+        "type": "bdist_wheel"
+      },
+      {
+        "url": "https://files.pythonhosted.org/packages/93/2f/6a91adaa2dc26877d6ed2f54c0370c8910f019db7d77c5c6a194611e93ea/aiohttp-3.14.4.tar.gz",
+        "sha256": "831fc5bd39ec2517851e348f613ddb5447a47cf4b71cb09845af7ad7ed45d8f9",
+        "filename": "aiohttp-3.14.4.tar.gz",
+        "type": "sdist"
+      }
+    ]
+  },
+  "multidict": {
+    "version": "6.9.1",
+    "requires_dist": [
+      "typing-extensions>=4.1.0; python_version < \"3.11\""
+    ],
+    "files": [
+      {
+        "url": "https://files.pythonhosted.org/packages/be/59/e26cb779be4c591d1a910f59d29aca9fba4de70349840a833beba2652371/multidict-6.9.1-py3-none-any.whl",
+        "sha256": "7bf6478188f4e47bf5686e8a33da4ae28bf43b1b2528d9ee144d28492bfac60b",
+        "filename": "multidict-6.9.1-py3-none-any.whl",
+        "type": "bdist_wheel"
+      },
+      {
+        "url": "https://files.pythonhosted.org/packages/d6/99/1d4d69c3512d0ddbfa3a1b69cfd9a151012ab2eb4eabbb096201b1f0b7d8/multidict-6.9.1.tar.gz",
+        "sha256": "0f06e60fa190aa7abd0914c2a766736fdc8e9f34878c4346338534b73d1b20e2",
+        "filename": "multidict-6.9.1.tar.gz",
+        "type": "sdist"
+      }
+    ]
+  },
+  "pillow": {
+    "version": "13.0.0",
+    "requires_dist": [
+      "furo; extra == \"docs\"",
+      "olefile; extra == \"docs\"",
+      "sphinx>=8.2; extra == \"docs\"",
+      "sphinx-autobuild; extra == \"docs\"",
+      "sphinx-copybutton; extra == \"docs\"",
+      "sphinx-inline-tabs; extra == \"docs\"",
+      "sphinxext-opengraph; extra == \"docs\"",
+      "olefile; extra == \"fpx\"",
+      "olefile; extra == \"mic\"",
+      "arro3-compute; extra == \"test-arrow\"",
+      "arro3-core; extra == \"test-arrow\"",
+      "nanoarrow; extra == \"test-arrow\"",
+      "pyarrow; extra == \"test-arrow\"",
+      "coverage>=7.4.2; extra == \"tests\"",
+      "defusedxml; extra == \"tests\"",
+      "markdown2; extra == \"tests\"",
+      "olefile; extra == \"tests\"",
+      "packaging; extra == \"tests\"",
+      "psutil; (sys_platform == \"linux\" or sys_platform == \"darwin\") and extra == \"tests\"",
+      "pytest; extra == \"tests\"",
+      "pytest-cov; extra == \"tests\"",
+      "pytest-timeout; extra == \"tests\"",
+      "pytest-xdist; extra == \"tests\"",
+      "setuptools; extra == \"tests\"",
+      "trove-classifiers>=2024.10.12; extra == \"tests\"",
+      "defusedxml; extra == \"xmp\""
+    ],
+    "files": [
+      {
+        "url": "https://files.pythonhosted.org/packages/ce/a4/9cc30690a394a8305e8be4c9036aa16d0dfddadd09079860b582f562496d/pillow-13.0.0.tar.gz",
+        "sha256": "cdcd1ba258178f7356d74170c9a81ba4eab6a5d55748bc402a5a2a6fe6be3510",
+        "filename": "pillow-13.0.0.tar.gz",
+        "type": "sdist"
+      }
+    ]
+  },
+  "certifi": {
+    "version": "2026.10.19",
+    "requires_dist": null,
+    "files": [
+      {
+        "url": "https://files.pythonhosted.org/packages/c4/51/29046e48f693c54e5b7412216d447a1d8362c9653148d98c02cdf65fa733/certifi-2026.10.19-py3-none-any.whl",
+        "sha256": "42d35340cc5b9ba78e818ddbff0c5b1c2b779de448a340fd1b989f5fa8670e1b",
+        "filename": "certifi-2026.10.19-py3-none-any.whl",
+        "type": "bdist_wheel"
+      },
+      {
+        "url": "https://files.pythonhosted.org/packages/a6/bd/1436c50cc46699de0230fbaacc1d1de7bfec413176099949e9d5112e88f2/certifi-2026.10.19.tar.gz",
+        "sha256": "035c1e85572b141bf1c3a3eff0e33a8eb74917522f2559075ff8d2fea780a1ae",
+        "filename": "certifi-2026.10.19.tar.gz",
+        "type": "sdist"
+      }
+    ]
+  },
+  "mcp": {
+    "version": "2.2.0",
+    "requires_dist": [
+      "anyio>=4.10; python_version >= \"3.14\"",
+      "anyio>=4.9; python_version < \"3.14\"",
+      "httpx2>=2.5.0",
+      "jsonschema>=4.20.0",
+      "mcp-types==2.2.0",
+      "opentelemetry-api>=1.28.0",
+      "pydantic>=2.12.0",
+      "pyjwt[crypto]>=2.10.1",
+      "python-multipart>=0.0.9",
+      "pywin32>=311; sys_platform == \"win32\"",
+      "sse-starlette>=3.0.0",
+      "starlette>=0.27; python_version < \"3.14\"",
+      "starlette>=0.48.0; python_version >= \"3.14\"",
+      "typing-extensions>=4.13.0",
+      "typing-inspection>=0.4.1",
+      "uvicorn>=0.31.1; sys_platform != \"emscripten\"",
+      "python-dotenv>=1.0.0; extra == \"cli\"",
+      "typer>=0.16.0; extra == \"cli\"",
+      "rich>=13.9.4; extra == \"rich\""
+    ],
+    "files": [
+      {
+        "url": "https://files.pythonhosted.org/packages/1b/ff/8e7eade68b8a28f7da0ed1085544341b51f9c935dbf6b95c76b7edfea6a0/mcp-2.2.0-py3-none-any.whl",
+        "sha256": "bde982589473a060ae145e3406e9a5333fe538c97229ba841f5a7f92be004f81",
+        "filename": "mcp-2.2.0-py3-none-any.whl",
+        "type": "bdist_wheel"
+      },
+      {
+        "url": "https://files.pythonhosted.org/packages/76/31/ac54fb0fdd5b37de704486e288bba4fbbb463f24cfcfedbede407b854513/mcp-2.2.0.tar.gz",
+        "sha256": "2dc37ecb1974becdcebdbf7561e7c15a07dbbf20ba21ba16c3593b3038b3afbd",
+        "filename": "mcp-2.2.0.tar.gz",
+        "type": "sdist"
+      }
+    ]
+  },
+  "mcp-types": {
+    "version": "2.2.0",
+    "requires_dist": [
+      "pydantic>=2.12.0",
+      "typing-extensions>=4.13.0"
+    ],
+    "files": [
+      {
+        "url": "https://files.pythonhosted.org/packages/8f/d7/6ffba5d8cd5dd9b8a19478875c50e04945314ba5074e84d749283f27f62d/mcp_types-2.2.0-py3-none-any.whl",
+        "sha256": "ea476b73ee86709ab5abc9452385ed36cc05907e582355622e294595c9a04f13",
+        "filename": "mcp_types-2.2.0-py3-none-any.whl",
+        "type": "bdist_wheel"
+      },
+      {
+        "url": "https://files.pythonhosted.org/packages/ae/91/762d7755d971aff8a28d75f7961656148edf27875c8026e6385aaab08ae7/mcp_types-2.2.0.tar.gz",
+        "sha256": "d3ed53703ddd10d9c6399f29d322bb66f3f67ab41348ac8556ba23e07fedefad",
+        "filename": "mcp_types-2.2.0.tar.gz",
+        "type": "sdist"
+      }
+    ]
+  }
+}

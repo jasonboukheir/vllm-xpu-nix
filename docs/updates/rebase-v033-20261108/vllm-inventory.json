@@ -1,0 +1,32 @@
+[
+  {
+    "sha": "5673b4bb84953d9f65b20f79b49ecbcd07432bd4",
+    "parent": "5df63a7203cdb9328d824a27b682e77c7b9928be",
+    "subject": "fix(xpu): strip graph padding from GDN index tensors",
+    "patch_id": "d64845a36cdad79bf367e27f08a7e3352db390d4"
+  },
+  {
+    "sha": "efddf8010f4b9d8c896b91aa4bfed3c5e7edc2a1",
+    "parent": "5673b4bb84953d9f65b20f79b49ecbcd07432bd4",
+    "subject": "fix(xpu): stabilize Qwen GDN prefill and mixed scheduling",
+    "patch_id": "bc1ae2a1b600934985ef687084640ec90541731d"
+  },
+  {
+    "sha": "93b30581c4d0ca790e30fdad4a5e9854689b3837",
+    "parent": "efddf8010f4b9d8c896b91aa4bfed3c5e7edc2a1",
+    "subject": "fix(xpu): preserve functional batch-invariant residual RMSNorm",
+    "patch_id": "b19479b47e1d751c7ca2d336ab440780db34855b"
+  },
+  {
+    "sha": "5f58938759fcb527c2b6d99ce189aaf6df32c8a3",
+    "parent": "93b30581c4d0ca790e30fdad4a5e9854689b3837",
+    "subject": "fix(xpu): accept explicit unquantized KV cache dtypes",
+    "patch_id": "6f704ef6d098637584d969bf3fe2b27a26615957"
+  },
+  {
+    "sha": "6b3d89e6e64f1e9c4f44c68c93af84e1504ef6f0",
+    "parent": "5f58938759fcb527c2b6d99ce189aaf6df32c8a3",
+    "subject": "feat(xpu): integrate KVarN hybrid caching with V2 DFlash2",
+    "patch_id": "20a59cfedff0e178a1d7fdbbacddbf911a08a79a"
+  }
+]

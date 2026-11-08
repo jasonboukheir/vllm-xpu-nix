@@ -1,0 +1,54 @@
+{
+  "run": "rebase-v033-20261108",
+  "scope": "Prepare audited v0.33 candidate and host configuration audit; stop before GPU qualification for operator maintenance handoff",
+  "baseline_release": "xpu-v1.13.0",
+  "vllm": {
+    "old_base": "5df63a7203cdb9328d824a27b682e77c7b9928be",
+    "old_tip": "6b3d89e6e64f1e9c4f44c68c93af84e1504ef6f0",
+    "target_tag": "v0.33.0",
+    "tag_object": "3a4d82f569a9f57054ba81633e9b6c73b34b51fe",
+    "target": "4ba787ec9959e566d3b587a796dff07673324da5",
+    "official_url": "https://github.com/vllm-project/vllm/releases/tag/v0.33.0",
+    "release_metadata": "Stable annotated tag verified via GitHub Git API and git ls-remote; release-by-tag API returned 404",
+    "candidate_path": "/tmp/vllm-v033-20261108",
+    "lineage": {
+      "merge_base": "fe341a53dda00472c281a2d1f4bd34a74e7eae6e",
+      "old_release_only_commits": 16,
+      "new_release_only_commits": 943,
+      "explanation": "Published release branches diverge; all 16 old release commits have corresponding upstream PRs in v0.33, 12 with identical stable patch IDs. Remaining PRs #59815 #61556 #61409 #61427 exist with mainline variants, so this is a forward release migration, not a snapshot downgrade."
+    },
+    "candidate_tip": "066206bafebe124485a69e13dcb975a2afc55ad2",
+    "durable_candidate_ref": "refs/heads/rebase/v0.33-20261108",
+    "repository": "/home/jasonbk/Projects/vllm"
+  },
+  "kernels": {
+    "old_base": "ddf336d86e3c8602888572a3502f951abd51df12",
+    "old_tip": "05d4536b2440db171741b5de5c148cdc834bd692",
+    "target": "ddf336d86e3c8602888572a3502f951abd51df12",
+    "target_version": "0.1.15.4",
+    "compatibility": "v0.33.0 requirements/xpu.txt retains exact vllm_xpu_kernels==0.1.15.4; preserve released-wheel source mapping from xpu-v1.13.0 manifest",
+    "newest_observed_stable": "v0.1.17",
+    "newest_observed_stable_sha": "6a1ec18b69b00eaf67a457e0bdd40e72632feaae",
+    "excluded_reason": "Does not match selected vLLM release's exact kernel dependency",
+    "official_url": "https://github.com/vllm-project/vllm-xpu-kernels/releases/tag/v0.1.17",
+    "candidate_path": "/tmp/vllm-kernels-v033-20261108",
+    "newer_release_investigation_requested": true,
+    "selection_status": "Retain0.1.15.4 after independent compatibility and performance review of0.1.16.4 and0.1.17",
+    "newer_review": [
+      "kernels-v017-compatibility.json",
+      "kernels-v017-performance.json"
+    ]
+  },
+  "gpu_testing": "awaiting user maintenance handoff; no GPU work or service changes authorized yet",
+  "host_profile": "~/.config/nix/hosts/brutus/services/vllm-xpu/models/RedHatAI__Qwen3.8-27B-INT4.nix",
+  "host_profile_context": 131072,
+  "host_profile_gpu_utilization": 0.93,
+  "recovery_refs": {
+    "vllm": "refs/heads/backup/pre-v033-20261108",
+    "vllm-xpu-kernels": "refs/heads/backup/pre-v033-20261108"
+  },
+  "publication_status": "No published ref changed; immutable xpu-v1.13.0 and local main branches preserve baseline. Candidate work is isolated.",
+  "candidate_package": "/nix/store/5jvmvr89c90f4j1lry5l3a0xr8jp0gfw-python3.12-vllm-xpu-0.33.0+unstable.2026.11.08.g066206b",
+  "candidate_derivation": "/nix/store/1zx6swwn83jq2rl9kf1nnz6yrjicmm0q-python3.12-vllm-xpu-0.33.0+unstable.2026.11.08.g066206b.drv",
+  "preparation_status": "ready for operator GPU handoff"
+}

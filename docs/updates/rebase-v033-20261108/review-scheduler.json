@@ -1,0 +1,170 @@
+{
+  "schema": 1,
+  "agent": "/root/review_v033_scheduler",
+  "repository": "/tmp/vllm-v033-20261108",
+  "target": "4ba787ec9959e566d3b587a796dff07673324da5",
+  "old_base": "5df63a7203cdb9328d824a27b682e77c7b9928be",
+  "old_tip": "6b3d89e6e64f1e9c4f44c68c93af84e1504ef6f0",
+  "reviewed_head": "bcbdafbc60fc4cb28e23d3ea0594817363c404ce",
+  "reviewed_state": "First four commits replayed; KVarN feature staged and uncommitted. Static review only.",
+  "disposition": "PASS_STATIC_AND_CPU_REGRESSIONS",
+  "findings": [],
+  "conclusion": "No actionable source rebase regression found in the reviewed scope. All 738 distinct scheduler/cache/GDN CPU test cases pass after two test-fixture field repairs and environment-specific reruns. Device correctness and performance remain unqualified until the operator GPU handoff.",
+  "reviewed_file_blobs": {
+    "vllm/v1/core/block_pool.py": "922b62cbfbd63afbe6dc5d0b4f1471923d5196b9",
+    "vllm/v1/core/kv_cache_coordinator.py": "08be665534af3684dd911e40fcf6ffe90b938560",
+    "vllm/v1/core/kv_cache_manager.py": "7cbfcda051874c4e01b7e9b6335cf4eaf5ea2ef5",
+    "vllm/v1/core/sched/scheduler.py": "106458851479269c3baa17d3c5a04a7b2208369c",
+    "vllm/v1/core/single_type_kv_cache_manager.py": "f07f391fd5e5aa3582dddd50e1999dba6eb5ed11",
+    "vllm/v1/kv_cache_interface.py": "58b4745b197ff7a952ff34180d515fc8bca8fe32",
+    "vllm/model_executor/layers/mamba/gdn/qwen_gdn_linear_attn.py": "e31a4b37d67f4f57633fef86709172e07eef107d",
+    "vllm/_xpu_ops.py": "67ba984a56bc020e12f789c187774f2bf6e676a6"
+  },
+  "checks": [
+    {
+      "area": "Lookahead hashes and DFlash prefix reuse",
+      "evidence": [
+        "KVCacheCoordinator.__init__ forwards num_hash_lookahead_tokens to every physical BlockPool (kv_cache_coordinator.py:120).",
+        "Scheduler keeps use_eagle distinct from use_eagle_block_drop and clears only the block-drop behavior when lookahead hashes are enabled (scheduler.py:297-359).",
+        "Coordinator retains separate eagle_group_ids and drop_eagle_group_ids; unitary and hybrid cache lookups use the latter (kv_cache_coordinator.py:141-150, 630, 769).",
+        "All three get_mamba_prefill_checkpoint_position calls in _mamba_block_aligned_split retain upstream num_hash_lookahead_tokens; MambaManager predictor and checkpoint cache publication retain their upstream lookahead arguments.",
+        "OffloadingConnector.bind_kv_cache_manager now derives its replay boundary callback from drop_eagle_group_ids (offloading_connector.py:64), matching the no-drop DFlash policy. Offload lifecycle is separately reviewed."
+      ],
+      "result": "Upstream hash-proof and no-drop semantics preserved."
+    },
+    {
+      "area": "Allocation, full-sequence admission and async-load reservation",
+      "evidence": [
+        "KVCacheCoordinator.get_num_blocks_to_allocate_by_pool preserves each manager's upstream predictor arguments, including apply_admission_cap and prefill_end, and accumulates by the group's physical pool (kv_cache_coordinator.py:260).",
+        "KVCacheManager.allocate_slots applies full-sequence admission, watermarks and reserved capacity against each physical pool, with strict tuple-length validation for reservations (kv_cache_manager.py:523-615).",
+        "Scheduler computes speculative decode reserves and in-flight prefill reserves per pool; the existing Mamba cap is limited to RUNNING requests in a single-group independent pool (scheduler.py:379, 3469).",
+        "MambaManager.cap_future_reservation remains the old fork behavior: it declines the optimization for fine-grained hashing and pending COW, credits only private ref_cnt==1 blocks, and leaves actual per-step allocation on the upstream predictor (single_type_kv_cache_manager.py:1815)."
+      ],
+      "result": "No new cross-pool capacity borrowing or speculative admission regression found."
+    },
+    {
+      "area": "Speculative acceptance, deferred frees and COW",
+      "evidence": [
+        "KVCacheManager.allocate_slots retains the upstream processed-token boundary before freeing skipped blocks and caps cache publication to committed request.num_tokens (kv_cache_manager.py:578-650).",
+        "Scheduler request-free/COW fencing and _drain_deferred_frees retain the upstream implementation; releases use MultiBlockPool.free_blocks when independent pools are present (scheduler.py:3151-3184).",
+        "MultiBlockPool groups by physical pool while preserving within-pool order, and BlockPool.free_blocks retains upstream null-block skipping and actual-owner delegation (block_pool.py:823, 969).",
+        "take_pending_kv_cache_block_copies retains both endpoints with group_id attached to each copy; attention and recurrent zeroing IDs are also group-qualified (kv_cache_manager.py:867-925)."
+      ],
+      "result": "Scheduler-side lifetime and namespace obligations are preserved; worker execution of copies and offload fences is covered by the separate lifecycle review."
+    },
+    {
+      "area": "Qwen GDN identity and native guards",
+      "evidence": [
+        "QwenGatedDeltaNetAttention.mamba_type returns QWEN_GDN_ATTN only for XPU, otherwise delegating to the upstream GDN identity (qwen_gdn_linear_attn.py:547). This avoids breaking new Qwen4 experimental NVIDIA/AMD state-copy maps keyed by GDN_ATTN.",
+        "QwenGDNAttentionBackend alone supplies the 64-token arithmetic-grid requirement; the default AttentionBackend hook returns None.",
+        "The scheduler arithmetic grid remains restricted to XPU, mamba_cache_mode=none, non-speculative, non-multimodal, non-encoder-decoder execution; cache-aligned checkpoints continue using upstream logic (scheduler.py:440-508).",
+        "_gdn_attention_core_xpu_impl retains exact request-index slicing, all speculative rollback columns, and the guarded mixed non-spec dispatch predicate (vllm/_xpu_ops.py:235-289).",
+        "Qwen forward_xpu retains the new upstream explicit Triton/SYCL backend choice."
+      ],
+      "result": "Local behavior remains narrowly scoped and new upstream GDN dispatch is preserved."
+    },
+    {
+      "area": "KV cache interface and compatibility",
+      "evidence": [
+        "KVCacheConfig synthesizes the legacy shared pool when no explicit topology is supplied, validates explicit group ownership, and preserves upstream host-tier fields.",
+        "New pool_id and KVCacheBlockCopy.group_id fields retain defaults for legacy single-pool consumers.",
+        "KVarN quantization enum values occupy the separate 100-105 range and is_kvarn is additive.",
+        "The CUSTOM/OCTAVE_K3V4 enum alias is present in frozen upstream, not introduced by this replay; no unrelated repair is proposed.",
+        "Coordinator reset behavior is unchanged from both old fork and new upstream; the added facade's reset helper is not used by KVCacheManager.reset_prefix_cache."
+      ],
+      "result": "No new interface regression identified in reviewed scheduler-facing paths."
+    }
+  ],
+  "validation": {
+    "performed": [
+      "Read applicable AGENTS.md and the original GDN/KVarN per-commit audit reports.",
+      "Compared final candidate diffs against frozen v0.33 upstream and selected old-fork implementations; inspected callers and existing test coverage.",
+      "Recorded source blob hashes to identify the exact reviewed contents."
+    ],
+    "not_performed": [
+      "Initial static review did not run tests or import the changing candidate; the subsequently authorized CPU regression run is recorded below.",
+      "No production source edits, GPU model execution, native compilation or service operations by this reviewer.",
+      "Planner and full worker/offload lifecycle are outside this review assignment."
+    ],
+    "parent_validation_targets": [
+      "Existing test_independent_kv_cache_pools.py and the scheduler async-hit per-pool admission and async-load wedge cases.",
+      "Upstream prefix-cache lookahead checkpoint/hash matching cases and test_mamba_align_chunk_split.py lookahead cases.",
+      "Existing group-qualified zero/COW and deferred-free tests through scheduler/worker integration.",
+      "XPU/non-XPU Qwen identity and native GDN metadata tests; device correctness only after the user's GPU handoff."
+    ]
+  },
+  "cpu_regressions": {
+    "final_candidate": "066206bafebe124485a69e13dcb975a2afc55ad2",
+    "harness": "/tmp/vllm-v033-cpu-pytest",
+    "device_guard": "Harness forces CpuPlatform and replaces torch.cuda._lazy_init and torch.xpu._lazy_init with hard errors. Tests run with HF_HUB_OFFLINE=1 and TRANSFORMERS_OFFLINE=1. Device-enumeration warnings occurred in sandboxed fixture cleanup, but no GPU allocation or execution was attempted by these CPU tests.",
+    "distinct_cases_passing": 738,
+    "remaining_failures": 0,
+    "runs": [
+      {
+        "command": "/tmp/vllm-v033-cpu-pytest -q tests/v1/core/test_kv_cache_utils.py tests/v1/core/test_prefix_caching.py tests/v1/core/test_mamba_align_chunk_split.py --tb=short",
+        "initial_passed": 381,
+        "initial_failed": 3,
+        "seconds": 223.7,
+        "log": "validation/scheduler-cache-initial.log",
+        "failure_resolution": "Existing fixtures lacked connector_scheduler and num_hash_lookahead_tokens; repaired setup without changing assertions or source behavior."
+      },
+      {
+        "command": "/tmp/vllm-v033-cpu-pytest -q tests/v1/core/test_scheduler.py tests/v1/attention/test_gdn_metadata_builder.py --tb=short",
+        "initial_passed": 290,
+        "initial_failed": 64,
+        "seconds": 252.76,
+        "log": "validation/scheduler-gdn-initial.log",
+        "failure_resolution": "62 LLaVA cases lacked offline model metadata; one DP case required local sockets; one async pipeline-parallel test requires the V2 runner, which CPU defaults do not select. All were rerun successfully with only environment adjustments."
+      },
+      {
+        "command": "/tmp/vllm-v033-cpu-pytest -q tests/v1/core/test_prefix_caching.py::test_hisparse_indexer_offload_is_capped_by_missing_host_prefix tests/v1/core/test_prefix_caching.py::test_hybrid_mamba_retention_mtp_resend_of_aligned_prompt --tb=short",
+        "passed": 3,
+        "failed": 0,
+        "seconds": 2.7,
+        "log": "validation/scheduler-cache-fixture-rerun.log"
+      },
+      {
+        "command": "VLLM_USE_V2_MODEL_RUNNER=1 /tmp/vllm-v033-cpu-pytest -q tests/v1/core/test_scheduler.py::test_async_scheduling_pp_allows_rescheduling_with_output_placeholders --tb=short",
+        "passed": 1,
+        "failed": 0,
+        "seconds": 14.82,
+        "log": "validation/scheduler-pp-rerun.log"
+      },
+      {
+        "command": "/tmp/vllm-v033-cpu-pytest -q tests/v1/core/test_scheduler.py::test_local_prefill_interval_left_to_engine_under_dp --tb=short",
+        "environment": "Approved require_escalated invocation permits local port allocation; same no-GPU harness.",
+        "passed": 1,
+        "failed": 0,
+        "seconds": 15.11,
+        "log": "validation/scheduler-dp-rerun.log"
+      },
+      {
+        "command": "mapfile -t scheduler_llava_nodes < /tmp/vllm-v033-scheduler-llava-nodes.txt; HF_HOME=/tmp/vllm-v033-scheduler-hf-cache /tmp/vllm-v033-cpu-pytest -q \"${scheduler_llava_nodes[@]}\" --tb=short",
+        "node_list": "validation/scheduler-llava-nodes.txt",
+        "passed": 62,
+        "failed": 0,
+        "seconds": 41.82,
+        "log": "validation/scheduler-llava-rerun.log"
+      },
+      {
+        "command": "/tmp/vllm-v033-cpu-pytest -q tests/v1/core/test_scheduler.py::test_async_hit_admission_reserves_only_the_pool_that_needs_blocks tests/v1/core/test_mamba_align_chunk_split.py -x --tb=short",
+        "passed": 62,
+        "failed": 0,
+        "seconds": 52.1,
+        "log": "validation/scheduler-pool-mamba-targeted.log",
+        "count_note": "Overlaps the main batches; not added to the 738 distinct total."
+      }
+    ],
+    "fixture_changes": [
+      "tests/v1/core/test_prefix_caching.py: Existing OffloadingConnector.__new__ fixture initializes connector_scheduler=None before binding.",
+      "tests/v1/core/test_prefix_caching.py: Existing MTP splitter fixture provides num_hash_lookahead_tokens=0, preserving the test's legacy Eagle block-drop case."
+    ],
+    "offline_metadata": {
+      "model": "llava-hf/llava-1.5-7b-hf",
+      "revision": "b234b804b114d9e37bb655e11cbbb5f5e971b7a9",
+      "cache": "/tmp/vllm-v033-scheduler-hf-cache",
+      "log": "validation/scheduler-llava-metadata.log",
+      "scope": "Public configuration, processor and tokenizer files plus model index JSON only; no tensor weights. Existing model cache entries are linked read-only from /var/cache/huggingface/hub; new files live only under /tmp."
+    }
+  }
+}

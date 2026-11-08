@@ -1,0 +1,152 @@
+{
+  "schema": 1,
+  "agent": "kernels_v017_perf",
+  "scope": "Read-only applicability and performance audit; no GPU, serving, model loading or service-state operations",
+  "inputs": {
+    "kernel_old_base": "ddf336d86e3c8602888572a3502f951abd51df12",
+    "kernel_old_tip": "05d4536b2440db171741b5de5c148cdc834bd692",
+    "kernel_v017": "6a1ec18b69b00eaf67a457e0bdd40e72632feaae",
+    "kernel_v0164": "4e38707669b8f44a47afcdc68b7d5dc223de66c0",
+    "vllm_old_base": "5df63a7203cdb9328d824a27b682e77c7b9928be",
+    "vllm_old_tip": "6b3d89e6e64f1e9c4f44c68c93af84e1504ef6f0",
+    "vllm_target": "4ba787ec9959e566d3b587a796dff07673324da5",
+    "host_recipe": "/home/jasonbk/.config/nix/hosts/brutus/services/vllm-xpu/models/RedHatAI__Qwen3.8-27B-INT4.nix",
+    "host_operations": "/home/jasonbk/.config/nix/hosts/brutus/services/vllm-xpu/README.md",
+    "host_package": "/home/jasonbk/.config/nix/hosts/brutus/services/vllm-xpu/package.nix",
+    "release_manifest": "../../releases/xpu-v1.13.0.json"
+  },
+  "recommendation": {
+    "decision": "Retain the v0.33-pinned kernel 0.1.15.4 for the primary candidate; do not upgrade solely for an assumed current-profile speedup",
+    "reason": "Source tracing finds no automatic benefit from v0.1.17's prominent performance changes on the current eager, dense Qwen, Xe2 B70, custom-KVarN path. The release does add useful correctness and coverage work, but those are not measured speedups here. Its Torch 2.15 and packaging migration belongs to a separately qualified experiment if pursued.",
+    "observed_performance_delta": null,
+    "certainty": "Call-path applicability is source-verified; total performance, memory and TTFT remain unmeasured",
+    "intermediate_release": "v0.1.16.4 also changes Torch to 2.15 and does not contain the token-aware QK kernel change or the adaptive FlashAttention change. Its additions primarily address other model shapes, MoE, FP8, RecoverSSM and M-RoPE coverage. Earlier 0.1.16/0.1.16.2 avoid that final Torch bump but present no clear benefit to the active paths identified here. No intermediate upgrade is recommended on this evidence."
+  },
+  "active_profile": {
+    "device": "Intel Arc Pro B70, Xe2/BMG AOT",
+    "target": "RedHatAI/Qwen3.8-27B-INT4 at bf08f3dbd9a324e53956920aad378a1f1b6dd24a",
+    "target_compute": "BF16 dense W4A16 compressed-tensors; hybrid full attention plus GDN",
+    "target_cache": "kvarn_k4v2_g128_compact",
+    "draft": "syvai/Qwen3.8-27B-DFlash2-W4A16 at 4d30ec736ffc6b8688dc2ae2b502d9b48bdec279",
+    "draft_cache": "BF16 sliding window 2048, two speculative tokens",
+    "runner": "V2, eager, XPU graph disabled",
+    "context": 131072,
+    "max_num_seqs": 4,
+    "max_num_batched_tokens": 2048,
+    "long_prefill_token_threshold": 1024,
+    "gpu_memory_utilization": 0.93,
+    "cpu_prefix_bytes": 8589934592,
+    "multimodal": "Two images, no video, fixed 200704 pixel budget per image",
+    "sharing": "Embedding/STT workers disabled; GPU headroom retained for Jellyfin"
+  },
+  "kernel_changes": [
+    {
+      "sha": "306334612856eb808046f7a2e40abbea09f6ae70",
+      "change": "Token-aware heads_per_sg selection for native fused_qk_norm_rope",
+      "upstream_evidence": "csrc/fused_qknorm_rope.cpp::select_heads_per_sg tunes num_tokens * total_qk_heads and explicitly says thresholds were tuned on B70. Upstream adds bit-identical forced-variant tests and a benchmark gate.",
+      "current_profile_applicability": "No automatic use. vLLM's native _C.fused_qk_norm_rope call lives in compilation/passes/fusion/qk_norm_rope_fusion.py. enforce_eager sets CompilationMode.NONE. The target Qwen3NextAttention._project_qkv_gate calls the separate Triton fused_qk_rmsnorm_rope_gate, not this native operator. DFlash2Qwen3DecoderLayer inherits DFlashQwen3DecoderLayer; its attention uses eager RMSNorm and rotary_emb calls.",
+      "action": "Do not attribute upstream kernel benchmark gains to this host. A future compiled or explicitly fused draft experiment needs proof of operator dispatch, correctness and whole-service measurements. Do not enable graphs just to reach it; KVarN's XPU beta rejects graph mode."
+    },
+    {
+      "sha": "470c19fe019ddcf7c4783bd01884be0c7f53c74d",
+      "change": "Ragged and padded speculative query support in FlashAttention split-K decode redirection",
+      "upstream_evidence": "vllm_xpu_kernels/flash_attn_interface.py::_spec_decode_varlen_fwd uses searchsorted on device cu_seqlens_q instead of a uniform query-length assumption; flash_attn_varlen_func now accepts nonuniform small causal paged batches.",
+      "current_profile_applicability": "The KVarN target verifies through its native compact-cache path. KVarNAttentionImpl._flash_varlen passes dense unpaged K/V, so this new block_table-dependent redirect is not used there. BF16 draft FlashAttention may use its wrapper, but fixed two-proposal drafting does not by itself establish a newly ragged workload or improvement over the existing uniform fast path.",
+      "action": "No current-profile speedup established. Adaptive verification requires more than this kernel upgrade."
+    },
+    {
+      "shas": ["b73bdc317dd9f38f905a866e579855cec8459a08", "11c79175cddab23e76b7bfaf6b3df2538185e888", "daf624051e617bac77c4e1de6f13c6a1d83f9e57"],
+      "change": "GDN null-state skipping, DS conv-state layout, and 64-bit conv-state offsets",
+      "current_profile_applicability": "Valuable correctness changes. Null-state handling targets graph padding, while this host uses eager execution and its adapter trims request padding. DS layout support fixes a different layout than the existing qualified SD path. Wider offsets address sufficiently high block-index times stride; the independent recurrent pool is small, unlike a large shared attention-sized pool. None establishes a speed benefit or invalidates the separate fresh-state producer/consumer barrier.",
+      "local_patch_implication": "The fresh-state barrier file csrc/xpu/gdn_attn/xe_2/chunk_gated_delta_rule_kernels_xe2.hpp has no old-base-to-v0.1.17 diff. These newer changes are not evidence to drop the local barrier or re-enable historically unstable tiled prefill. Per-commit audit remains authoritative.",
+      "action": "Keep in the correctness watchlist and future graph/layout qualification; no blanket workaround removal."
+    },
+    {
+      "change": "Xe3P grouped GEMM, fused routed/shared MoE, FP8/MXFP8 fixes, MLA context parallelism, head-size 72 and expanded attention presets",
+      "current_profile_applicability": "Xe3P differs from this BMG/Xe2 build. The target and draft are dense W4A16 rather than routed MoE, and KVarN is not FP8/MLA. MoonViT head-size72 and other model-specific configs do not match the active target's H256 attention. These additions must not silently broaden the host AOT selection.",
+      "action": "No current-profile performance claim. Preserve explicit BMG and host kernel coverage."
+    },
+    {
+      "sha": "4444c69bde1420f83718e5e9157d67c436e80109",
+      "change": "Native interleaved M-RoPE support, present in 0.1.16 lineage",
+      "current_profile_applicability": "The relevant target uses fused Triton gated QK norm/RoPE. v0.33 MRotaryEmbedding.forward_xpu delegates to forward_cuda, whose 2D path calls triton_mrope. New native SYCL M-RoPE coverage therefore does not establish an automatic benefit to this eager host.",
+      "action": "Treat as coverage for other paths, not a reason to repin this candidate."
+    }
+  ],
+  "v033_host_opportunities": [
+    {
+      "priority": 1,
+      "sha": "0bfeb8d0e367c21d4406c87d0807729cc8787322",
+      "feature": "DFlash/DSpark stop dropping the last prefix-cache block",
+      "applicability": "Directly relevant to the active DFlash2 plus hybrid Mamba-aligned prefix-cache workload, including RAM-prefix replay when the local connector follows upstream group ownership.",
+      "action": "Preserve the upstream fix during rebase; compare matched warm-prefix and RAM-restored requests. Measure recomputed tokens, TTFT and cache correctness at block/context boundaries. No new serving flag needed.",
+      "performance_status": "Expected reduction of avoidable replay work by source semantics; magnitude not measured."
+    },
+    {
+      "priority": 1,
+      "sha": "5c1c903501927ea7c6c699aabd4c271015e66e71",
+      "feature": "Incremental Qwen3 tool argument streaming",
+      "applicability": "Current toolCallParser=qwen3_xml resolves through tool_parsers/__init__.py to Qwen3EngineToolParser, then registered_adapters.py to Qwen3Parser. The changed parser is on the configured path.",
+      "action": "Retain the existing parser setting. Test long string arguments and escaped/structured values through the actual gateway. Compare time to first useful tool-argument chunk and parser CPU time. Upstream's 12KB benchmark is not the host's measured speedup and is not model-prefill TTFT.",
+      "performance_status": "Automatic applicable parser improvement; local measurement pending."
+    },
+    {
+      "priority": 2,
+      "sha": "7cd7982dfda0d29c68f73c54cd343b674b290a47",
+      "feature": "DFlash draft rows no longer consume target scheduler token budget",
+      "applicability": "Direct DFlash configuration path. The current four-request/two-proposal limit is far below a 2048-token draft-pass cap, so major capacity claims would be overstated.",
+      "action": "Preserve upstream logic; compare mixed prefill/decode at four requests and record scheduled target tokens and prefill latency."
+    },
+    {
+      "priority": 2,
+      "sha": "ed3050add4abd770b118ad6fa337bdde0ba2ae08",
+      "feature": "prefill_schedule_interval works without data parallelism",
+      "applicability": "The single-engine host can now test it. Interval >1 intentionally gives existing decoders uninterrupted steps by deferring all prefill work, including already admitted chunks.",
+      "action": "Keep default 1 for the qualification baseline. Optional matched interval 1 versus 2 experiment under one active decode plus one long prompt; promote only if inter-token latency improves enough to justify increased prompt TTFT. It is not a general TTFT improvement."
+    },
+    {
+      "priority": 3,
+      "sha": "38168d5b82f1c4015f8f37372f1670e11b6afdba",
+      "feature": "XPU GDN SYCL/Triton selection",
+      "applicability": "qwen_gdn_linear_attn.py::_resolve_gdn_prefill_backend reads additional_config.gdn_prefill_backend; auto still chooses available SYCL. Triton offers an alternate implementation to compare.",
+      "action": "Optional isolated experiment after baseline qualification, using additional-config gdn_prefill_backend=triton. Validate fresh-state output, cached continuation, speculative rollback and RAM restore before considering performance. Do not infer equivalence or retire local native fixes from the existence of this toggle."
+    },
+    {
+      "priority": "do_not_enable",
+      "sha": "35d01660ff3644de128253950b8fcb4b7705668f",
+      "feature": "XPU adaptive verification",
+      "applicability": "Not a ready-to-enable feature for this hybrid custom backend. GDNAttentionBackend.is_ssm returns true and inherits supports_device_cpu_query_lens_mismatch=false. The adaptive manager rejects such backends. KVarNMetadataBuilder reports UNIFORM_BATCH without a demonstrated variable-length bound, and XPU KVarN explicitly rejects graph mode.",
+      "action": "Leave enable_adaptive_verification false. A future implementation needs verified variable-length GDN/KVarN ownership and admission semantics, not merely kernel v0.1.17."
+    },
+    {
+      "priority": "audit_only",
+      "feature": "Upstream CPU offload pinning, shm partitioning and capacity metrics",
+      "applicability": "IndependentCPUOffloadingWorker allocates one pinned uint8 host tensor and performs its own bounded byte-pool transfers. Generic CPUOffloadingSpec improvements do not automatically optimize this custom worker.",
+      "action": "Audit integration and capacity metric reporting separately; do not claim RAM savings from generic CPU offload changes without observing the custom worker's allocation."
+    }
+  ],
+  "host_configuration_assessment": {
+    "retain": [
+      "128K context and 0.93 utilization preserve the documented shared-GPU headroom; lowering context alone would not reserve GPU memory",
+      "Four request slots share the recorded 149888 attention-token pool; do not describe this as four concurrent full contexts",
+      "8GiB RAM prefix tier, pinned target/draft revisions, explicit BF16 draft KV, and bounded image processing",
+      "2048 batched-token limit: the current KVarN XPU speculative configuration explicitly guards max_num_batched_tokens<=2048; do not casually recommend4096 or8192",
+      "Eager mode: this is an explicit KVarN support constraint, not an accidentally forgotten graph optimization"
+    ],
+    "still_unresolved": "The documented long-idle stall needs a natural before/after idle snapshot. MemorySwapMax=0 is not proof of cause or protection for every GPU-driver allocation. Do not replace that investigation with keepalive traffic or a speculative cache-size change.",
+    "memory_claim": "No source-audit evidence of a new automatic VRAM reduction for the configured KVarN path. Preserve current budget until candidate allocation and shared-GPU behavior are measured."
+  },
+  "qualification_order": [
+    "Build and run the v0.33 + audited0.1.15.4 baseline at the exact current host profile after the user frees the GPU",
+    "Run native GDN/KVarN regression coverage, short structured answers, vision, speculative rejection/rollback, cache reset, warm-prefix/RAM replay and128K boundaries",
+    "Matched old/new profile comparison at1,2,4 requests: cold/warm/RAM-restored TTFT, inter-token latency, output tokens/s, acceptance, preemption, actual GPU/RAM allocation and correctness",
+    "Exercise long XML tool-argument streaming through the gateway separately from model TTFT",
+    "Only then test optional prefill interval2 or GDN Triton as one-variable changes; retain the current limit/profile on regressions",
+    "If separately investigating newer kernels, compare an otherwise identical fully matched Torch/toolchain pair and prove which native ops actually execute before attributing gains"
+  ],
+  "validation": {
+    "performed": ["Read immutable Git objects and diffs for both kernel release lines", "Traced v0.33 model, parser, scheduler and backend eligibility call paths", "Read exact current host profile, package override and documented qualification limits", "Checked official upstream release and relevant PR pages"],
+    "not_performed": ["GPU benchmarks", "Native kernel execution", "Model loading or serving", "Service modifications", "Host config edits"],
+    "sources": ["https://github.com/vllm-project/vllm-xpu-kernels/releases/tag/v0.1.17", "https://github.com/vllm-project/vllm-xpu-kernels/pull/641", "https://github.com/vllm-project/vllm-xpu-kernels/pull/647", "https://github.com/vllm-project/vllm/pull/62027", "https://github.com/vllm-project/vllm/pull/54163", "https://github.com/vllm-project/vllm/pull/54627", "https://github.com/vllm-project/vllm/pull/62244"]
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "schema": 1,
+  "reviewer": "/root/audit_vllm_kvarn",
+  "scope": "Read-only follow-up on the duplicate fsspec closure failure. No source edits, build cancellation or test suppression.",
+  "failure_log": "/tmp/vllm-v033-candidate-final-build.log",
+  "failure": "xgrammar and accelerate combine the prebuilt torch-xpu dependency closure with the newly scoped Transformers/huggingface-hub closure. Both contain fsspec 2026.6.0, but changed test inputs produce distinct store paths, so pythonCatchConflicts correctly rejects the duplicate.",
+  "artifacts": {
+    "stock": "/nix/store/1wapaws7p4sw0vmblgdr8898wmxw2j1s-python3.12-fsspec-2026.6.0",
+    "scoped": "/nix/store/gbp7si31c042l7wpbln76igh5jpkkbwc-python3.12-fsspec-2026.6.0",
+    "stock_derivation": "/nix/store/bfzkwp62bxc9w1d5bf0l9p70igx5wq7m-python3.12-fsspec-2026.6.0.drv",
+    "scoped_derivation": "/nix/store/29qjqn7pzvclnakqsm7hq4pkrkpbr773-python3.12-fsspec-2026.6.0.drv",
+    "shared_source": "/nix/store/k54vg10qjb51sknchzh9ll25wr8yyad6-source"
+  },
+  "equivalence_evidence": [
+    "diff -rq --exclude='*.pyc' between complete output trees is empty, including installed source, package metadata and nix-support files.",
+    "Both propagated-build-inputs files contain only /nix/store/yvwk46zd4zvbwzqwhpd8kddpz14zda49-python3-3.12.13.",
+    "The stock package's dependencies passthru is empty and its buildInputs are empty. Its Requires-Dist metadata is entirely gated on optional extras.",
+    "Derivation inspection shows identical source, patches, build-system and Python packaging hooks. Changed native test inputs are aiohttp 3.14.3 versus 3.14.4 and corresponding rebuilt requests/pytest-vcr packages.",
+    "nix/torch-xpu.nix obtains fsspec from the unmodified pinned python312Packages, while the scoped Python fixed point rebuilds fsspec because its nativeCheckInputs consume the refreshed HTTP stack."
+  ],
+  "recommended_change": {
+    "principle": "Reuse the identical stock fsspec runtime artifact, but replace only its optional-dependencies passthru with the scoped extras. Retain conflict checks and the existing Torch/native-kernel derivation identities.",
+    "expression_lines": [
+      "fsspec =",
+      "  let stock = pkgs.python312Packages.fsspec; in",
+      "  assert pkgs.lib.assertMsg (",
+      "    (stock.dependencies or [ ]) == [ ]",
+      "    && map toString (stock.propagatedBuildInputs or [ ])",
+      "       == [ (toString pkgs.python312Packages.python) ]",
+      "  ) \"Review fsspec reuse: runtime dependencies changed\";",
+      "  stock.overrideAttrs (old: {",
+      "    passthru = (old.passthru or { }) // {",
+      "      optional-dependencies = pyPrev.fsspec.optional-dependencies;",
+      "    };",
+      "  });"
+    ],
+    "optional_additional_guard": "Require stock.version == pyPrev.fsspec.version and toString stock.src == toString pyPrev.fsspec.src if a future separate scoped fsspec source override should explicitly invalidate this reuse policy.",
+    "why_preserve_extras": "datasets and pytorch-lightning consume fsspec.optional-dependencies.http, and imageio consumes its github extra. Reusing the complete stock attribute unchanged would reintroduce old aiohttp/requests through those consumers. Overriding only passthru preserves the runtime artifact and the scope's new optional providers."
+  },
+  "evaluation_results": {
+    "method": "Constructed the existing stock and scoped package sets in a read-only nix eval expression, applied the passthru-only override, and inspected derivation/output identities and optional providers.",
+    "same_derivation": true,
+    "same_output": true,
+    "stock_http_aiohttp_version": "3.14.3",
+    "reused_http_aiohttp_version": "3.14.4",
+    "new_http_aiohttp": "/nix/store/splfxd89kdny3gljkwis1dvmjmxj807s-python3.12-aiohttp-3.14.4",
+    "preserves_extras_on_plain_attr": true,
+    "preserves_extras_on_out_attr": true,
+    "preserves_extras_on_lib_getOutput_out": true,
+    "runtime_guard_inputs": {
+      "dependencies": [],
+      "propagatedBuildInputs": [
+        "/nix/store/yvwk46zd4zvbwzqwhpd8kddpz14zda49-python3-3.12.13"
+      ]
+    }
+  },
+  "validation_boundary": "This proves artifact compatibility and the evaluated passthru behavior. Parent must apply the repair and rerun failed downstream package builds with conflict checks active. No passing final candidate build is claimed. The existing keep-going build was left running so independent work, including OpenCV, could finish.",
+  "mutations": "Only this audit artifact. Nix evaluation/derivation queries were read-only; no service, source, lock, branch or build-client state was changed."
+}

@@ -1,0 +1,44 @@
+[
+  {
+    "sha": "e50d437ee5560e5b5f12581ee61b1bddab157733",
+    "parent": "ddf336d86e3c8602888572a3502f951abd51df12",
+    "subject": "fix(onednn): make W4A16 matmul deterministic",
+    "patch_id": "7ea50ac3b0ceb331108743cc12894af0bd2fce23"
+  },
+  {
+    "sha": "63a31d01e8fcf44a7b08f8e76e85ec40a208b6f1",
+    "parent": "e50d437ee5560e5b5f12581ee61b1bddab157733",
+    "subject": "fix(gdn): disable unstable tiled causal-convolution prefill",
+    "patch_id": "f7fd14e5d76964b1426c46ae21f46913f227194d"
+  },
+  {
+    "sha": "ad5d9e16721f5c219de65c8d408c02edab104919",
+    "parent": "63a31d01e8fcf44a7b08f8e76e85ec40a208b6f1",
+    "subject": "fix(gdn): order fresh-state prefill output reads",
+    "patch_id": "be4c0310f7f161dda8916d4d75bfd15db795f471"
+  },
+  {
+    "sha": "d8e1f69699496beeda61da9a544f49d9b6378d73",
+    "parent": "ad5d9e16721f5c219de65c8d408c02edab104919",
+    "subject": "fix(gdn): preserve cached decode arithmetic in mixed batches",
+    "patch_id": "21d478c5a5c87f2f04d87acf4cb3b4a0e21e8672"
+  },
+  {
+    "sha": "7d72670ba22c67480a4805a2d418beb19f83d004",
+    "parent": "d8e1f69699496beeda61da9a544f49d9b6378d73",
+    "subject": "test(gdn): preserve shortened-query rollback and storage guards",
+    "patch_id": "8ff0d6efd5b31d2320987b2995329a9841856343"
+  },
+  {
+    "sha": "348a8b91e4c301ff3c94b0fce68a4cda7a591bfc",
+    "parent": "7d72670ba22c67480a4805a2d418beb19f83d004",
+    "subject": "test(attn): cover native FlashAttention replay determinism",
+    "patch_id": "43a970403358d0f0303a73a99af6367d7a0e5012"
+  },
+  {
+    "sha": "05d4536b2440db171741b5de5c148cdc834bd692",
+    "parent": "348a8b91e4c301ff3c94b0fce68a4cda7a591bfc",
+    "subject": "feat(attn): add native KVarN cache and compact K4V2 attention",
+    "patch_id": "4ff4c3eb11770280350fa8f4739b6edee6cacff4"
+  }
+]

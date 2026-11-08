@@ -1,0 +1,82 @@
+{
+  "schema": 1,
+  "agent": "audit_kernel_determinism",
+  "repository": "/home/jasonbk/Projects/vllm-xpu-kernels",
+  "commit": "e50d437ee5560e5b5f12581ee61b1bddab157733",
+  "parent": "ddf336d86e3c8602888572a3502f951abd51df12",
+  "subject": "fix(onednn): make W4A16 matmul deterministic",
+  "patch_id": "7ea50ac3b0ceb331108743cc12894af0bd2fce23",
+  "old_base": "ddf336d86e3c8602888572a3502f951abd51df12",
+  "old_tip": "05d4536b2440db171741b5de5c148cdc834bd692",
+  "selected_target": "ddf336d86e3c8602888572a3502f951abd51df12",
+  "selected_version": "0.1.15.4",
+  "companion": {
+    "repository": "/home/jasonbk/Projects/vllm",
+    "old_base": "5df63a7203cdb9328d824a27b682e77c7b9928be",
+    "old_tip": "6b3d89e6e64f1e9c4f44c68c93af84e1504ef6f0",
+    "target": "4ba787ec9959e566d3b587a796dff07673324da5",
+    "version": "v0.33.0"
+  },
+  "requirement": {
+    "behavior": "Request deterministic oneDNN accumulation for repeated native W4A16 projections with fixed tensor/primitive shape, including primitive reuse across different layers and output/scratch allocation changes.",
+    "implementation": "Set primitive_attr::set_deterministic(true) in dnnl_matmul_w4a16_int4's f_attr callback before primitive creation and caching.",
+    "workload": "Intel B70, compressed-tensors symmetric INT4 group-128 target projections with BF16 activations; the deployed W4A16 DFlash2 drafter also uses compressed-tensors projections. Current host runs eager V2/DFlash2, K4V2 target KV, explicit BF16 draft KV, 131072 context and four request slots.",
+    "limits": "This is fixed-shape kernel repeatability, not a guarantee of identical arithmetic across batch sizes or deterministic whole-model text. Existing batch-separability coverage allows two BF16 rounding quanta and records bitwise differences diagnostically. The current host README explicitly reports cold-run text differences in the two-proposal profile.",
+    "final_old_stack": "The header and regression file are unchanged by all six subsequent fork commits; the requested attribute remains effective. No on/off speed benefit is established by this audit or the maintained fork rationale."
+  },
+  "upstream_coverage": [
+    {
+      "target": "ddf336d86e3c8602888572a3502f951abd51df12",
+      "paths": [
+        "csrc/xpu/onednn/int4_gemm_w4a16.h:dnnl_matmul_w4a16_int4",
+        "csrc/xpu/onednn/onednn_ext.h:matmul_primitive_create_and_cache",
+        "csrc/xpu/onednn/onednn_matmul.cpp:int4_gemm_w4a16",
+        "csrc/xpu/torch_bindings.cpp:_xpu_C::int4_gemm_w4a16"
+      ],
+      "finding": "The selected base is unchanged. Native W4A16 creates a default primitive_attr and invokes f_attr; upstream configures scratchpad, scale/zero-point and fpmath attributes without requesting determinism. No equivalent native or dispatcher replacement was found."
+    },
+    {
+      "commit": "fc377f77714b42f706640d5857a0f2a5f233758d",
+      "path": "vllm/model_executor/kernels/linear/mixed_precision/xpu.py:XPUwNa16LinearKernel",
+      "finding": "v0.33 replaces parameter assignment helpers but retains apply_weights dispatch to torch.ops._xpu_C.int4_gemm_w4a16 with the existing ABI. BF16/FP16 activation support and uint4/uint4b8 weight selection remain. This refactor does not replace native accumulation policy."
+    },
+    {
+      "commit": "b33cb8123707977aed605937a772bf0bc5d2a92d",
+      "path": "vllm/model_executor/layers/quantization/compressed_tensors/schemes/compressed_tensors_wNa16.py:CompressedTensorsWNA16",
+      "finding": "An actual alternate upstream implementation now bypasses the quantized kernel when global VLLM_BATCH_INVARIANT is enabled, dequantizing weights and calling matmul_batch_invariant. The current host does not enable that flag, so this does not cover ordinary native W4A16 serving or justify deleting the deterministic attribute. Optional global batch-invariant profiles should expect this changed dispatch and be validated separately; do not conflate it with the fork's scoped request-stability policy."
+    },
+    {
+      "target": "6a1ec18b69b00eaf67a457e0bdd40e72632feaae",
+      "version": "v0.1.17",
+      "path": "csrc/xpu/onednn/int4_gemm_w4a16.h",
+      "finding": "Header blob 88cff6b258645c656887abad597cf31cfdf87fdf is identical to selected upstream0.1.15.4, still without deterministic attribute. New nearby oneDNN changes concern FP8 scale routing, not W4A16. Newer kernels therefore do not supersede this requirement either; this source observation is not qualification of the Torch2.15 stack."
+    }
+  ],
+  "disposition": "KEEP",
+  "minimum_residual": "Retain the single deterministic attribute request and existing fixed-shape replay/batch-separability tests unchanged. No production adaptation or fold is required on the unchanged kernel base.",
+  "drop_condition": "An equivalent deterministic native implementation proven for supported W4A16 shapes, or an explicit decision to retire fixed-shape reproducibility. A different optional global dequantization path or an unmeasured potential speed improvement is insufficient.",
+  "dependencies": {
+    "fork_prerequisites": [],
+    "later_folds": [],
+    "cross_repository": "No schema or ABI extension. Retained v0.33 XPUwNa16LinearKernel caller uses the existing int4_gemm_w4a16 operator. KVarN cache kernels and mixed GDN policies are independent.",
+    "packaging": "Requires enabled oneDNN build and the existing API supporting set_deterministic, already used by the preserved0.1.15.4 fork. Any future Torch/oneDNN refresh requires remeasurement even if this wrapper source is unchanged."
+  },
+  "validation": {
+    "observed": [
+      "Read original commit, computed stable patch ID, inspected full final-stack contribution and confirmed no later edits to its two files.",
+      "Compared selected upstream and0.1.17 native W4A16 header blobs; both equal88cff6b258645c656887abad597cf31cfdf87fdf, versus retained fork blob48b136b3d58f752c975e9f35c0e9d69fd89acaa8.",
+      "Inspected native primitive-attribute creation and v0.33 quantized linear dispatch, including the alternative global batch-invariant dequantization route.",
+      "Read current host model recipe, repeatability limitation and maintained fork rationale."
+    ],
+    "runtime_run": false,
+    "required_gpu_checks": [
+      "Run tests/test_int4_gemm_determinism.py: nine fixed-shape repeated-projection cases including primitive reuse and allocation pressure, plus six M=4 versus four M=1 numerical-separability cases.",
+      "If reconsidering the policy for performance, compare identical compiled deterministic-on/off variants with matched target and draft projection shapes, recording latency, numerical differences and fixed-shape replay failures; do not infer an isolated gain from whole-profile throughput.",
+      "Qualify paired v0.33 serving separately, including target/draft numerical behavior. Kernel repeatability does not establish deterministic generated text."
+    ],
+    "unresolved": [
+      "No current controlled speed cost or benefit for the deterministic setting has been measured.",
+      "No native runtime tests were run because GPU maintenance has not been handed off."
+    ]
+  }
+}

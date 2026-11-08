@@ -1,0 +1,75 @@
+{
+  "schema": 1,
+  "scope": "Read-only configuration and source audit; no GPU measurements or service changes",
+  "host": "brutus",
+  "profile": "~/.config/nix/hosts/brutus/services/vllm-xpu/models/RedHatAI__Qwen3.8-27B-INT4.nix",
+  "baseline": {
+    "target": "RedHatAI/Qwen3.8-27B-INT4",
+    "cache": "kvarn_k4v2_g128_compact",
+    "runner": "V2 eager",
+    "draft": "syvai/Qwen3.8-27B-DFlash2-W4A16",
+    "draft_tokens": 2,
+    "draft_kv_dtype": "bfloat16",
+    "max_model_len": 131072,
+    "max_num_seqs": 4,
+    "batch_tokens": 2048,
+    "long_prefill_threshold": 1024,
+    "gpu_memory_utilization": 0.93,
+    "cpu_prefix_bytes": 8589934592,
+    "cpu_offload_policy": "active_only",
+    "offload_prompt_only": false,
+    "images": 2,
+    "pixels_per_image": 200704,
+    "video": 0
+  },
+  "retain": [
+    "Keep pinned target/draft revisions and host BMG AOT presets for a matched baseline.",
+    "Retain explicit target KVarN and draft BF16; auto can inherit checkpoint FP8 metadata.",
+    "Keep eager V2 and disabled XPU graphs: current custom cache/draft combination is qualified for eager only.",
+    "Keep 0.93 GPU utilization and context/concurrency budgets until measured with Jellyfin sharing; do not spend headroom speculatively.",
+    "Keep synchronous host-load budget at its default zero; enabling it needs hybrid recurrent-state ordering validation.",
+    "Keep chat service swap disabled; observed MemorySwapMax=0 and MemorySwapCurrent=0."
+  ],
+  "automatic_v033_benefits": [
+    {
+      "feature": "DFlash last-prefix-block retention",
+      "impact": "Avoids unnecessary trailing-block replay for DFlash; potential warm-prefix TTFT benefit, unmeasured",
+      "source": "https://github.com/vllm-project/vllm/commit/0bfeb8d0e367c21d4406c87d0807729cc8787322"
+    },
+    {
+      "feature": "Incremental qwen3_xml tool arguments",
+      "impact": "Earlier usable streamed tool arguments; does not imply faster token generation",
+      "source": "https://github.com/vllm-project/vllm/commit/5c1c903501927ea7c6c699aabd4c271015e66e71"
+    },
+    {
+      "feature": "Request-scoped prefix eviction order",
+      "impact": "Port upstream LRU into the custom variable-byte CPU tier to preserve prefix heads during growing-request stores",
+      "source_commit": "e113018f5067"
+    }
+  ],
+  "optional_experiments_after_baseline": [
+    {
+      "setting": "scheduler_config.prefill_schedule_interval=2",
+      "tradeoff": "Can protect ongoing decode latency from competing prefills, but increases prompt waiting and can lengthen prefill by up to N engine steps; not a universal TTFT improvement",
+      "default": 1
+    },
+    {
+      "setting": "additional_config.gdn_prefill_backend=triton",
+      "tradeoff": "v0.33 makes XPU SYCL versus Triton selection explicit; SYCL remains auto default. Benchmark end-to-end mixed scheduling and prefix replay before changing; no predicted win."
+    }
+  ],
+  "not_applicable": [
+    "New Triton/FlashAttention multimodal-prefix composite does not replace the custom KVarN backend.",
+    "Newer kernels 0.1.17/0.1.16.4 require Torch 2.15; no source-traced automatic speed win in current eager dense-FFN hybrid-GDN path. See separate compatibility/performance reports."
+  ],
+  "gpu_handoff_checks": [
+    "New package import/operator identity and source revision equivalence",
+    "Cold/warm text and qwen3_xml streamed tool calls",
+    "Aligned/unaligned RAM prefix restores including growing prefixes and cache reset",
+    "DFlash context-only step and context ceiling",
+    "Four-request mixed prefill/decode and preemption, two images",
+    "Matched throughput, TTFT, decode latency, draft acceptance, peak device/host memory",
+    "DFlash zero-draft context-only step followed by resumed drafting"
+  ],
+  "measured_performance_delta": null
+}

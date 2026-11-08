@@ -1,0 +1,100 @@
+{
+  "schema": 1,
+  "agent": "/root/audit_kernel_rollback_tests",
+  "repository": "/home/jasonbk/Projects/vllm-xpu-kernels",
+  "commit": "7d72670ba22c67480a4805a2d418beb19f83d004",
+  "parent": "d8e1f69699496beeda61da9a544f49d9b6378d73",
+  "subject": "test(gdn): preserve shortened-query rollback and storage guards",
+  "patch_id": "8ff0d6efd5b31d2320987b2995329a9841856343",
+  "old_base": "ddf336d86e3c8602888572a3502f951abd51df12",
+  "old_tip": "05d4536b2440db171741b5de5c148cdc834bd692",
+  "target": "ddf336d86e3c8602888572a3502f951abd51df12",
+  "target_version": "0.1.15.4",
+  "companion": {
+    "repository": "/home/jasonbk/Projects/vllm",
+    "old_base": "5df63a7203cdb9328d824a27b682e77c7b9928be",
+    "old_tip": "6b3d89e6e64f1e9c4f44c68c93af84e1504ef6f0",
+    "target": "4ba787ec9959e566d3b587a796dff07673324da5",
+    "target_version": "v0.33.0"
+  },
+  "disposition": "KEEP",
+  "requirement": {
+    "behavior": "Shortened or ragged speculative GDN calls must produce the same active rows and rollback state as a full-width native call's matching prefix, preserve unscheduled output rows, unused rollback slots and adjacent layers, and support continuation from each accepted prefix.",
+    "workload": "Intel XPU BF16 GDN with three rollback slots, query lengths (2), (1), or (3,2,1), accepted counts 1 or 3, both input reorder modes, and head geometries K4/V8/D32 and the host's K16/V48/D128. This is native speculative-state regression coverage relevant to the fork's supported Qwen/MTP/DFlash hybrid lifecycle; it is not a performance optimization.",
+    "final_stack_effect": "Only tests/gdn_attn/test_gdn_attn_padded.py changes, adding one 162-line parametrized test with 24 cases. The file has identical blob 91e087ee1de7d23912a279b54126a67bd5b05b30 at this commit and the final old tip. No later commit cancels or alters the test. No production code or native schema is supplied by this commit.",
+    "existing_rationale": "docs/fork-delta.md identifies this as the residual after upstream took ownership of the ragged speculative traversal implementation. Do not resurrect that retired production patch."
+  },
+  "upstream_coverage": [
+    {
+      "commits": [
+        "f4b729ae7fb3eb22c564606ec8b4d184c7c8bc4a",
+        "da16a5595c105605bcd44b558c7933b934a05f85"
+      ],
+      "upstream_pr": "https://github.com/vllm-project/vllm-xpu-kernels/pull/600",
+      "relationship": "The selected 0.1.15.4 base contains the release-branch version f4b729ae. Newer 0.1.17 contains mainline da16a559. Both have stable patch ID 23336ec4384d2b1f2d483c0193e3197022acce45.",
+      "production_symbols": [
+        "csrc/xpu/gdn_attn/causal_conv1d.hpp::causal_conv1d_spec_kernel",
+        "csrc/xpu/gdn_attn/gated_delta_rule.hpp::gated_delta_rule_spec_kernel",
+        "csrc/xpu/gdn_attn/gdn_attn_interface.cpp"
+      ],
+      "production_coverage": "Native traversal already takes actual token bounds from query_start_loc while retaining the fixed cache-index row width for rollback capacity. Initial SSM history is selected by num_accepted_tokens minus one, independently of the current query length. This fully supersedes the old native ragged-query fix; the assigned commit correctly retains tests only.",
+      "test_symbols": [
+        "tests/gdn_attn/test_gdn_attn.py::_run_gdn_attention_mtp",
+        "tests/gdn_attn/test_gdn_attn.py::test_gdn_attention_mtp_ragged",
+        "tests/gdn_attn/test_gdn_attn.py::test_gdn_attention_mtp_ragged_state_reuse"
+      ],
+      "test_overlap": "Upstream tests cover ragged token layouts, reference numerical comparisons, untouched unused SSM/convolution slots, and a second step with accepted counts [1,2,3] and current lengths [2,1,2]. Thus accepted counts exceeding current query length and basic state continuation are already upstream-covered; neither alone justifies retaining this delta.",
+      "uncovered_residual": "The local test compares shortened execution bit-for-bit with a full-width native execution and continues from every possible accepted prefix. It uses interleaved convolution storage with guarded adjacent layers and sentinel-filled padded output rows, checks both reorder modes, and includes the active K16/V48/D128 head geometry. Upstream's existing reference tests use numerical tolerances, ordinary per-layer storage, and a fixed second-step sequence; they do not supply this combined exact storage/continuation contract.",
+      "decision": "KEEP the small test-only residual. No additional native fix is needed."
+    },
+    {
+      "companion_commit": "38168d5b82f1c4015f8f37372f1670e11b6afdba",
+      "companion_symbols": [
+        "vllm/model_executor/layers/mamba/gdn/qwen_gdn_linear_attn.py::_resolve_gdn_prefill_backend",
+        "vllm/model_executor/layers/mamba/gdn/qwen_gdn_linear_attn.py::QwenGatedDeltaNetAttention.forward_xpu",
+        "vllm/_xpu_ops.py::_gdn_attention_core_xpu_impl"
+      ],
+      "evidence": "v0.33 adds a selectable Triton path, but auto still chooses the available SYCL GDN implementation and preserves speculative state and acceptance metadata passed to gdn_attention. The optional alternate implementation does not retire the native operator's supported behavior or its regression coverage."
+    }
+  ],
+  "newer_release_examined": {
+    "version": "v0.1.17",
+    "commit": "6a1ec18b69b00eaf67a457e0bdd40e72632feaae",
+    "selected": false,
+    "disposition_if_adopted": "ADAPT tests to the new null-slot contract; retain the residual coverage",
+    "evidence": "The newer release does not add this full-width bitwise/interleaved-storage test. Its only change to test_gdn_attn_padded.py is selecting positive state slots for an existing helper. New graph, DS-layout and RecoverSSM tests concern additional behavior, not this complete regression contract.",
+    "null_slot_change": "b73bdc317dd9f38f905a866e579855cec8459a08 (#660) makes convolution and SSM kernels treat state indices <=0 as padding. The local test currently uses randperm(total), which includes slot 0. A future port must allocate total+1 state slots and shift real state indices by one, preserving slot 0 as a guard. Otherwise unchanged tests exercise a newly invalid real-state assumption. This is unnecessary on the selected 0.1.15.4 base."
+  },
+  "minimum_residual": "Retain the existing test-only commit unchanged on the unchanged selected kernel base. It already removed the superseded production implementation. Upstreaming the remaining test would reduce downstream drift without weakening validation.",
+  "dependencies": [
+    {
+      "commit": "f4b729ae7fb3eb22c564606ec8b4d184c7c8bc4a",
+      "relationship": "Upstream native ragged traversal is a prerequisite for the regression and is already included in the selected base."
+    },
+    {
+      "commit": "d8e1f69699496beeda61da9a544f49d9b6378d73",
+      "relationship": "Historical parent only for this pure-speculative test: split_mixed_non_spec is not requested. Removing the test changes no operator ABI and does not independently permit removing the mixed-batch fix."
+    },
+    {
+      "commit": "5673b4bb84953d9f65b20f79b49ecbcd07432bd4",
+      "repository": "vllm",
+      "relationship": "The vLLM adapter must continue preserving rollback columns when trimming graph-padded request rows. This native test covers the capacity-versus-actual-query distinction from the operator side."
+    }
+  ],
+  "validation": {
+    "performed": [
+      "Read the assigned patch, exact selected and newer implementations/tests, full inventory and final-stack file history.",
+      "Confirmed the assigned diff touches only the one test file and its source blob remains unchanged at the final old tip.",
+      "Confirmed upstream #600 release/mainline patch-ID equivalence and inspected its traversal and state-reuse assertions rather than relying on patch IDs alone.",
+      "Parsed the test file with ast.parse at selected base, assigned commit, final old tip and newer target using the parent's uv-created /tmp/vllm-v033-20261108/.venv/bin/python; all parsed successfully.",
+      "AST inspection counted exactly one local regression and 24 parametrized combinations at the assigned and final old tips, absent from both examined upstream versions."
+    ],
+    "gpu_required": [
+      "Run tests/gdn_attn/test_gdn_attn_padded.py::test_gdn_shortened_mtp_preserves_rollback against the installed paired native candidate after the operator releases the GPU.",
+      "Run upstream test_gdn_attention_mtp_ragged and test_gdn_attention_mtp_ragged_state_reuse as complementary numerical-reference checks.",
+      "Keep the exact comparisons intact; investigate failures instead of relaxing tolerances. If evaluating 0.1.17 separately, adapt positive state slots first and include upstream null-state regression coverage."
+    ],
+    "not_performed": "No native/GPU test, serving request, model load, benchmark or service operation was performed. Syntax/static inspection does not establish runtime correctness.",
+    "performance": "No serving performance change is introduced by this test-only commit, and no performance measurement is needed to justify its retention."
+  }
+}

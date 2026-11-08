@@ -1,0 +1,50 @@
+{
+  "schema": 1,
+  "agent": "/root/audit_build_memory",
+  "patch": "nix/patches/0005-reduce-kernel-build-memory.patch",
+  "patch_sha256": "e017852b1365a37bbd7eab968f1ee7dbb2dde347cc687f9403d694b6594f9b67",
+  "selected_kernel_base": "ddf336d86e3c8602888572a3502f951abd51df12",
+  "selected_kernel_tip": "05d4536b2440db171741b5de5c148cdc834bd692",
+  "paired_vllm_target": "4ba787ec9959e566d3b587a796dff07673324da5",
+  "disposition": "KEEP",
+  "requirement": "Expose SYCL device-link concurrency to Nix's configured build-core budget and retain bounded CUTLASS template diagnostics. This is configurable build behavior, not an established runtime or successful-build performance optimization.",
+  "upstream_coverage": {
+    "selected_source": "CMakeLists.txt hardcodes -fsycl-max-parallel-link-jobs=16 and -ftemplate-backtrace-limit=0. It has no equivalent CMake cache-variable controls.",
+    "base_and_fork_cmake_blob": "4d13ac6781673267f6c13f2e8040572d2c150be4",
+    "newer_release_check": "The unselected v0.1.17 source 6a1ec18b69b00eaf67a457e0bdd40e72632feaae still hardcodes the same values at CMakeLists.txt lines 303 and 412; it does not supersede the controls."
+  },
+  "nix_consumers": [
+    {
+      "path": "nix/vllm-xpu-lib.nix",
+      "behavior": "Split libraries apply 0001 then 0005. preConfigure appends -DVLLM_XPU_SYCL_LINK_PARALLELISM=$NIX_BUILD_CORES to cmakeFlagsArray, so the value is expanded by the build shell. cmakeFlags sets VLLM_XPU_CUTLASS_TEMPLATE_BACKTRACE_LIMIT=10."
+    },
+    {
+      "path": "nix/mk-kernels.nix",
+      "behavior": "The attention library uses compileJobs=12. Its preBuild cap runs after configure captures the original device-link budget, so a 24-core build can use 12 concurrent frontends while retaining 24 device-link jobs. --cores 4 gives four for both. This patch alone does not impose a universal four-job or twelve-job device-link cap."
+    },
+    {
+      "path": "nix/vllm-xpu-kernels.nix",
+      "behavior": "Base/glue and FA2 binding builds do not apply 0005. MAX_JOBS follows NIX_BUILD_CORES for their build scheduling, but the CMake device-link flag remains the upstream hardcoded 16."
+    }
+  ],
+  "minimal_residual": "Keep the existing two cache variables and their flag substitutions unchanged. The device-link control is required for the existing configurable split build. The diagnostic-depth control is independently removable only if its existing diagnostic policy is deliberately retired; upstream has not replaced it. No new flags, architecture changes or patches are needed for the selected pair.",
+  "evidence_limits": [
+    "No controlled A/B measurement of peak memory, elapsed compile time or successful-build benefit was performed here or established by docs/fork-delta.md.",
+    "The template-backtrace option primarily bounds diagnostic output; it must not be presented as a proven memory optimization for successful compilations.",
+    "No runtime GPU performance effect is claimed."
+  ],
+  "validation": {
+    "passed": [
+      "Exact patch dry-run against exported selected fork CMakeLists.txt with patch --dry-run --fuzz=0; all three hunks apply with offsets only.",
+      "Actual split-build patch order checked in a temporary export containing CMakeLists.txt and setup.py: apply 0001 with --fuzz=0, then dry-run 0005 with --fuzz=0; all hunks pass.",
+      "Confirmed selected upstream and fork CMakeLists.txt are byte-identical by Git blob IDs.",
+      "Inspected Nix split-library preConfigure/preBuild ordering, binding patch list, existing kernel-build-parallelism check and upstream/newer hardcoded flags."
+    ],
+    "not_run": [
+      "Native compilation",
+      "Memory or build-time A/B measurement",
+      "GPU operations"
+    ],
+    "existing_check_scope": "nix/tests/kernel-build-parallelism.nix checks frontend core-cap behavior for 1, 4, 12 and 24 inputs; it does not measure device-link memory savings."
+  }
+}

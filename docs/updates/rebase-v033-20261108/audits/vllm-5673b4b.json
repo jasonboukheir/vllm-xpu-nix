@@ -1,0 +1,122 @@
+{
+  "schema": 1,
+  "agent": "/root/audit_vllm_padding",
+  "repository": "/home/jasonbk/Projects/vllm",
+  "commit": "5673b4bb84953d9f65b20f79b49ecbcd07432bd4",
+  "parent": "5df63a7203cdb9328d824a27b682e77c7b9928be",
+  "subject": "fix(xpu): strip graph padding from GDN index tensors",
+  "patch_id": "d64845a36cdad79bf367e27f08a7e3352db390d4",
+  "old_base": "5df63a7203cdb9328d824a27b682e77c7b9928be",
+  "old_tip": "6b3d89e6e64f1e9c4f44c68c93af84e1504ef6f0",
+  "upstream_target": {
+    "tag": "v0.33.0",
+    "commit": "4ba787ec9959e566d3b587a796dff07673324da5"
+  },
+  "companion": {
+    "repository": "/home/jasonbk/Projects/vllm-xpu-kernels",
+    "old_base": "ddf336d86e3c8602888572a3502f951abd51df12",
+    "target": "ddf336d86e3c8602888572a3502f951abd51df12",
+    "tip": "05d4536b2440db171741b5de5c148cdc834bd692",
+    "version": "0.1.15.4",
+    "scope": "Verdict applies to the exact v0.33 dependency. Newer v0.1.17 is under separate investigation and is not assumed selected."
+  },
+  "disposition": "KEEP",
+  "requirement": {
+    "failure": "The native SYCL GDN interface requires exact live request counts in its state-index, query-start and accepted-token metadata. Graph staging can retain padded request rows while separately reporting live counts, causing native TORCH_CHECK failures.",
+    "behavior": "Slice only dimension 0 of five metadata tensors immediately before the native call. Preserve all speculative rollback columns, the original data tensors, num_actual_tokens, underlying storage, and optional None values.",
+    "workload": "Qwen GDN on Intel XPU, including padded decode/speculative batches. The deployed eager V2/DFlash2 profile need not trigger every padding case, but alternate graph configurations remain supported.",
+    "final_old_stack": "Subsequent efddf8010f adds split_mixed_non_spec calculation and flag after this normalization; it does not supersede the trim. The remaining three local commits do not remove or replace these five slices.",
+    "benefit": "Correctness/metadata compatibility safeguard; no measured standalone performance improvement claimed."
+  },
+  "upstream_coverage": [
+    {
+      "path": "vllm/_xpu_ops.py",
+      "symbol": "_gdn_attention_core_xpu_impl",
+      "target_lines": "178-274",
+      "evidence": "git diff --exit-code OLD_BASE TARGET -- vllm/_xpu_ops.py exits 0. The whole file is unchanged between the frozen upstream bases; the adapter still forwards the metadata tensors without live-row trimming.",
+      "coverage": "none"
+    },
+    {
+      "path": "vllm/v1/attention/backends/gdn_attn.py",
+      "symbol": "GDNAttentionMetadataBuilder.build",
+      "target_lines": "610-671",
+      "evidence": "batch_size remains m.num_reqs; staged spec state/accepted metadata use [:batch_size], query starts use [:batch_size+1], and trailing slots are filled after num_spec_decodes. Ordinary decode staging similarly uses batch_size rather than num_decodes.",
+      "coverage": "none; the producer still permits request padding"
+    },
+    {
+      "upstream_commit": "38168d5b82f1c4015f8f37372f1670e11b6afdba",
+      "subject": "[XPU] [Feature] Adding triton/sycl GDN toggle (#56835)",
+      "paths": [
+        "vllm/model_executor/layers/mamba/gdn/qwen_gdn_linear_attn.py",
+        "vllm/v1/attention/backends/gdn_attn.py"
+      ],
+      "symbols": [
+        "_resolve_gdn_prefill_backend",
+        "QwenGatedDeltaNetAttention.forward_xpu"
+      ],
+      "evidence": "Upstream can now choose a Triton whole-layer path. On XPU auto and sycl still resolve to sycl when torch.ops._xpu_C.gdn_attention exists, and the SYCL forward branch still calls torch.ops.vllm.gdn_attention_core_xpu. Changing all supported configurations to Triton would be a separate behavior/performance change; availability of that alternate implementation does not fix the active native contract.",
+      "coverage": "alternate backend bypasses this boundary, but default SYCL requirement remains"
+    },
+    {
+      "upstream_commit": "badfcdbf919532624b2296eeacb85c6dd9fe2e58",
+      "subject": "[Perf][GDN] Internal prefill checkpoints for the FlashInfer GDN prefill backend (#60050)",
+      "evidence": "Adds FlashInfer-specific prefill checkpoint planning and a metadata field. Does not change SYCL request-row normalization.",
+      "coverage": "none"
+    },
+    {
+      "upstream_commit": "937d6c19dfec2f928b5c75562c932de2070a40a7",
+      "subject": "[Perf][GDN] Skip FLA chunk metadata when FlashInfer GDN prefill is active (#61569)",
+      "evidence": "Skips unused FLA chunk metadata only for FlashInfer; does not alter native SYCL index tensors or counts.",
+      "coverage": "none"
+    },
+    {
+      "path": "csrc/xpu/gdn_attn/gdn_attn_interface.cpp",
+      "source_commit": "ddf336d86e3c8602888572a3502f951abd51df12",
+      "lines": "69,93,116,299,328",
+      "evidence": "Native causal_conv1d_spec checks query starts == num_spec_decodes+1, state rows == num_spec_decodes, accepted rows == num_spec_decodes. Non-spec path checks query starts == num_prefills+num_decodes+1 and state rows == num_prefills+num_decodes. Companion fork changes add mixed dispatch and disable tiled prefill but do not relax or replace those checks.",
+      "coverage": "native constraint persists"
+    }
+  ],
+  "minimal_residual": {
+    "production": "Retain the existing 14-line normalization block in _gdn_attention_core_xpu_impl unchanged.",
+    "tests": "Retain test_xpu_gdn_adapter_trims_only_request_padding and its SimpleNamespace import in tests/v1/attention/test_gdn_metadata_builder.py.",
+    "port_notes": "Upstream appends test_plan_flashinfer_checkpoints_selects_the_state_at_each_offset at the old test file end. If replay conflicts at the append point, preserve both independent tests and upstream plan_flashinfer_checkpoints import. Production insertion site is unchanged upstream."
+  },
+  "dependencies": {
+    "prerequisite_local_commits": [],
+    "later_local_commits": [
+      {
+        "commit": "efddf8010f4b9d8c896b91aa4bfed3c5e7edc2a1",
+        "relationship": "Uses the same adapter and appends split_mixed_non_spec; keep trimming before native invocation."
+      }
+    ],
+    "native_abi": "No operator schema or ABI change. This patch only passes same-storage live-row views into the existing interface.",
+    "paired_drop": "No companion patch must be removed if this is later superseded. A drop requires proving the selected native interface tolerates padding or that all supported producers pass exact rows; neither holds for the selected 0.1.15.4 pair."
+  },
+  "validation": {
+    "observed": [
+      "Read assigned commit, full upstream adapter, staging logic, upstream SYCL/Triton dispatch change, and native row-size checks.",
+      "Computed stable patch ID with git show COMMIT | git patch-id --stable.",
+      "Verified upstream _xpu_ops.py unchanged using git diff --exit-code OLD_BASE TARGET -- vllm/_xpu_ops.py (exit 0).",
+      "Inspected old-to-final adapter diff; the original trim remains, with only mixed-dispatch additions afterward.",
+      "No Python, GPU, native compilation, or service operations were performed."
+    ],
+    "required_cpu": [
+      "Run the five parametrizations of tests/v1/attention/test_gdn_metadata_builder.py::test_xpu_gdn_adapter_trims_only_request_padding in the assembled candidate runtime; this asserts live lengths, rollback columns, shared storage, unchanged sources, untouched data tensors and None handling."
+    ],
+    "required_gpu": [
+      "After operator handoff, exercise actual SYCL GDN native invocation with padded ordinary and speculative decode metadata and verify no size-check failure or rollback-state corruption. Include deployed V2/DFlash2 serving checks."
+    ],
+    "performance": "No added numerical work or copies in the trim; unchanged slice views. No benchmark conducted or speedup claimed.",
+    "limitations": [
+      "CPU regression was inspected, not run during this source-only audit.",
+      "The active eager profile's runtime exposure to padding is not claimed from static inspection.",
+      "If selecting a newer kernel base, recheck its exact-size contract before carrying this verdict forward."
+    ]
+  },
+  "prior_evidence": [
+    "docs/fork-delta.md",
+    "docs/releases/xpu-v1.13.0.json"
+  ],
+  "source_mutations": false
+}

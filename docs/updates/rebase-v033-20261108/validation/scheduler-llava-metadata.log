@@ -1,0 +1,12 @@
+added_tokens.json 41
+chat_template.json 701
+config.json 950
+generation_config.json 141
+model.safetensors.index.json 70128
+preprocessor_config.json 505
+processor_config.json 173
+special_tokens_map.json 552
+tokenizer.json 3619380
+tokenizer.model 499723
+tokenizer_config.json 1451
+cached revision b234b804b114d9e37bb655e11cbbb5f5e971b7a9

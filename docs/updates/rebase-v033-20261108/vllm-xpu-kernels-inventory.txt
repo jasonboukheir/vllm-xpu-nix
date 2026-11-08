@@ -1,0 +1,7 @@
+e50d437ee5560e5b5f12581ee61b1bddab157733 ddf336d86e3c8602888572a3502f951abd51df12 fix(onednn): make W4A16 matmul deterministic
+63a31d01e8fcf44a7b08f8e76e85ec40a208b6f1 e50d437ee5560e5b5f12581ee61b1bddab157733 fix(gdn): disable unstable tiled causal-convolution prefill
+ad5d9e16721f5c219de65c8d408c02edab104919 63a31d01e8fcf44a7b08f8e76e85ec40a208b6f1 fix(gdn): order fresh-state prefill output reads
+d8e1f69699496beeda61da9a544f49d9b6378d73 ad5d9e16721f5c219de65c8d408c02edab104919 fix(gdn): preserve cached decode arithmetic in mixed batches
+7d72670ba22c67480a4805a2d418beb19f83d004 d8e1f69699496beeda61da9a544f49d9b6378d73 test(gdn): preserve shortened-query rollback and storage guards
+348a8b91e4c301ff3c94b0fce68a4cda7a591bfc 7d72670ba22c67480a4805a2d418beb19f83d004 test(attn): cover native FlashAttention replay determinism
+05d4536b2440db171741b5de5c148cdc834bd692 348a8b91e4c301ff3c94b0fce68a4cda7a591bfc feat(attn): add native KVarN cache and compact K4V2 attention

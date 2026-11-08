@@ -1,0 +1,25 @@
+{
+  "source": "066206bafebe124485a69e13dcb975a2afc55ad2",
+  "python_files": 110,
+  "ast": "passed",
+  "whitespace": "passed",
+  "ruff": [
+    {
+      "command": [
+        "/nix/store/jqb09p4ipdlyv6pfd8mh5da8b2syix9j-ruff-0.14.0/bin/ruff",
+        "check",
+        "<110 changed Python files>"
+      ],
+      "output": "All checks passed!\n"
+    },
+    {
+      "command": [
+        "/nix/store/jqb09p4ipdlyv6pfd8mh5da8b2syix9j-ruff-0.14.0/bin/ruff",
+        "format",
+        "--check",
+        "<110 changed Python files>"
+      ],
+      "output": "110 files already formatted\n"
+    }
+  ]
+}

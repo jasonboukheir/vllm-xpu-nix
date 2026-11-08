@@ -1,0 +1,98 @@
+{
+  "schema": 1,
+  "agent": "/root/audit_kernel_kvarn",
+  "repository": "/home/jasonbk/Projects/vllm-xpu-kernels",
+  "commit": "05d4536b2440db171741b5de5c148cdc834bd692",
+  "parent": "348a8b91e4c301ff3c94b0fce68a4cda7a591bfc",
+  "subject": "feat(attn): add native KVarN cache and compact K4V2 attention",
+  "patch_id": "4ff4c3eb11770280350fa8f4739b6edee6cacff4",
+  "old_base": "ddf336d86e3c8602888572a3502f951abd51df12",
+  "old_tip": "05d4536b2440db171741b5de5c148cdc834bd692",
+  "selected_target": "ddf336d86e3c8602888572a3502f951abd51df12",
+  "selected_version": "0.1.15.4",
+  "newer_target_reviewed": "6a1ec18b69b00eaf67a457e0bdd40e72632feaae",
+  "newer_version_reviewed": "0.1.17",
+  "companion": {
+    "repository": "/home/jasonbk/Projects/vllm",
+    "old_base": "5df63a7203cdb9328d824a27b682e77c7b9928be",
+    "old_tip": "6b3d89e6e64f1e9c4f44c68c93af84e1504ef6f0",
+    "target": "4ba787ec9959e566d3b587a796dff07673324da5",
+    "target_version": "0.33.0"
+  },
+  "disposition": "KEEP",
+  "requirement": {
+    "feature": "Native Xe2 KVarN K4V4/K4V2 packed-record writing, DPAS layout, Hadamard/scatter, compact-cache decode, bounded materialization and output reduction; independent record/reference/replay tests",
+    "active_workload": "B70/Xe2, dense Qwen3.8-27B W4A16 target with compact K4V2 D256/G128 cache, V2/DFlash2 and RAM prefixes. Existing supported K4V4, padded records and numerical reference paths remain within retained feature scope.",
+    "net_effect": "Assigned commit is the final old kernel tip. No later local repair or revert changes its contribution. Its commit already folds the released format/reader refinements and removes the unused coordinate-loader experiment.",
+    "removal_consequence": "The paired vLLM KVarN backend loses required _vllm_fa2_C operators and compact-record support. Ordinary BF16/FP8 attention and the upstream CPU cache tier do not substitute for this record format or its memory reduction."
+  },
+  "upstream_coverage": [
+    {
+      "area": "Core compact KVarN feature",
+      "evidence": "Selected kernel target is unchanged, so it adds no implementation. git grep over frozen vLLM v0.33 and kernel v0.1.17 finds no KVarN/K4V2 implementation. Upstream Sinkhorn mentions are MHC gating, not quantized KV-record balancing. Neither target supplies KVarNLayout, compact 26880-byte K4V2 records, the DPAS bit packing, FP16 resident-tail ownership, or matching native writer/decode/materialize operators.",
+      "symbols": [
+        "csrc/flash_attn/flash_api.cpp::TORCH_LIBRARY_EXPAND KVarN schemas",
+        "csrc/xpu/attn/xe_2/kvarn_balanced_writer_xe2.cpp::kvarn_pack_balanced_kv_xe2",
+        "csrc/xpu/attn/xe_2/kvarn_decode_xe2.cpp::kvarn_decode_with_scratch_xe2",
+        "csrc/xpu/attn/xe_2/kvarn_decode_xe2.cpp::kvarn_materialize_packed_kv_xe2",
+        "csrc/xpu/attn/xe_2/collective/kvarn_decode_mainloop.hpp::KVarNDecodeFwdMainloop"
+      ],
+      "decision": "KEEP. No semantic upstream replacement was demonstrated."
+    },
+    {
+      "area": "Newer ordinary attention alignment",
+      "sha": "6f5935cfc219251cd4362df7d10ce837521f0ac3",
+      "evidence": "New block_2d_align.hpp and edits in chunk_prefill_mainloop.hpp/chunk_prefill_epilogue.hpp align ordinary per-head Q/K/V/O 2D surfaces for nonstandard head widths such as MoonViT H72. Our resident-tail optimization is inside KVarNDecodeFwdMainloop and conditionally loads FP16 tail slots using its own storage contract, with a scalar fallback for unaligned base views. The new helper neither decodes KVarN records nor reaches the custom resident-tail reader automatically.",
+      "decision": "Not superseding. If a newer kernel base is selected later, reconcile overlapping generic epilogue edits and preserve upstream alignment rather than replaying old epilogue bodies wholesale; reuse of the helper would need explicit source and numerical review. No adaptation is needed on the selected unchanged base."
+    },
+    {
+      "area": "Newer adaptive FlashAttention verification",
+      "sha": "470c19fe019ddcf7c4783bd01884be0c7f53c74d",
+      "evidence": "The newer Python FlashAttention wrapper handles ragged speculative queries against ordinary paged K/V. KVarN callers use separate compact-cache native decode/materialization operators, and their unpaged materialized fallback is not this paged redirect. This does not replace the quantized record ABI, resident tails or custom output reduction.",
+      "decision": "No feature deletion or new current-profile speed claim. v0.33 GDN/KVarN adaptive-verification compatibility remains a separate issue documented by the host performance audit."
+    },
+    {
+      "area": "Optional local split reduction and resident loads",
+      "symbols": [
+        "csrc/xpu/attn/xe_2/kvarn_decode.hpp::KVarNReduceSplit16Kernel",
+        "csrc/xpu/attn/xe_2/kvarn_decode.hpp::KVarNReduceSplitOutputHadamardSpecializedKernel",
+        "csrc/xpu/attn/xe_2/collective/kvarn_decode_mainloop.hpp::block_tail_k/block_tail_v"
+      ],
+      "evidence": "These are local optimizations rather than essential record-format semantics. The selected upstream base is unchanged and newer upstream does not provide their custom-reader/reducer equivalents. Existing docs/fork-delta.md records about 3% in one historical short reducer cell, an unresolved 3.67% K4V4 regression, stronger historical K4V2 resident-load evidence and a short K4V4 anomaly. No fresh controlled with/without result was obtained in this audit.",
+      "decision": "Retain the existing qualified implementation while preserving fallback/reference paths. Do not report a newly established speedup. Their future removal can be independent of the KVarN format but needs a controlled comparison covering both K4V2 and K4V4, not absence of a merge conflict or smaller commit count."
+    }
+  ],
+  "minimum_residual": [
+    "Keep this single coherent native feature commit unchanged at the selected kernel base; no temporary follow-up commits or base bump are required.",
+    "Keep the XE2-gated native schemas, CMake source registration and MIXED_GRF_SIZE behavior used by this attention library.",
+    "Keep both value-bit-width contracts, compact/padded layout reference tests, alignment fallbacks and stream-lifetime distinctions.",
+    "Keep the currently qualified optional optimizations with their limited evidence explicitly recorded; no new performance claim is made."
+  ],
+  "dependencies": [
+    {
+      "repository": "vllm",
+      "commit": "6b3d89e6e64f1e9c4f44c68c93af84e1504ef6f0",
+      "contract": "KVarN backend's writer, scatter, decode and materialization call sites must match the retained native schemas. vllm/v1/attention/backends/kvarn_attn.py and ops/triton_kvarn_decode.py supply value_bits, dpas_layout, split count, block-to-tail slots and caller-owned scratch. Native decode validates D256/G128/Hq24/Hkv4 geometry, variant18, exact multi-split scratch layout and nonaliasing. The exp_sums tensor stores split LSE; legacy max_logits remains validated/stream-tracked for ABI compatibility."
+    },
+    {
+      "repository": "vllm-xpu-nix",
+      "contract": "The split attention library must include all KVarN sources and the FA2 glue must register them under VLLM_XPU_ENABLE_XE2. Brutus retains BMG AOT selection. Package identity/build checks remain necessary even when the kernel source tip is unchanged."
+    }
+  ],
+  "validation": {
+    "performed": [
+      "Read assigned patch and final old-tip implementation; stable patch ID recorded above.",
+      "Inspected selected/newer upstream symbols and affected attention diffs, including ordinary surface alignment and adaptive verification alternatives.",
+      "git diff --check ddf336d86e3c8602888572a3502f951abd51df12..05d4536b2440db171741b5de5c148cdc834bd692 passed.",
+      "33 CPU tests passed in2.47s: test_kvarn_layout.py, test_kvarn_compact_record.py, test_kvarn_dpas_layout.py, test_kvarn_qkv_scatter_static.py and test_kvarn_reader_variants_static.py. Ran through the uv-created candidate .venv with --noconftest, no pytest cache and PYTHONDONTWRITEBYTECODE=1; both torch.xpu._lazy_init and torch.cuda._lazy_init were replaced by rejecting guards. No accelerator initialized."
+    ],
+    "cpu_test_scope": "Independent packed-record byte/coordinate/scale behavior plus source-level lifetime/reader address checks. These do not establish native numerical execution or performance.",
+    "required_after_operator_handoff": [
+      "Run installed native K4V2/K4V4 record writer/dequant/scatter/materialization/decode reference and replay cases, including compact strides, ragged lengths, split16/fused output, aligned and offset tail buffers, shortened verification and boundary requests.",
+      "Test the rebased vLLM candidate's real target/draft ownership, RAM replay, reset and context-ceiling behavior against the retained native ABI.",
+      "Use matched old/new host serving measurements for throughput, TTFT, RAM-prefix restore and peak memory; source-equivalent kernels do not qualify changed vLLM scheduling/planning.",
+      "If changing optional reducers or resident loads, separately compare with/without on K4V2 and K4V4. Existing whole-profile qualification is not isolated optimization evidence."
+    ],
+    "not_performed": ["GPU execution", "native compilation", "matched performance comparison", "service-state changes"]
+  }
+}

@@ -1,0 +1,65 @@
+/tmp/vllm-v033-20261108/vllm/__init__.py:7: RuntimeWarning: Failed to read commit hash:
+No module named 'vllm._version'
+  from .version import __version__, __version_tuple__  # isort:skip
+/tmp/vllm-v033-20261108/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:300: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the "fixture" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to "function" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+........................................................................ [ 18%]
+..............................................F......................... [ 37%]
+........................................................................ [ 56%]
+........................................................................ [ 75%]
+....FF.................................................................. [ 93%]
+........................                                                 [100%]
+=================================== FAILURES ===================================
+________ test_hisparse_indexer_offload_is_capped_by_missing_host_prefix ________
+tests/v1/core/test_prefix_caching.py:528: in test_hisparse_indexer_offload_is_capped_by_missing_host_prefix
+    connector.bind_kv_cache_manager(manager)
+vllm/distributed/kv_transfer/kv_connector/v1/offloading_connector.py:59: in bind_kv_cache_manager
+    if self.connector_scheduler is not None:
+       ^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'OffloadingConnector' object has no attribute 'connector_scheduler'
+_______ test_hybrid_mamba_retention_mtp_resend_of_aligned_prompt[False] ________
+tests/v1/core/test_prefix_caching.py:5393: in test_hybrid_mamba_retention_mtp_resend_of_aligned_prompt
+    num_new_tokens = Scheduler._mamba_block_aligned_split(
+vllm/v1/core/sched/scheduler.py:638: in _mamba_block_aligned_split
+    num_hash_lookahead_tokens=self.num_hash_lookahead_tokens,
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'types.SimpleNamespace' object has no attribute 'num_hash_lookahead_tokens'
+________ test_hybrid_mamba_retention_mtp_resend_of_aligned_prompt[True] ________
+tests/v1/core/test_prefix_caching.py:5393: in test_hybrid_mamba_retention_mtp_resend_of_aligned_prompt
+    num_new_tokens = Scheduler._mamba_block_aligned_split(
+vllm/v1/core/sched/scheduler.py:638: in _mamba_block_aligned_split
+    num_hash_lookahead_tokens=self.num_hash_lookahead_tokens,
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'types.SimpleNamespace' object has no attribute 'num_hash_lookahead_tokens'
+=============================== warnings summary ===============================
+../../nix/store/97i7ar7k1i4n3dqn42krqv1vflkjmv45-python3.12-anyio-4.14.2/lib/python3.12/site-packages/anyio/pytest_plugin.py:14
+  /nix/store/97i7ar7k1i4n3dqn42krqv1vflkjmv45-python3.12-anyio-4.14.2/lib/python3.12/site-packages/anyio/pytest_plugin.py:14: PytestRemovedIn10Warning: _pytest.python.CallSpec2 has been renamed to CallSpec.
+  The CallSpec2 alias will be removed in pytest 10.
+  Update imports to use CallSpec instead.
+  See https://docs.pytest.org/en/stable/deprecations.html#callspec2-renamed
+    from _pytest.python import CallSpec2
+
+../../nix/store/yv16l8ysyld56xn99xlwpgx7bijagcz8-python3.12-torch-2.14.0+xpu/lib/python3.12/site-packages/torch/xpu/__init__.py:251
+../../nix/store/yv16l8ysyld56xn99xlwpgx7bijagcz8-python3.12-torch-2.14.0+xpu/lib/python3.12/site-packages/torch/xpu/__init__.py:251
+  /nix/store/yv16l8ysyld56xn99xlwpgx7bijagcz8-python3.12-torch-2.14.0+xpu/lib/python3.12/site-packages/torch/xpu/__init__.py:251: UserWarning: Can't initialize Level Zero Sysman
+    return _enum_zes_device_infos(visible_mask)
+
+../../nix/store/yv16l8ysyld56xn99xlwpgx7bijagcz8-python3.12-torch-2.14.0+xpu/lib/python3.12/site-packages/torch/xpu/__init__.py:278
+  /nix/store/yv16l8ysyld56xn99xlwpgx7bijagcz8-python3.12-torch-2.14.0+xpu/lib/python3.12/site-packages/torch/xpu/__init__.py:278: UserWarning: XPU device count is zero! (Triggered internally at /__w/pytorch/pytorch/c10/xpu/XPUFunctions.cpp:113.)
+    count = torch._C._xpu_getDeviceCount() if zes_count < 0 else zes_count
+
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: builtin type SwigPyPacked has no __module__ attribute
+
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: builtin type SwigPyObject has no __module__ attribute
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/v1/core/test_prefix_caching.py::test_hisparse_indexer_offload_is_capped_by_missing_host_prefix
+FAILED tests/v1/core/test_prefix_caching.py::test_hybrid_mamba_retention_mtp_resend_of_aligned_prompt[False]
+FAILED tests/v1/core/test_prefix_caching.py::test_hybrid_mamba_retention_mtp_resend_of_aligned_prompt[True]
+3 failed, 381 passed, 6 warnings in 223.70s (0:03:43)
+sys:1: DeprecationWarning: builtin type swigvarlink has no __module__ attribute

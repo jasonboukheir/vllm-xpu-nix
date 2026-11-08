@@ -62,6 +62,7 @@ let
       blake3
       cachetools
       cbor2
+      certifi
       cloudpickle
       compressed-tensors
       datasets
@@ -81,9 +82,11 @@ let
       mistral-common
       model-hosting-container-standards
       msgspec
+      multidict
       numba
       numpy
       openai
+      orjson
       opencv-python-headless
       opentelemetry-api
       opentelemetry-exporter-otlp
@@ -247,11 +250,26 @@ python3Packages.buildPythonPackage {
   dontUseCmakeConfigure = true;
 
   postPatch = ''
+    ${lib.optionalString (lib.versionAtLeast version "0.33.0") ''
+      grep -F 'fastapi[standard] >= 0.133.0, < 0.137.0' requirements/common.txt || {
+        echo 'Review the FastAPI pin: upstream requirements/common.txt changed its route-tree compatibility bound.' >&2
+        exit 1
+      }
+    ''}
     ${lib.optionalString (lib.versionAtLeast version "0.31.0") ''
       # XPU uses a newer Torch release than the common CUDA build metadata.
       grep -Fx 'torch==${lib.head (lib.splitString "+" torch-xpu.version)}' requirements/xpu.txt
-      substituteInPlace pyproject.toml \
-        --replace-fail '"torch == 2.13.0"' '"torch == ${lib.head (lib.splitString "+" torch-xpu.version)}"'
+      ${
+        if lib.versionOlder version "0.33.0" then
+          ''
+            substituteInPlace pyproject.toml \
+              --replace-fail '"torch == 2.13.0"' '"torch == ${lib.head (lib.splitString "+" torch-xpu.version)}"'
+          ''
+        else
+          ''
+            grep -F '"torch == ${lib.head (lib.splitString "+" torch-xpu.version)}"' pyproject.toml
+          ''
+      }
     ''}
 
     # Drop setuptools-rust because the Rust frontend is stripped below.

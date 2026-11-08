@@ -1,0 +1,34 @@
+{
+  "root": "/nix/store/1zx6swwn83jq2rl9kf1nnz6yrjicmm0q-python3.12-vllm-xpu-0.33.0+unstable.2026.11.08.g066206b.drv",
+  "kernel_derivation": "/nix/store/9a7pf5ld1z2xfxcsjzdgfjn8ilcqpsbv-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.g05d4536.drv",
+  "evaluated_nodes": 187,
+  "realized_distribution_count": 175,
+  "duplicate_distribution_names": {},
+  "unavailable_output_paths": [
+    {
+      "name": "vllm-xpu",
+      "version": "0.33.0+unstable.2026.11.08.g066206b",
+      "drv": "/nix/store/1zx6swwn83jq2rl9kf1nnz6yrjicmm0q-python3.12-vllm-xpu-0.33.0+unstable.2026.11.08.g066206b.drv",
+      "path": "/0cv22nmg8naa8b4vb6p9w1zr170djqhvqby9z8cgm90ybxc1zzh7"
+    },
+    {
+      "name": "vllm-xpu-kernels",
+      "version": "0.1.15.4+unstable.2026.10.10.g05d4536",
+      "drv": "/nix/store/9a7pf5ld1z2xfxcsjzdgfjn8ilcqpsbv-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.g05d4536.drv",
+      "path": "/0w92dq5x01vpwxqlm9yj73jvypsdmnyccljchqfm1xrkbf4c7lj9"
+    }
+  ],
+  "realized_nodes_without_distribution_metadata": [
+    "python3",
+    "portaudio",
+    "grpcio",
+    "grpc",
+    "pyopenssl",
+    "c-ares",
+    "re2",
+    "zlib",
+    "abseil-cpp",
+    "icu4c"
+  ],
+  "note": "Unresolved content-addressed output placeholders and outputs not yet realized cannot be inspected at filesystem paths; graph-level identities still use their exact derivation paths."
+}

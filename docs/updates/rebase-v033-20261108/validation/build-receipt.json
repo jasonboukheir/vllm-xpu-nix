@@ -1,0 +1,17 @@
+{
+  "status": "passed",
+  "exit_code": 0,
+  "source": "066206bafebe124485a69e13dcb975a2afc55ad2",
+  "derivation": "/nix/store/1zx6swwn83jq2rl9kf1nnz6yrjicmm0q-python3.12-vllm-xpu-0.33.0+unstable.2026.11.08.g066206b.drv",
+  "package": "/nix/store/5jvmvr89c90f4j1lry5l3a0xr8jp0gfw-python3.12-vllm-xpu-0.33.0+unstable.2026.11.08.g066206b",
+  "version": "0.33.0+unstable.2026.11.08.g066206b",
+  "kernel_derivation": "/nix/store/9a7pf5ld1z2xfxcsjzdgfjn8ilcqpsbv-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.g05d4536.drv",
+  "host_override": "/home/jasonbk/.config/nix/hosts/brutus/services/vllm-xpu/package.nix",
+  "flake": "git+file:///home/jasonbk/Projects/vllm-xpu-nix",
+  "full_log": "/tmp/vllm-v033-candidate-build-3.log",
+  "full_log_sha256": "740f1afa8475572969b67774d211636ff018e3a28d12c23ebf8fd956f2526c87",
+  "command": "nix build --impure --no-link --keep-going --print-out-paths --print-build-logs --max-jobs 2 --cores 4 --expr 'let f = builtins.getFlake \"git+file:///home/jasonbk/Projects/vllm-xpu-nix\"; in import /home/jasonbk/.config/nix/hosts/brutus/services/vllm-xpu/package.nix { vllm-xpu-unstable = f.packages.x86_64-linux.vllm-xpu-unstable; }'",
+  "gpu_executed": false,
+  "publication": "local candidate only; no remote push or release refs",
+  "local_pin_requirement": "This preparation branch requires /home/jasonbk/Projects/vllm with refs/heads/rebase/v0.33-20261108 until source publication."
+}

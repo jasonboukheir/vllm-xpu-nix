@@ -1,0 +1,141 @@
+/tmp/vllm-v033-20261108/vllm/__init__.py:7: RuntimeWarning: Failed to read commit hash:
+No module named 'vllm._version'
+  from .version import __version__, __version_tuple__  # isort:skip
+/tmp/vllm-v033-20261108/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:300: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the "fixture" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to "function" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+_ TestBytePoolOffloadingManager.test_running_prefix_survives_incremental_stores[False] _
+
+self = <tests.v1.kv_offload.cpu.test_manager.TestBytePoolOffloadingManager object at 0x7b2a00a513a0>
+reverse_completion = False
+
+    @pytest.mark.parametrize("reverse_completion", [False, True])
+    def test_running_prefix_survives_incremental_stores(self, reverse_completion):
+        manager = BytePoolOffloadingManager(576, {0: 64, 1: 128, 2: 192})
+        ctx = make_req_context("running")
+        groups = [
+            [make_offload_key(str(position).encode(), group) for position in range(3)]
+            for group in range(2)
+        ]
+        batches = []
+        for position in range(3):
+            batch = [group[position] for group in groups]
+            for key in batch:
+                ctx.set_offload_key_position(key, (position + 1) * 128)
+            assert manager.prepare_store(batch, ctx) is not None
+            batches.append(batch)
+            if not reverse_completion:
+                manager.complete_store(batch, ctx)
+        if reverse_completion:
+            for batch in reversed(batches):
+                manager.complete_store(batch, ctx)
+
+        replacement = make_offload_key(b"pressure", 2)
+        output = manager.prepare_store([replacement], make_req_context("other"))
+        assert output is not None
+>       assert set(output.evicted_keys) == {group[-1] for group in groups}
+E       AssertionError: assert {b'0\x00\x00\...\x00\x00\x01'} == {b'2\x00\x00\...\x00\x00\x01'}
+E
+E         Extra items in the left set:
+E         b'0\x00\x00\x00\x00'
+E         b'0\x00\x00\x00\x01'
+E         Extra items in the right set:
+E         b'2\x00\x00\x00\x01'
+E         b'2\x00\x00\x00\x00'
+E         Use -v to get more diff
+
+tests/v1/kv_offload/cpu/test_manager.py:1808: AssertionError
+_ TestBytePoolOffloadingManager.test_running_prefix_survives_incremental_stores[True] _
+
+self = <tests.v1.kv_offload.cpu.test_manager.TestBytePoolOffloadingManager object at 0x7b2a00a50c80>
+reverse_completion = True
+
+    @pytest.mark.parametrize("reverse_completion", [False, True])
+    def test_running_prefix_survives_incremental_stores(self, reverse_completion):
+        manager = BytePoolOffloadingManager(576, {0: 64, 1: 128, 2: 192})
+        ctx = make_req_context("running")
+        groups = [
+            [make_offload_key(str(position).encode(), group) for position in range(3)]
+            for group in range(2)
+        ]
+        batches = []
+        for position in range(3):
+            batch = [group[position] for group in groups]
+            for key in batch:
+                ctx.set_offload_key_position(key, (position + 1) * 128)
+            assert manager.prepare_store(batch, ctx) is not None
+            batches.append(batch)
+            if not reverse_completion:
+                manager.complete_store(batch, ctx)
+        if reverse_completion:
+            for batch in reversed(batches):
+                manager.complete_store(batch, ctx)
+
+        replacement = make_offload_key(b"pressure", 2)
+        output = manager.prepare_store([replacement], make_req_context("other"))
+        assert output is not None
+>       assert set(output.evicted_keys) == {group[-1] for group in groups}
+E       AssertionError: assert {b'0\x00\x00\...\x00\x00\x01'} == {b'2\x00\x00\...\x00\x00\x01'}
+E
+E         Extra items in the left set:
+E         b'0\x00\x00\x00\x00'
+E         b'0\x00\x00\x00\x01'
+E         Extra items in the right set:
+E         b'2\x00\x00\x00\x01'
+E         b'2\x00\x00\x00\x00'
+E         Use -v to get more diff
+
+tests/v1/kv_offload/cpu/test_manager.py:1808: AssertionError
+_______ TestBytePoolOffloadingManager.test_reports_host_cache_hit_source _______
+
+self = <tests.v1.kv_offload.cpu.test_manager.TestBytePoolOffloadingManager object at 0x7b2a00a51130>
+
+    def test_reports_host_cache_hit_source(self):
+        from vllm.v1.metrics.cache_hit_source import CacheHitSource
+
+        manager = BytePoolOffloadingManager(64, {0: 64})
+        ctx = make_req_context("host")
+        key = to_key(1)
+        assert manager.prepare_store([key], ctx) is not None
+        manager.complete_store([key], ctx)
+        assert manager.lookup(key, ctx) is LookupResult.HIT
+>       assert manager.get_load_source(key, ctx) is CacheHitSource.HOST
+E       AssertionError: assert <CacheHitSource.EXTERNAL_UNSPECIFIED: 'external_unspecified'> is <CacheHitSource.HOST: 'host'>
+E        +  where <CacheHitSource.EXTERNAL_UNSPECIFIED: 'external_unspecified'> = get_load_source(b'1\x00\x00\x00\x00', ReqContext(req_id='host', kv_transfer_params=None, kv_hints=None, load_tier_filter=TierFilter(matchers=(TierMatcher(medium=None, locality=None),))))
+E        +    where get_load_source = <vllm.v1.kv_offload.cpu.byte_pool.BytePoolOffloadingManager object at 0x7b291d800800>.get_load_source
+E        +  and   <CacheHitSource.HOST: 'host'> = <enum 'CacheHitSource'>.HOST
+
+tests/v1/kv_offload/cpu/test_manager.py:1821: AssertionError
+=============================== warnings summary ===============================
+../../nix/store/97i7ar7k1i4n3dqn42krqv1vflkjmv45-python3.12-anyio-4.14.2/lib/python3.12/site-packages/anyio/pytest_plugin.py:14
+  /nix/store/97i7ar7k1i4n3dqn42krqv1vflkjmv45-python3.12-anyio-4.14.2/lib/python3.12/site-packages/anyio/pytest_plugin.py:14: PytestRemovedIn10Warning: _pytest.python.CallSpec2 has been renamed to CallSpec.
+  The CallSpec2 alias will be removed in pytest 10.
+  Update imports to use CallSpec instead.
+  See https://docs.pytest.org/en/stable/deprecations.html#callspec2-renamed
+    from _pytest.python import CallSpec2
+
+../../nix/store/yv16l8ysyld56xn99xlwpgx7bijagcz8-python3.12-torch-2.14.0+xpu/lib/python3.12/site-packages/torch/xpu/__init__.py:251
+../../nix/store/yv16l8ysyld56xn99xlwpgx7bijagcz8-python3.12-torch-2.14.0+xpu/lib/python3.12/site-packages/torch/xpu/__init__.py:251
+  /nix/store/yv16l8ysyld56xn99xlwpgx7bijagcz8-python3.12-torch-2.14.0+xpu/lib/python3.12/site-packages/torch/xpu/__init__.py:251: UserWarning: Can't initialize Level Zero Sysman
+    return _enum_zes_device_infos(visible_mask)
+
+../../nix/store/yv16l8ysyld56xn99xlwpgx7bijagcz8-python3.12-torch-2.14.0+xpu/lib/python3.12/site-packages/torch/xpu/__init__.py:278
+  /nix/store/yv16l8ysyld56xn99xlwpgx7bijagcz8-python3.12-torch-2.14.0+xpu/lib/python3.12/site-packages/torch/xpu/__init__.py:278: UserWarning: XPU device count is zero! (Triggered internally at /__w/pytorch/pytorch/c10/xpu/XPUFunctions.cpp:113.)
+    count = torch._C._xpu_getDeviceCount() if zes_count < 0 else zes_count
+
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: builtin type SwigPyPacked has no __module__ attribute
+
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: builtin type SwigPyObject has no __module__ attribute
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/v1/kv_offload/cpu/test_manager.py::TestBytePoolOffloadingManager::test_running_prefix_survives_incremental_stores[False]
+FAILED tests/v1/kv_offload/cpu/test_manager.py::TestBytePoolOffloadingManager::test_running_prefix_survives_incremental_stores[True]
+FAILED tests/v1/kv_offload/cpu/test_manager.py::TestBytePoolOffloadingManager::test_reports_host_cache_hit_source
+3 failed, 82 deselected, 6 warnings in 1.65s
+sys:1: DeprecationWarning: builtin type swigvarlink has no __module__ attribute

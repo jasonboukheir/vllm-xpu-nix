@@ -1,0 +1,144 @@
+{
+  "schema": 1,
+  "status": "Ready for operator GPU handoff: source and installed CPU checks pass, exact Brutus Nix package built successfully",
+  "gpu": "Not run; no GPU compute or service changes. Correctness, performance, memory and TTFT qualification pending.",
+  "cpu_harness": {
+    "path": "/tmp/vllm-v033-cpu-pytest",
+    "python": "uv-created .venv/bin/python 3.12",
+    "dependencies": "existing qualified Nix vLLM0.32 runtime closure; pytest tools in isolated venv",
+    "candidate_import": "/tmp/vllm-v033-20261108",
+    "gpu_guard": "CpuPlatform; both torch.xpu._lazy_init and torch.cuda._lazy_init raise; HF_HUB_OFFLINE=1; no accelerator computation",
+    "limitation": "source logic regression coverage; not qualification of newly built installed package"
+  },
+  "suites": [
+    {
+      "scope": "KV planning, builder, independent pools",
+      "passed": 167,
+      "log": "validation/planning-tests-2.log"
+    },
+    {
+      "scope": "Offloading config/scheduler/worker, physical-pool ownership, warmup and native dispatch",
+      "passed": 630,
+      "skipped": 2,
+      "log": "validation/offload-tests.log"
+    },
+    {
+      "scope": "XPU beta envelope, V2 runner, GPU connector, draft backend override",
+      "passed_initial": 140,
+      "failed_initial": 1,
+      "repair": "replace stale selector SimpleNamespace with real AttentionSelectorConfig",
+      "rerun_passed": 6,
+      "unique_tests_passing_after_repair": 141,
+      "logs": [
+        "validation/runner-tests.log",
+        "validation/draft-override-tests.log"
+      ]
+    },
+    {
+      "scope": "KVarN CPU/fake-tensor behavior and block-table lifecycle",
+      "passed_initial": 219,
+      "failed_initial": 2,
+      "repair": "assert KVarN range disjoint from upstream aliases; migrate removed BlockTable constructor argument",
+      "rerun_passed": 2,
+      "unique_tests_passing_after_repair": 221,
+      "logs": [
+        "validation/kvarn-tests.log",
+        "validation/kvarn-migration-tests.log"
+      ]
+    },
+    {
+      "scope": "CPU manager with adapted upstream LRU policy",
+      "passed": 93,
+      "before_fix_regressions_failed": 3,
+      "logs": [
+        "validation/bytepool-before.log",
+        "validation/bytepool-after.log"
+      ]
+    },
+    {
+      "scope": "ModelOpt draft quantization mapping and aliases",
+      "passed": 17,
+      "deselected": 95,
+      "log": "validation/draft-mapping.log"
+    },
+    {
+      "scope": "Scheduler/cache/prefix/GDN metadata",
+      "distinct_passing": 738,
+      "evidence": "review-scheduler.json",
+      "environment_repairs": [
+        "LLaVA config/tokenizer metadata cached without model weights",
+        "V2 explicitly selected for async+pipeline test",
+        "local socket test outside network sandbox with GPU initialization guard retained"
+      ],
+      "fixture_repairs": [
+        "connector_scheduler initialized on existing manually constructed connector",
+        "num_hash_lookahead_tokens supplied on existing splitter fixture"
+      ]
+    },
+    {
+      "scope": "XPU-only Qwen GDN identity",
+      "passed": 2,
+      "deselected": 13,
+      "log": "validation/gdn-identity.log"
+    }
+  ],
+  "lint": {
+    "pre_commit": "hook environment fetch failed due sandbox network; no hook pass claimed",
+    "substitution": "repository Nix-pinned Ruff0.14.0 check and format --check on110changedPython files passed; all110 AST parsed; git diff --check passed",
+    "hook_failure_log": "validation/pre-commit.log"
+  },
+  "dependency_build": {
+    "status": "Final candidate successful after recorded dependency/test and closure-coherence repairs",
+    "source": "upstream0.33 base for dependency preparation; final candidate build pending",
+    "fixes": [
+      "multidict6.9.1 coverage test dependency",
+      "aiohttp3.14.4 postPatch migration, yarl1.25.1 floor and coverage test dependency",
+      "certifi2026.10.19 preserves released root bundle while honoring explicit NIX_SSL_CERT_FILE",
+      "Reuse identical dependency-free fsspec core with current scoped optional extras; conflict checks remain enabled",
+      "Rewrap unchanged torchvision wheel with scoped Pillow13; Torch/native kernel artifacts retained"
+    ],
+    "log": "/tmp/vllm-v033-dependency-build-5.log"
+  },
+  "candidate_build": {
+    "status": "passed",
+    "exit_code": 0,
+    "source": "066206bafebe124485a69e13dcb975a2afc55ad2",
+    "derivation": "/nix/store/1zx6swwn83jq2rl9kf1nnz6yrjicmm0q-python3.12-vllm-xpu-0.33.0+unstable.2026.11.08.g066206b.drv",
+    "package": "/nix/store/5jvmvr89c90f4j1lry5l3a0xr8jp0gfw-python3.12-vllm-xpu-0.33.0+unstable.2026.11.08.g066206b",
+    "version": "0.33.0+unstable.2026.11.08.g066206b",
+    "kernel_derivation": "/nix/store/9a7pf5ld1z2xfxcsjzdgfjn8ilcqpsbv-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.g05d4536.drv",
+    "host_override": "/home/jasonbk/.config/nix/hosts/brutus/services/vllm-xpu/package.nix",
+    "flake": "git+file:///home/jasonbk/Projects/vllm-xpu-nix",
+    "full_log": "/tmp/vllm-v033-candidate-build-3.log",
+    "full_log_sha256": "740f1afa8475572969b67774d211636ff018e3a28d12c23ebf8fd956f2526c87",
+    "command": "nix build --impure --no-link --keep-going --print-out-paths --print-build-logs --max-jobs 2 --cores 4 --expr 'let f = builtins.getFlake \"git+file:///home/jasonbk/Projects/vllm-xpu-nix\"; in import /home/jasonbk/.config/nix/hosts/brutus/services/vllm-xpu/package.nix { vllm-xpu-unstable = f.packages.x86_64-linux.vllm-xpu-unstable; }'",
+    "gpu_executed": false,
+    "publication": "local candidate only; no remote push or release refs",
+    "local_pin_requirement": "This preparation branch requires /home/jasonbk/Projects/vllm with refs/heads/rebase/v0.33-20261108 until source publication."
+  },
+  "evidence_format": "Retained synthetic logs and range-diff have trailing whitespace normalized; original raw logs remain under /tmp.",
+  "source_distinct_passed": 2009,
+  "installed_package": {
+    "status": "passed",
+    "source_python_files_identical": 3001,
+    "imports": "validation/installed-package.json",
+    "focused_cpu_tests_passed": 108,
+    "scope": "KV cache config builder and CPU offloading manager, imported from installed candidate; overlaps source regression count",
+    "log": "validation/installed-tests.log",
+    "harness": "uv-created .venv/bin/python -S, installed wrapper environment/site paths, CPU platform and GPU initialization hard errors",
+    "test_plugin_bootstrap": "Initial automatic discovery encountered a test-only platformdirs plugin version mismatch. Rerun with PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 used pytest builtin fixtures and passed all108 selected tests; application dependencies were unchanged."
+  },
+  "cli_no_device_control": {
+    "status": "requires GPU-visible device inference; same failure reproduced on deployed baseline",
+    "candidate_log": "validation/candidate-cli-no-device.log",
+    "baseline_log": "validation/baseline-cli-no-device.log",
+    "reason": "GPU-less sandbox reports zero XPU devices; CLI eagerly constructs DeviceConfig even for --version. Actual server startup is reserved for operator GPU handoff."
+  },
+  "launch_plan": {
+    "private_recipe": "/tmp/vllm-v033-qualification/unit.json",
+    "private_plan": "/tmp/vllm-v033-qualification/launch-plan.json",
+    "arguments": 41,
+    "test_port": 18000,
+    "status": "prepared, not executed"
+  }
+}

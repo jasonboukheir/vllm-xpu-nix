@@ -1,0 +1,164 @@
+{
+  "schema": 1,
+  "agent": "/root/audit_vllm_kvarn",
+  "repository": "/home/jasonbk/Projects/vllm",
+  "commit": "6b3d89e6e64f1e9c4f44c68c93af84e1504ef6f0",
+  "parent": "5f58938759fcb527c2b6d99ce189aaf6df32c8a3",
+  "subject": "feat(xpu): integrate KVarN hybrid caching with V2 DFlash2",
+  "patch_id": "20a59cfedff0e178a1d7fdbbacddbf911a08a79a",
+  "old_base": "5df63a7203cdb9328d824a27b682e77c7b9928be",
+  "old_tip": "6b3d89e6e64f1e9c4f44c68c93af84e1504ef6f0",
+  "target_tag": "v0.33.0",
+  "target": "4ba787ec9959e566d3b587a796dff07673324da5",
+  "companion": {
+    "repository": "/home/jasonbk/Projects/vllm-xpu-kernels",
+    "old_and_new_base": "ddf336d86e3c8602888572a3502f951abd51df12",
+    "tip": "05d4536b2440db171741b5de5c148cdc834bd692",
+    "exact_dependency": "vllm_xpu_kernels==0.1.15.4"
+  },
+  "disposition": "ADAPT",
+  "requirement": {
+    "feature": "KVarN compact K4V2/K4V4 attention, native Xe2 storage/decode/materialization, separately sized full-attention/recurrent/draft pools, bounded RAM prefix retention with FP16 sink sidecars, V1 bundled MTP and eager V2 DFlash2 ownership/lifecycle integration",
+    "active_workload": "Intel B70/Xe2, RedHatAI/Qwen3.8-27B-INT4 at pinned bf08f3dbd9a324e53956920aad378a1f1b6dd24a, BF16 activations, compact K4V2 target cache, Syvai W4A16 DFlash2 pinned 4d30ec736ffc6b8688dc2ae2b502d9b48bdec279 with two proposals and BF16 2048-token sliding draft cache, V2 eager, 128K context, four request slots, 2048-token batches, 8 GiB IndependentCPUOffloadingSpec RAM arena, active_only GPU retention",
+    "scope": "The deployed profile is narrower than the supported fork feature. Preserve alternative supported KVarN/V1 paths and scoped request-stability behavior unless deliberately retired; the upgrade does not authorize deleting them merely because the current profile does not activate them.",
+    "net_effect": "This is the final fork commit; all its behavior survives at the old tip. No later local repair/revert supersedes it. Its original commit already folds prior KVarN/prefix/V2 repairs."
+  },
+  "upstream_coverage": [
+    {
+      "area": "KVarN backend and independent physical cache namespaces",
+      "evidence": "At frozen v0.33, vllm/v1/kv_cache_interface.py still gives device KV tensors one shared num_blocks; only HiSparse host storage has a separate special pool. There is no KVarN backend, KVCachePoolSpec, pool_id tensor field or IndependentCPUOffloadingSpec. vllm/v1/worker/utils.py is unchanged between old upstream and v0.33, including its single-device-backing allocation contract.",
+      "decision": "KEEP the essential KVarN feature and explicit physical-pool ownership through allocation, zero/COW, offload fences, admission and reset. Upstream CPU offloading and HiSparse do not replace heterogeneous KVarN byte storage or sink sidecars."
+    },
+    {
+      "area": "Planning module ownership and extensibility",
+      "commits": [
+        "df6c7ad03194a3051a197d57ca4a94e4a063014e",
+        "b5445874080ce85c575f2bcb847852235f1af7bc",
+        "3e75ccba298d0c7f045f35c39078cec74184b799"
+      ],
+      "evidence": "Planning moved to vllm/v1/core/kv_cache_planning.py. KVCacheConfigBuilder/get_kv_cache_config_builder now supplies grouping, placement and a per-block byte hook; Platform.get_kv_cache_config_builder_cls selects it. Frozen-target get_kv_cache_configs now receives global_kv_cache_groups as a fourth argument, and get_global_kv_cache_groups performs earlier global grouping. Existing get_kv_cache_config_from_groups takes bytes, but the new builder method takes a block count. Core still assumes a common block-count capacity and reserves one common per-block byte quantum.",
+      "decision": "ADAPT local planner contributions at the new owner and preserve the upstream grouping/builder dispatch and new call signature. The new hook is a useful reduction boundary, but cannot by itself express fixed max_num_seqs recurrent/draft reservations plus variable full-attention capacity, separate null pages and per-pool rank convergence. Do not replace these rules with a scalar average bytes-per-block or bypass new core invariants. Keep non-KVarN planning on the unmodified default builder path."
+    },
+    {
+      "area": "Preserving group attributes across worker projection",
+      "commits": [
+        "b5445874080ce85c575f2bcb847852235f1af7bc",
+        "c3de0b37e25fb4b59eaa3e292df928c61b3dc172"
+      ],
+      "evidence": "Frozen-target _project_kv_cache_groups_to_worker explicitly preserves host_resident, enable_kv_transfer and role. It also intentionally propagates is_eagle_group without the old 'and bool(worker_layer_names)' check. The local replacement of KVCacheGroupSpec(...) with replace(group, ...) exists to preserve those fields.",
+      "decision": "DROP that local projection workaround and use the upstream constructor and empty-rank draft-group semantics. This is demonstrated semantic supersession despite a different implementation. Retain the existing coverage of group fields, adapted to the new owner."
+    },
+    {
+      "area": "Draft-layer tags, prefix proofs and DFlash replay",
+      "commits": [
+        "c3de0b37e25fb4b59eaa3e292df928c61b3dc172",
+        "0bfeb8d0e367c21d4406c87d0807729cc8787322",
+        "2fb320d8304381e224dd27fbf8c13c30b4e1020f",
+        "d561af5dfcd136fc1bea95a0343d3a09b6fa0988",
+        "a608b6e6e05f4b309f77981f010e93c2caa1c677"
+      ],
+      "evidence": "KVCacheSpec.is_draft replaces positional EAGLE heuristics. needs_eagle_block_drop excludes DFlash/DSpark; KVCacheCoordinator separates eagle_group_ids from drop_eagle_group_ids. BlockPool now receives num_hash_lookahead_tokens and Mamba checkpoint helpers read it. Local OffloadingConnector.bind_kv_cache_manager currently binds replay_boundaries with bool(coordinator.eagle_group_ids). Upstream OffloadingConnectorScheduler still uses only (num_prompt_tokens - 1,) for retained RAM replay windows, so the local exact-replay binding remains necessary.",
+      "decision": "ADAPT replay binding to coordinator.drop_eagle_group_ids. Preserve upstream draft tags and group propagation; never resurrect deleted positional heuristics. Pass num_hash_lookahead_tokens to every physical BlockPool. Keep upstream already-committed checkpoint and shared-prefix-junction fixes when combining local pool-reservation logic. Add aligned/unaligned DFlash restore checks with no trailing-block drop plus EAGLE/MTP lookahead cases."
+    },
+    {
+      "area": "Offloading allocation tracking and new async/sync lifecycle",
+      "commits": [
+        "c67c69e657254dace058ed5250a29f884cf4a19b",
+        "fe5fe8ba5fb9412ac6deafd192ae8b7c466b96c5",
+        "c5f8adc0b1944b9142a31d85cfbc6a61973d0b3a",
+        "14aefcd4f907ff91cb29b9e80bd9c6a5568944bb",
+        "a64fc94081cfa3f0061a87e6c0646ed472552a1b"
+      ],
+      "evidence": "update_state_after_alloc now tracks allocated blocks from all groups BEFORE returning when num_external_tokens==0; this fixes reallocation fence detection. submit_load gained expedited=False, and worker.py calls it with expedited=True for sync loads. Manager lock/on_reset_flushed contracts and reset reporting were expanded. Frozen upstream keeps raw unqualified numeric block IDs in fence maps, which still collide across local independent pools.",
+      "decision": "ADAPT the new all-group allocation loop to enumerate groups and map every block through _physical_block_id before the early return; retain all new tracking semantics. Preserve new synchronous-load, manager-lock, resume and reset handling while adding local pool IDs. Add expedited=False to IndependentCPUOffloadingWorker.submit_load; the worker already completes its transfers before returning, so the argument does not require a new asynchronous implementation. Do not enable a nonzero sync_load_budget_bytes in the host until this path has CPU and GPU coverage."
+    },
+    {
+      "area": "V2 connector collection, metadata and page-reuse fences",
+      "commits": [
+        "0c5dd18e7a0ace18d99438fb16b8375572ea76b5",
+        "856b98415be95893a1b5b26adeb238783bcf91fe",
+        "388a610dfb5f462261cc1ec27bc2e3bebc0249ca"
+      ],
+      "evidence": "Upstream post_forward now collects transfer results before drafting and finalize_step waits for saves/clears metadata afterward. Local prepare_cache_update fences outgoing stores before runner zeroing/COW; early pre_forward completes sync restores before KVarN mutable metadata claims. The upstream change occurs later in the step and does not cover those hazards. DFlash can now skip query drafting while still storing context when num_speculative_tokens==0.",
+      "decision": "KEEP early KVarN fences and target/draft builder isolation, combined with upstream's new post_forward/finalize_step order. Do not move post_forward back after drafting. Preserve the new context-only draft pass. Upstream still computes q_resident without query_pos < max_model_len, so retain the local query-slot ceiling guard: mixed batches can include a request at its ceiling even while another request needs drafts."
+    },
+    {
+      "area": "Draft quantization configuration mapping",
+      "commits": [
+        "5f63ea461ccd567ece6f50dd3701430c0f321039"
+      ],
+      "evidence": "Upstream DFlashQwen3Model now calls map_draft_quant_config. In model_executor/models/utils.py that helper applies the rename mapper only for ModelOptQuantConfigBase and returns; other backends retain their existing settings and get only exclusion aliases. It does not update Qwen3ForCausalLM.packed_modules_mapping. Therefore the local seven-line mapping addition is not fully superseded for the deployed compressed-tensors W4A16 draft.",
+      "decision": "ADAPT, preserving compressed-tensors rename and packed-module behavior while avoiding double application of the rename mapper to ModelOpt before upstream's helper. Keep upstream prefix/layer alias handling; do not restore _add_global_draft_layer_exclusions. Validate the actual pinned drafter's quantized module mapping rather than treating the new helper's presence as equivalence."
+    },
+    {
+      "area": "Running-request CPU prefix retention",
+      "commits": [
+        "e113018f5067045ac92de3949b8c302439abb226"
+      ],
+      "evidence": "Upstream CPUOffloadingManager now feeds incremental request accesses into its eviction policy so growing tails do not displace reusable prefixes. Local BytePoolOffloadingManager is a separate variable-size allocator with per-request access tracking and final prefix-order touch. It does not call CPUOffloadingManager or its policy, so the upstream behavior is not inherited automatically.",
+      "decision": "KEEP the variable-size byte arena and its existing prefix retention, with a focused review/test of growing requests across multiple store batches. Prefer the upstream request-order behavior if that regression reproduces locally; replacing the arena with the fixed-chunk CPU manager would lose the independent-group byte savings and sink handling. No demonstrated local failure or runtime comparison was produced in this audit."
+    }
+  ],
+  "minimum_residual": [
+    "One coherent KVarN feature commit retaining configuration/backend registration, quantized record layout, native operators, bounded materialization and side buffers, supported variants and their tests.",
+    "Separate device pool metadata and namespace-aware allocation/admission/zero/COW/offload/reset remain required; port planner logic to kv_cache_planning.py and update tests/imports for get_global_kv_cache_groups and builder block-count contracts.",
+    "Remove the superseded worker-projection field-preservation workaround; adopt upstream explicit draft tagging, DFlash no-drop prefix semantics and new connector lifecycle.",
+    "Fold all required v0.33 interface changes into this feature commit; do not create temporary repair commits in the final stack."
+  ],
+  "dependencies": [
+    {
+      "commit": "05d4536b2440db171741b5de5c148cdc834bd692",
+      "repository": "vllm-xpu-kernels",
+      "contract": "Native KVarN packing, scatter, cache materialization and compact attention schemas under _vllm_fa2_C. Retaining the feature requires the matching kernel ABI; dropping only one side is invalid."
+    },
+    {
+      "commit": "5f58938759fcb527c2b6d99ce189aaf6df32c8a3",
+      "contract": "Explicit BF16 draft cache names must remain compatible with the unchanged native cache writer; KVarN target/draft separation relies on this configuration remaining explicit."
+    },
+    {
+      "commit": "93b30581c4d0ca790e30fdad4a5e9854689b3837",
+      "contract": "Functional batch-invariant residual RMSNorm is used by the optional scoped request-stability policy inside this feature. Active RedHat DFlash profile does not activate that policy."
+    },
+    {
+      "commits": [
+        "5673b4bb84953d9f65b20f79b49ecbcd07432bd4",
+        "efddf8010f4b9d8c896b91aa4bfed3c5e7edc2a1",
+        "d8e1f69699496beeda61da9a544f49d9b6378d73"
+      ],
+      "contract": "GDN live metadata and native mixed-batch arithmetic are separately owned fixes; KVarN adds immutable eager metadata and uses their selected paths. Reconcile their audits rather than folding unrelated correctness policy into KVarN."
+    }
+  ],
+  "validation": {
+    "performed": [
+      "Read repository instructions, commit-audit contract, full assigned patch inventory/stat and patch-id; reviewed the actual host recipe and baseline manifest/rationale.",
+      "Inspected immutable old-base-to-target Git history and implementations for planning/builders, all independent-pool ownership paths, offloading config/worker/manager interfaces, V2 connector and DFlash paths, group projection and quantization mapper behavior.",
+      "Verified unchanged source content for worker/utils.py, cpu_model_runner.py, xpu_worker.py, offloading/canonical_mapping.py, offloading_connector.py, several draft proposer adapters, logits_processor.py and static_sink_attention.py against old upstream. This demonstrates absence of upstream replacements in those files, not runtime correctness.",
+      "Verified target q_resident still lacks the per-request context-ceiling predicate; target worker submit_load expedited calling convention; target KVCacheSpec.is_draft and drop_eagle_group_ids semantics."
+    ],
+    "not_performed": [
+      "No runtime tests, candidate imports, native compilation, model inference or GPU operations were executed by this audit agent.",
+      "No source, branch, lock, service or host changes were made; only this report was written.",
+      "The v1.13 native/serving evidence is baseline evidence and does not qualify the v0.33 candidate."
+    ],
+    "required_cpu_checks": [
+      "Existing KVarN quantization/platform guard and independent-pool planner suites, updated for planning-module ownership and builder APIs; compare non-KVarN default grouping/auto-fit/override behavior with upstream.",
+      "Per-pool admission/reservations, null blocks, group-qualified zero/COW, physical-block overrides, rank convergence, teardown/reset and pool-ownership suites.",
+      "Offloading scheduler tests including zero external tokens, colliding numeric IDs across pools, aligned/unaligned DFlash RAM windows, EAGLE/MTP lookahead hashes, same-step resume, reset, expedited sync loads and growing-prefix store batches.",
+      "V2 worker tests covering preemption fence before zero/COW, restores before KVarN metadata, post_forward before draft and finalize_step after draft.",
+      "Compressed-tensors DFlash mapper/packed-module test and upstream ModelOpt draft quantization tests to catch double mapping; target/draft metadata builder isolation tests.",
+      "DFlash input preparation ceiling guard with a mixed batch where one request has no room for drafts, plus the upstream num_speculative_tokens=0 context-only path."
+    ],
+    "required_gpu_checks_after_handoff": [
+      "Build and test the exact paired package using Brutus's existing BMG/torchvision/kernel-config overrides; preserve production service state until user maintenance handoff.",
+      "Native compact K4V2 references, ragged speculative verification, rejection-tail poisoning, GDN rollback, and cached materialization at page/context boundaries.",
+      "Actual 128K/0.93 V2 two-proposal DFlash2 profile: cold and warm prompts, four-request admission, eviction/preemption, 8 GiB RAM restore at aligned and unaligned prefix boundaries, two-image path, reset/restart and context ceiling.",
+      "Matched baseline/candidate TTFT, inter-token latency, throughput, peak GPU/RAM and offload load/store timings. Keep draft-query skipping and synchronous CPU-load tuning as measured comparisons; do not promote settings from source review alone."
+    ]
+  },
+  "remaining_risks": [
+    "The 100-file feature is large; a clean textual replay is not evidence that new planning and scheduler invariants are preserved. Independent review of the final effective diff is required.",
+    "The new builder interface still models scalar capacity; integrating it with genuinely independent fixed and variable pools needs behavioral tests, especially auto-fit and explicit block overrides.",
+    "Synchronous CPU-tier loads are a potential TTFT tuning option, but the custom worker needs the new method contract and fence coverage before enabling the budget.",
+    "Optional scoped determinism and whole-model repeatability remain distinct; baseline documentation already does not promise identical cold-run text with DFlash."
+  ]
+}

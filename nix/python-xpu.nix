@@ -15,7 +15,119 @@ pkgs.python312Packages.overrideScope (
   pyFinal: pyPrev: {
     torch = torch-xpu;
     triton = triton-xpu;
-    torchvision = torchvision-xpu;
+    # Rewrap the same vision wheel with this scope's Pillow and NumPy.
+    torchvision = torchvision-xpu.override { python3Packages = pyFinal; };
+
+    # Torch retains this dependency-free core. Rebuilding it only because
+    # HTTP test inputs changed creates a duplicate in downstream closures.
+    # Keep optional extras scoped so HTTP callers still get the new aiohttp.
+    fsspec =
+      let
+        stock = pkgs.python312Packages.fsspec;
+      in
+      assert pkgs.lib.assertMsg (
+        stock.version == pyPrev.fsspec.version
+        && toString stock.src == toString pyPrev.fsspec.src
+        && (stock.dependencies or [ ]) == [ ]
+        &&
+          map toString (stock.propagatedBuildInputs or [ ]) == [
+            (toString pkgs.python312Packages.python)
+          ]
+      ) "Review fsspec reuse: its source or unconditional runtime dependencies changed";
+      stock.overrideAttrs (old: {
+        passthru = (old.passthru or { }) // {
+          optional-dependencies = pyPrev.fsspec.optional-dependencies;
+        };
+      });
+
+    fastapi = pyPrev.fastapi.overridePythonAttrs {
+      version = "0.136.3";
+      src = pkgs.fetchFromGitHub {
+        owner = "fastapi";
+        repo = "fastapi";
+        tag = "0.136.3";
+        hash = "sha256-lfmk8ZveKPukEEfwWq2mKtWmOHAtVzGuE5BsOskDzh0=";
+      };
+    };
+
+    aiohttp =
+      assert pkgs.lib.assertMsg (pkgs.lib.versionOlder pyPrev.aiohttp.version "3.14.4")
+        "nixpkgs aiohttp has caught up; review the vLLM 0.33 override";
+      pyPrev.aiohttp.overridePythonAttrs (oldAttrs: {
+        version = "3.14.4";
+        src = pkgs.fetchFromGitHub {
+          owner = "aio-libs";
+          repo = "aiohttp";
+          tag = "v3.14.4";
+          hash = "sha256-ArlEDpuUQJ6Ueup7tL9H1Nd3/TgajMaHtg4pJiSGOy8=";
+        };
+        postPatch = ''
+          rm -r vendor
+          patchShebangs tools
+          touch .git
+          substituteInPlace Makefile \
+            --replace-fail "cythonize: .install-cython" "cythonize:"
+        '';
+        nativeCheckInputs = (oldAttrs.nativeCheckInputs or [ ]) ++ [ pyPrev.coverage ];
+      });
+
+    # aiohttp 3.14.4 requires yarl >= 1.25.1.
+    yarl =
+      assert pkgs.lib.assertMsg (pkgs.lib.versionOlder pyPrev.yarl.version "1.25.1")
+        "nixpkgs yarl has caught up; review the vLLM 0.33 override";
+      pyPrev.yarl.overridePythonAttrs {
+        version = "1.25.1";
+        src = pkgs.fetchFromGitHub {
+          owner = "aio-libs";
+          repo = "yarl";
+          tag = "v1.25.1";
+          hash = "sha256-cQsVglP3OqaQW95OYPlbWCFTs5p6L5wOzx7QCIqqJ9U=";
+        };
+      };
+
+    multidict =
+      assert pkgs.lib.assertMsg (pkgs.lib.versionOlder pyPrev.multidict.version "6.9.1")
+        "nixpkgs multidict has caught up; review the vLLM 0.33 override";
+      pyPrev.multidict.overridePythonAttrs (oldAttrs: {
+        version = "6.9.1";
+        src = pkgs.fetchFromGitHub {
+          owner = "aio-libs";
+          repo = "multidict";
+          tag = "v6.9.1";
+          hash = "sha256-Xe8n3Y8x5fOS+xme5pKJuiiU6y+oXosZLoEA1Rkp+Qw=";
+        };
+        nativeCheckInputs = (oldAttrs.nativeCheckInputs or [ ]) ++ [ pyPrev.coverage ];
+      });
+
+    pillow =
+      assert pkgs.lib.assertMsg (pkgs.lib.versionOlder pyPrev.pillow.version "13.0.0")
+        "nixpkgs pillow has caught up; review the vLLM 0.33 override";
+      pyPrev.pillow.overridePythonAttrs {
+        version = "13.0.0";
+        src = pkgs.fetchFromGitHub {
+          owner = "python-pillow";
+          repo = "pillow";
+          tag = "13.0.0";
+          hash = "sha256-7FHwvgfT40qiHmvcJFZN/FlOECE0YiqOLBEYCMugk+4=";
+        };
+      };
+
+    certifi =
+      assert pkgs.lib.assertMsg (pkgs.lib.versionOlder pyPrev.certifi.version "2026.10.19")
+        "nixpkgs certifi has caught up; review the vLLM 0.33 override";
+      pyPrev.certifi.overridePythonAttrs {
+        version = "2026.10.19";
+        src = pkgs.fetchFromGitHub {
+          owner = "certifi";
+          repo = "python-certifi";
+          tag = "2026.10.19";
+          hash = "sha256-eiNK0yRcaOr0HW/kCc+0oOUXOl0jh+2rT41qBdDrVK8=";
+        };
+        # Keep this release's root removals; the inherited postPatch replaces
+        # its bundle with the older pinned NSS bundle. env.patch still honors
+        # an explicit NIX_SSL_CERT_FILE trust store.
+        postPatch = "";
+      };
 
     # vLLM 0.32 requires these versions ahead of the pinned nixpkgs set.
     transformers =
@@ -68,11 +180,11 @@ pkgs.python312Packages.overrideScope (
     # vLLM releases retain pyFinal.mcp while new callers select pyFinal.mcp-v2.
     mcp-types-v2 = pyFinal.buildPythonPackage rec {
       pname = "mcp-types";
-      version = "2.0.0";
+      version = "2.2.0";
       format = "wheel";
       src = pkgs.fetchurl {
-        url = "https://files.pythonhosted.org/packages/f5/4c/c78d78c3d52b0ac594ad7cc8ef5972adfe070e3597a8a4c6ce0cd39196ea/mcp_types-${version}-py3-none-any.whl";
-        hash = "sha256-ay3nl8onl/Vot5Up4bJZSONN5RG8wL2C/vEDmm0bjrA=";
+        url = "https://files.pythonhosted.org/packages/8f/d7/6ffba5d8cd5dd9b8a19478875c50e04945314ba5074e84d749283f27f62d/mcp_types-${version}-py3-none-any.whl";
+        hash = "sha256-6kdrc+6GcJq1q8lFI4XtNswFkH5YI1ViLilFlcmgTxM=";
       };
       dependencies = with pyFinal; [
         pydantic
@@ -83,11 +195,11 @@ pkgs.python312Packages.overrideScope (
 
     mcp-v2 = pyFinal.buildPythonPackage rec {
       pname = "mcp";
-      version = "2.0.0";
+      version = "2.2.0";
       format = "wheel";
       src = pkgs.fetchurl {
-        url = "https://files.pythonhosted.org/packages/67/72/7d7897418912c1d12e87556630dfb7bf0eac71160e9bef8b447960804ee3/mcp-${version}-py3-none-any.whl";
-        hash = "sha256-HLTHXS0se4wddWNV5dgqOfKCLMfxPiKiBR18o1kjSdY=";
+        url = "https://files.pythonhosted.org/packages/1b/ff/8e7eade68b8a28f7da0ed1085544341b51f9c935dbf6b95c76b7edfea6a0/mcp-${version}-py3-none-any.whl";
+        hash = "sha256-vemCWJRzoGCuFF40BumlMz/lOMlyKbqEH1p/kr4AT4E=";
       };
       dependencies = with pyFinal; [
         anyio

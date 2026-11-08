@@ -1,0 +1,100 @@
+python3.12-vllm-xpu> adding 'vllm/v1/worker/gpu/sample/logit_bias.py'
+python3.12-vllm-xpu> adding 'vllm/v1/worker/gpu/sample/logprob.py'
+python3.12-vllm-xpu> adding 'vllm/v1/worker/gpu/sample/min_p.py'
+python3.12-vllm-xpu> adding 'vllm/v1/worker/gpu/sample/output.py'
+python3.12-vllm-xpu> adding 'vllm/v1/worker/gpu/sample/penalties.py'
+python3.12-vllm-xpu> adding 'vllm/v1/worker/gpu/sample/prompt_logprob.py'
+python3.12-vllm-xpu> adding 'vllm/v1/worker/gpu/sample/sampler.py'
+python3.12-vllm-xpu> adding 'vllm/v1/worker/gpu/sample/states.py'
+python3.12-vllm-xpu> adding 'vllm/v1/worker/gpu/sample/thinking_budget.py'
+python3.12-vllm-xpu> adding 'vllm/v1/worker/gpu/sample/trace_replay.py'
+python3.12-vllm-xpu> adding 'vllm/v1/worker/gpu/sample/watermark.py'
+python3.12-vllm-xpu> adding 'vllm/v1/worker/gpu/sample/logits_processor/__init__.py'
+python3.12-vllm-xpu> adding 'vllm/v1/worker/gpu/sample/logits_processor/interface.py'
+python3.12-vllm-xpu> adding 'vllm/v1/worker/gpu/sample/logits_processor/loader.py'
+python3.12-vllm-xpu> adding 'vllm/v1/worker/gpu/spec_decode/__init__.py'
+python3.12-vllm-xpu> adding 'vllm/v1/worker/gpu/spec_decode/acceptance_estimator.py'
+python3.12-vllm-xpu> adding 'vllm/v1/worker/gpu/spec_decode/adaptive_verification.py'
+python3.12-vllm-xpu> adding 'vllm/v1/worker/gpu/spec_decode/extract_hidden_states.py'
+python3.12-vllm-xpu> adding 'vllm/v1/worker/gpu/spec_decode/rejection_sampler.py'
+python3.12-vllm-xpu> adding 'vllm/v1/worker/gpu/spec_decode/rejection_sampler_utils.py'
+python3.12-vllm-xpu> adding 'vllm/v1/worker/gpu/spec_decode/speculator.py'
+python3.12-vllm-xpu> adding 'vllm/v1/worker/gpu/spec_decode/utils.py'
+python3.12-vllm-xpu> adding 'vllm/v1/worker/gpu/spec_decode/dflash/__init__.py'
+python3.12-vllm-xpu> adding 'vllm/v1/worker/gpu/spec_decode/dflash/cudagraph.py'
+python3.12-vllm-xpu> adding 'vllm/v1/worker/gpu/spec_decode/dflash/speculator.py'
+python3.12-vllm-xpu> adding 'vllm/v1/worker/gpu/spec_decode/dflash/utils.py'
+python3.12-vllm-xpu> adding 'vllm/v1/worker/gpu/spec_decode/dflash2/__init__.py'
+python3.12-vllm-xpu> adding 'vllm/v1/worker/gpu/spec_decode/dflash2/speculator.py'
+python3.12-vllm-xpu> adding 'vllm/v1/worker/gpu/spec_decode/dspark/__init__.py'
+python3.12-vllm-xpu> adding 'vllm/v1/worker/gpu/spec_decode/dspark/speculator.py'
+python3.12-vllm-xpu> adding 'vllm/v1/worker/gpu/spec_decode/dspark/utils.py'
+python3.12-vllm-xpu> adding 'vllm/v1/worker/gpu/spec_decode/eagle/__init__.py'
+python3.12-vllm-xpu> adding 'vllm/v1/worker/gpu/spec_decode/eagle/eagle3_utils.py'
+python3.12-vllm-xpu> adding 'vllm/v1/worker/gpu/spec_decode/eagle/speculator.py'
+python3.12-vllm-xpu> adding 'vllm/v1/worker/gpu/spec_decode/eagle/utils.py'
+python3.12-vllm-xpu> adding 'vllm/v1/worker/gpu/spec_decode/gemma4/__init__.py'
+python3.12-vllm-xpu> adding 'vllm/v1/worker/gpu/spec_decode/gemma4/speculator.py'
+python3.12-vllm-xpu> adding 'vllm/v1/worker/gpu/spec_decode/lilicorr/__init__.py'
+python3.12-vllm-xpu> adding 'vllm/v1/worker/gpu/spec_decode/lilicorr/speculator.py'
+python3.12-vllm-xpu> adding 'vllm/v1/worker/gpu/spec_decode/mtp/__init__.py'
+python3.12-vllm-xpu> adding 'vllm/v1/worker/gpu/spec_decode/mtp/speculator.py'
+python3.12-vllm-xpu> adding 'vllm/v1/worker/gpu/spec_decode/multi_module_mtp/__init__.py'
+python3.12-vllm-xpu> adding 'vllm/v1/worker/gpu/spec_decode/multi_module_mtp/speculator.py'
+python3.12-vllm-xpu> adding 'vllm/v1/worker/gpu/spec_decode/ngram/__init__.py'
+python3.12-vllm-xpu> adding 'vllm/v1/worker/gpu/spec_decode/ngram/speculator.py'
+python3.12-vllm-xpu> adding 'vllm/v1/worker/gpu/spec_decode/standalone_ar/__init__.py'
+python3.12-vllm-xpu> adding 'vllm/v1/worker/gpu/spec_decode/standalone_ar/speculator.py'
+python3.12-vllm-xpu> adding 'vllm/v1/worker/gpu/spec_decode/target_dependent_ar/__init__.py'
+python3.12-vllm-xpu> adding 'vllm/v1/worker/gpu/spec_decode/target_dependent_ar/cudagraph_utils.py'
+python3.12-vllm-xpu> adding 'vllm/v1/worker/gpu/spec_decode/target_dependent_ar/speculator.py'
+python3.12-vllm-xpu> adding 'vllm/v1/worker/gpu/spec_decode/xpress/__init__.py'
+python3.12-vllm-xpu> adding 'vllm/v1/worker/gpu/spec_decode/xpress/kernels.py'
+python3.12-vllm-xpu> adding 'vllm/v1/worker/gpu/spec_decode/xpress/speculator.py'
+python3.12-vllm-xpu> adding 'vllm/v1/worker/sentinel/__init__.py'
+python3.12-vllm-xpu> adding 'vllm/v1/worker/sentinel/gpu_worker_sentinel.py'
+python3.12-vllm-xpu> adding 'vllm/vllm_flash_attn/.gitkeep'
+python3.12-vllm-xpu> adding 'vllm/vllm_flash_attn/__init__.py'
+python3.12-vllm-xpu> adding 'vllm/vllm_flash_attn/flash_attn_interface.py'
+python3.12-vllm-xpu> adding 'vllm-0.33.0+unstable.2026.11.8.g066206b.dist-info/licenses/LICENSE'
+python3.12-vllm-xpu> adding 'vllm-0.33.0+unstable.2026.11.8.g066206b.dist-info/METADATA'
+python3.12-vllm-xpu> adding 'vllm-0.33.0+unstable.2026.11.8.g066206b.dist-info/WHEEL'
+python3.12-vllm-xpu> adding 'vllm-0.33.0+unstable.2026.11.8.g066206b.dist-info/entry_points.txt'
+python3.12-vllm-xpu> adding 'vllm-0.33.0+unstable.2026.11.8.g066206b.dist-info/top_level.txt'
+python3.12-vllm-xpu> adding 'vllm-0.33.0+unstable.2026.11.8.g066206b.dist-info/RECORD'
+python3.12-vllm-xpu> removing build/bdist.linux-x86_64/wheel
+python3.12-vllm-xpu> Successfully built vllm-0.33.0+unstable.2026.11.8.g066206b-py3-none-any.whl
+python3.12-vllm-xpu> Finished creating a wheel...
+python3.12-vllm-xpu> /build/source/dist /build/source
+python3.12-vllm-xpu> Unpacking to: unpacked/vllm-0.33.0+unstable.2026.11.8.g066206b...OK
+python3.12-vllm-xpu> Repacking wheel as ./vllm-0.33.0+unstable.2026.11.8.g066206b-py3-none-any.whl...OK
+python3.12-vllm-xpu> /build/source
+python3.12-vllm-xpu> Finished executing pypaBuildPhase
+python3.12-vllm-xpu> Running phase: installPhase
+python3.12-vllm-xpu> Executing pypaInstallPhase
+python3.12-vllm-xpu> /nix/store/qdailkvgvr0svzwnz72c4xyssh9ckfy2-python3.12-installer-1.0.1/lib/python3.12/site-packages/installer/__main__.py:118: RuntimeWarning: Skip installing vllm/__pycache__/envs.cpython-312.pyc from vllm. Installing files in a __pycache__ directory poses a security risk. __pycache__ directories should not be included in wheels. This is probably an issue in the build process of 'vllm'.
+python3.12-vllm-xpu>   installer.install(source, destination, {})
+python3.12-vllm-xpu> Successfully installed vllm-0.33.0+unstable.2026.11.8.g066206b-py3-none-any.whl
+python3.12-vllm-xpu> Finished executing pypaInstallPhase
+python3.12-vllm-xpu> Running phase: pythonOutputDistPhase
+python3.12-vllm-xpu> Executing pythonOutputDistPhase
+python3.12-vllm-xpu> Finished executing pythonOutputDistPhase
+python3.12-vllm-xpu> Running phase: fixupPhase
+python3.12-vllm-xpu> shrinking RPATHs of ELF executables and libraries in /nix/store/5jvmvr89c90f4j1lry5l3a0xr8jp0gfw-python3.12-vllm-xpu-0.33.0+unstable.2026.11.08.g066206b
+python3.12-vllm-xpu> checking for references to /build/ in /nix/store/5jvmvr89c90f4j1lry5l3a0xr8jp0gfw-python3.12-vllm-xpu-0.33.0+unstable.2026.11.08.g066206b...
+python3.12-vllm-xpu> patching script interpreter paths in /nix/store/5jvmvr89c90f4j1lry5l3a0xr8jp0gfw-python3.12-vllm-xpu-0.33.0+unstable.2026.11.08.g066206b
+python3.12-vllm-xpu> shrinking RPATHs of ELF executables and libraries in /nix/store/flpq2ca9247rqfglfbkbx2cpdmj0x030-python3.12-vllm-xpu-0.33.0+unstable.2026.11.08.g066206b-dist
+python3.12-vllm-xpu> checking for references to /build/ in /nix/store/flpq2ca9247rqfglfbkbx2cpdmj0x030-python3.12-vllm-xpu-0.33.0+unstable.2026.11.08.g066206b-dist...
+python3.12-vllm-xpu> patching script interpreter paths in /nix/store/flpq2ca9247rqfglfbkbx2cpdmj0x030-python3.12-vllm-xpu-0.33.0+unstable.2026.11.08.g066206b-dist
+python3.12-vllm-xpu> Rewriting #!/nix/store/yvwk46zd4zvbwzqwhpd8kddpz14zda49-python3-3.12.13/bin/python3.12 to #!/nix/store/yvwk46zd4zvbwzqwhpd8kddpz14zda49-python3-3.12.13
+python3.12-vllm-xpu> wrapping `/nix/store/5jvmvr89c90f4j1lry5l3a0xr8jp0gfw-python3.12-vllm-xpu-0.33.0+unstable.2026.11.08.g066206b/bin/vllm'...
+python3.12-vllm-xpu> Executing pythonRemoveTestsDir
+python3.12-vllm-xpu> Finished executing pythonRemoveTestsDir
+python3.12-vllm-xpu> Running phase: installCheckPhase
+python3.12-vllm-xpu> setting known thread variables to default: 1
+python3.12-vllm-xpu>  OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 BLIS_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 NUMBA_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1
+python3.12-vllm-xpu> no Makefile or custom installCheckPhase, doing nothing
+python3.12-vllm-xpu> Running phase: pythonRemoveBinBytecodePhase
+python3.12-vllm-xpu> Running phase: pythonImportsCheckPhase
+python3.12-vllm-xpu> Executing pythonImportsCheckPhase
+python3.12-vllm-xpu> Check whether the following modules can be imported: vllm

@@ -1,0 +1,112 @@
+{
+  "schema": 1,
+  "agent": "kernels_v017_compat",
+  "assessment": "Do not substitute v0.1.17 into the v0.33 candidate as a kernel-only upgrade. A separate coordinated Torch/SYCL-TLA/build-layout migration is feasible in principle but is not yet validated or justified by demonstrated performance on the deployed dense Qwen profile.",
+  "inputs": {
+    "vllm_target": "4ba787ec9959e566d3b587a796dff07673324da5",
+    "vllm_target_tag": "v0.33.0",
+    "old_kernel_base": "ddf336d86e3c8602888572a3502f951abd51df12",
+    "old_kernel_tip": "05d4536b2440db171741b5de5c148cdc834bd692",
+    "kernel_target": "6a1ec18b69b00eaf67a457e0bdd40e72632feaae",
+    "kernel_target_tag": "v0.1.17",
+    "intermediate_target": "4e38707669b8f44a47afcdc68b7d5dc223de66c0",
+    "intermediate_tag": "v0.1.16.4",
+    "host_profile": "RedHatAI/Qwen3.8-27B-INT4; B70; V2; eager; compact K4V2 target KV; Syvai W4A16 DFlash2 with two proposals and BF16 draft KV; 131072 context; four request slots; 0.93 GPU utilization; 8 GiB RAM prefix cache"
+  },
+  "blockers_for_unchanged_packaging": [
+    {
+      "requirement": "Coherent Torch ABI and upstream dependency selection",
+      "evidence": "vLLM v0.33 requirements/xpu.txt pins torch==2.14.0 and vllm_xpu_kernels==0.1.15.4. Kernel v0.1.17 pyproject.toml and requirements.txt pin torch==2.15.0+xpu, and CMakeLists.txt expects 2.15.0. Official release notes explicitly require the matching Torch environment.",
+      "upstream_commit": "6be812295404ff2f6dd8cda14e1563712d4cc104",
+      "effect": "Current Nix Torch2.14/Triton3.8/torchvision0.29 closure cannot be treated as the supported v0.1.17 environment. CMake merely warns on an unexpected Torch version; this is not compatibility evidence. Existing native binaries cannot establish compatibility with rebuilt Torch2.15 binaries.",
+      "minimum_action": "Resolve exact compatible Torch2.15 XPU, Triton, torchvision and runtime/toolchain dependencies; rebuild all native extensions and consumers; explicitly reconcile vLLM's exact Torch2.14 pin and qualify that exception instead of deleting dependency checks."
+    },
+    {
+      "requirement": "Split grouped-GEMM build layout",
+      "evidence": "Kernel v0.1.17 deletes csrc/xpu/grouped_gemm/xe_default, add_xe_default_kernel_library and VLLM_XPU_ENABLE_XE_DEFAULT; it adds Xe3 grouped GEMM. Nix mk-kernels.nix still builds grouped_gemm_xe_default, makes grouped_gemm_xe_2 depend on it, and composes/exports the old library.",
+      "upstream_commit": "f9f74e4a1328fea4dc50404d1ba20a62f61ee7a3",
+      "observed_check": "patch --dry-run --batch --fuzz=0 -p1: 0001-split-kernel-libs.patch fails its first CMake hunk. The remaining CMake hunk and setup.py hunk apply.",
+      "minimum_action": "Version-gate the obsolete target and corresponding build chain, composition, prebuilt-library exports, source projection and cache identity checks while keeping older supported source inputs buildable. Adapt 0001 rather than restoring the deleted upstream architecture. Preserve explicit Xe3P=OFF for B70."
+    },
+    {
+      "requirement": "SYCL-TLA source pair",
+      "evidence": "v0.1.17 CMakeLists.txt changes CUTLASS_REVISION from 87f6850680a580654b9ea2c80dbc01aeb36ad231 to 7b56b936b87f799f80dde60c2fd8d11c1128cebb. Packaging currently overrides the source with the old exact revision.",
+      "upstream_commit": "f9f74e4a1328fea4dc50404d1ba20a62f61ee7a3",
+      "minimum_action": "Use the selected release's SYCL-TLA revision and inspect effects on the supported older stable input, all split source projections, custom KVarN kernels and oneAPI compiler. The oneDNN source tag remains unchanged at 0e2a5bfeef1bfbffc3137464606540233086ce9b."
+    }
+  ],
+  "interface_review": [
+    {
+      "interface": "compact_sampling_mask",
+      "upstream_commit": "c2d9548066373809297b9d41531b9af8b0c7ae28",
+      "change": "Native schema changes from logits, num_sampled_tokens, max_num_kept, max_compact_support to logits, cu_num_logits, num_sampled_tokens, max_num_kept, max_compact_support, rows_per_request.",
+      "assessment": "Breaking for direct old native callers, but not a demonstrated serving break here: git grep of both frozen v0.33 and old fork finds only the local Triton _compact_sampling_mask_kernel in vllm/v1/worker/gpu/sample/output.py, not a torch.ops._xpu_C.compact_sampling_mask call. Do not count this schema difference alone as a blocker for the current profile."
+    },
+    {
+      "interface": "GDN",
+      "assessment": "Existing upstream gdn_attention and ordinary spec/non-spec schemas remain compatible with v0.33 _gdn_attention_core_xpu_impl. The downstream split_mixed_non_spec trailing argument is still absent upstream and must be replayed with its paired vLLM caller. New native RecoverSSM entrypoint has no Qwen GDN caller in frozen v0.33: its _xpu_ops.py continues to dispatch gdn_attention and its ReplaySSM config validates supported architectures. Kernel availability alone does not enable Qwen recurrent-memory savings.",
+      "upstream_addition": "78799fe (Add gated_delta_rule_spec_recoverssm, #618)",
+      "new_runtime_risks": "v0.1.17 changes causal-convolution null-state handling from <=-1 to <=0, adds 64-bit convolution-state offsets and DeepSeek layout support. Review all seven downstream patches against these changes and run native mixed/spec/padded and cache-lifecycle tests; do not infer the old tiled-path corruption or fresh-state barrier requirement is fixed from unrelated layout changes."
+    },
+    {
+      "interface": "FlashAttention",
+      "assessment": "Public Python flash_attn_varlen_func and native varlen_fwd call shapes used by v0.33 remain available. v0.1.17 changes speculative fast-path row mapping to handle ragged and padded queries and places it under fallback handling. This is a plausible benefit for adaptive verification or BF16 paged draft attention, but the KVarN target path and ordinary eager profile need dispatch tracing before any throughput claim.",
+      "upstream_commit": "470c19fe019ddcf7c4783bd01884be0c7f53c74d"
+    },
+    {
+      "interface": "MoE and optional schema additions",
+      "assessment": "XpuFusedMoe keeps the v0.33 keyword constructor/apply arguments and adds optional quantization/activation hooks; it also changes device-dependent weight layouts and mutates parameters once. Existing v0.33 xpu_moe.py uses keyword arguments. Added optional defaults for MLA skip_scale, multimodal mrope_interleaved and quantization expert_scale_desc preserve old argument calls. This is static signature compatibility only; MoE numerical and loading tests remain required for the generic package. The deployed 27B dense model does not use the new Qwen3.6-35B-A3B fused MoE path."
+    }
+  ],
+  "source_projection_review": {
+    "base_glue": "Existing projection retains all non-FlashAttention csrc files, including new csrc/sycl_launch.h used by csrc/cache.cpp and new ngram source, so no missing base-header issue was found.",
+    "fa2_glue": "Its include closure remains csrc/utils.h, core/ and public attention headers when Xe3P is disabled. No new omitted header was found in this bounded review.",
+    "split_libraries": "Whole selected subtrees remain included, but the deleted grouped_gemm_xe_default build target requires the migration above.",
+    "architecture": "Keep the B70 override aotDevices=[bmg] and both Nix split/glue Xe3P OFF settings. v0.1.17 defaults Xe3P ON and folds CRI targets into AOT when enabled. Enabling Xe3P would expand build scope without a B70 benefit."
+  },
+  "intermediate_v0164": {
+    "assessment": "Not a Torch2.14-compatible escape hatch. It also pins Torch2.15; its tip 4e38707669b8f44a47afcdc68b7d5dc223de66c0 is the Torch dependency bump.",
+    "smaller_build_delta": "Retains SYCL-TLA 87f6850 and XE_DEFAULT layout. All four existing packaging patches individually pass zero-fuzz dry runs against the exact tag source.",
+    "missing_v017_opportunities": "Does not contain the ragged adaptive-verification FlashAttention fast-path update or token-aware fused QK/RoPE change. Its principal attention optimization is head_size=72 MoonViT; no direct dense W4A16 matmul implementation change was found.",
+    "recommendation": "Do not adopt it solely as a compromise version: it still expands the Torch upgrade scope, without demonstrated B70/Qwen gains. A different intermediate release would require its own exact tag/dependency/performance audit."
+  },
+  "packaging_patch_dry_runs": {
+    "command_template": "git archive <exact-tag-sha> | tar -x -C <scratch>; patch --dry-run --batch --fuzz=0 -p1 -d <scratch> < nix/patches/<patch>",
+    "v017": {
+      "0001-split-kernel-libs.patch": "FAIL: first CMake hunk references deleted XE_DEFAULT block",
+      "0004-skip-prebuilt-additional-libs.patch": "PASS",
+      "0005-reduce-kernel-build-memory.patch": "PASS",
+      "0006-forward-mhc-feature-flag.patch": "PASS"
+    },
+    "v0164": {
+      "0001-split-kernel-libs.patch": "PASS",
+      "0004-skip-prebuilt-additional-libs.patch": "PASS",
+      "0005-reduce-kernel-build-memory.patch": "PASS",
+      "0006-forward-mhc-feature-flag.patch": "PASS"
+    },
+    "limitation": "Individual dry runs on pristine tag sources; no sequential patch/native configure/build pass claimed. Application alone does not prove need or correctness."
+  },
+  "additional_v033_packaging_issue": "nix/vllm-xpu.nix postPatch currently replace-fails the literal torch == 2.13.0 for versions >=0.31, but v0.33 pyproject already says 2.14.0. Adapt this independently of any kernel upgrade.",
+  "validation_completed": [
+    "Read exact target and old-base dependency/build metadata and relevant native schemas, Python wrappers, vLLM call sites and host recipe.",
+    "Compared source projections, architecture flags, SYCL-TLA and oneDNN pins.",
+    "Ran zero-fuzz dry-run checks for all four Nix packaging patches on v0.1.17 and v0.1.16.4.",
+    "Verified no diff in csrc/xpu/onednn/int4_gemm_w4a16.h from old base to v0.1.17.",
+    "Checked official v0.1.17 and v0.1.16.4 release pages."
+  ],
+  "validation_required_if_upgrade_selected": [
+    "One independent audit per downstream kernel commit against the selected new base, including cross-repo GDN and KVarN schemas.",
+    "CPU import/operator schema tests and pure planner/offloader tests using the rebuilt matching Torch closure.",
+    "Normal and Brutus-specific Nix configure/build/source-projection/cache-identity checks with exact selected dependency pins.",
+    "After operator GPU handoff: native GDN cold/cached/mixed/spec/padded tests, BF16 draft FlashAttention references, KVarN native references, RAM prefix restoration and context-boundary serving.",
+    "Matched 0.1.15.4 versus new-pair TTFT, decode latency, acceptance rate, memory and two-user behavior at the same 128K/0.93 profile; preserve shared-GPU headroom."
+  ],
+  "gpu_activity": "None; no models, benchmarks or service state changes performed.",
+  "sources": [
+    "https://github.com/vllm-project/vllm-xpu-kernels/releases/tag/v0.1.17",
+    "https://github.com/vllm-project/vllm-xpu-kernels/releases/tag/v0.1.16.4",
+    "https://github.com/vllm-project/vllm/blob/4ba787ec9959e566d3b587a796dff07673324da5/requirements/xpu.txt",
+    "https://github.com/vllm-project/vllm-xpu-kernels/blob/6a1ec18b69b00eaf67a457e0bdd40e72632feaae/pyproject.toml",
+    "https://github.com/vllm-project/vllm-xpu-kernels/blob/6a1ec18b69b00eaf67a457e0bdd40e72632feaae/CMakeLists.txt"
+  ]
+}

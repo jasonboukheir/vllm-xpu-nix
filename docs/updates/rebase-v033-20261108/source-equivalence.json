@@ -1,0 +1,9 @@
+{
+  "candidate": "066206bafebe124485a69e13dcb975a2afc55ad2",
+  "source_store": "/nix/store/0gzg3hw8wcl1ncv1hlcknn5q8kaq558q-source",
+  "tracked_vllm_files_identical": 3659,
+  "installed_package_check": "passed",
+  "installed_package": "/nix/store/5jvmvr89c90f4j1lry5l3a0xr8jp0gfw-python3.12-vllm-xpu-0.33.0+unstable.2026.11.08.g066206b",
+  "installed_python_files_identical": 3001,
+  "installed_imports": "passed with CPU platform and GPU initialization forbidden"
+}

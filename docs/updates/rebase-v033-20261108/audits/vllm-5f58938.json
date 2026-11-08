@@ -1,0 +1,87 @@
+{
+  "schema": 1,
+  "agent": "/root/audit_vllm_cache_dtype",
+  "repository": "/home/jasonbk/Projects/vllm",
+  "commit": "5f58938759fcb527c2b6d99ce189aaf6df32c8a3",
+  "parent": "93b30581c4d0ca790e30fdad4a5e9854689b3837",
+  "subject": "fix(xpu): accept explicit unquantized KV cache dtypes",
+  "patch_id": "6f704ef6d098637584d969bf3fe2b27a26615957",
+  "old_base": "5df63a7203cdb9328d824a27b682e77c7b9928be",
+  "old_tip": "6b3d89e6e64f1e9c4f44c68c93af84e1504ef6f0",
+  "target_tag": "v0.33.0",
+  "target": "4ba787ec9959e566d3b587a796dff07673324da5",
+  "companion": {
+    "repository": "/home/jasonbk/Projects/vllm-xpu-kernels",
+    "old_base": "ddf336d86e3c8602888572a3502f951abd51df12",
+    "selected_base": "ddf336d86e3c8602888572a3502f951abd51df12",
+    "old_tip": "05d4536b2440db171741b5de5c148cdc834bd692",
+    "additional_target_inspected": "6a1ec18b69b00eaf67a457e0bdd40e72632feaae",
+    "additional_target_label": "v0.1.17"
+  },
+  "disposition": "KEEP",
+  "requirement": {
+    "behavior": "Allow explicit float16/bfloat16 KV-cache settings on XPU by translating only the native writer's dtype argument to auto after validating key, value, key_cache and value_cache all match the explicit dtype. Preserve the explicit engine setting so checkpoint FP8 metadata cannot override the requested storage.",
+    "workload": "B70 RedHatAI/Qwen3.8-27B-INT4 target with KVarN K4V2 target storage and independently configured bfloat16 Syvai W4A16 DFlash2 draft cache; also supported ordinary explicit FP16/BF16 cache profiles.",
+    "final_stack_behavior": "The later KVarN feature does not modify either file owned by this commit. Its draft cache allocation and backend selection use the retained explicit BF16 behavior.",
+    "prior_rationale": "docs/fork-delta.md; docs/releases/xpu-v1.13.0.json; current Brutus model recipe"
+  },
+  "upstream_coverage": [
+    {
+      "path": "vllm/_custom_ops.py",
+      "symbol": "reshape_and_cache_flash",
+      "finding": "The wrapper is AST-identical at the old upstream base and v0.33. It passes kv_cache_dtype directly to torch.ops._C_cache_ops.reshape_and_cache_flash without translation or four-tensor validation."
+    },
+    {
+      "path": "vllm/v1/attention/backends/flash_attn.py",
+      "symbol": "FlashAttentionImpl.do_kv_cache_update",
+      "finding": "The serving backend still splits the transposed cache into strided K/V views and calls the wrapper with self.kv_cache_dtype. Both explicit dtype names can therefore reach the unchanged native dispatch."
+    },
+    {
+      "commit": "48f17b77bba9430ffedc3297186a2c9d932d94c7",
+      "path": "vllm/config/vllm.py",
+      "symbol": "VllmConfig._reject_mismatched_float_kv_cache",
+      "finding": "The new upstream config check rejects an explicit cache dtype that differs from model dtype. It does not normalize the native operator string or verify runtime tensor storage. It is complementary, not a replacement. Keep it unchanged; retain the local four-tensor boundary check because direct operator callers and malformed actual cache tensors can bypass config-level proof."
+    },
+    {
+      "path": "vllm/model_executor/layers/attention/attention.py",
+      "symbol": "Attention.__init__",
+      "finding": "The target honors checkpoint FP8 KV metadata only for auto. Changing the global config to auto would lose the explicit dtype policy and is not a valid substitute for boundary-only normalization."
+    },
+    {
+      "path": "csrc/quantization/fp8/quant_utils.h",
+      "symbol": "DISPATCH_BY_KV_CACHE_DTYPE",
+      "base_and_v017_blob": "7b214c0059cf92ad791aca263c13cadd31f79491",
+      "finding": "The dispatch header is byte-identical between kernels0.1.15.4 and v0.1.17. Its unquantized path accepts auto only, selecting float/half/bfloat16 from the input scalar type; all other recognized strings are FP8 formats. Literal float16/bfloat16 reach the unsupported-dtype error. Both contiguous and strided reshape_and_cache_flash branches invoke this macro at both releases."
+    },
+    {
+      "commit": "85f16dd4d0004948ddf7e9ec576dead69a2e1de5",
+      "path": "csrc/cache.cpp",
+      "finding": "The newer SYCL cache/MLA port changes launch plumbing and adds/fixes MLA, gather and FP8 behavior, but leaves reshape_and_cache_flash's dtype-dispatch contract intact. Newer kernels therefore do not supersede this fix either."
+    }
+  ],
+  "minimum_residual": {
+    "code": "Retain the existing 14-line XPU-only translation and tensor checks in reshape_and_cache_flash unchanged; leave non-XPU, auto and quantized calls untouched.",
+    "tests": "Retain tests/v1/attention/test_xpu_unquantized_cache.py: four sparse-write dtype/layout cases and 24 BF16 draft-attention causal-reference cases, including rejected-future-row poisoning and native-fallback rejection.",
+    "port_guidance": "No semantic adaptation identified. Keep upstream config-level mismatch validation alongside the boundary check. Preserve this as an independent fix instead of folding it into KVarN."
+  },
+  "dependencies": {
+    "local_followup": "6b3d89e6e64f1e9c4f44c68c93af84e1504ef6f0 owns independent BF16 draft pools and their FlashAttention backend selection; it relies on this native boundary behavior.",
+    "cross_repo": "No added operator or schema. The existing _C_cache_ops.reshape_and_cache_flash ABI is unchanged. Dropping this commit requires native support for literal unquantized dtype names or another boundary normalization, not merely upgrading to v0.1.17.",
+    "folds": "None."
+  },
+  "validation": {
+    "performed": [
+      "Read exact commit and final stack delta; derived stable patch ID.",
+      "Inspected exact old/new upstream wrapper, serving caller, new config guard and checkpoint dtype precedence.",
+      "Verified the native dispatch header has identical Git blob IDs at kernels0.1.15.4 and v0.1.17; inspected both native contiguous and strided dispatch paths.",
+      "Using the existing uv-created candidate .venv/bin/python, extracted the actual wrapper AST into a CPU-only mocked operator namespace. All16 checks passed: two matching explicit-dtype translations, two upstream controls that retain the unsupported literal, eight mismatches across all four tensors, two non-XPU passthroughs and auto/FP8 passthroughs. No Torch or GPU was imported.",
+      "Parsed the retained native regression test and asserted old/new upstream wrapper AST equality. Both passed."
+    ],
+    "required_gpu": [
+      "Run the retained28 native regression combinations against the installed candidate after the user's GPU handoff; native fallback must remain rejected.",
+      "Run actual BF16 DFlash2 draft-cache cold/prefix-restored serving as part of paired KVarN qualification."
+    ],
+    "limitations": "CPU-mocked checks verify Python boundary behavior only, not native writes, strides, causal attention or serving. No GPU tests or performance measurements were run.",
+    "performance": "Correctness compatibility fix; no throughput improvement claimed."
+  }
+}

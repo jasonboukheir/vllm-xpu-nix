@@ -1,0 +1,175 @@
+{
+  "reviewer": "review_v033_lifecycle",
+  "status": "findings_fixed_cpu_validated",
+  "review_method": "Initial read-only comparison of candidate working tree, frozen upstream v0.33, old downstream tip, original KVarN audit, and relevant upstream regression tests. Parent subsequently authorized implementation restricted to byte_pool.py and TestBytePoolOffloadingManager, with CPU validation only. No GPU or service actions.",
+  "snapshot": {
+    "checkout": "/tmp/vllm-v033-20261108",
+    "head_at_review": "bcbdafbc60fc4cb28e23d3ea0594817363c404ce",
+    "note": "Candidate has uncommitted KVarN changes; line numbers identify the reviewed working-tree version and may move during parent fixes.",
+    "upstream": "4ba787ec9959e566d3b587a796dff07673324da5",
+    "old_base": "5df63a7203cdb9328d824a27b682e77c7b9928be",
+    "old_tip": "6b3d89e6e64f1e9c4f44c68c93af84e1504ef6f0"
+  },
+  "findings": [
+    {
+      "id": "LIFECYCLE-1",
+      "resolution": "Fixed in working tree; reuses upstream LRUCachePolicy and ChunkStatus with transactional byte-arena eviction candidate selection. Regression failed before fix and passes afterward.",
+      "priority": "P2",
+      "confidence": "high",
+      "title": "Custom byte arena misses upstream running-request prefix retention fix",
+      "file": "vllm/v1/kv_offload/cpu/byte_pool.py",
+      "lines": [139, 144, 175, 178, 201, 202, 223, 241],
+      "problem": "Each prepare_store or prepare_load touches only the current batch. Eviction iterates OrderedDict insertion/last-touch order. Full request prefix order is restored only by on_request_finished. A running request stored over successive batches therefore makes its earliest prefix pages older than its tail, precisely the bug fixed upstream in e113018f5067045ac92de3949b8c302439abb226 (#61050). This file is unchanged from the old downstream tip.",
+      "concrete_trigger": "Use an arena of 192 bytes and 64-byte pages. Give request A keys p1,p2,p3 positions128,256,384. prepare_store/complete_store each key in separate batches without finalizing A. entries is now [p1,p2,p3]. A fourth single-page store, from A or another request, selects p1 as the first unpinned eviction victim. Prefix matching then loses all reusable history despite p2/p3 remaining resident. Upstream provisional request rank plus negative token position selects p3 instead.",
+      "impact": "Lower RAM-prefix hit rate and worse repeated-prompt TTFT under arena pressure, relevant to the deployed IndependentCPUOffloadingSpec and 8GiB arena. This is a missed upstream fix rather than a newly introduced memory-safety regression.",
+      "suggested_correction": "Adapt upstream LRU request-rank/position semantics to variable-sized host pages, ideally reusing the policy semantics while retaining transactional allocation and transfer pinning. Avoid rescanning and reordering the full prefix after every small store; upstream explicitly tests incremental complexity. Retain generation reset, failed-offer atomicity, and preservation of newer shared accesses.",
+      "validation_requested": [
+        "Port test_unfinished_lru_prefix_survives_pressure_across_store_batches to BytePoolOffloadingManager, covering unequal groups and reverse transfer completion.",
+        "Cover running-request reused prefix plus new tail, out-of-order backfill, failed store retry, reset, and an old request observing a newer shared page.",
+        "Check incremental position lookups stay linear in the number of newly observed keys."
+      ],
+      "upstream_evidence": [
+        "vllm/v1/kv_offload/cpu/policies/lru.py:104-151",
+        "tests/v1/kv_offload/cpu/test_manager.py:test_unfinished_lru_prefix_survives_pressure_across_store_batches",
+        "tests/v1/kv_offload/cpu/test_manager.py:test_lru_incremental_stores_do_not_rescan_the_prefix"
+      ],
+      "uncertainty": "Source-level deterministic trace; no runtime reproducer was executed because the candidate is changing and parent owns testing. Magnitude on real prompts depends on memory pressure and sharing."
+    },
+    {
+      "id": "LIFECYCLE-2",
+      "resolution": "Fixed in working tree; get_load_source returns CacheHitSource.HOST. Regression failed before fix and passes afterward.",
+      "priority": "P3",
+      "confidence": "high",
+      "title": "Custom host cache reports unspecified external tier instead of HOST",
+      "file": "vllm/v1/kv_offload/cpu/byte_pool.py",
+      "lines": [133, 137],
+      "problem": "BytePoolOffloadingManager implements lookup but does not override the new get_load_source interface. The base implementation at vllm/v1/kv_offload/base.py:320 returns CacheHitSource.EXTERNAL_UNSPECIFIED, whereas upstream CPUOffloadingManager returns CacheHitSource.HOST. Successful RAM hits therefore do not receive the same host-tier provenance as the upstream CPU cache.",
+      "impact": "Incorrect cache-tier attribution in v0.33's cache-source statistics; no transfer correctness or direct throughput effect.",
+      "suggested_correction": "Import CacheHitSource and implement get_load_source(key, req_context) returning CacheHitSource.HOST, following CPUOffloadingManager.",
+      "validation_requested": ["Assert a successful BytePool hit reports CacheHitSource.HOST through get_load_source."],
+      "uncertainty": "Observed by direct inheritance/source inspection. No runtime metrics endpoint was queried."
+    }
+  ],
+  "nonblocking_followups": [
+    {
+      "id": "LIFECYCLE-N1",
+      "confidence": "medium",
+      "title": "Same-step sync restore needs ordering review before enabling on Mamba align profiles",
+      "locations": [
+        "vllm/v1/worker/gpu/model_runner.py:1929",
+        "vllm/v1/worker/gpu/model_runner.py:2001",
+        "vllm/v1/worker/gpu/model_states/mamba_hybrid.py:180",
+        "vllm/v1/worker/gpu/kv_connector.py:110"
+      ],
+      "detail": "Mamba align preprocess_state runs the fused recurrent-state precopy before early pre_forward initiates same-step synchronous loads. A boundary-crossing sync RAM hit may therefore copy a not-yet-restored source state into its next state slot. The active host is dense and does not enable sync_load_budget_bytes, so this is outside the current execution path and matches the original audit's instruction to leave sync loads off pending coverage.",
+      "suggested_next_step": "Keep sync_load_budget_bytes at zero. Before supporting hybrid synchronous loads, prove the precopy source/destination behavior with a boundary-crossing RAM hit and move sync restoration before state migration if needed.",
+      "uncertainty": "No GPU or CPU model execution; request initialization may eliminate some trigger cases. This is recorded as an ordering hazard rather than a demonstrated active-host bug."
+    }
+  ],
+  "verified_by_source_inspection": [
+    {
+      "area": "Physical pool identities",
+      "result": "Offloading canonical mapping and worker registration derive num_blocks per actual group. Scheduler fence tracking uses cumulative physical pool offsets for allocations, copy-on-write destinations, partial/aligned handoffs and normal stores. The new upstream all-group allocation tracking remains before the num_external_tokens == 0 return."
+    },
+    {
+      "area": "V2 store fence and load ordering",
+      "result": "KVarN prepare_cache_update runs before request updates that zero or copy cache pages; metadata identity prevents duplicate handle_preemptions between that call and pre_forward. Early pre_forward precedes mutable KVarN attention metadata construction. Independent worker copies remain synchronous, so accepting expedited=False satisfies the new submit_load contract without weakening completion guarantees."
+    },
+    {
+      "area": "Upstream post-forward lifecycle",
+      "result": "v0.33 post_forward transfer collection before drafting and finalize_step after drafting remain intact. Deferred stores are queued after draft work, retaining draft-cache freshness. DFlash's num_speculative_tokens == 0 context-only cache maintenance remains intact."
+    },
+    {
+      "area": "Replay reachability",
+      "result": "OffloadingConnector.bind_kv_cache_manager binds replay_boundaries with coordinator.scheduler_block_size and bool(coordinator.drop_eagle_group_ids), preserving the new distinction between all draft groups and draft groups requiring the EAGLE lookahead drop. DFlash/DSpark are not accidentally treated as dropped EAGLE groups."
+    },
+    {
+      "area": "Independent byte arena ownership",
+      "result": "Pending stores and active loads pin pages. Failed multi-page offers allocate against copied free ranges and do not mutate state. Duplicate load keys increment/decrement references once while preserving transfer order. CPU sink restore clones payload ownership before arena space can be reused; sink byte accounting agrees between group configuration and KVarN serialization."
+    },
+    {
+      "area": "DFlash query ceiling",
+      "result": "q_resident masks query_pos >= max_model_len and physical block0. Block-table column loads are clamped, positions are clamped for the attention pass, and masked query slots use PAD_SLOT_ID. Existing context rejected/null-slot masking and upstream K=0 branch remain intact."
+    },
+    {
+      "area": "Draft quantization mapping",
+      "result": "Compressed-tensors and other non-ModelOpt configurations retain the local rename-mapper application and Qwen3 packed projection mapping. ModelOpt skips that preliminary mapping and receives the new upstream map_draft_quant_config helper exactly once, preserving upstream runtime prefix/layer aliases. This checks port preservation, not complete support for arbitrary compressed-tensors exact per-layer targets."
+    }
+  ],
+  "remediation": {
+    "source": "vllm/v1/kv_offload/cpu/byte_pool.py",
+    "tests": "tests/v1/kv_offload/cpu/test_manager.py::TestBytePoolOffloadingManager",
+    "implementation": [
+      "Upstream LRUCachePolicy owns request ranks, position ordering, explicit touches, finalization, newer shared accesses, reset generation, and transfer-pinning eligibility.",
+      "Entries share upstream ChunkStatus for the reference count rather than maintaining a second count.",
+      "A small policy subclass lazily inspects a heap snapshot only if allocation needs eviction. The arena commits removals only after every requested page fits, preserving failure atomicity. This adapter depends on upstream LRU heap internals and allocates a temporary heap list under pressure; no duplicate rank algorithm was introduced.",
+      "Request access recording forwards only newly seen keys and does not rescan prefix positions on incremental stores.",
+      "Host-cache provenance now returns CacheHitSource.HOST."
+    ],
+    "before_fix": {
+      "command": "/tmp/vllm-v033-cpu-pytest tests/v1/kv_offload/cpu/test_manager.py -q -k 'TestBytePoolOffloadingManager and (running_prefix_survives_incremental_stores or reports_host_cache_hit_source)'",
+      "log": "/tmp/vllm-v033-bytepool-before.log",
+      "result": "3 failed, 82 deselected, 6 warnings in 1.65s",
+      "relevant_output": [
+        "Both completion-order variants evicted position0 keys for groups0/1 instead of position2 tail keys.",
+        "CacheHitSource.EXTERNAL_UNSPECIFIED did not equal CacheHitSource.HOST."
+      ]
+    },
+    "after_fix": {
+      "command": "/tmp/vllm-v033-cpu-pytest tests/v1/kv_offload/cpu/test_manager.py -q",
+      "log": "/tmp/vllm-v033-bytepool-after.log",
+      "result": "93 passed, 6 warnings in 44.40s",
+      "coverage": [
+        "Running incremental stores with unequal group sizes and reversed completion order",
+        "Reused prefixes via both load and store followed by new tails",
+        "Failed multi-page admission preserves arena contents and request recency",
+        "Out-of-order backfills, failed-store retries, reset generations, and newer shared accesses",
+        "Linear position-lookup count during incremental stores",
+        "Existing pinning, sink accounting, failed-transfer coalescing, protected offers, duplicate keys and overlapping loads",
+        "HOST hit provenance"
+      ],
+      "harness": "Provided CPU harness selects CpuPlatform, uses the candidate uv-created .venv and installed runtime dependencies, forbids torch.xpu/cuda lazy initialization, and sets Hugging Face offline mode. Existing environment warnings include unavailable Level Zero/device count, missing generated version metadata, and dependency deprecations."
+    },
+    "lint": {
+      "tool": "/nix/store/jqb09p4ipdlyv6pfd8mh5da8b2syix9j-ruff-0.14.0/bin/ruff",
+      "commands": [
+        "ruff format vllm/v1/kv_offload/cpu/byte_pool.py tests/v1/kv_offload/cpu/test_manager.py",
+        "ruff check vllm/v1/kv_offload/cpu/byte_pool.py tests/v1/kv_offload/cpu/test_manager.py"
+      ],
+      "result": "Formatting applied; All checks passed!"
+    },
+    "ci_selection": ".buildkite/test_areas/misc.yaml v1-kv-offload step runs pytest -v -s v1/kv_offload; its source_file_dependencies include vllm/v1/ and tests/v1/kv_offload, covering both owned files.",
+    "commit": "No commit created; parent will fold fixes into the rebased feature commit."
+  },
+  "targeted_draft_followup": {
+    "result": "No additional source-port bug found; no production or regression-test edits in this followup.",
+    "cpu_validation": {
+      "command": "/tmp/vllm-v033-cpu-pytest tests/quantization/test_modelopt.py -q -k 'draft_quant_config or draft_weight_aliases'",
+      "log": "/tmp/vllm-v033-draft-mapping.log",
+      "result": "17 passed, 95 deselected, 6 warnings in 7.72s",
+      "scope": "Real ModelOpt/Quark configuration objects validate runtime prefix and layer remapping, noncascading offsets, aliases at module boundaries, already-global names, and preservation of Quark settings. These helper tests do not instantiate the full draft model constructor."
+    },
+    "deployed_compressed_tensors": {
+      "config_file": "/var/cache/huggingface/hub/models--syvai--Qwen3.8-27B-DFlash2-W4A16/snapshots/4d30ec736ffc6b8688dc2ae2b502d9b48bdec279/config.json",
+      "observed": "The pinned Syvai draft uses target Linear, W4 group size128, and regex ignores re:.*kernel_projection$, re:.*candidate_selector.*, re:.*hidden_projection$. It has five draft layers and64 target layers.",
+      "assessment": "CompressedTensorsConfig.apply_vllm_mapper preserves semantic Linear and re: patterns; the downstream packed_modules_mapping update remains present. map_draft_quant_config does not reinterpret these settings. Therefore the exact local-layer-name offset limitation noted in the initial review does not affect this pinned draft. Full weight loading and kernel selection remain for GPU validation."
+    },
+    "query_ceiling": {
+      "source": "Only the q_resident query_pos < max_model_len guard differs from frozen upstream in the V2 DFlash speculator. Existing null-block masking, column clamping, and context-only path remain intact.",
+      "existing_regression": "tests/v1/spec_decode/test_dflash_prepare_inputs.py::test_dflash2_context_ceiling_queries_cannot_alias_last_page",
+      "assessment": "The regression tests valid positions6/7 with max length8 and six later query slots padded instead of aliased. Its module requires CUDA/XPU and was not run on the CPU harness. The v1-spec-decode CI step selects this file and its source dependencies."
+    },
+    "context_only_coverage_gap": {
+      "source": "The num_speculative_tokens == 0 branch is unchanged from v0.33. It stores hidden states and context K/V before returning, while the runner masks returned stale draft-token slots and defers connector finalization until afterward.",
+      "gap": "No focused test was found that executes a K=0 DFlash/DFlash2 step and then resumes normal drafting. Current input-preparation tests stop before graph dispatch and do not cover context-only cache maintenance.",
+      "gpu_handoff": "Exercise chunked prefill or skip_drafts that gives a context-only step, followed by a normal proposal, using the pinned draft and RAM cache; compare correctness/acceptance against the ordinary path. Run the existing query-ceiling regression on XPU. No mock-heavy or implementation-mirroring test was added to claim this coverage on CPU."
+    },
+    "bytepool_followup": "The recorded three before-fix failures cover both required bugs. The93passing manager suite, including11new parameterized cases, is adequate CPU coverage for the scoped BytePool correction. No repeat or broader suite was needed."
+  },
+  "validation_limits": [
+    "Only the manager CPU suite and lint were executed after implementation. Real-model regression requested by tests/AGENTS.md remains part of the parent-owned GPU handoff; the user has not yet freed the GPU.",
+    "No GPU memory, services, running model, or deployment configuration was changed.",
+    "Review is scoped to lifecycle/offload/draft integration; separate review owns cache planning and kernel geometry.",
+    "Static inspection cannot establish GPU stream behavior, quantized model acceptance, exact RAM replay outputs, or real TTFT/throughput."
+  ]
+}

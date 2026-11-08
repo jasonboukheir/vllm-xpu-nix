@@ -1,0 +1,146 @@
+{
+  "schema": 1,
+  "agent": "/root/audit_vllm_gdn_schedule",
+  "repository": "/home/jasonbk/Projects/vllm",
+  "commit": "efddf8010f4b9d8c896b91aa4bfed3c5e7edc2a1",
+  "parent": "5673b4bb84953d9f65b20f79b49ecbcd07432bd4",
+  "subject": "fix(xpu): stabilize Qwen GDN prefill and mixed scheduling",
+  "patch_id": "bc1ae2a1b600934985ef687084640ec90541731d",
+  "old_base": "5df63a7203cdb9328d824a27b682e77c7b9928be",
+  "old_tip": "6b3d89e6e64f1e9c4f44c68c93af84e1504ef6f0",
+  "target_tag": "v0.33.0",
+  "target": "4ba787ec9959e566d3b587a796dff07673324da5",
+  "companion": {
+    "repository": "/home/jasonbk/Projects/vllm-xpu-kernels",
+    "old_and_new_base": "ddf336d86e3c8602888572a3502f951abd51df12",
+    "tip": "05d4536b2440db171741b5de5c148cdc834bd692",
+    "paired_commit": "d8e1f69699496beeda61da9a544f49d9b6378d73",
+    "required_version": "0.1.15.4"
+  },
+  "instructions_read": [
+    "/home/jasonbk/Projects/vllm/AGENTS.md",
+    "/home/jasonbk/Projects/vllm-xpu-nix/.agents/skills/vllm-xpu-update/references/commit-audit.md"
+  ],
+  "requirement": {
+    "arithmetic_grid": "Keep eligible text-only, non-speculative XPU Qwen GDN prefills in mamba_cache_mode=none on an absolute 64-token arithmetic grid. Preserve final tails, checkpoint/cache boundaries, and progress with concurrent decodes. Avoid applying the new grid to generic GDN, non-XPU, multimodal, speculative, or encoder-decoder profiles.",
+    "mixed_batches": "When ordinary one-token cached decodes and prefills share a contiguous decode-first native GDN batch, keep decode rows on their standalone arithmetic path instead of the prefill arithmetic path.",
+    "mechanism": "Distinct Qwen GDN backend identity exposes get_required_prefill_chunk_size; scheduler separates arithmetic alignment from cache alignment; XPU wrapper passes a tightly gated split_mixed_non_spec keyword to the paired native operator.",
+    "current_host_applicability": "The deployed Brutus V2/DFlash2 multimodal profile does not activate the scheduler's non-speculative text-only arithmetic-grid policy. Mixed split is gated by actual metadata and cannot cover speculative decode batches. Retention protects supported alternative configurations; this audit establishes no current-profile performance improvement.",
+    "later_local_commits": "The KVarN feature changes scheduler allocation/accounting and metadata/checkpoint behavior, but does not supersede this grid or mixed native dispatch. _xpu_ops.py, Qwen layer and SSM transfer changes in this commit remain byte-identical through the old final tip."
+  },
+  "upstream_coverage": [
+    {
+      "commit": "38168d5b82f1c4015f8f37372f1670e11b6afdba",
+      "subject": "[XPU] [Feature] Adding triton/sycl GDN toggle (#56835)",
+      "paths_symbols": [
+        "vllm/model_executor/layers/mamba/gdn/qwen_gdn_linear_attn.py::_resolve_gdn_prefill_backend",
+        "vllm/model_executor/layers/mamba/gdn/qwen_gdn_linear_attn.py::QwenGatedDeltaNetAttention.forward_xpu"
+      ],
+      "finding": "Adds an alternative Triton path while auto still chooses the fused native SYCL GDN op when available. SYCL continues through gdn_attention_core_xpu, whose _xpu_ops.py source is unchanged from v0.32 and lacks split_mixed_non_spec. Switching the whole model to unqualified Triton is not an equivalent demonstrated fix and does not justify deleting native correctness policy. Preserve this upstream selection and do not force SYCL while replaying."
+    },
+    {
+      "commit": "badfcdbf919532624b2296eeacb85c6dd9fe2e58",
+      "subject": "[Perf][GDN] Internal prefill checkpoints for the FlashInfer GDN prefill backend (#60050)",
+      "paths_symbols": [
+        "vllm/model_executor/layers/mamba/gdn/qwen_gdn_linear_attn.py::get_prefill_checkpoint_alignment/get_kv_cache_spec",
+        "vllm/v1/attention/backends/gdn_attn.py::GDNFlashInferCheckpointPlan"
+      ],
+      "finding": "64-token FlashInfer checkpoint alignment concerns checkpoint export on the FlashInfer/CUDA path. It is not non-final XPU arithmetic-grid scheduling, nor a native SYCL mixed-batch replacement. Retain the upstream implementation and distinguish cache checkpoint alignment from local arithmetic alignment."
+    },
+    {
+      "commit": "2fb320d8304381e224dd27fbf8c13c30b4e1020f",
+      "subject": "[Core][Spec Decode] Lookahead block hashes for EAGLE prefix caching (#61589)",
+      "paths_symbols": [
+        "vllm/v1/core/sched/scheduler.py::Scheduler._mamba_block_aligned_split",
+        "tests/v1/core/test_mamba_align_chunk_split.py::_split"
+      ],
+      "finding": "Target adds num_hash_lookahead_tokens to checkpoint positions and their fixtures. Preserve all upstream lookahead proof logic when applying local alignment edits; never restore the old complete function or fixtures. This is additive cache correctness, not coverage of the non-speculative grid."
+    },
+    {
+      "commit": "0bfeb8d0e367c21d4406c87d0807729cc8787322",
+      "subject": "[Bugfix][Spec Decode] DFlash/DSpark no longer drop the last prefix-cache block (#54163)",
+      "finding": "Retain upstream speculative block-drop policy. The local arithmetic grid excludes speculation and does not require reinstating the old DFlash trailing-block workaround."
+    },
+    {
+      "commit": "c825e1d235896694ca50160286440859ed46d7d3",
+      "subject": "[Perf] Fuse the mamba align block-table gather into one Triton kernel (#58737)",
+      "finding": "Changes block-table metadata gathering in attention/backends/utils.py, not scheduler arithmetic partitioning or native GDN dispatch; does not supersede this patch."
+    },
+    {
+      "commit": "03e8300d2cac77b24f7ab6013a803369ee64c19e",
+      "subject": "[Bugfix] Enable inductor batch-invariant mode under VLLM_BATCH_INVARIANT (#61118)",
+      "finding": "Compiler mode does not alter the unchanged fused SYCL custom op or the non-speculative scheduler partition. It does not establish semantic coverage of the local requirements."
+    }
+  ],
+  "target_implementation_evidence": [
+    "scheduler.py:434-436 still enables need_mamba_block_aligned_split only for mamba_cache_mode=align; no backend-required arithmetic grid exists upstream.",
+    "platforms/xpu.py:485-521 rounds cache block size to a multiple of 64 for GDN; cache-block sizing alone does not align scheduler chunks in mode=none.",
+    "The exact old-base and target blobs for vllm/_xpu_ops.py are equal. Upstream has neither the mixed split keyword nor its gate.",
+    "No QWEN_GDN_ATTN, get_required_prefill_chunk_size, or split_mixed_non_spec symbols exist under target vllm/.",
+    "Frozen kernel base gated_delta_rule.hpp:693 and xe_2/chunk_gated_delta_rule_kernels_xe2.hpp:1530 choose the standalone cached-decode path only when num_prefills==0. The paired fork explicitly splits eligible mixed calls into native decode and prefill work."
+  ],
+  "disposition": "ADAPT",
+  "disposition_reason": "Retain both unmet XPU arithmetic requirements. Narrow the Qwen backend identity override to XPU to remove an unrelated cross-platform compatibility regression discovered during the audit; otherwise retain the small production policy and preserve new upstream checkpoint logic.",
+  "minimal_residual": [
+    "Retain Qwen backend class/enum plus the required-chunk query, scheduler arithmetic/cache alignment separation and progress validation.",
+    "Retain XPU block-size recognition and SSM transfer support for the Qwen enum, since the new identity must work throughout those interfaces.",
+    "Retain the exact conservative split_mixed_non_spec gate and paired native keyword; no broader speculative mixed dispatch is justified.",
+    "Change QwenGatedDeltaNetAttention.mamba_type to return QWEN_GDN_ATTN only on XPU and delegate to super().mamba_type on other platforms. Update the existing identity test to cover both platform outcomes.",
+    "Preserve upstream num_hash_lookahead_tokens checkpoint arguments and fixture fields during replay. Keep upstream FlashInfer checkpoint export and the new SYCL/Triton backend choice."
+  ],
+  "adaptation_evidence": {
+    "problem": "The old override assigns QWEN_GDN_ATTN globally, although the new scheduling requirement is XPU-only. Qwen4Exp instantiates QwenGatedDeltaNetAttention, but both its NVIDIA and AMD state-copy maps accept GDN_ATTN and SHORT_CONV only and assert on unknown types.",
+    "target_paths": [
+      "vllm/models/qwen4_exp/nvidia/model.py:228 QwenGatedDeltaNetAttention construction; :868 get_mamba_state_copy_funcs mapping",
+      "vllm/models/qwen4_exp/amd/model.py:222 QwenGatedDeltaNetAttention construction; :814 get_mamba_state_copy_funcs mapping",
+      "vllm/model_executor/layers/mamba/gdn/base.py:49-51 generic mamba_type property"
+    ],
+    "scope": "This mapping mismatch also exists in the old stack; it is not newly introduced by v0.33. Narrowing the XPU-only workaround removes that avoidable non-XPU drift. If the maintainer chooses globally distinct identity instead, both maps require an explicit alias and a regression test.",
+    "runtime_status": "Static call-path finding; no Qwen4Exp model was loaded."
+  },
+  "minimal_code_and_test_guidance": {
+    "property": "@property\ndef mamba_type(self) -> MambaAttentionBackendEnum:\n    if current_platform.is_xpu():\n        return MambaAttentionBackendEnum.QWEN_GDN_ATTN\n    return super().mamba_type",
+    "test": "Parameterize the existing test_qwen_gdn_uses_distinct_backend over is_xpu=True/False; mock the qwen_gdn_linear_attn module's current_platform with an object whose is_xpu returns that flag. Use layer = object.__new__(QwenGatedDeltaNetAttention), then layer.mamba_type. Do not keep the existing descriptor invocation on object(), since zero-argument super() requires an actual QwenGatedDeltaNetAttention instance. Assert QWEN_GDN_ATTN/QwenGDNAttentionBackend/required chunk 64 on XPU and GDN_ATTN/GDNAttentionBackend/required chunk None elsewhere. No model construction, tensor allocation or GPU initialization is needed.",
+    "port": "Keep the target versions of _mamba_block_aligned_split and upstream tests as the base. Apply only the arithmetic/cache alignment distinction and required stub fields; preserve target num_hash_lookahead_tokens, checkpoint alignment and speculative block-drop behavior."
+  },
+  "dependencies": [
+    {
+      "commit": "5673b4bb84953d9f65b20f79b49ecbcd07432bd4",
+      "relationship": "Preceding XPU metadata trimming in the same adapter. Preserve live request dimensions when retaining the mixed split gate."
+    },
+    {
+      "commit": "d8e1f69699496beeda61da9a544f49d9b6378d73",
+      "repository": "vllm-xpu-kernels",
+      "relationship": "Required trailing schema argument bool split_mixed_non_spec=False in csrc/xpu/torch_bindings.cpp:258 and implementation csrc/xpu/gdn_attn/gdn_attn_interface.cpp:810 onward. Removing only native support breaks the Python call; removing only the Python call abandons the arithmetic requirement. Keep or retire as a pair."
+    },
+    {
+      "commit": "6b3d89e6e64f1e9c4f44c68c93af84e1504ef6f0",
+      "relationship": "KVarN shares scheduler and GDN metadata/checkpoint files but does not supersede this feature. Keep repairs to the scheduler policy in this commit and independent pool/cache ownership changes in KVarN."
+    }
+  ],
+  "validation": {
+    "executed": [
+      "Derived stable patch ID from git show | git patch-id --stable.",
+      "Reviewed exact target implementations, path-specific upstream history, GDN/mixed/batch-invariance commit history, paired native schema and dispatch, and final-old-stack differences.",
+      "git diff --exit-code old_base target -- vllm/_xpu_ops.py passed; explicit blob identity comparison passed.",
+      "git grep absence check for split_mixed_non_spec, get_required_prefill_chunk_size and QWEN_GDN_ATTN under target vllm/ passed.",
+      "git diff --exit-code assigned_commit old_tip -- vllm/_xpu_ops.py vllm/model_executor/layers/mamba/gdn/qwen_gdn_linear_attn.py vllm/distributed/kv_transfer/kv_connector/v1/ssm_conv_transfer_utils.py passed.",
+      "Verified target requirements/xpu.txt pins vllm_xpu_kernels==0.1.15.4."
+    ],
+    "not_executed": "No Python unit tests, native execution, GPU work, model load, service change or performance run in this read-only audit.",
+    "required_cpu_checks_after_port": [
+      "tests/v1/core/test_mamba_align_chunk_split.py: ragged B4 allocation yields 3968 instead of 3970 for the unfinished prefill; final tail preserved; budget 67 accommodates three one-token decodes plus one full 64-token prefill; invalid 66-token/63-threshold configurations reject; non-XPU, generic GDN, multimodal and speculative exclusions remain unchanged.",
+      "Retain and run upstream lookahead hash/prompt checkpoint cases from test_mamba_align_chunk_split.py and prefix-cache suites, alongside existing local alignment fixture fields.",
+      "tests/v1/attention/test_attention_backends_selection.py identity test: XPU selects QWEN_GDN_ATTN, non-XPU retains generic GDN_ATTN after the proposed adaptation.",
+      "tests/v1/attention/test_kvarn_native_xpu_dispatch.py mock dispatch gate cases and tests/v1/kv_connector/unit/test_nixl_connector_hma.py SSM convolution split coverage; import of the native extension may need the packaged runtime."
+    ],
+    "required_gpu_checks": [
+      "Paired kernel tests/gdn_attn/test_gdn_attn.py mixed-batch regression comparing standalone cached decode against mixed prefill/decode, including output and continued state.",
+      "Eligible non-spec text profile: ragged single/batched prompts, concurrent cached decode+prefill and continuation correctness; keep this evidence distinct from the normal V2 DFlash2 profile.",
+      "Actual Brutus V2/DFlash2 K4V2 profile: run normal cold/prefix/RAM restore, multimodal and mixed scheduling qualification to detect cross-path port regressions.",
+      "If considering the new Triton GDN alternative to remove native workarounds, independently compare numerics, TTFT and token throughput before changing the default or dropping the paired native fix."
+    ],
+    "performance_claim": "No new speedup claimed. This is retained arithmetic stability policy; the current two-proposal profile does not guarantee deterministic full-text replay."
+  },
+  "new_commit": null
+}

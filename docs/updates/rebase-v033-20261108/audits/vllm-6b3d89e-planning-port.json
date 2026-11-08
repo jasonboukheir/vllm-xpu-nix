@@ -1,0 +1,78 @@
+{
+  "schema": 1,
+  "agent": "/root/audit_vllm_kvarn",
+  "target": "4ba787ec9959e566d3b587a796dff07673324da5",
+  "purpose": "Read-only follow-up guidance for the parent resolving the KVarN planning-module move",
+  "recommended_strategy": "Keep the new upstream grouping/builder flow and add narrowly gated independent-pool accounting/placement branches. Do not pretend the independent pool budget is representable by one bytes-per-block multiplier.",
+  "ownership": {
+    "remain_in_kv_cache_utils": [
+      "KVCacheBlock.pool_id and KVCacheBlockCopy.group_id",
+      "get_max_concurrency_for_kv_cache_config independent-pool branch",
+      "generate_scheduler_kv_cache_config pool-topology equality check",
+      "update_kv_cache_capacity pool capacity reporting",
+      "_physical_blocks_per_request helper: used by capacity reporting and can be imported by planning, which already imports utils"
+    ],
+    "move_to_kv_cache_planning": [
+      "_uses_independent_kvarn_pools",
+      "_independent_pool_bytes_for_requests",
+      "_null_block_bytes",
+      "_plan_kv_cache_tensors (independent placement and reconciliation only)",
+      "_uses_independent_cpu_offload",
+      "_validate_kv_transfer_pool_compat",
+      "_get_kv_cache_groups_uniform_page_size independent_pools option and get_kv_cache_groups independent branch",
+      "Independent allocation portion of get_kv_cache_config_from_groups",
+      "Independent early return in _max_memory_usage_bytes_from_groups",
+      "Independent override/null reservation/placement/rank reconciliation in get_kv_cache_configs"
+    ],
+    "do_not_restore": [
+      "Deleted _uses_trailing_mtp_layers, _groups_partition_layers_exactly or _annotate_eagle_groups heuristics",
+      "Old get_kv_cache_configs grouping prelude: get_global_kv_cache_groups now owns merging, extra retained tokens, builder grouping and explicit draft tags",
+      "Old projection replace() workaround: upstream explicitly preserves all group fields and intentionally retains is_eagle_group on empty worker projections",
+      "Old three-argument get_kv_cache_configs signature or old helper signatures without builder"
+    ]
+  },
+  "get_kv_cache_configs_adaptation": [
+    {
+      "stage": "Input and projection",
+      "instruction": "Preserve upstream four-argument signature (vllm_config, kv_cache_specs, available_memory, global_kv_cache_groups), builder resolution, and projection of the supplied global groups. Do not regroup or mutate draft annotations here."
+    },
+    {
+      "stage": "Explicit capacity override",
+      "instruction": "Before the upstream scalar bytes_per_block branch, detect independent groups. Require override>=1. Compute override_memory = independent_pool_bytes_for_requests(config, groups, 1, attention_blocks=override-1) + sum(individual_group_block_bytes). Reject if it exceeds the actual profiled avail_mem; append it and continue. The explicit override is physical attention blocks including null, not a shared aggregate-pool count. Preserve bounded recurrent/draft slots."
+    },
+    {
+      "stage": "Null reservation and memory checks",
+      "instruction": "For independent groups, subtract one null page's bytes in every pool. Otherwise keep upstream _pool_bytes_per_block_from_builder. In _max_memory_usage_bytes_from_groups(builder, config, groups), insert the old independent early return after filtering host groups and checking emptiness. _estimate_max_model_len_from_groups and _auto_fit_max_model_len can remain upstream verbatim, retaining builder parameters and HiSparse builder calls."
+    },
+    {
+      "stage": "Placement",
+      "instruction": "For independent groups only, call the module's bytes-based independent placement with available_memory_one_worker directly. For all other groups, preserve upstream bytes_per_block_from_builder division and builder.get_kv_cache_config_from_groups(..., num_blocks). Do not feed a byte budget to the builder method, and do not run its one-block probe for independent groups: fixed max_num_seqs reservations make a one-block byte budget invalid."
+    },
+    {
+      "stage": "Worker convergence",
+      "instruction": "For independent configurations, retain the old per-pool minimum capacities, rebuild only changed tensor layouts from the min-pool vector, and set legacy config.num_blocks=min(min_pool_blocks). Preserve the ordinary upstream scalar minimum and builder replan for non-independent configurations. Never use legacy config.num_blocks as an attention-pool capacity."
+    },
+    {
+      "stage": "Completion",
+      "instruction": "Run the existing pool-aware connector compatibility validation, then keep the upstream per-worker kv_tp_replicas assignment and return. Preserve all non-KVarN builder extension points."
+    }
+  ],
+  "allocation_rules_to_preserve": [
+    "Separate compatible-layer buckets without padding them to the smallest bucket's layer count; preserve each actual page format and logical cache-block boundary.",
+    "Start every independent pool with one null block; allocate max_num_seqs * physical_blocks_per_request usable blocks for Mamba and sliding draft groups.",
+    "For full-attention groups, allocate remaining memory in the least-common-multiple token quantum, accounting for each group's block size and byte footprint.",
+    "Without RAM offload and without an explicit override, optional extra aligned recurrent checkpoints may consume spare bytes only after preserving one maximum-length full-attention request.",
+    "Tensor strides and offsets must be replanned from actual per-pool block counts; preserve block-stride padding and existing layout validation."
+  ],
+  "additional_delta_reductions": [
+    "Keep upstream shared-pool get_kv_cache_config_from_groups placement body verbatim where feasible, dispatching only independent pools into the local helper. The old rewrite of shared placement through _plan_kv_cache_tensors is a convenience refactor and is not required for the feature.",
+    "Keep upstream autofit and estimate implementations rather than copying old equivalents: the local difference belongs in required-memory calculation and per-pool null/override accounting."
+  ],
+  "test_port_notes": [
+    "Update new and retained planner tests to import moved planning symbols from kv_cache_planning. Keep pool/concurrency/capacity imports from utils. Avoid adding compatibility reexports solely to keep old tests unchanged.",
+    "Calls to get_kv_cache_configs need get_global_kv_cache_groups(config, specs) as the fourth argument, matching the real engine flow. Existing upstream builder tests should still prove custom grouping/placement hooks, scalar override and rank convergence work.",
+    "Retain independent tests for fixed recurrent reserves, attention capacity, exact physical override, auto-fit with max_num_seqs>1, null pages, mixed head/byte sizes, rank convergence and unsupported connectors.",
+    "Default builder placement is also called by minimal CUDA-graph profiling in V1 and V2. The active XPU KVarN profile forbids graphs, but inspect this call path before claiming graph qualification for other KVarN configurations. The old independent planner also required fixed reservations rather than accepting the old profiling zero-byte budget; do not broaden support claims incidentally."
+  ],
+  "validation": "Read-only static comparison of old full utils, frozen-target planning/config-builder, caller interfaces and current conflict inventory. No edits or tests against the changing candidate source."
+}

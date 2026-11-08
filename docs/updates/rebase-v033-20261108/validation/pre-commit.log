@@ -1,0 +1,10 @@
+[WARNING] Unstaged files detected.
+[INFO] Stashing unstaged files to /tmp/vllm-v033-pre-commit/patch1794176880-3.
+[INFO] Initializing environment for https://github.com/astral-sh/ruff-pre-commit.
+[INFO] Restored changes from /tmp/vllm-v033-pre-commit/patch1794176880-3.
+An unexpected error has occurred: CalledProcessError: command: ('/nix/store/jnyfsf2mp08d1xyz2m72ic2vz2kcx0sd-bash-5.3p9/bin/bash', '-e', '/etc/profiles/per-user/jasonbk/bin/git', 'fetch', 'origin', '--tags')
+return code: 128
+stdout: (none)
+stderr:
+    fatal: unable to access 'https://github.com/astral-sh/ruff-pre-commit/': Could not resolve host: github.com
+Check the log at /tmp/vllm-v033-pre-commit/pre-commit.log

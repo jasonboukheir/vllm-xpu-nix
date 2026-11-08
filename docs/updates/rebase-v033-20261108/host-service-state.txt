@@ -1,0 +1,18 @@
+ActiveState=active
+SubState=running
+ActiveEnterTimestamp=Wed 2026-11-04 19:21:05 PST
+MainPID=1084405
+MemoryCurrent=6777561088
+MemorySwapCurrent=0
+MemorySwapMax=0
+Id=vllm-xpu-embedding.service
+ActiveState=inactive
+SubState=dead
+
+Id=vllm-xpu-stt.service
+ActiveState=inactive
+SubState=dead
+
+Id=jellyfin.service
+ActiveState=active
+SubState=running

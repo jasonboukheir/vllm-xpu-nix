@@ -1,0 +1,189 @@
+{
+  "schema": 1,
+  "reviewer": "/root/audit_vllm_kvarn",
+  "scope": "Read-only review of v0.33 dependency semantics and minimal packaging drift. Parent owns edits and builds. Final source-input wiring is intentionally outside this intermediate review.",
+  "frozen_vllm_target": "4ba787ec9959e566d3b587a796dff07673324da5",
+  "nixpkgs_revision": "0e251e24a4f24e036a084b6b4b2d2491af4167f4",
+  "reviewed_blobs": {
+    "nix/python-xpu.nix": "3c9db8351cbb8831e9115a0dd86e48287b473f99",
+    "nix/vllm-xpu.nix": "9103ffd2c4ac7879c220b29750b4cee8c96ec53c",
+    "flake.nix": "8eb9ec0f0e0fd16152ff8f457a2733432a28b172"
+  },
+  "result": "The reviewed changes cover the newly raised v0.33 runtime requirements and preserve the existing XPU toolchain. The parent repaired yarl API/version compatibility, retention of the refreshed certifi bundle, the aiohttp test input, duplicate fsspec artifacts and the torchvision/Pillow fixed-wheel dependency boundary. The exact Brutus host package's 187-node propagated runtime graph has no duplicate normalized dependency names. No remaining new source-level blocker identified; final candidate build 3 is pending.",
+  "resolved_findings": [
+    {
+      "id": "aiohttp-yarl-api",
+      "evidence": "/tmp/vllm-v033-dependency-build-3.log shows aiohttp 3.14.4 wheel construction succeeded, then pythonRuntimeDepsCheck rejected yarl 1.24.5 against >=1.25.1,<2.0. Source aiohttp/web_request.py imports yarl.query_to_pairs, which yarl 1.25.1 exports. This is a real API requirement, not merely an overly tight metadata bound.",
+      "requirement": "Selected vLLM common.txt explicitly requires aiohttp>=3.14.4; downgrading to the old 3.14.3 would violate the selected release's floor.",
+      "repair_observed": "Scoped yarl 1.25.1 override with its original build/test recipe retained and a caught-up assertion.",
+      "verified_source": {
+        "owner": "aio-libs",
+        "repo": "yarl",
+        "tag": "v1.25.1",
+        "hash": "sha256-cQsVglP3OqaQW95OYPlbWCFTs5p6L5wOzx7QCIqqJ9U=",
+        "local_source": "/nix/store/v4dcawbj36x9sb8j3ns5svmyql2zii42-v1.25.1.tar.gz"
+      },
+      "validation": "Hash independently fetched using nix store prefetch-file --unpack. Runtime metadata requires idna>=2.0, multidict>=4.0 and propcache>=0.2.1; the inherited recipe supplies those dependencies. Parent's build 4 progressed beyond this runtime dependency failure."
+    },
+    {
+      "id": "certifi-root-removal",
+      "upstream_commit": "fa72b61b55989222302b3fa479044c5c9fc9415d",
+      "evidence": "Upstream adds certifi>=2026.10.19 and explicitly refreshes the runtime system CA package to obtain certificate removals. The inherited nixpkgs certifi postPatch deletes the bundled cacert.pem and symlinks pinned nss-cacert 3.126, so a version/src bump alone discarded the bundle update.",
+      "comparison": {
+        "method": "Compared SHA256 fingerprints of DER-decoded certificates from the new certifi source bundle and each locally available nss-cacert 3.126 standard PEM bundle; all available NSS variants had the same root set.",
+        "nss_root_count": 121,
+        "certifi_root_count": 120,
+        "nss_only_root": "C=IN, OU=emSign PKI, O=eMudhra Technologies Limited, CN=emSign ECC Root CA - G3",
+        "nss_only_root_sha256": "86a1ecba089c4a8d3bbe2734c612ba341d813e043cf9e8a862cd5c57a36bbe6b",
+        "certifi_only_roots": 0
+      },
+      "repair_observed": "certifi postPatch is now empty, retaining the release's actual bundled roots. The inherited env.patch still honors an explicit NIX_SSL_CERT_FILE.",
+      "qualification_boundary": "This refreshes certifi's default bundle. An explicitly selected host/system trust store still takes precedence; no host trust configuration was changed or claimed refreshed by this packaging review."
+    },
+    {
+      "id": "aiohttp-test-warning-filter",
+      "evidence": "Build 4 progressed to pytest and failed because the new pytest.ini warning filter names coverage.exceptions.CoverageWarning while the inherited pytest-cov-stub setup does not provide coverage. Nixpkgs previously removed this filter from setup.cfg, but the new source moved it to pytest.ini.",
+      "repair_observed": "Parent added coverage to aiohttp nativeCheckInputs, preserving the filter and test execution. This is confined to test inputs and does not relax runtime constraints.",
+      "validation": "Static source/recipe check only; build 5 was running at the initial review."
+    },
+    {
+      "id": "fsspec-test-closure-duplicate",
+      "reviewed_python_xpu_blob": "35458438906b38fe27d704c87757990c9ac70209",
+      "evidence": "The final candidate build's xgrammar and accelerate conflict checks found fsspec 2026.6.0 twice: stock /nix/store/1wapaws7p4sw0vmblgdr8898wmxw2j1s-python3.12-fsspec-2026.6.0 through prebuilt torch-xpu and scoped /nix/store/gbp7si31c042l7wpbln76igh5jpkkbwc-python3.12-fsspec-2026.6.0 through Transformers/huggingface-hub. Derivation inspection showed identical source/build-system/hooks and no unconditional runtime dependency except the same Python. Only HTTP-related test inputs changed.",
+      "identity_proof": "diff -rq --exclude='*.pyc' between the complete installed output trees was empty. Both propagated-build-inputs files contain only /nix/store/yvwk46zd4zvbwzqwhpd8kddpz14zda49-python3-3.12.13. The stock dependencies passthru and buildInputs are empty.",
+      "repair_observed": "Parent reuses pkgs.python312Packages.fsspec with an overrideAttrs changing only passthru.optional-dependencies to pyPrev.fsspec.optional-dependencies. Guards require matching source/version, empty unconditional dependencies and exactly the existing Python as propagated input. No conflict check was suppressed and no Torch/native-kernel recipe changed.",
+      "evaluated_applied_repair": {
+        "same_stock_derivation": true,
+        "stock_and_reused_derivation": "/nix/store/bfzkwp62bxc9w1d5bf0l9p70igx5wq7m-python3.12-fsspec-2026.6.0.drv",
+        "stock_and_reused_output": "/nix/store/1wapaws7p4sw0vmblgdr8898wmxw2j1s-python3.12-fsspec-2026.6.0",
+        "http_extra": "/nix/store/splfxd89kdny3gljkwis1dvmjmxj807s-python3.12-aiohttp-3.14.4",
+        "plain_out_and_lib_getOutput_extras_agree": true
+      },
+      "why_extras_matter": "datasets consumes fsspec.optional-dependencies.http and imageio consumes its github extra. Preserving scoped extras prevents reuse of the core artifact from reintroducing the old HTTP stack through those consumers.",
+      "validation_boundary": "Read-only nix eval checked the actual applied repair, including fsspec.out and lib.getOutput out. Parent's second final candidate build must still pass with conflict checks active. The earlier keep-going build was left running.",
+      "supplemental_report": "review-fsspec-reuse.json"
+    },
+    {
+      "id": "torchvision-pillow-scope",
+      "reviewed_python_xpu_blob": "9553ee4b8c04e06bceeaae5087b36fb46875e705",
+      "evidence": "torchvision-xpu was instantiated outside the scoped Python package set and propagated stock Pillow 12.3.0, while vLLM 0.33 now requires and directly selects Pillow 13.0.0. Directly assigning the old torchvision derivation into the scope would retain both Pillow artifacts despite the root vLLM recipe's preexisting disabled conflict check.",
+      "repair_observed": "torchvision = torchvision-xpu.override { python3Packages = pyFinal; }; selects scoped NumPy/Pillow while retaining the separate explicit torch-xpu argument used by buildInputs, propagatedBuildInputs and appendRunpaths. The same prebuilt torchvision wheel is repackaged; native XPU source/toolchain inputs do not change.",
+      "evaluation_proof": {
+        "same_torchvision_wheel_source": true,
+        "old_torchvision_derivation": "/nix/store/9z640l4xbcw7ww1m4bblgn44jlwl533i-python3.12-torchvision-0.29.0+xpu.drv",
+        "new_torchvision_derivation": "/nix/store/80krlykkj16083vidqaa7w1jgid8l79h-python3.12-torchvision-0.29.0+xpu.drv",
+        "unchanged_torch_derivation": "/nix/store/bzqri82r9yk2pq0rij2rsdyg7nxvlhr0-python3.12-torch-2.14.0+xpu.drv",
+        "sole_pillow_version": "13.0.0",
+        "sole_pillow_path": "/nix/store/5v371dhfb5a0gcd5z340fzac0dv0qmxp-python3.12-pillow-13.0.0"
+      },
+      "validation_boundary": "The proposed override and the applied exact host package were evaluated independently. Installed runtime checks after candidate build 3 remain required; this does not rely on package import order or disabling additional conflict checks."
+    }
+  ],
+  "authoritative_host_runtime_graph": {
+    "flake_expression": "builtins.getFlake \"git+file:///home/jasonbk/Projects/vllm-xpu-nix\"",
+    "root_expression": "import /home/jasonbk/.config/nix/hosts/brutus/services/vllm-xpu/package.nix { vllm-xpu-unstable = f.packages.x86_64-linux.vllm-xpu-unstable; }",
+    "root_derivation": "/nix/store/1zx6swwn83jq2rl9kf1nnz6yrjicmm0q-python3.12-vllm-xpu-0.33.0+unstable.2026.11.08.g066206b.drv",
+    "host_kernel_derivation": "/nix/store/9a7pf5ld1z2xfxcsjzdgfjn8ilcqpsbv-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.g05d4536.drv",
+    "method": "Traverse all propagatedBuildInputs recursively with derivation paths as node identities, group package names after lowercase/underscore normalization, and report multiple derivations for one name. Derivation identities remain valid for content-addressed outputs whose final store paths are unresolved placeholders during evaluation.",
+    "node_count": 187,
+    "duplicate_normalized_package_names": {},
+    "realized_wheel_metadata_distributions_checked": 175,
+    "duplicate_normalized_distribution_names": {},
+    "graph_artifact": "validation/runtime-dependency-graph.json",
+    "metadata_artifact": "validation/runtime-metadata-audit.json",
+    "qualification_boundary": "This authoritative graph uses the actual Brutus BMG AOT and kernel-shape override, not the generic validation variant. Available dist-info/egg-info metadata was read without importing code. Two content-addressed output paths were unresolved and ten realized nodes had no dist-info/egg-info at the standard path; these limits are recorded in the metadata artifact. Final installed environment checks are still needed."
+  },
+  "requirement_mapping": [
+    {
+      "requirement": "aiohttp>=3.14.4, multidict>=6.9.1, pillow>=13.0.0, certifi>=2026.10.19",
+      "selected": "3.14.4, 6.9.1, 13.0.0, 2026.10.19 respectively",
+      "assessment": "Narrow overrides meet the selected release's raised floors without changing nixpkgs/toolchain. Parent retains tests and adds coverage only where the migrated test configuration requires it."
+    },
+    {
+      "requirement": "orjson>=3.11.6",
+      "selected": "3.11.9 from pinned nixpkgs, now a direct runtime input",
+      "assessment": "Meets the new explicit requirement supporting shared orjson responses; no version override needed. Relevant upstream commit f46ea25e5889e56ee29792b6a90e95f0bc3e6558."
+    },
+    {
+      "requirement": "mcp>=2.2.0,<3.0.0",
+      "selected": "mcp 2.2.0 and mcp-types 2.2.0",
+      "assessment": "Wheel METADATA independently read: mcp pins mcp-types==2.2.0, uses httpx2>=2.5.0 and pyjwt[crypto], and requires Python>=3.10. The existing explicit sibling-package design and dependency list cover these requirements while retaining MCP 1.x for old callers."
+    },
+    {
+      "requirement": "fastapi[standard]>=0.133.0,<0.137.0",
+      "selected": "0.136.3 instead of pinned nixpkgs 0.139.0",
+      "assessment": "Correctly respects the route-tree compatibility cap for model-hosting-container-standards. A guarded source requirement check will force review if the upstream bound changes. The FastAPI requirement itself already existed at v0.32; this fixes an inherited packaging mismatch rather than a newly raised v0.33 floor."
+    },
+    {
+      "requirement": "torch==2.14.0 and triton==3.8.0+xpu; kernels==0.1.15.4",
+      "selected": "Existing torch 2.14.0+xpu, triton 3.8.0+xpu, selected 0.1.15.4 fork",
+      "assessment": "v0.33 pyproject now agrees with the existing XPU Torch version, so replacing the obsolete 2.13 build-metadata rewrite with an exact-presence check is correct. The old rewrite is retained only for older versions. No toolchain or kernel-base bump is required by this dependency update."
+    },
+    {
+      "requirement": "transformers>=5.16.1,<5.21.0",
+      "selected": "Existing 5.16.1 override",
+      "assessment": "Still satisfies the widened upper bound; no unsolicited Transformers upgrade is needed. Existing tokenizers 0.23.2 also meets the unchanged floor."
+    }
+  ],
+  "inherited_exceptions": [
+    {
+      "package": "compressed-tensors",
+      "upstream_requirement": "==0.17.0",
+      "resolved_version": "0.17.1",
+      "status": "Inherited mismatch, unchanged by v0.33 requirements or these changes. Record explicitly; target/draft quantized model qualification is relevant evidence."
+    },
+    {
+      "package": "lark",
+      "upstream_requirement": "==1.2.2",
+      "resolved_version": "1.3.1",
+      "status": "Inherited mismatch, unchanged by this rebase. Do not describe the complete runtime as satisfying every exact upstream pin."
+    },
+    {
+      "package": "numba",
+      "upstream_requirement": "==0.65.0",
+      "resolved_version": "0.66.0",
+      "status": "Inherited mismatch, unchanged by this rebase. The active DFlash2 profile does not use N-gram speculation; broad N-gram qualification is not established."
+    },
+    {
+      "package": "fastapi standard extra",
+      "upstream_requirement": "fastar>=0.9.0 in the selected FastAPI package's standard extra",
+      "resolved_version": null,
+      "status": "Pinned nixpkgs optional-dependencies.standard explicitly has FIXME package fastar and omits it. This existing optional CLI gap does not block vLLM's own API server, but the full FastAPI standard extra is not installed literally."
+    },
+    {
+      "package": "vllm metadata enforcement",
+      "status": "Existing pythonRelaxDeps=true and dontCheckRuntimeDeps=true remain. They make a successful vLLM wheel build insufficient evidence of strict metadata compliance. This review independently checked the changed requirements and records known existing exceptions; it does not introduce additional relaxation."
+    }
+  ],
+  "minimal_drift_assessment": "The shared fixed-point Python override scope preserves coherent transitive dependency selection and the expensive XPU substrate. New version overrides correspond to explicit raised floors or the existing FastAPI compatibility cap; yarl is required by an actual new API call. The version-aware Torch patch removes an obsolete transformation instead of reapplying it. No broader package-set/toolchain change is recommended.",
+  "validation": {
+    "performed": [
+      "Read exact v0.32-to-v0.33 requirements and pyproject deltas, plus the relevant upstream dependency commits.",
+      "Read pinned nixpkgs recipes and fetched package source metadata/build hooks.",
+      "Evaluated resolved vLLM runtime input names/versions using nix eval without building or changing locks.",
+      "Inspected MCP wheel METADATA with the existing candidate venv Python; no package code or GPU was imported.",
+      "Verified the yarl source hash and compared certifi/NSS certificate DER fingerprints.",
+      "Read parent build logs 3 and 4 and observed build 5 start; no builds/tests run by this reviewer.",
+      "Confirmed parent's updated planner log records 167 passed, 6 warnings."
+    ],
+    "pending": [
+      "Final candidate build 3 completion with fsspec/torchvision repairs, including package conflict/import checks and any remaining repairs owned by parent.",
+      "Final package and manifest checks after final pins; this review did not audit the completed input wiring.",
+      "GPU model correctness/performance qualification after the user frees the device."
+    ],
+    "mutations_by_reviewer": "Only this report; source hash prefetch populated the Nix store. No source, branch, lock, service or host edits."
+  },
+  "primary_sources": [
+    "https://raw.githubusercontent.com/aio-libs/yarl/v1.25.1/setup.cfg",
+    "https://raw.githubusercontent.com/aio-libs/yarl/v1.25.1/pyproject.toml",
+    "https://github.com/vllm-project/vllm/commit/fa72b61b55989222302b3fa479044c5c9fc9415d",
+    "https://github.com/vllm-project/vllm/commit/a5b71c1eb3b0e4def2f0effd8cc4fd0c5e18cc3b",
+    "https://github.com/vllm-project/vllm/commit/f46ea25e5889e56ee29792b6a90e95f0bc3e6558"
+  ],
+  "parent_final_validation": {
+    "status": "exact Brutus build passed;3001 installed Python files match;108 installed CPU tests passed",
+    "receipt": "validation/build-receipt.json",
+    "installed": "validation/installed-package.json",
+    "gpu": "pending operator handoff"
+  }
+}

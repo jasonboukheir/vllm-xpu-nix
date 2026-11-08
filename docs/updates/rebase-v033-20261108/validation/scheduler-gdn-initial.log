@@ -1,0 +1,1024 @@
+/tmp/vllm-v033-20261108/vllm/__init__.py:7: RuntimeWarning: Failed to read commit hash:
+No module named 'vllm._version'
+  from .version import __version__, __version_tuple__  # isort:skip
+/tmp/vllm-v033-20261108/.venv/lib/python3.12/site-packages/pytest_asyncio/plugin.py:300: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the "fixture" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to "function" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+...............................................FF...FF.......F.......... [ 20%]
+.FFFFF.................................................................. [ 40%]
+......................................FFFFFFFFFFFFFFFFFFFFFFFF........F. [ 61%]
+...FFFFFFFF........FFFFFFFFFFFFF.............................FFFFFFFF... [ 81%]
+..................................................................       [100%]
+=================================== FAILURES ===================================
+______________________ test_schedule_multimodal_requests _______________________
+tests/v1/core/test_scheduler.py:702: in test_schedule_multimodal_requests
+    scheduler = create_scheduler(model="llava-hf/llava-1.5-7b-hf")
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ...None, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+____ test_async_scheduling_pp_allows_rescheduling_with_output_placeholders _____
+tests/v1/core/test_scheduler.py:725: in test_async_scheduling_pp_allows_rescheduling_with_output_placeholders
+    scheduler = create_scheduler(async_scheduling=True, pipeline_parallel_size=2)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/v1/core/utils.py:215: in create_scheduler
+    vllm_config = VllmConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for VllmConfig
+E     Value error, Async scheduling is not supported by the V1 model runner with pipeline parallelism. [type=value_error, input_value=ArgsKwargs((), {'schedule...monitor_verbose=False)}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+________________________ test_schedule_partial_requests ________________________
+tests/v1/core/test_scheduler.py:857: in test_schedule_partial_requests
+    scheduler = create_scheduler(
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ...None, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+____________ test_encoder_only_prompt_longer_than_budget_is_chunked ____________
+tests/v1/core/test_scheduler.py:915: in test_encoder_only_prompt_longer_than_budget_is_chunked
+    scheduler = create_scheduler(
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ...4096, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+_____________ test_local_prefill_interval_left_to_engine_under_dp ______________
+vllm/utils/network_utils.py:257: in _get_open_port
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/nix/store/lpgczl8hqnjlkicsphcylqfgds7dqc13-python3-3.12.13/lib/python3.12/socket.py:233: in __init__
+    _socket.socket.__init__(self, family, type, proto, fileno)
+E   PermissionError: [Errno 1] Operation not permitted
+
+During handling of the above exception, another exception occurred:
+tests/v1/core/test_scheduler.py:1161: in test_local_prefill_interval_left_to_engine_under_dp
+    scheduler = create_scheduler(prefill_schedule_interval=4, data_parallel_size=2)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/v1/core/utils.py:219: in create_scheduler
+    parallel_config=ParallelConfig(
+vllm/config/parallel.py:1012: in __post_init__
+    self._data_parallel_master_port_list = get_open_ports_list(5)
+                                           ^^^^^^^^^^^^^^^^^^^^^^
+vllm/utils/network_utils.py:228: in get_open_ports_list
+    ports_set.add(get_open_port())
+                  ^^^^^^^^^^^^^^^
+vllm/utils/network_utils.py:201: in get_open_port
+    port = _get_open_port()
+           ^^^^^^^^^^^^^^^^
+vllm/utils/network_utils.py:262: in _get_open_port
+    with socket.socket(socket.AF_INET6, socket.SOCK_STREAM) as s:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/nix/store/lpgczl8hqnjlkicsphcylqfgds7dqc13-python3-3.12.13/lib/python3.12/socket.py:233: in __init__
+    _socket.socket.__init__(self, family, type, proto, fileno)
+E   PermissionError: [Errno 1] Operation not permitted
+_____________ test_same_step_duplicate_encoder_input_stays_cached ______________
+tests/v1/core/test_scheduler.py:1501: in test_same_step_duplicate_encoder_input_stays_cached
+    scheduler = create_scheduler(
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ...2048, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+_______________________ test_no_mm_input_chunking[False] _______________________
+tests/v1/core/test_scheduler.py:1530: in test_no_mm_input_chunking
+    scheduler = create_scheduler(
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ...2048, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+_______________________ test_no_mm_input_chunking[True] ________________________
+tests/v1/core/test_scheduler.py:1530: in test_no_mm_input_chunking
+    scheduler = create_scheduler(
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ...2048, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+______________ test_no_mm_input_chunking_for_same_step_duplicate _______________
+tests/v1/core/test_scheduler.py:1591: in test_no_mm_input_chunking_for_same_step_duplicate
+    scheduler = create_scheduler(
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ...2048, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+__________________ test_no_mm_input_chunking_at_item_boundary __________________
+tests/v1/core/test_scheduler.py:1642: in test_no_mm_input_chunking_at_item_boundary
+    assert ask(0, 500) == 400
+           ^^^^^^^^^^^
+tests/v1/core/test_scheduler.py:1628: in ask
+    scheduler = create_scheduler(
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ...2048, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+__________________ test_ec_connector_text_only_request[False] __________________
+tests/v1/core/test_scheduler.py:5546: in test_ec_connector_text_only_request
+    scheduler = create_scheduler(
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ...None, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+__________________ test_ec_connector_text_only_request[True] ___________________
+tests/v1/core/test_scheduler.py:5546: in test_ec_connector_text_only_request
+    scheduler = create_scheduler(
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ...None, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+_______________ test_ec_connector_cache_hit_external_load[False] _______________
+tests/v1/core/test_scheduler.py:5588: in test_ec_connector_cache_hit_external_load
+    scheduler = create_scheduler(
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ...None, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+_______________ test_ec_connector_cache_hit_external_load[True] ________________
+tests/v1/core/test_scheduler.py:5588: in test_ec_connector_cache_hit_external_load
+    scheduler = create_scheduler(
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ...None, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+_____________ test_ec_connector_cache_miss_computes_locally[False] _____________
+tests/v1/core/test_scheduler.py:5640: in test_ec_connector_cache_miss_computes_locally
+    scheduler = create_scheduler(
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ...None, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+_____________ test_ec_connector_cache_miss_computes_locally[True] ______________
+tests/v1/core/test_scheduler.py:5640: in test_ec_connector_cache_miss_computes_locally
+    scheduler = create_scheduler(
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ...None, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+_________ test_ec_connector_with_partial_cache_hit_multi_round[False] __________
+tests/v1/core/test_scheduler.py:5694: in test_ec_connector_with_partial_cache_hit_multi_round
+    scheduler = create_scheduler(
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ...None, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+__________ test_ec_connector_with_partial_cache_hit_multi_round[True] __________
+tests/v1/core/test_scheduler.py:5694: in test_ec_connector_with_partial_cache_hit_multi_round
+    scheduler = create_scheduler(
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ...None, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+__________ test_ec_connector_schedule_multiple_requests[False-local] ___________
+tests/v1/core/test_scheduler.py:5847: in test_ec_connector_schedule_multiple_requests
+    scheduler = create_scheduler(
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ...None, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+______ test_ec_connector_schedule_multiple_requests[False-connector_only] ______
+tests/v1/core/test_scheduler.py:5847: in test_ec_connector_schedule_multiple_requests
+    scheduler = create_scheduler(
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ...None, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+_________ test_ec_connector_schedule_multiple_requests[False-no_where] _________
+tests/v1/core/test_scheduler.py:5847: in test_ec_connector_schedule_multiple_requests
+    scheduler = create_scheduler(
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ...None, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+___________ test_ec_connector_schedule_multiple_requests[True-local] ___________
+tests/v1/core/test_scheduler.py:5847: in test_ec_connector_schedule_multiple_requests
+    scheduler = create_scheduler(
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ...None, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+______ test_ec_connector_schedule_multiple_requests[True-connector_only] _______
+tests/v1/core/test_scheduler.py:5847: in test_ec_connector_schedule_multiple_requests
+    scheduler = create_scheduler(
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ...None, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+_________ test_ec_connector_schedule_multiple_requests[True-no_where] __________
+tests/v1/core/test_scheduler.py:5847: in test_ec_connector_schedule_multiple_requests
+    scheduler = create_scheduler(
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ...None, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+_________________ test_ec_connector_unable_to_allocate[False] __________________
+tests/v1/core/test_scheduler.py:5941: in test_ec_connector_unable_to_allocate
+    scheduler = create_scheduler(
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ...None, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+__________________ test_ec_connector_unable_to_allocate[True] __________________
+tests/v1/core/test_scheduler.py:5941: in test_ec_connector_unable_to_allocate
+    scheduler = create_scheduler(
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ...None, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+_ test_priority_scheduling_ec_connector_preemption_and_resumption[False-local] _
+tests/v1/core/test_scheduler.py:6036: in test_priority_scheduling_ec_connector_preemption_and_resumption
+    scheduler = create_scheduler_with_priority(
+tests/v1/core/test_scheduler.py:4286: in create_scheduler_with_priority
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ... 'float16', 'seed': 42}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+_ test_priority_scheduling_ec_connector_preemption_and_resumption[False-connector_only] _
+tests/v1/core/test_scheduler.py:6036: in test_priority_scheduling_ec_connector_preemption_and_resumption
+    scheduler = create_scheduler_with_priority(
+tests/v1/core/test_scheduler.py:4286: in create_scheduler_with_priority
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ... 'float16', 'seed': 42}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+_ test_priority_scheduling_ec_connector_preemption_and_resumption[False-no_where] _
+tests/v1/core/test_scheduler.py:6036: in test_priority_scheduling_ec_connector_preemption_and_resumption
+    scheduler = create_scheduler_with_priority(
+tests/v1/core/test_scheduler.py:4286: in create_scheduler_with_priority
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ... 'float16', 'seed': 42}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+_ test_priority_scheduling_ec_connector_preemption_and_resumption[True-local] __
+tests/v1/core/test_scheduler.py:6036: in test_priority_scheduling_ec_connector_preemption_and_resumption
+    scheduler = create_scheduler_with_priority(
+tests/v1/core/test_scheduler.py:4286: in create_scheduler_with_priority
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ... 'float16', 'seed': 42}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+_ test_priority_scheduling_ec_connector_preemption_and_resumption[True-connector_only] _
+tests/v1/core/test_scheduler.py:6036: in test_priority_scheduling_ec_connector_preemption_and_resumption
+    scheduler = create_scheduler_with_priority(
+tests/v1/core/test_scheduler.py:4286: in create_scheduler_with_priority
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ... 'float16', 'seed': 42}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+_ test_priority_scheduling_ec_connector_preemption_and_resumption[True-no_where] _
+tests/v1/core/test_scheduler.py:6036: in test_priority_scheduling_ec_connector_preemption_and_resumption
+    scheduler = create_scheduler_with_priority(
+tests/v1/core/test_scheduler.py:4286: in create_scheduler_with_priority
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ... 'float16', 'seed': 42}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+_____ test_ec_connector_allocate_encoder_tokens_with_external_load[False] ______
+tests/v1/core/test_scheduler.py:6276: in test_ec_connector_allocate_encoder_tokens_with_external_load
+    scheduler = create_scheduler(
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ...None, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+______ test_ec_connector_allocate_encoder_tokens_with_external_load[True] ______
+tests/v1/core/test_scheduler.py:6276: in test_ec_connector_allocate_encoder_tokens_with_external_load
+    scheduler = create_scheduler(
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ...None, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+_______________ test_ec_connector_update_connector_output_called _______________
+tests/v1/core/test_scheduler.py:6777: in test_ec_connector_update_connector_output_called
+    scheduler = create_scheduler(
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ...None, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+___________________ test_eagle3_mm_encoder_cache_with_shift ____________________
+tests/v1/core/test_scheduler.py:7113: in test_eagle3_mm_encoder_cache_with_shift
+    scheduler = create_scheduler(
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ...2048, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+__________ test_free_encoder_inputs_respects_unconfirmed_placeholders __________
+tests/v1/core/test_scheduler.py:7182: in test_free_encoder_inputs_respects_unconfirmed_placeholders
+    scheduler = create_scheduler(
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ...None, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+______________ test_free_encoder_inputs_notifies_the_ec_connector ______________
+tests/v1/core/test_scheduler.py:7231: in test_free_encoder_inputs_notifies_the_ec_connector
+    scheduler = create_scheduler(model="llava-hf/llava-1.5-7b-hf")
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ...None, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+________ test_unavailable_encoder_input_fails_the_request_as_retryable _________
+tests/v1/core/test_scheduler.py:7257: in test_unavailable_encoder_input_fails_the_request_as_retryable
+    scheduler = create_scheduler(model="llava-hf/llava-1.5-7b-hf")
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ...None, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+_______________ test_encoder_cache_accepts_matching_embed_count ________________
+tests/v1/core/test_scheduler.py:7309: in test_encoder_cache_accepts_matching_embed_count
+    scheduler = create_scheduler(model="llava-hf/llava-1.5-7b-hf")
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ...None, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+______________ test_encoder_cache_rejects_mismatched_embed_count _______________
+tests/v1/core/test_scheduler.py:7329: in test_encoder_cache_rejects_mismatched_embed_count
+    scheduler = create_scheduler(model="llava-hf/llava-1.5-7b-hf")
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ...None, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+_______ test_encoder_cache_embed_count_mismatch_restores_prior_hit_state _______
+tests/v1/core/test_scheduler.py:7377: in test_encoder_cache_embed_count_mismatch_restores_prior_hit_state
+    scheduler = create_scheduler(model="llava-hf/llava-1.5-7b-hf")
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ...None, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+_______ test_encoder_cache_rejects_mismatched_embed_count_within_request _______
+tests/v1/core/test_scheduler.py:7440: in test_encoder_cache_rejects_mismatched_embed_count_within_request
+    scheduler = create_scheduler(model="llava-hf/llava-1.5-7b-hf")
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ...None, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+____________ test_free_encoder_inputs_unchanged_without_spec_decode ____________
+tests/v1/core/test_scheduler.py:7562: in test_free_encoder_inputs_unchanged_without_spec_decode
+    scheduler = create_scheduler(model="llava-hf/llava-1.5-7b-hf")
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ...None, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+__________ test_waiting_encoder_stall_does_not_starve_later_requests ___________
+tests/v1/core/test_scheduler.py:7587: in test_waiting_encoder_stall_does_not_starve_later_requests
+    scheduler = create_scheduler(model="llava-hf/llava-1.5-7b-hf")
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ...None, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+______________ test_waiting_encoder_stall_is_counted_as_deferred _______________
+tests/v1/core/test_scheduler.py:7609: in test_waiting_encoder_stall_is_counted_as_deferred
+    scheduler = create_scheduler(model="llava-hf/llava-1.5-7b-hf")
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ...None, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+__________ test_waiting_encoder_stall_kv_holder_keeps_drain_priority ___________
+tests/v1/core/test_scheduler.py:7630: in test_waiting_encoder_stall_kv_holder_keeps_drain_priority
+    scheduler = create_scheduler(model="llava-hf/llava-1.5-7b-hf")
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ...None, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+___________ test_encoder_cache_retained_across_preemption_and_resume ___________
+tests/v1/core/test_scheduler.py:7658: in test_encoder_cache_retained_across_preemption_and_resume
+    scheduler = create_scheduler(
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ...None, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+_________ test_encoder_cache_recomputed_when_evicted_during_preemption _________
+tests/v1/core/test_scheduler.py:7702: in test_encoder_cache_recomputed_when_evicted_during_preemption
+    scheduler = create_scheduler(
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ...None, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+________ test_ec_connector_ensure_cache_available_defers_request[False] ________
+tests/v1/core/test_scheduler.py:7755: in test_ec_connector_ensure_cache_available_defers_request
+    scheduler = create_scheduler(
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ...None, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+________ test_ec_connector_ensure_cache_available_defers_request[True] _________
+tests/v1/core/test_scheduler.py:7755: in test_ec_connector_ensure_cache_available_defers_request
+    scheduler = create_scheduler(
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ...None, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+___ test_ec_connector_waits_for_embeddings_in_prefix_replay[128-False-True] ____
+tests/v1/core/test_scheduler.py:7829: in test_ec_connector_waits_for_embeddings_in_prefix_replay
+    scheduler = create_scheduler(
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ...None, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+___ test_ec_connector_waits_for_embeddings_in_prefix_replay[128-False-False] ___
+tests/v1/core/test_scheduler.py:7829: in test_ec_connector_waits_for_embeddings_in_prefix_replay
+    scheduler = create_scheduler(
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ...None, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+____ test_ec_connector_waits_for_embeddings_in_prefix_replay[0-False-False] ____
+tests/v1/core/test_scheduler.py:7829: in test_ec_connector_waits_for_embeddings_in_prefix_replay
+    scheduler = create_scheduler(
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ...None, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+___ test_ec_connector_waits_for_embeddings_in_prefix_replay[128-True-False] ____
+tests/v1/core/test_scheduler.py:7829: in test_ec_connector_waits_for_embeddings_in_prefix_replay
+    scheduler = create_scheduler(
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ...None, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+__________ test_ec_connector_defers_running_request_for_async_reload ___________
+tests/v1/core/test_scheduler.py:7888: in test_ec_connector_defers_running_request_for_async_reload
+    scheduler = create_scheduler(
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ...None, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+_______ test_cpu_encoder_input_updates_wait_for_completed_prefill[False] _______
+tests/v1/core/test_scheduler.py:8742: in test_cpu_encoder_input_updates_wait_for_completed_prefill
+    scheduler = create_scheduler(
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ... 128, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+_______ test_cpu_encoder_input_updates_wait_for_completed_prefill[True] ________
+tests/v1/core/test_scheduler.py:8742: in test_cpu_encoder_input_updates_wait_for_completed_prefill
+    scheduler = create_scheduler(
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ... 128, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+____________ test_cpu_encoder_input_updates_resume_and_abort[False] ____________
+tests/v1/core/test_scheduler.py:8785: in test_cpu_encoder_input_updates_resume_and_abort
+    scheduler = create_scheduler(
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ...None, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+____________ test_cpu_encoder_input_updates_resume_and_abort[True] _____________
+tests/v1/core/test_scheduler.py:8785: in test_cpu_encoder_input_updates_resume_and_abort
+    scheduler = create_scheduler(
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ...None, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+_____ test_cpu_encoder_input_updates_restore_after_kv_load_failure[False] ______
+tests/v1/core/test_scheduler.py:8821: in test_cpu_encoder_input_updates_restore_after_kv_load_failure
+    scheduler = create_scheduler(
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ...None, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+______ test_cpu_encoder_input_updates_restore_after_kv_load_failure[True] ______
+tests/v1/core/test_scheduler.py:8821: in test_cpu_encoder_input_updates_restore_after_kv_load_failure
+    scheduler = create_scheduler(
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ...None, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+__________ test_cpu_encoder_input_updates_preserve_shm_handles[False] __________
+tests/v1/core/test_scheduler.py:8888: in test_cpu_encoder_input_updates_preserve_shm_handles
+    scheduler = create_scheduler(
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ...None, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+__________ test_cpu_encoder_input_updates_preserve_shm_handles[True] ___________
+tests/v1/core/test_scheduler.py:8888: in test_cpu_encoder_input_updates_preserve_shm_handles
+    scheduler = create_scheduler(
+tests/v1/core/utils.py:117: in create_scheduler
+    model_config = ModelConfig(
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for ModelConfig
+E     Value error, Invalid repository ID or local directory specified: 'llava-hf/llava-1.5-7b-hf'.
+E   Please verify the following requirements:
+E   1. Provide a valid Hugging Face repository ID.
+E   2. Specify a local directory that contains a recognized configuration file.
+E      - For Hugging Face models: ensure the presence of a 'config.json'.
+E      - For Mistral models: ensure the presence of a 'params.json'.
+E    [type=value_error, input_value=ArgsKwargs((), {'model': ...None, 'runner': 'auto'}), input_type=ArgsKwargs]
+E       For further information visit https://errors.pydantic.dev/2.13/v/value_error
+=============================== warnings summary ===============================
+../../nix/store/97i7ar7k1i4n3dqn42krqv1vflkjmv45-python3.12-anyio-4.14.2/lib/python3.12/site-packages/anyio/pytest_plugin.py:14
+  /nix/store/97i7ar7k1i4n3dqn42krqv1vflkjmv45-python3.12-anyio-4.14.2/lib/python3.12/site-packages/anyio/pytest_plugin.py:14: PytestRemovedIn10Warning: _pytest.python.CallSpec2 has been renamed to CallSpec.
+  The CallSpec2 alias will be removed in pytest 10.
+  Update imports to use CallSpec instead.
+  See https://docs.pytest.org/en/stable/deprecations.html#callspec2-renamed
+    from _pytest.python import CallSpec2
+
+../../nix/store/yv16l8ysyld56xn99xlwpgx7bijagcz8-python3.12-torch-2.14.0+xpu/lib/python3.12/site-packages/torch/xpu/__init__.py:251
+../../nix/store/yv16l8ysyld56xn99xlwpgx7bijagcz8-python3.12-torch-2.14.0+xpu/lib/python3.12/site-packages/torch/xpu/__init__.py:251
+  /nix/store/yv16l8ysyld56xn99xlwpgx7bijagcz8-python3.12-torch-2.14.0+xpu/lib/python3.12/site-packages/torch/xpu/__init__.py:251: UserWarning: Can't initialize Level Zero Sysman
+    return _enum_zes_device_infos(visible_mask)
+
+../../nix/store/yv16l8ysyld56xn99xlwpgx7bijagcz8-python3.12-torch-2.14.0+xpu/lib/python3.12/site-packages/torch/xpu/__init__.py:278
+  /nix/store/yv16l8ysyld56xn99xlwpgx7bijagcz8-python3.12-torch-2.14.0+xpu/lib/python3.12/site-packages/torch/xpu/__init__.py:278: UserWarning: XPU device count is zero! (Triggered internally at /__w/pytorch/pytorch/c10/xpu/XPUFunctions.cpp:113.)
+    count = torch._C._xpu_getDeviceCount() if zes_count < 0 else zes_count
+
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: builtin type SwigPyPacked has no __module__ attribute
+
+<frozen importlib._bootstrap>:488
+  <frozen importlib._bootstrap>:488: DeprecationWarning: builtin type SwigPyObject has no __module__ attribute
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/v1/core/test_scheduler.py::test_schedule_multimodal_requests - p...
+FAILED tests/v1/core/test_scheduler.py::test_async_scheduling_pp_allows_rescheduling_with_output_placeholders
+FAILED tests/v1/core/test_scheduler.py::test_schedule_partial_requests - pyda...
+FAILED tests/v1/core/test_scheduler.py::test_encoder_only_prompt_longer_than_budget_is_chunked
+FAILED tests/v1/core/test_scheduler.py::test_local_prefill_interval_left_to_engine_under_dp
+FAILED tests/v1/core/test_scheduler.py::test_same_step_duplicate_encoder_input_stays_cached
+FAILED tests/v1/core/test_scheduler.py::test_no_mm_input_chunking[False] - py...
+FAILED tests/v1/core/test_scheduler.py::test_no_mm_input_chunking[True] - pyd...
+FAILED tests/v1/core/test_scheduler.py::test_no_mm_input_chunking_for_same_step_duplicate
+FAILED tests/v1/core/test_scheduler.py::test_no_mm_input_chunking_at_item_boundary
+FAILED tests/v1/core/test_scheduler.py::test_ec_connector_text_only_request[False]
+FAILED tests/v1/core/test_scheduler.py::test_ec_connector_text_only_request[True]
+FAILED tests/v1/core/test_scheduler.py::test_ec_connector_cache_hit_external_load[False]
+FAILED tests/v1/core/test_scheduler.py::test_ec_connector_cache_hit_external_load[True]
+FAILED tests/v1/core/test_scheduler.py::test_ec_connector_cache_miss_computes_locally[False]
+FAILED tests/v1/core/test_scheduler.py::test_ec_connector_cache_miss_computes_locally[True]
+FAILED tests/v1/core/test_scheduler.py::test_ec_connector_with_partial_cache_hit_multi_round[False]
+FAILED tests/v1/core/test_scheduler.py::test_ec_connector_with_partial_cache_hit_multi_round[True]
+FAILED tests/v1/core/test_scheduler.py::test_ec_connector_schedule_multiple_requests[False-local]
+FAILED tests/v1/core/test_scheduler.py::test_ec_connector_schedule_multiple_requests[False-connector_only]
+FAILED tests/v1/core/test_scheduler.py::test_ec_connector_schedule_multiple_requests[False-no_where]
+FAILED tests/v1/core/test_scheduler.py::test_ec_connector_schedule_multiple_requests[True-local]
+FAILED tests/v1/core/test_scheduler.py::test_ec_connector_schedule_multiple_requests[True-connector_only]
+FAILED tests/v1/core/test_scheduler.py::test_ec_connector_schedule_multiple_requests[True-no_where]
+FAILED tests/v1/core/test_scheduler.py::test_ec_connector_unable_to_allocate[False]
+FAILED tests/v1/core/test_scheduler.py::test_ec_connector_unable_to_allocate[True]
+FAILED tests/v1/core/test_scheduler.py::test_priority_scheduling_ec_connector_preemption_and_resumption[False-local]
+FAILED tests/v1/core/test_scheduler.py::test_priority_scheduling_ec_connector_preemption_and_resumption[False-connector_only]
+FAILED tests/v1/core/test_scheduler.py::test_priority_scheduling_ec_connector_preemption_and_resumption[False-no_where]
+FAILED tests/v1/core/test_scheduler.py::test_priority_scheduling_ec_connector_preemption_and_resumption[True-local]
+FAILED tests/v1/core/test_scheduler.py::test_priority_scheduling_ec_connector_preemption_and_resumption[True-connector_only]
+FAILED tests/v1/core/test_scheduler.py::test_priority_scheduling_ec_connector_preemption_and_resumption[True-no_where]
+FAILED tests/v1/core/test_scheduler.py::test_ec_connector_allocate_encoder_tokens_with_external_load[False]
+FAILED tests/v1/core/test_scheduler.py::test_ec_connector_allocate_encoder_tokens_with_external_load[True]
+FAILED tests/v1/core/test_scheduler.py::test_ec_connector_update_connector_output_called
+FAILED tests/v1/core/test_scheduler.py::test_eagle3_mm_encoder_cache_with_shift
+FAILED tests/v1/core/test_scheduler.py::test_free_encoder_inputs_respects_unconfirmed_placeholders
+FAILED tests/v1/core/test_scheduler.py::test_free_encoder_inputs_notifies_the_ec_connector
+FAILED tests/v1/core/test_scheduler.py::test_unavailable_encoder_input_fails_the_request_as_retryable
+FAILED tests/v1/core/test_scheduler.py::test_encoder_cache_accepts_matching_embed_count
+FAILED tests/v1/core/test_scheduler.py::test_encoder_cache_rejects_mismatched_embed_count
+FAILED tests/v1/core/test_scheduler.py::test_encoder_cache_embed_count_mismatch_restores_prior_hit_state
+FAILED tests/v1/core/test_scheduler.py::test_encoder_cache_rejects_mismatched_embed_count_within_request
+FAILED tests/v1/core/test_scheduler.py::test_free_encoder_inputs_unchanged_without_spec_decode
+FAILED tests/v1/core/test_scheduler.py::test_waiting_encoder_stall_does_not_starve_later_requests
+FAILED tests/v1/core/test_scheduler.py::test_waiting_encoder_stall_is_counted_as_deferred
+FAILED tests/v1/core/test_scheduler.py::test_waiting_encoder_stall_kv_holder_keeps_drain_priority
+FAILED tests/v1/core/test_scheduler.py::test_encoder_cache_retained_across_preemption_and_resume
+FAILED tests/v1/core/test_scheduler.py::test_encoder_cache_recomputed_when_evicted_during_preemption
+FAILED tests/v1/core/test_scheduler.py::test_ec_connector_ensure_cache_available_defers_request[False]
+FAILED tests/v1/core/test_scheduler.py::test_ec_connector_ensure_cache_available_defers_request[True]
+FAILED tests/v1/core/test_scheduler.py::test_ec_connector_waits_for_embeddings_in_prefix_replay[128-False-True]
+FAILED tests/v1/core/test_scheduler.py::test_ec_connector_waits_for_embeddings_in_prefix_replay[128-False-False]
+FAILED tests/v1/core/test_scheduler.py::test_ec_connector_waits_for_embeddings_in_prefix_replay[0-False-False]
+FAILED tests/v1/core/test_scheduler.py::test_ec_connector_waits_for_embeddings_in_prefix_replay[128-True-False]
+FAILED tests/v1/core/test_scheduler.py::test_ec_connector_defers_running_request_for_async_reload
+FAILED tests/v1/core/test_scheduler.py::test_cpu_encoder_input_updates_wait_for_completed_prefill[False]
+FAILED tests/v1/core/test_scheduler.py::test_cpu_encoder_input_updates_wait_for_completed_prefill[True]
+FAILED tests/v1/core/test_scheduler.py::test_cpu_encoder_input_updates_resume_and_abort[False]
+FAILED tests/v1/core/test_scheduler.py::test_cpu_encoder_input_updates_resume_and_abort[True]
+FAILED tests/v1/core/test_scheduler.py::test_cpu_encoder_input_updates_restore_after_kv_load_failure[False]
+FAILED tests/v1/core/test_scheduler.py::test_cpu_encoder_input_updates_restore_after_kv_load_failure[True]
+FAILED tests/v1/core/test_scheduler.py::test_cpu_encoder_input_updates_preserve_shm_handles[False]
+FAILED tests/v1/core/test_scheduler.py::test_cpu_encoder_input_updates_preserve_shm_handles[True]
+64 failed, 290 passed, 6 warnings in 252.76s (0:04:12)
+sys:1: DeprecationWarning: builtin type swigvarlink has no __module__ attribute

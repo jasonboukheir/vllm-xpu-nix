@@ -1,0 +1,91 @@
+{
+  "schema": 1,
+  "agent": "/root/audit_vllm_rmsnorm",
+  "repository": "/home/jasonbk/Projects/vllm",
+  "commit": "93b30581c4d0ca790e30fdad4a5e9854689b3837",
+  "parent": "efddf8010f4b9d8c896b91aa4bfed3c5e7edc2a1",
+  "subject": "fix(xpu): preserve functional batch-invariant residual RMSNorm",
+  "patch_id": "b19479b47e1d751c7ca2d336ab440780db34855b",
+  "old_base": "5df63a7203cdb9328d824a27b682e77c7b9928be",
+  "old_tip": "6b3d89e6e64f1e9c4f44c68c93af84e1504ef6f0",
+  "target_tag": "v0.33.0",
+  "target": "4ba787ec9959e566d3b587a796dff07673324da5",
+  "companion": {
+    "repository": "/home/jasonbk/Projects/vllm-xpu-kernels",
+    "old_base": "ddf336d86e3c8602888572a3502f951abd51df12",
+    "selected_base": "ddf336d86e3c8602888572a3502f951abd51df12",
+    "old_tip": "05d4536b2440db171741b5de5c148cdc834bd692",
+    "additional_target_inspected": "6a1ec18b69b00eaf67a457e0bdd40e72632feaae",
+    "additional_target_label": "v0.1.17"
+  },
+  "disposition": "KEEP",
+  "requirement": {
+    "behavior": "On XPU the batch-invariant residual RMSNorm helper must preserve input/residual ownership, add in FP32 before normalization, accept optional and FP32/strided weights, and retain a fixed row-local reduction tree across batch sizes. Non-XPU residual dispatch remains native and mutating as upstream defines it.",
+    "supported_scope": "The helper serves optional XPU batch invariance and the local scoped AEON request-stability caller. The current RedHatAI/Qwen3.8-27B-INT4 V2/DFlash2 profile does not activate that scoped policy, so retention is not a claim of current-profile throughput or whole-model determinism.",
+    "final_stack_behavior": "The later KVarN commit calls this helper from GemmaRMSNorm.request_invariant_apply_once, with FP32 weight offset semantics, for its narrowly selected model/profile. It does not supersede this implementation.",
+    "prior_rationale": "docs/fork-delta.md; docs/releases/xpu-v1.13.0.json"
+  },
+  "upstream_coverage": [
+    {
+      "path": "vllm/model_executor/determinism/batch_invariant.py",
+      "symbol": "rms_norm_batch_invariant",
+      "finding": "AST-identical between old upstream base and v0.33. For any residual it calls ops.fused_add_rms_norm(input,residual,weight,eps) and returns the same input/residual objects before its contiguous-weight normalization path. This does not meet the local functional/FP32-add contract."
+    },
+    {
+      "commits": [
+        "03e8300d2cac77b24f7ab6013a803369ee64c19e",
+        "82a24bb82dd9344cce7a43195bb51a2390adf00a"
+      ],
+      "symbol": "override_envs_for_invariance",
+      "finding": "New Inductor batch_invariant configuration and its hasattr guard affect compiled PyTorch paths. They do not change the custom residual operator's mutation, scalar-type sum or row-dependent reduction. Preserve these upstream additions when replaying the separate helper patch."
+    },
+    {
+      "commits": [
+        "ac71b175172f2c092d7141f41f0777b914788cfb",
+        "9da5f2d3103df460dfca53df4ab4884def5c935f"
+      ],
+      "finding": "Neutral dummy norm weights and ROCm gated-norm default changes do not replace the XPU residual helper."
+    },
+    {
+      "path": "csrc/layernorm.cpp",
+      "symbols": [
+        "fused_add_rms_norm_kernel",
+        "call_fused_add_rms_norm_kernel",
+        "fused_add_rms_norm"
+      ],
+      "base_and_v017_blob": "fd504487cfff6257859966e1a1084ad963f2a559",
+      "finding": "File is byte-identical at kernel0.1.15.4 and v0.1.17. Vector and scalar kernels add in scalar_t, overwrite residual/input, use weight data_ptr<scalar_t>(), and choose max_block_size1024 below256 rows versus256 otherwise. Copying inputs alone would not restore the FP32 sum, weight-dtype or fixed-reduction requirements."
+    },
+    {
+      "commit": "d883ff23b15de0b9e94884a6a1b21e950d43d5a1",
+      "path": "csrc/xpu/sycl/fused_input_norm.cpp",
+      "finding": "v0.1.17's mixed weight/bias dtype support belongs to fused_input_norm, not fused_add_rms_norm. It does not invalidate this patch."
+    }
+  ],
+  "minimum_residual": {
+    "code": "Retain _fused_add_rms_norm_kernel and the XPU-only residual branch in rms_norm_batch_invariant unchanged. Preserve upstream's new Inductor setup elsewhere in the file.",
+    "tests": "Retain the24 XPU parameter combinations spanning six row counts and the CPU-mocked non-XPU native-dispatch regression.",
+    "scope_reduction": "Dropping the optional request-stability behavior would be a deliberate feature retirement, not an upstream-driven minimization. That retirement is not requested."
+  },
+  "dependencies": {
+    "local_followup": "6b3d89e6e64f1e9c4f44c68c93af84e1504ef6f0 adds the scoped GemmaRMSNorm caller and request_stable_linear policy",
+    "cross_repo": "No new native operator/schema. Triton helper owns its output tensors; retained kernel deterministic GEMM policy is separate.",
+    "folds": "None; keep this independent functional correctness fix separate from KVarN feature integration."
+  },
+  "validation": {
+    "performed": [
+      "Read exact old commit diff and final stack callers; derived stable patch ID.",
+      "Inspected old-to-new upstream path history and alternate Inductor/native implementations.",
+      "Using the existing uv-created candidate .venv/bin/python, asserted upstream helper AST equivalence, parsed both changed Python files, and asserted byte equality of native layernorm.cpp across0.1.15.4/v0.1.17. All passed."
+    ],
+    "pending_cpu": [
+      "tests/v1/determinism/test_rms_norm_batch_invariant.py::test_non_xpu_residual_rms_norm_preserves_native_dispatch on the rebased candidate"
+    ],
+    "pending_gpu": [
+      "tests/v1/determinism/test_rms_norm_batch_invariant.py::test_xpu_residual_rms_norm_is_functional_and_batch_invariant after user GPU maintenance handoff",
+      "Scoped AEON request-stability checks only if claiming that supported profile; helper checks alone do not establish whole-model output determinism"
+    ],
+    "performance": "No fresh performance measurement. Current RedHat DFlash profile does not enable this optional path; no speedup claim.",
+    "limitations": "No imports, native launches, model evaluations or serving checks were performed by this audit."
+  }
+}

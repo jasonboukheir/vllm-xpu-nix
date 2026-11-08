@@ -1,0 +1,120 @@
+{
+  "schema": 1,
+  "agent": "/root/audit_kernel_conv",
+  "repository": "/home/jasonbk/Projects/vllm-xpu-kernels",
+  "commit": "63a31d01e8fcf44a7b08f8e76e85ec40a208b6f1",
+  "parent": "e50d437ee5560e5b5f12581ee61b1bddab157733",
+  "subject": "fix(gdn): disable unstable tiled causal-convolution prefill",
+  "patch_id": "f7fd14e5d76964b1426c46ae21f46913f227194d",
+  "old_base": "ddf336d86e3c8602888572a3502f951abd51df12",
+  "old_tip": "05d4536b2440db171741b5de5c148cdc834bd692",
+  "target_version": "0.1.15.4",
+  "target": "ddf336d86e3c8602888572a3502f951abd51df12",
+  "companion": {
+    "repository": "/home/jasonbk/Projects/vllm",
+    "old_base": "5df63a7203cdb9328d824a27b682e77c7b9928be",
+    "old_tip": "6b3d89e6e64f1e9c4f44c68c93af84e1504ef6f0",
+    "target_tag": "v0.33.0",
+    "target": "4ba787ec9959e566d3b587a796dff07673324da5"
+  },
+  "disposition": "KEEP",
+  "requirement": {
+    "failure": "Historical B70 fresh-state tiled causal-convolution prefills produced corrupted or inconsistent q/k/v and repeated-punctuation serving output. The local workaround selects the untiled Xe2 prefill kernel instead.",
+    "hardware_and_scope": "Intel Arc B70/Xe2 Qwen GDN BF16, including the deployed Qwen3.8-27B target. The source rationale records oneAPI 2026.0; current-toolchain comparative evidence has not been rerun in this audit.",
+    "observable_contract": "Identical fresh-prefill inputs must produce identical convolution intermediates, z and committed cache state regardless of prior unused cache contents. Existing regression uses 162 tokens, positive state slot 1, contiguous SD cache, width 4, has_initial_state=False, and repeated poison values.",
+    "final_old_stack": "The constexpr enable_tiled_prefill=false remains in causal_conv1d_non_spec at the final old tip. Later mixed-batch dispatch calls this same function, preserving the workaround. The regression file has identical blob ab42fb3f2020e7e67f2fd758db60f08c94d27957 at the assigned commit and final tip."
+  },
+  "upstream_coverage": [
+    {
+      "target": "ddf336d86e3c8602888572a3502f951abd51df12",
+      "paths": [
+        "csrc/xpu/gdn_attn/gdn_attn_interface.cpp:causal_conv1d_non_spec",
+        "csrc/xpu/gdn_attn/xe_2/chunk_causal_conv1d_tiled_xe2.hpp:chunk_causal_conv1d_tiled_kernel",
+        "csrc/xpu/gdn_attn/xe_2/chunk_causal_conv1d_xe2.hpp"
+      ],
+      "finding": "The selected kernel base is unchanged. Its dispatcher selects tiled prefill whenever non_spec_token >= conv1d_tile_size (8). It has no equivalent guard or corrected implementation that demonstrably satisfies the local fresh-state replay requirement."
+    },
+    {
+      "commit": "38168d5b82f1c4015f8f37372f1670e11b6afdba",
+      "repository": "vllm",
+      "paths": [
+        "vllm/model_executor/layers/mamba/gdn/qwen_gdn_linear_attn.py:_resolve_gdn_prefill_backend",
+        "vllm/model_executor/layers/mamba/gdn/qwen_gdn_linear_attn.py:QwenGatedDeltaNetAttention.forward_xpu"
+      ],
+      "finding": "v0.33 introduces SYCL/Triton GDN selection. On XPU, auto still chooses the fused SYCL whole-layer operator whenever it is built, including convolution. The actual host does not select the alternative Triton path, so mere availability of Triton is not equivalent replacement coverage. Switching the whole GDN implementation would require separate model/correctness/performance qualification."
+    }
+  ],
+  "newer_release_review": {
+    "version": "0.1.17",
+    "target": "6a1ec18b69b00eaf67a457e0bdd40e72632feaae",
+    "selected_for_candidate": false,
+    "disposition_if_revisited": "KEEP pending direct fresh-state tiled replay/reference validation; no demonstrated semantic supersession",
+    "fixes_investigated": [
+      {
+        "commit": "daf624051e617bac77c4e1de6f13c6a1d83f9e57",
+        "pr": 658,
+        "behavior": "Casts state-slot multiplication to int64_t to prevent conv-state offset overflow.",
+        "coverage": "Does not explain the local regression: it uses state slot 1 and a small two-slot contiguous allocation, whose offset fits int32. This is a separate correctness improvement."
+      },
+      {
+        "commit": "11c79175cddab23e76b7bfaf6b3df2538185e888",
+        "pr": 683,
+        "behavior": "Introduces ConvStateStrides and shape-based SD/DS layout handling in convolution reads, writes and speculative shape checks.",
+        "coverage": "Does not cover the local reproduction's contiguous SD case. Its resolved row stride is conv_elems and feature stride is 1, reproducing the old offset formula. has_initial_state=False also excludes stale-state reads in the first tile. The SLM metadata/load/compute synchronization has not changed."
+      },
+      {
+        "commit": "b73bdc317dd9f38f905a866e579855cec8459a08",
+        "pr": 660,
+        "behavior": "Uses NULL_BLOCK_ID=0 and skips nonpositive state indices rather than only -1.",
+        "coverage": "Does not cover the local reproduction, whose live state index is 1 and contains no padded request. This protects null-page and graph-padding behavior separately."
+      }
+    ],
+    "dispatch": "v0.1.17 still selects tiled prefill at >=8 non-spec tokens. Its tiled-file delta from 0.1.15.4 changes state addressing/layout and padding checks, not SLM synchronization or convolution math. Therefore none of the investigated fixes establishes that the fresh-state corruption workaround is obsolete.",
+    "uncertainty": "These source comparisons do not prove that v0.1.17 still reproduces the historical hardware failure. Compiler/toolchain changes could change observed behavior; a corrected tiled path can only be accepted after direct device regression and matched serving checks."
+  },
+  "minimum_residual": [
+    "Retain the existing explicit tiled-prefill disable guard and fresh-prefill replay test; no selected-base source change is required.",
+    "Do not broaden this patch to unrelated DS layout, null-index or offset-overflow backports merely to emulate a newer release.",
+    "If later testing establishes a correct upstream tiled path, drop the dispatch guard and retain or upstream the replay regression."
+  ],
+  "dependencies": [
+    {
+      "commit": "d8e1f69699496beeda61da9a544f49d9b6378d73",
+      "repository": "vllm-xpu-kernels",
+      "relationship": "Later mixed-batch split dispatch calls causal_conv1d_non_spec separately for decode/prefill groups. The prefill group still depends on the selected stable convolution route; do not re-enable tiled prefill during that port. No schema change belongs to this guard."
+    },
+    {
+      "commit": "ad5d9e16721f5c219de65c8d408c02edab104919",
+      "repository": "vllm-xpu-kernels",
+      "relationship": "Separate fresh-state GDN output ordering fix acts after convolution and does not substitute for the convolution dispatch workaround. Keep the requirements independently reviewable."
+    },
+    {
+      "commit": "efddf8010f4b9d8c896b91aa4bfed3c5e7edc2a1",
+      "repository": "vllm",
+      "relationship": "Its mixed scheduling policy uses the companion split operator; it does not remove native prefill convolution from the SYCL path."
+    }
+  ],
+  "validation": {
+    "executed": [
+      {
+        "check": "git diff --check 63a31d01e8fcf44a7b08f8e76e85ec40a208b6f1^ 63a31d01e8fcf44a7b08f8e76e85ec40a208b6f1",
+        "result": "passed"
+      },
+      {
+        "check": "Parse final old-stack test_causal_conv1d_replay.py with ast.parse using the isolated candidate .venv/bin/python",
+        "result": "passed; no torch import or GPU operation"
+      },
+      {
+        "check": "Compare final-stack guard, regression blob, newer tiled implementation diff, and frozen v0.33 SYCL/Triton selection",
+        "result": "Guard and regression persist; no inspected upstream fix replaces their requirement"
+      }
+    ],
+    "required_after_gpu_handoff": [
+      "Run tests/gdn_attn/test_causal_conv1d_replay.py on the actual paired candidate, retaining bitwise checks of intermediates and final state across cache poison values.",
+      "Run upstream causal-convolution numerical-reference tests for the deployed Qwen geometry and mixed/decode paths.",
+      "Before retiring the guard, compare upstream tiled and retained untiled implementations on the same B70/toolchain with positive small SD slots, fresh and cached state, prompt lengths below/at/above 8 tokens and realistic chunks, plus end-to-end fresh-prefill serving. Include numerical reference checks because repeatability alone can be consistently wrong.",
+      "Measure prefill latency/TTFT separately if considering restored tiled dispatch or the new Triton alternative; no speed gain or loss was measured in this audit."
+    ],
+    "not_performed": "No GPU, native build, services, runtime model, or performance operations. Historical failure rationale was read, not independently reproduced."
+  }
+}

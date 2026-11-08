@@ -1,0 +1,104 @@
+{
+  "schema": 1,
+  "agent": "/root/audit_kernel_barrier",
+  "repository": "/home/jasonbk/Projects/vllm-xpu-kernels",
+  "commit": "ad5d9e16721f5c219de65c8d408c02edab104919",
+  "parent": "63a31d01e8fcf44a7b08f8e76e85ec40a208b6f1",
+  "subject": "fix(gdn): order fresh-state prefill output reads",
+  "patch_id": "be4c0310f7f161dda8916d4d75bfd15db795f471",
+  "old_base": "ddf336d86e3c8602888572a3502f951abd51df12",
+  "old_tip": "05d4536b2440db171741b5de5c148cdc834bd692",
+  "target": "ddf336d86e3c8602888572a3502f951abd51df12",
+  "target_version": "0.1.15.4",
+  "newer_release_examined": {
+    "version": "v0.1.17",
+    "commit": "6a1ec18b69b00eaf67a457e0bdd40e72632feaae",
+    "selected": false,
+    "disposition_if_adopted": "KEEP"
+  },
+  "companion": {
+    "repository": "/home/jasonbk/Projects/vllm",
+    "old_base": "5df63a7203cdb9328d824a27b682e77c7b9928be",
+    "old_tip": "6b3d89e6e64f1e9c4f44c68c93af84e1504ef6f0",
+    "target": "4ba787ec9959e566d3b587a796dff07673324da5",
+    "target_version": "v0.33.0"
+  },
+  "disposition": "KEEP",
+  "requirement": {
+    "failure": "Fresh-state Xe2 GDN prefill must not read another subgroup's not-yet-published O2 values when computing O2 times U. The local patch orders those writes before the fresh-state output GEMM, addressing nondeterministic/corrupt fresh-state output described by the existing fork rationale.",
+    "workload": "Intel B70/Xe2 Qwen3.8-27B BF16 GDN, K16/V48/D128 at TP1, including fresh requests under the eager V2/DFlash2 profile. The recurrent prefill kernel uses 64-token chunks; local coverage brackets the boundary and exercises longer fresh-state and continuation cases.",
+    "final_stack_behavior": "The barrier-containing source blob at this commit is identical at final old tip 05d4536b2440db171741b5de5c148cdc834bd692. No subsequent repair or revert cancels this behavior.",
+    "scope": "Correctness synchronization, not a speed optimization or a claim of whole-model deterministic output. The asynchronous regression also covers workspace lifetime and neighboring oneDNN projection behavior."
+  },
+  "upstream_coverage": [
+    {
+      "path": "csrc/xpu/gdn_attn/xe_2/chunk_gated_delta_rule_kernels_xe2.hpp",
+      "symbol": "gdn::chunk_fwd_o_kernel",
+      "selected_base_evidence": "The selected kernel base is unchanged. At lines 1086-1087, subgroups copy their O2 fragments to the global A/O2 workspace. The fresh-state branch at line 1214 reaches gemm_TTS(O2_tensor, U_tensor_T, ...) without a workgroup barrier after those writes.",
+      "alternate_synchronization": "The start-of-chunk WAR barrier and SLM-publication barrier occur before O2 production. The later U_new barrier is inside has_prev_state and is not executed for a fresh first chunk. Intervening state GEMMs and stores are not a cross-subgroup publication barrier. has_prev_state is computed from uniform chunk_id and per-batch initial_state, so the added group barrier is on a workgroup-uniform branch.",
+      "newer_release_evidence": "The complete file has identical blob b457f3d06213cf141dfed99d0ed1a6a4b387dc7f at both upstream ddf336d86e3c8602888572a3502f951abd51df12 and v0.1.17 6a1ec18b69b00eaf67a457e0bdd40e72632feaae. No commits in that upstream interval change this file. The later GDN NULL-state guard, DS convolution layout and RecoverSSM changes do not alter the fresh-state O2 producer/consumer ordering.",
+      "related_newer_commits": [
+        "b73bdc317dd9f38f905a866e579855cec8459a08",
+        "11c79175cddab23e76b7bfaf6b3df2538185e888",
+        "78799feacc02fd2fd52fe01b847ae5ae681b9627"
+      ],
+      "decision": "No equivalent synchronization or removal of the affected path exists in either examined upstream kernel version."
+    },
+    {
+      "path": "vllm/model_executor/layers/mamba/gdn/qwen_gdn_linear_attn.py",
+      "symbols": [
+        "_resolve_gdn_prefill_backend",
+        "QwenGatedDeltaNetAttention.forward_xpu"
+      ],
+      "commits": [
+        "38168d5b82f1c4015f8f37372f1670e11b6afdba"
+      ],
+      "evidence": "v0.33 adds selectable Triton/SYCL GDN execution, but auto still selects sycl when _xpu_C.gdn_attention is built. forward_xpu then invokes gdn_attention_core_xpu. In both kernel targets, non-spec prefill on Xe2 selects chunk_gated_delta_rule_xe2 and ultimately chunk_fwd_o_kernel. v0.1.17 retains this selection at gdn_attn_interface.cpp lines 810-833.",
+      "decision": "Optional Triton execution avoids the native site only when explicitly selected. It does not repair or retire the supported/default SYCL route and does not justify dropping the barrier."
+    }
+  ],
+  "minimum_residual": {
+    "production": "Retain sycl::group_barrier(item.get_group()) immediately inside if (!has_prev_state), before the output dv loop. Preserve upstream U_new and next-chunk synchronization. No additional API or schema change is needed.",
+    "tests": "Retain the existing replay, batch-separability, canonical-boundary continuation and asynchronous-chain regressions. They cover observable native behavior beyond source-text checks; no new test or broad refactor is needed for an unchanged kernel base.",
+    "source_identity": {
+      "upstream_file_blob": "b457f3d06213cf141dfed99d0ed1a6a4b387dc7f",
+      "local_commit_and_final_tip_file_blob": "2db48c2fed78a6bcc92356d1431261704848c2af"
+    }
+  },
+  "dependencies": [
+    {
+      "commit": "63a31d01e8fcf44a7b08f8e76e85ec40a208b6f1",
+      "relationship": "Preceding untiled-convolution workaround addresses another stage of the fused GDN path. Replacing or removing that workaround does not remove this output-GEMM synchronization requirement."
+    },
+    {
+      "commit": "e50d437ee5560e5b5f12581ee61b1bddab157733",
+      "relationship": "The asynchronous end-to-end native regression includes int4_gemm_w4a16 projections, so its bitwise layer-output checks also rely on the separate deterministic oneDNN policy. The two-line production synchronization fix itself has no dependency on the oneDNN implementation."
+    },
+    {
+      "commit": "d8e1f69699496beeda61da9a544f49d9b6378d73",
+      "relationship": "Later mixed-batch split changes dispatch but leaves this header unchanged. Fresh prefills still need the barrier even when ordinary cached decodes are separated."
+    }
+  ],
+  "validation": {
+    "performed": [
+      "Read full production hunk and producer/consumer control flow at selected and newer upstream targets.",
+      "Verified exact upstream-file blob equality through v0.1.17 and exact local-file equality from assigned commit through final old tip.",
+      "Checked v0.33 SYCL/Triton resolution and v0.1.17 native Xe2 prefill dispatch; neither retires the affected route.",
+      "Computed stable patch ID and reviewed four added native regression functions.",
+      "Parsed final old-stack tests/gdn_attn/test_gdn_attn.py with Python ast without importing or executing kernels."
+    ],
+    "required_gpu_checks": [
+      "Run test_qwen38_gdn_fresh_state_replay_is_exact for 63,64,65,104,107,162 tokens, including poisoned initial states and allocation perturbation.",
+      "Run test_qwen38_gdn_fresh_state_is_batch_separable and test_qwen38_gdn_state_carry_is_exact_on_canonical_boundaries.",
+      "Run test_qwen38_gdn_t107_async_chain_is_exact on the candidate native closure to exercise queued non-default-stream calls and exact workspace-shape churn.",
+      "Run the actual Qwen/DFlash serving/cache qualification after the operator maintenance handoff. Passing the native regression does not establish deterministic text generation for the whole model."
+    ],
+    "comparison_if_removal_is_proposed": "Compare patched and upstream-only kernels on identical toolchain/input/stream conditions. Repeated passing executions alone cannot prove absence of this source-level inter-subgroup race; require a changed ordering or execution design before removing the synchronization.",
+    "gpu_executed": false,
+    "performance_claim": "None. No controlled barrier-cost comparison or new serving measurement was run; retain the existing correctness requirement."
+  },
+  "unresolved": [
+    "Native regressions await user authorization to free the GPU.",
+    "Existing release qualification is historical evidence, not a runtime pass for the new vLLM candidate."
+  ]
+}

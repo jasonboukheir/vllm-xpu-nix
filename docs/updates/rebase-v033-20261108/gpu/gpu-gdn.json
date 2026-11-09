@@ -1,0 +1,168 @@
+{
+  "package": "/nix/store/5jvmvr89c90f4j1lry5l3a0xr8jp0gfw-python3.12-vllm-xpu-0.33.0+unstable.2026.11.08.g066206b",
+  "vllm_module": "/nix/store/5jvmvr89c90f4j1lry5l3a0xr8jp0gfw-python3.12-vllm-xpu-0.33.0+unstable.2026.11.08.g066206b/lib/python3.12/site-packages/vllm/__init__.py",
+  "kernels_module": "/nix/store/nsa1yrpwwb87nsk13f611zr50rz38ri3-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.g05d4536/lib/python3.12/site-packages/vllm_xpu_kernels/__init__.py",
+  "native_fa_library": "/nix/store/nsa1yrpwwb87nsk13f611zr50rz38ri3-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.g05d4536/lib/python3.12/site-packages/vllm_xpu_kernels/_vllm_fa2_C.abi3.so",
+  "native_fa_library_resolved": "/nix/store/nsa1yrpwwb87nsk13f611zr50rz38ri3-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.g05d4536/lib/python3.12/site-packages/vllm_xpu_kernels/_vllm_fa2_C.abi3.so",
+  "device": "Intel(R) Arc(TM) Pro B70 Graphics",
+  "suite": "gdn",
+  "tests_manifest": "/tmp/vllm-v033-qualification/gpu-regression-plan.json",
+  "results": [
+    {
+      "test": "tests.gdn_attn.test_causal_conv1d_replay.test_qwen38_fresh_prefill_replay_is_exact",
+      "parameters": {
+        "num_tokens": "162"
+      },
+      "status": "passed",
+      "seconds": 0.06658594682812691
+    },
+    {
+      "test": "tests.gdn_attn.test_gdn_attn.test_qwen38_gdn_fresh_state_replay_is_exact",
+      "parameters": {
+        "num_actual_tokens": "63"
+      },
+      "status": "passed",
+      "seconds": 0.09257787396200001
+    },
+    {
+      "test": "tests.gdn_attn.test_gdn_attn.test_qwen38_gdn_fresh_state_replay_is_exact",
+      "parameters": {
+        "num_actual_tokens": "64"
+      },
+      "status": "passed",
+      "seconds": 0.07799697085283697
+    },
+    {
+      "test": "tests.gdn_attn.test_gdn_attn.test_qwen38_gdn_fresh_state_replay_is_exact",
+      "parameters": {
+        "num_actual_tokens": "65"
+      },
+      "status": "passed",
+      "seconds": 0.8064807339105755
+    },
+    {
+      "test": "tests.gdn_attn.test_gdn_attn.test_qwen38_gdn_fresh_state_replay_is_exact",
+      "parameters": {
+        "num_actual_tokens": "104"
+      },
+      "status": "passed",
+      "seconds": 0.1349466829560697
+    },
+    {
+      "test": "tests.gdn_attn.test_gdn_attn.test_qwen38_gdn_fresh_state_replay_is_exact",
+      "parameters": {
+        "num_actual_tokens": "107"
+      },
+      "status": "passed",
+      "seconds": 0.13502182392403483
+    },
+    {
+      "test": "tests.gdn_attn.test_gdn_attn.test_qwen38_gdn_fresh_state_replay_is_exact",
+      "parameters": {
+        "num_actual_tokens": "162"
+      },
+      "status": "passed",
+      "seconds": 0.15845133806578815
+    },
+    {
+      "test": "tests.gdn_attn.test_gdn_attn.test_qwen38_gdn_fresh_state_is_batch_separable",
+      "parameters": {
+        "sequence_lengths": "(162, 107, 104, 131)",
+        "projection_groups": "(0, 1, 2, 3)"
+      },
+      "status": "passed",
+      "seconds": 0.32703841384500265
+    },
+    {
+      "test": "tests.gdn_attn.test_gdn_attn.test_qwen38_gdn_state_carry_is_exact_on_canonical_boundaries",
+      "parameters": {},
+      "status": "passed",
+      "seconds": 0.4135428569279611
+    },
+    {
+      "test": "tests.gdn_attn.test_gdn_attn.test_qwen38_gdn_cached_decode_is_exact_in_mixed_prefill",
+      "parameters": {},
+      "status": "passed",
+      "seconds": 0.006877274019643664
+    },
+    {
+      "test": "tests.gdn_attn.test_gdn_attn.test_qwen38_gdn_t107_async_chain_is_exact",
+      "parameters": {},
+      "status": "passed",
+      "seconds": 0.11800760915502906
+    },
+    {
+      "test": "tests.gdn_attn.test_gdn_attn_padded.test_gdn_attention_accepts_padded_leading_dim",
+      "parameters": {
+        "num_actual_tokens": "1",
+        "padded_size": "4"
+      },
+      "status": "passed",
+      "seconds": 0.2278577999677509
+    },
+    {
+      "test": "tests.gdn_attn.test_gdn_attn_padded.test_gdn_attention_accepts_padded_leading_dim",
+      "parameters": {
+        "num_actual_tokens": "3",
+        "padded_size": "4"
+      },
+      "status": "passed",
+      "seconds": 0.0020734078716486692
+    },
+    {
+      "test": "tests.gdn_attn.test_gdn_attn_padded.test_gdn_attention_accepts_padded_leading_dim",
+      "parameters": {
+        "num_actual_tokens": "5",
+        "padded_size": "8"
+      },
+      "status": "passed",
+      "seconds": 0.002146925078704953
+    },
+    {
+      "test": "tests.gdn_attn.test_gdn_attn_padded.test_gdn_shortened_mtp_preserves_rollback",
+      "parameters": {
+        "lengths": "(1,)",
+        "accepted": "3",
+        "reorder_input": "True",
+        "shape": "(16, 48, 128)"
+      },
+      "status": "passed",
+      "seconds": 0.1146075390279293
+    },
+    {
+      "test": "tests.gdn_attn.test_gdn_attn_padded.test_gdn_shortened_mtp_preserves_rollback",
+      "parameters": {
+        "lengths": "(2,)",
+        "accepted": "3",
+        "reorder_input": "True",
+        "shape": "(16, 48, 128)"
+      },
+      "status": "passed",
+      "seconds": 0.004815167048946023
+    },
+    {
+      "test": "tests.gdn_attn.test_gdn_attn_padded.test_gdn_shortened_mtp_preserves_rollback",
+      "parameters": {
+        "lengths": "(3, 2, 1)",
+        "accepted": "3",
+        "reorder_input": "True",
+        "shape": "(16, 48, 128)"
+      },
+      "status": "passed",
+      "seconds": 0.009185441071167588
+    },
+    {
+      "test": "tests.gdn_attn.test_gdn_attn_padded.test_gdn_shortened_mtp_preserves_rollback",
+      "parameters": {
+        "lengths": "(3, 2, 1)",
+        "accepted": "1",
+        "reorder_input": "True",
+        "shape": "(16, 48, 128)"
+      },
+      "status": "passed",
+      "seconds": 0.010232989909127355
+    }
+  ],
+  "passed": true,
+  "test_method": "Explicit bounded calls to existing unmodified test functions; required native fixtures performed here. Test marks do not reduce coverage silently."
+}

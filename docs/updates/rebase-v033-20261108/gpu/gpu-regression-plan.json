@@ -1,0 +1,86 @@
+{
+  "package": "/nix/store/5jvmvr89c90f4j1lry5l3a0xr8jp0gfw-python3.12-vllm-xpu-0.33.0+unstable.2026.11.08.g066206b",
+  "status": "prepared_only; not executed by audit agent",
+  "runtime_policy": "Parent sole GPU owner; stop HTTP server before running suites sequentially. Installed module origins asserted. Only test/helper files copied; source roots excluded.",
+  "suites": {
+    "k4v2": {
+      "cases": 17,
+      "coverage": "K4V2 compact/padded records, natural/DPAS materialization, ragged decode, resident FP16 tails, BF16 output, split reductions, invalid formats"
+    },
+    "gdn": {
+      "cases": 18,
+      "coverage": "Fresh convolution, 63/64/65/104/107/162 chunk boundaries, mixed cached decode, exact 64-token state carry, async replay, padded outputs, shortened-query rollback with accepted count exceeding query length"
+    },
+    "dtype": {
+      "cases": 10,
+      "coverage": "Explicit BF16/FP16 sparse cache writes; BF16 native causal attention for q1/q3/q129, batches1/4, physical strides, finite poisoned padding; fallback rejected"
+    },
+    "rmsnorm": {
+      "cases": 7,
+      "coverage": "BF16 functional outputs, residual/input nonmutation, weight variants, striding, 255/256/257 launch boundary; one FP16 control"
+    }
+  },
+  "commands": [
+    "/tmp/vllm-v033-qualification/gpu-regressions.sh --suite k4v2",
+    "/tmp/vllm-v033-qualification/gpu-regressions.sh --suite gdn",
+    "/tmp/vllm-v033-qualification/gpu-regressions.sh --suite dtype",
+    "/tmp/vllm-v033-qualification/gpu-regressions.sh --suite rmsnorm"
+  ],
+  "test_files": [
+    {
+      "source": "/tmp/vllm-kernels-v033-20261108/tests/utils.py",
+      "copy": "/tmp/vllm-v033-qualification/installed-tests/tests/utils.py",
+      "sha256": "e8d923726bb6d2fe907adb778f109e55eee0b551111ca58a8587afda54ed7136"
+    },
+    {
+      "source": "/tmp/vllm-kernels-v033-20261108/tests/gdn_attn/test_gdn_attn.py",
+      "copy": "/tmp/vllm-v033-qualification/installed-tests/tests/gdn_attn/test_gdn_attn.py",
+      "sha256": "f5a75743116732d436d8a2255326160e70f053519440fa99970d847016a3b9d5"
+    },
+    {
+      "source": "/tmp/vllm-kernels-v033-20261108/tests/gdn_attn/test_gdn_attn_padded.py",
+      "copy": "/tmp/vllm-v033-qualification/installed-tests/tests/gdn_attn/test_gdn_attn_padded.py",
+      "sha256": "d24685dbc6100525c3c5c0be595d6ad96de0e9e4429271ac1c2dc13e4bf05e08"
+    },
+    {
+      "source": "/tmp/vllm-kernels-v033-20261108/tests/gdn_attn/test_causal_conv1d_replay.py",
+      "copy": "/tmp/vllm-v033-qualification/installed-tests/tests/gdn_attn/test_causal_conv1d_replay.py",
+      "sha256": "ab36fce668f5612410aac8a1762c067f24182be2d44fa5fe41dd5e10796589c6"
+    },
+    {
+      "source": "/tmp/vllm-kernels-v033-20261108/tests/flash_attn/test_kvarn_k4v2_xpu.py",
+      "copy": "/tmp/vllm-v033-qualification/installed-tests/tests/flash_attn/test_kvarn_k4v2_xpu.py",
+      "sha256": "3d81a844c3fcb2c53aaebe93eba4c7e718c111b9d1be56287c27cfa152b19e58"
+    },
+    {
+      "source": "/tmp/vllm-kernels-v033-20261108/tests/flash_attn/test_kvarn_hadamard_xpu.py",
+      "copy": "/tmp/vllm-v033-qualification/installed-tests/tests/flash_attn/test_kvarn_hadamard_xpu.py",
+      "sha256": "a4c4d6e032131f9290f25a718f22625b83428a9e553f30cd942a411689f057e0"
+    },
+    {
+      "source": "/tmp/vllm-kernels-v033-20261108/benchmark/kvarn_utils.py",
+      "copy": "/tmp/vllm-v033-qualification/installed-tests/benchmark/kvarn_utils.py",
+      "sha256": "de6802dacb550db48c98974954be72122bfb4a140841d924125976af3e08366d"
+    },
+    {
+      "source": "/tmp/vllm-v033-20261108/tests/v1/attention/test_xpu_unquantized_cache.py",
+      "copy": "/tmp/vllm-v033-qualification/installed-tests/tests/v1/attention/test_xpu_unquantized_cache.py",
+      "sha256": "3d60f6e9d92ff8c2dc1edeabd2b5e81d1a53f01289ce1b13c9e1e0459b65507f"
+    },
+    {
+      "source": "/tmp/vllm-v033-20261108/tests/v1/determinism/test_rms_norm_batch_invariant.py",
+      "copy": "/tmp/vllm-v033-qualification/installed-tests/tests/v1/determinism/test_rms_norm_batch_invariant.py",
+      "sha256": "8067f876551afe6f391d7b5568170f3c1990778961089c7d8300aa95bc1272c7"
+    },
+    {
+      "source": "/tmp/vllm-v033-20261108/tests/v1/determinism/utils.py",
+      "copy": "/tmp/vllm-v033-qualification/installed-tests/tests/v1/determinism/utils.py",
+      "sha256": "f3dca88a32ad77d88f72bc4b6f36acb80cfabb293e63f313abfd86d77dcca659"
+    }
+  ],
+  "limitations": [
+    "Direct bounded calls reuse existing test functions and assertions, not full pytest collection. Required native autouse fixture work is performed explicitly.",
+    "No GPU execution or performance claim by preparing agent.",
+    "Native padded output tests complement CPU adapter-padding tests; they do not replace actual V2 graph/metadata lifecycle serving checks."
+  ]
+}

@@ -1,0 +1,375 @@
+{
+  "schema": 1,
+  "status": "same_observed_fragment_granularity_new_source_optimization_present",
+  "method": "Read-only comparison of saved raw SSE, summaries, installed baseline/candidate package sources and local upstream git objects. No network, GPU, model or parser benchmark execution.",
+  "runs": {
+    "baseline": {
+      "directory": "/tmp/vllm-v033-qualification/baseline-lifecycle",
+      "package": "/nix/store/abyydgnrgglvviif8193zanhw6j1swch-python3.12-vllm-xpu-0.32.0+unstable.2026.10.20.gc0722c9",
+      "summary_sha256": "407db6abc125a6c13049143cea75bef53c256ca05eb03aaab8a957dd7cff2fee",
+      "raw_sse": "/tmp/vllm-v033-qualification/baseline-lifecycle/http/00081.sse.jsonl",
+      "raw_sse_sha256": "170ce174f1045d99ef688e0bdba2d3bbe03f7a0e374732125507067c51879ce6",
+      "raw_sse_events_match_summary": true,
+      "request_sha256": "fd7968ca892da414c8abf9c2d890fd30928a99b67891bc3c8e48eb352ee96ad7",
+      "event_count": 9,
+      "tool_name_events": [
+        {
+          "seconds": 0.7093576081097126,
+          "name": "get_temperature",
+          "index": 0,
+          "id": "chatcmpl-tool-a04ad5d8ad7c44d2"
+        }
+      ],
+      "argument_fragment_count": 5,
+      "argument_fragments": [
+        {
+          "seconds": 0.7542583430185914,
+          "text": "{\"city\": \"",
+          "index": 0
+        },
+        {
+          "seconds": 0.7990468391217291,
+          "text": "Oslo",
+          "index": 0
+        },
+        {
+          "seconds": 0.9788152491673827,
+          "text": "\", \"unit\": \"c",
+          "index": 0
+        },
+        {
+          "seconds": 1.023695666110143,
+          "text": "elsius",
+          "index": 0
+        },
+        {
+          "seconds": 1.1133779240772128,
+          "text": "\"}",
+          "index": 0
+        }
+      ],
+      "first_argument_seconds": 0.7542583430185914,
+      "first_tool_name_seconds": 0.7093576081097126,
+      "name_to_first_argument_seconds": 0.0449007349088788,
+      "first_to_last_argument_seconds": 0.3591195810586214,
+      "first_complete_json_seconds": 1.1133779240772128,
+      "elapsed_seconds": 1.1599963221233338,
+      "arguments": {
+        "city": "Oslo",
+        "unit": "celsius"
+      },
+      "argument_bytes": 35,
+      "finish_reason": "tool_calls",
+      "stream_done": true,
+      "usage": {
+        "prompt_tokens": 323,
+        "total_tokens": 363,
+        "completion_tokens": 40,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    },
+    "candidate": {
+      "directory": "/tmp/vllm-v033-qualification/candidate-lifecycle-vision-tools",
+      "package": "/nix/store/5jvmvr89c90f4j1lry5l3a0xr8jp0gfw-python3.12-vllm-xpu-0.33.0+unstable.2026.11.08.g066206b",
+      "summary_sha256": "70e841cb18efc29c2a7eee981911d67536097b0293d2a5cb12e6c664e7c0a2ad",
+      "raw_sse": "/tmp/vllm-v033-qualification/candidate-lifecycle-vision-tools/http/00011.sse.jsonl",
+      "raw_sse_sha256": "db8be95eb80101d413d0c5314efac3d776f52185c336a8cb77cc2597edef7669",
+      "raw_sse_events_match_summary": true,
+      "request_sha256": "fd7968ca892da414c8abf9c2d890fd30928a99b67891bc3c8e48eb352ee96ad7",
+      "event_count": 9,
+      "tool_name_events": [
+        {
+          "seconds": 0.5794289619661868,
+          "name": "get_temperature",
+          "index": 0,
+          "id": "chatcmpl-tool-9e56598e7f51db6d"
+        }
+      ],
+      "argument_fragment_count": 5,
+      "argument_fragments": [
+        {
+          "seconds": 0.6256854329258204,
+          "text": "{\"city\": \"",
+          "index": 0
+        },
+        {
+          "seconds": 0.6712566518690437,
+          "text": "Oslo",
+          "index": 0
+        },
+        {
+          "seconds": 0.8543900370132178,
+          "text": "\", \"unit\": \"c",
+          "index": 0
+        },
+        {
+          "seconds": 0.9000977408140898,
+          "text": "elsius",
+          "index": 0
+        },
+        {
+          "seconds": 0.9920099698938429,
+          "text": "\"}",
+          "index": 0
+        }
+      ],
+      "first_argument_seconds": 0.6256854329258204,
+      "first_tool_name_seconds": 0.5794289619661868,
+      "name_to_first_argument_seconds": 0.04625647095963359,
+      "first_to_last_argument_seconds": 0.3663245369680226,
+      "first_complete_json_seconds": 0.9920099698938429,
+      "elapsed_seconds": 1.039190819952637,
+      "arguments": {
+        "city": "Oslo",
+        "unit": "celsius"
+      },
+      "argument_bytes": 35,
+      "finish_reason": "tool_calls",
+      "stream_done": true,
+      "usage": {
+        "prompt_tokens": 323,
+        "total_tokens": 363,
+        "completion_tokens": 40,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    }
+  },
+  "observed_comparison": {
+    "identical_tool_request": true,
+    "same_argument_fragments": true,
+    "field_granularity": "Both streams emit a name/id event before arguments, then five argument fragments: opening city key/string, Oslo, closing city plus opening unit and first c, remaining elsius, and final JSON closure. The unit value crosses two SSE fragments; neither server buffers all fields until a complete tool JSON object exists.",
+    "first_argument_candidate_minus_baseline_seconds": -0.12857291009277105,
+    "name_to_first_argument_candidate_minus_baseline_seconds": 0.0013557360507547855,
+    "first_to_last_argument_candidate_minus_baseline_seconds": 0.007204955909401178,
+    "correctness": "Both reconstruct the same city=Oslo and unit=celsius arguments, finish with tool_calls and send DONE. The following tool-result turns return Oslo: 22\u00b0C."
+  },
+  "source_feature": {
+    "commit": "5c1c903501927ea7c6c699aabd4c271015e66e71",
+    "commit_is_in_new_upstream": true,
+    "commit_is_in_old_base": false,
+    "automatic_for_existing_recipe": true,
+    "existing_behavior": "The installed baseline qwen3_xml name already resolves to Qwen3EngineToolParser/Qwen3ParserToolAdapter and qwen3_config already enables stream_arg_deltas. Its _compute_arg_delta converts accumulated arguments and emits the new safe JSON suffix.",
+    "new_behavior": "The candidate qwen3_config installs _qwen3_arg_value_extender. ParserEngine retains an extender for the trailing open parameter and directly appends escaped new value text; it falls back to conversion when a parameter delimiter arrives. This reduces repeated conversion of long growing values while retaining the existing stream format.",
+    "source_backed_expected_benefit": "Lower CPU parser work for long XML tool argument values. This is especially relevant to large code/file content tools and needs no host recipe switch.",
+    "upstream_tests": "Commit adds long-call streaming equivalence, schema/no-schema coverage, split-tag/newline/escape handling and a test that converter invocation count stays fixed as a value grows from 20 to 200 content lines. These are source-inspected tests; this review did not execute them.",
+    "installed_source_references": [
+      {
+        "variant": "baseline",
+        "path": "/nix/store/abyydgnrgglvviif8193zanhw6j1swch-python3.12-vllm-xpu-0.32.0+unstable.2026.10.20.gc0722c9/lib/python3.12/site-packages/vllm/tool_parsers/__init__.py",
+        "sha256": "7f0407088ea827d463b61f3c14f95c4628e538408c5da15d82f3a8786882149a",
+        "references": [
+          {
+            "line": 194,
+            "text": "\"qwen3_engine_tool_parser\","
+          },
+          {
+            "line": 204,
+            "text": "\"qwen3_xml\": ("
+          },
+          {
+            "line": 205,
+            "text": "\"qwen3_engine_tool_parser\","
+          }
+        ]
+      },
+      {
+        "variant": "baseline",
+        "path": "/nix/store/abyydgnrgglvviif8193zanhw6j1swch-python3.12-vllm-xpu-0.32.0+unstable.2026.10.20.gc0722c9/lib/python3.12/site-packages/vllm/tool_parsers/qwen3_engine_tool_parser.py",
+        "sha256": "3cf83a2a9408d72c79082825464b2c4dea1147ff390289dfb8936c5501114be9",
+        "references": [
+          {
+            "line": 4,
+            "text": "from vllm.parser.engine.registered_adapters import Qwen3ParserToolAdapter"
+          },
+          {
+            "line": 7,
+            "text": "class Qwen3EngineToolParser(Qwen3ParserToolAdapter):  # type: ignore[valid-type, misc]"
+          }
+        ]
+      },
+      {
+        "variant": "baseline",
+        "path": "/nix/store/abyydgnrgglvviif8193zanhw6j1swch-python3.12-vllm-xpu-0.32.0+unstable.2026.10.20.gc0722c9/lib/python3.12/site-packages/vllm/parser/engine/registered_adapters.py",
+        "sha256": "fd9e1f019e16103f7e15a07ee3706fdd9b66487bb2523dfb2f95cf50d0b41740",
+        "references": [
+          {
+            "line": 26,
+            "text": "from vllm.parser.qwen3 import Qwen3Parser"
+          },
+          {
+            "line": 76,
+            "text": "Qwen3ParserReasoningAdapter,"
+          },
+          {
+            "line": 77,
+            "text": "Qwen3ParserToolAdapter,"
+          },
+          {
+            "line": 78,
+            "text": ") = make_adapters(Qwen3Parser)"
+          }
+        ]
+      },
+      {
+        "variant": "baseline",
+        "path": "/nix/store/abyydgnrgglvviif8193zanhw6j1swch-python3.12-vllm-xpu-0.32.0+unstable.2026.10.20.gc0722c9/lib/python3.12/site-packages/vllm/parser/qwen3.py",
+        "sha256": "2fa80f910f0da453c2134027564a3859cb1f2ec01035198b40f11da37fe0ac0a",
+        "references": [
+          {
+            "line": 69,
+            "text": "def _qwen3_arg_converter(raw_args: str, partial: bool) -> str:"
+          },
+          {
+            "line": 198,
+            "text": "arg_converter=_qwen3_arg_converter,"
+          },
+          {
+            "line": 199,
+            "text": "stream_arg_deltas=True,"
+          }
+        ]
+      },
+      {
+        "variant": "baseline",
+        "path": "/nix/store/abyydgnrgglvviif8193zanhw6j1swch-python3.12-vllm-xpu-0.32.0+unstable.2026.10.20.gc0722c9/lib/python3.12/site-packages/vllm/parser/engine/parser_engine.py",
+        "sha256": "62b741a0557beff5e2d7ed630e907c0203102ab8fda26b06190ded0563f0e120",
+        "references": [
+          {
+            "line": 1017,
+            "text": "def _compute_arg_delta(self, idx: int, raw_delta: str) -> str | None:"
+          },
+          {
+            "line": 1031,
+            "text": "current_json = converter(slot.args, True)"
+          }
+        ]
+      },
+      {
+        "variant": "candidate",
+        "path": "/nix/store/5jvmvr89c90f4j1lry5l3a0xr8jp0gfw-python3.12-vllm-xpu-0.33.0+unstable.2026.11.08.g066206b/lib/python3.12/site-packages/vllm/tool_parsers/__init__.py",
+        "sha256": "b8e980db90fccce9e77c808ea0c82b63185aa4f5ddcfb01cfdf84ade48de0cab",
+        "references": [
+          {
+            "line": 207,
+            "text": "\"qwen3_engine_tool_parser\","
+          },
+          {
+            "line": 217,
+            "text": "\"qwen3_xml\": ("
+          },
+          {
+            "line": 218,
+            "text": "\"qwen3_engine_tool_parser\","
+          }
+        ]
+      },
+      {
+        "variant": "candidate",
+        "path": "/nix/store/5jvmvr89c90f4j1lry5l3a0xr8jp0gfw-python3.12-vllm-xpu-0.33.0+unstable.2026.11.08.g066206b/lib/python3.12/site-packages/vllm/tool_parsers/qwen3_engine_tool_parser.py",
+        "sha256": "3cf83a2a9408d72c79082825464b2c4dea1147ff390289dfb8936c5501114be9",
+        "references": [
+          {
+            "line": 4,
+            "text": "from vllm.parser.engine.registered_adapters import Qwen3ParserToolAdapter"
+          },
+          {
+            "line": 7,
+            "text": "class Qwen3EngineToolParser(Qwen3ParserToolAdapter):  # type: ignore[valid-type, misc]"
+          }
+        ]
+      },
+      {
+        "variant": "candidate",
+        "path": "/nix/store/5jvmvr89c90f4j1lry5l3a0xr8jp0gfw-python3.12-vllm-xpu-0.33.0+unstable.2026.11.08.g066206b/lib/python3.12/site-packages/vllm/parser/engine/registered_adapters.py",
+        "sha256": "fd9e1f019e16103f7e15a07ee3706fdd9b66487bb2523dfb2f95cf50d0b41740",
+        "references": [
+          {
+            "line": 26,
+            "text": "from vllm.parser.qwen3 import Qwen3Parser"
+          },
+          {
+            "line": 76,
+            "text": "Qwen3ParserReasoningAdapter,"
+          },
+          {
+            "line": 77,
+            "text": "Qwen3ParserToolAdapter,"
+          },
+          {
+            "line": 78,
+            "text": ") = make_adapters(Qwen3Parser)"
+          }
+        ]
+      },
+      {
+        "variant": "candidate",
+        "path": "/nix/store/5jvmvr89c90f4j1lry5l3a0xr8jp0gfw-python3.12-vllm-xpu-0.33.0+unstable.2026.11.08.g066206b/lib/python3.12/site-packages/vllm/parser/qwen3.py",
+        "sha256": "629bdc9c5b4b4206b4c2d50e34e8c557061ed8091524a80bd62c6c4dc19ec5a4",
+        "references": [
+          {
+            "line": 70,
+            "text": "def _qwen3_arg_converter(raw_args: str, partial: bool) -> str:"
+          },
+          {
+            "line": 103,
+            "text": "def _param_value_extender("
+          },
+          {
+            "line": 144,
+            "text": "def _qwen3_arg_value_extender(raw_args: str) -> ArgValueExtender | None:"
+          },
+          {
+            "line": 284,
+            "text": "arg_converter=_qwen3_arg_converter,"
+          },
+          {
+            "line": 285,
+            "text": "arg_value_extender=_qwen3_arg_value_extender,"
+          },
+          {
+            "line": 286,
+            "text": "stream_arg_deltas=True,"
+          }
+        ]
+      },
+      {
+        "variant": "candidate",
+        "path": "/nix/store/5jvmvr89c90f4j1lry5l3a0xr8jp0gfw-python3.12-vllm-xpu-0.33.0+unstable.2026.11.08.g066206b/lib/python3.12/site-packages/vllm/parser/engine/parser_engine.py",
+        "sha256": "5bddf64c26e09f50810a4041bf3d082c3cf101cb729f5a0020129f8a9e33ec46",
+        "references": [
+          {
+            "line": 1071,
+            "text": "def _compute_arg_delta(self, idx: int, raw_delta: str) -> str | None:"
+          },
+          {
+            "line": 1081,
+            "text": "if slot.extend_open_value is not None:"
+          },
+          {
+            "line": 1082,
+            "text": "diff = slot.extend_open_value(raw_delta)"
+          },
+          {
+            "line": 1093,
+            "text": "current_json = converter(slot.args, True)"
+          },
+          {
+            "line": 1115,
+            "text": "slot.extend_open_value = self._arg_value_extender(slot.args)"
+          }
+        ]
+      }
+    ]
+  },
+  "honest_feature_claim": "v0.33 adds a more efficient Qwen3 XML argument-streaming implementation. The existing host recipe selects it automatically. Both baseline and candidate already streamed partial field values correctly in the observed short tool call; this test demonstrates preserved behavior, not newly enabled streaming or a measured parser speedup.",
+  "limitations": [
+    "Only one short two-string-field call per version (35 argument bytes), with no repeated timing distribution or CPU parser instrumentation.",
+    "First-argument arrival includes prefill, decoding, scheduling, HTTP delivery and parsing. Candidate arrived about129ms earlier in this sample, but its tool-name-to-first-argument interval was slightly longer; no general speed or TTFT conclusion follows.",
+    "Large string arguments, many tools, non-string values, escapes and parser CPU scaling were not exercised by these HTTP fixtures.",
+    "The upstream commit benchmark in its title is not reproduced or adopted as a host measurement."
+  ]
+}

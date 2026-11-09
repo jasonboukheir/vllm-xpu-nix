@@ -1,0 +1,1529 @@
+{
+  "schema": 1,
+  "status": "complete baseline/candidate supplementary chat comparison",
+  "root": "/tmp/vllm-v033-qualification/perf-chat-candidate",
+  "fixture_sha256": "71cce78c73fbf9a97ad256693e46d38d1435f33ebf0e44124171ed20717f74c6",
+  "client_sha256": "06444aabf72a78108181e668075e2d4cc49db67e521434e966eb13ee1f862b8f",
+  "builder_sha256": "5fc092c530fa2b9fefe4bb98a25f6d752ccd7e2ef2adab917159386e25a06d5d",
+  "sealed_fixture_matches": true,
+  "completed_waves": 12,
+  "measured_requests": 30,
+  "waves": [
+    {
+      "case": "c1024-b1/r0-cold/summary.json",
+      "concurrency": 1,
+      "repeat": 0,
+      "phase": "cold",
+      "success": true,
+      "valid_tokens": true,
+      "external_hit_tokens": 0.0,
+      "gpu_hit_tokens": 0.0,
+      "load_bytes": 0.0,
+      "store_bytes": 198131744.0,
+      "actual_preemptions": 0.0,
+      "accepted_tokens": 141.0,
+      "draft_tokens": 228.0,
+      "proposal_acceptance": 0.618421052631579,
+      "throughput": 42.94958126432172,
+      "ttfts_ms": [
+        796.2751449085772
+      ]
+    },
+    {
+      "case": "c1024-b1/r0-warm/summary.json",
+      "concurrency": 1,
+      "repeat": 0,
+      "phase": "warm",
+      "success": true,
+      "valid_tokens": true,
+      "external_hit_tokens": 896.0,
+      "gpu_hit_tokens": 0.0,
+      "load_bytes": 194691104.0,
+      "store_bytes": 1720320.0,
+      "actual_preemptions": 0.0,
+      "accepted_tokens": 149.0,
+      "draft_tokens": 214.0,
+      "proposal_acceptance": 0.6962616822429907,
+      "throughput": 50.197721590200146,
+      "ttfts_ms": [
+        246.8982138670981
+      ]
+    },
+    {
+      "case": "c1024-b1/r1-cold/summary.json",
+      "concurrency": 1,
+      "repeat": 1,
+      "phase": "cold",
+      "success": true,
+      "valid_tokens": true,
+      "external_hit_tokens": 0.0,
+      "gpu_hit_tokens": 0.0,
+      "load_bytes": 0.0,
+      "store_bytes": 198131744.0,
+      "actual_preemptions": 0.0,
+      "accepted_tokens": 141.0,
+      "draft_tokens": 228.0,
+      "proposal_acceptance": 0.618421052631579,
+      "throughput": 43.117093631533045,
+      "ttfts_ms": [
+        771.1458411067724
+      ]
+    },
+    {
+      "case": "c1024-b1/r1-warm/summary.json",
+      "concurrency": 1,
+      "repeat": 1,
+      "phase": "warm",
+      "success": true,
+      "valid_tokens": true,
+      "external_hit_tokens": 896.0,
+      "gpu_hit_tokens": 0.0,
+      "load_bytes": 194691104.0,
+      "store_bytes": 1720320.0,
+      "actual_preemptions": 0.0,
+      "accepted_tokens": 147.0,
+      "draft_tokens": 220.0,
+      "proposal_acceptance": 0.6681818181818182,
+      "throughput": 49.10951593020794,
+      "ttfts_ms": [
+        240.5255539342761
+      ]
+    },
+    {
+      "case": "c1024-b1/r2-cold/summary.json",
+      "concurrency": 1,
+      "repeat": 2,
+      "phase": "cold",
+      "success": true,
+      "valid_tokens": true,
+      "external_hit_tokens": 0.0,
+      "gpu_hit_tokens": 0.0,
+      "load_bytes": 0.0,
+      "store_bytes": 198131744.0,
+      "actual_preemptions": 0.0,
+      "accepted_tokens": 141.0,
+      "draft_tokens": 228.0,
+      "proposal_acceptance": 0.618421052631579,
+      "throughput": 42.868202388462684,
+      "ttfts_ms": [
+        772.2612780053169
+      ]
+    },
+    {
+      "case": "c1024-b1/r2-warm/summary.json",
+      "concurrency": 1,
+      "repeat": 2,
+      "phase": "warm",
+      "success": true,
+      "valid_tokens": true,
+      "external_hit_tokens": 896.0,
+      "gpu_hit_tokens": 0.0,
+      "load_bytes": 194691104.0,
+      "store_bytes": 1720320.0,
+      "actual_preemptions": 0.0,
+      "accepted_tokens": 146.0,
+      "draft_tokens": 220.0,
+      "proposal_acceptance": 0.6636363636363637,
+      "throughput": 48.76612251240038,
+      "ttfts_ms": [
+        244.2435990087688
+      ]
+    },
+    {
+      "case": "c1024-b4/r0-cold/summary.json",
+      "concurrency": 4,
+      "repeat": 0,
+      "phase": "cold",
+      "success": true,
+      "valid_tokens": true,
+      "external_hit_tokens": 0.0,
+      "gpu_hit_tokens": 0.0,
+      "load_bytes": 0.0,
+      "store_bytes": 792526976.0,
+      "actual_preemptions": 0.0,
+      "accepted_tokens": 595.0,
+      "draft_tokens": 852.0,
+      "proposal_acceptance": 0.6983568075117371,
+      "throughput": 114.724762919086,
+      "ttfts_ms": [
+        2572.0906951464713,
+        2909.133340930566,
+        2909.1715330723673,
+        2572.0366640016437
+      ]
+    },
+    {
+      "case": "c1024-b4/r0-warm/summary.json",
+      "concurrency": 4,
+      "repeat": 0,
+      "phase": "warm",
+      "success": true,
+      "valid_tokens": true,
+      "external_hit_tokens": 3584.0,
+      "gpu_hit_tokens": 0.0,
+      "load_bytes": 778764416.0,
+      "store_bytes": 3440640.0,
+      "actual_preemptions": 0.0,
+      "accepted_tokens": 592.0,
+      "draft_tokens": 856.0,
+      "proposal_acceptance": 0.6915887850467289,
+      "throughput": 153.94399198194634,
+      "ttfts_ms": [
+        518.4179721400142,
+        301.43624590709805,
+        518.0505949538201,
+        734.6923258155584
+      ]
+    },
+    {
+      "case": "c1024-b4/r1-cold/summary.json",
+      "concurrency": 4,
+      "repeat": 1,
+      "phase": "cold",
+      "success": true,
+      "valid_tokens": true,
+      "external_hit_tokens": 0.0,
+      "gpu_hit_tokens": 0.0,
+      "load_bytes": 0.0,
+      "store_bytes": 792526976.0,
+      "actual_preemptions": 1.0,
+      "accepted_tokens": 606.0,
+      "draft_tokens": 838.0,
+      "proposal_acceptance": 0.7231503579952268,
+      "throughput": 115.26835611497484,
+      "ttfts_ms": [
+        3094.074046937749,
+        2004.8455439973623,
+        2258.371615083888,
+        2258.799816016108
+      ]
+    },
+    {
+      "case": "c1024-b4/r1-warm/summary.json",
+      "concurrency": 4,
+      "repeat": 1,
+      "phase": "warm",
+      "success": true,
+      "valid_tokens": true,
+      "external_hit_tokens": 3584.0,
+      "gpu_hit_tokens": 0.0,
+      "load_bytes": 778764416.0,
+      "store_bytes": 6881280.0,
+      "actual_preemptions": 0.0,
+      "accepted_tokens": 607.0,
+      "draft_tokens": 830.0,
+      "proposal_acceptance": 0.7313253012048193,
+      "throughput": 156.0165591284525,
+      "ttfts_ms": [
+        683.5274940822273,
+        683.96608508192,
+        404.96277902275324,
+        404.5307410415262
+      ]
+    },
+    {
+      "case": "c1024-b4/r2-cold/summary.json",
+      "concurrency": 4,
+      "repeat": 2,
+      "phase": "cold",
+      "success": true,
+      "valid_tokens": true,
+      "external_hit_tokens": 0.0,
+      "gpu_hit_tokens": 0.0,
+      "load_bytes": 0.0,
+      "store_bytes": 792526976.0,
+      "actual_preemptions": 1.0,
+      "accepted_tokens": 603.0,
+      "draft_tokens": 842.0,
+      "proposal_acceptance": 0.7161520190023754,
+      "throughput": 116.88435028668907,
+      "ttfts_ms": [
+        2004.7448039986193,
+        3096.3765429332852,
+        2257.494794903323,
+        2257.6487329788506
+      ]
+    },
+    {
+      "case": "c1024-b4/r2-warm/summary.json",
+      "concurrency": 4,
+      "repeat": 2,
+      "phase": "warm",
+      "success": true,
+      "valid_tokens": true,
+      "external_hit_tokens": 3584.0,
+      "gpu_hit_tokens": 0.0,
+      "load_bytes": 778764416.0,
+      "store_bytes": 6881280.0,
+      "actual_preemptions": 0.0,
+      "accepted_tokens": 601.0,
+      "draft_tokens": 840.0,
+      "proposal_acceptance": 0.7154761904761905,
+      "throughput": 160.3969289921295,
+      "ttfts_ms": [
+        328.53930117562413,
+        328.5443000495434,
+        608.1116411369294,
+        608.4298870991915
+      ]
+    }
+  ],
+  "replay_summary": {
+    "b1": {
+      "pairs": 3,
+      "exact_matches": 0,
+      "common_prefix_lengths": [
+        17,
+        17,
+        17
+      ]
+    },
+    "b4": {
+      "pairs": 12,
+      "exact_matches": 1,
+      "common_prefix_lengths": [
+        17,
+        165,
+        256,
+        18,
+        17,
+        13,
+        12,
+        18,
+        17,
+        25,
+        12,
+        61
+      ]
+    }
+  },
+  "b1_repeat_stability": {
+    "cold": {
+      "responses": 3,
+      "unique_token_sequences": 1
+    },
+    "warm": {
+      "responses": 3,
+      "unique_token_sequences": 3
+    }
+  },
+  "pairs": [
+    {
+      "case": "c1024-b1",
+      "concurrency": 1,
+      "repeat": 0,
+      "fixture": "c1024-r0-i0",
+      "exact": false,
+      "text_exact": false,
+      "common_prefix_tokens": 17,
+      "different_positions": 233,
+      "payload_bytes_equal": true,
+      "payload_sha256": "d4ef4086cef068e2fc610fdf62aa3315fddfc6516f21ca60940fabe1edb70c60",
+      "cold_response_sha256": "e4434d26154557732437bb72ac3b16f1721d606b65c4334d72837491fff348cc",
+      "warm_response_sha256": "1a9644a984e9de37b2fb741479f1506d941ad97f274451aeec636f1e1783588c",
+      "cold_excerpt": "# Asynchronous Token-Bucket Rate Limiter\n\n## Design Overview\n\nA token bucket has two parameters:\n- **`rate`**: tokens added per second (float, must be > 0).\n- **`capacity`**: maximum tokens the bucket can hold (int, must be \u2265 1).\n\nTokens are replenished continuously over time. When a caller requests",
+      "warm_excerpt": "# Asynchronous Token-Bucket Rate Limiter\n\n## Design Overview\n\nA token bucket allows bursts up to `capacity` and then sustains a steady `rate` tokens/second. The key challenges for an async implementation are:\n\n1. **No busy-waiting**: waiters must sleep until the next token is available, not poll.\n2."
+    },
+    {
+      "case": "c1024-b1",
+      "concurrency": 1,
+      "repeat": 1,
+      "fixture": "c1024-r1-i0",
+      "exact": false,
+      "text_exact": false,
+      "common_prefix_tokens": 17,
+      "different_positions": 237,
+      "payload_bytes_equal": true,
+      "payload_sha256": "a8a99bb853d62535c6e359d120a851aef8d981f547ca958e94495b721b86ba50",
+      "cold_response_sha256": "e6e28189281003fa223381658b4db83b2deb8d027bc061c28b1b444a1729e75c",
+      "warm_response_sha256": "2b8d9f3d232b2812d8e61e9cc778313d5b86f6358d34d923b70d013cbe242283",
+      "cold_excerpt": "# Asynchronous Token-Bucket Rate Limiter\n\n## Design Overview\n\nA token bucket has two parameters:\n- **`rate`**: tokens added per second (float, must be > 0).\n- **`capacity`**: maximum tokens the bucket can hold (int, must be \u2265 1).\n\nTokens are replenished continuously over time. When a caller requests",
+      "warm_excerpt": "# Asynchronous Token-Bucket Rate Limiter\n\n## Design Overview\n\nA token bucket allows bursts up to `capacity` and then sustains a steady `rate` tokens/second. Tokens refill continuously based on elapsed time. The key challenges for an async implementation are:\n\n1. **No busy-waiting**: Waiters must sle"
+    },
+    {
+      "case": "c1024-b1",
+      "concurrency": 1,
+      "repeat": 2,
+      "fixture": "c1024-r2-i0",
+      "exact": false,
+      "text_exact": false,
+      "common_prefix_tokens": 17,
+      "different_positions": 235,
+      "payload_bytes_equal": true,
+      "payload_sha256": "83cfe7ce945ca32c9dffd2ed1841197b5dc139de26779a84b6daa63327a2fbe1",
+      "cold_response_sha256": "153ed5705c0574116c9fa724369f7e71b51f7e7d268d7ed6ed13e927e8f5f016",
+      "warm_response_sha256": "dddb0647cc544377ed7a69650c682459f9a66ad061dda08d822da9ad111391da",
+      "cold_excerpt": "# Asynchronous Token-Bucket Rate Limiter\n\n## Design Overview\n\nA token bucket has two parameters:\n- **`rate`**: tokens added per second (float, must be > 0).\n- **`capacity`**: maximum tokens the bucket can hold (int, must be \u2265 1).\n\nTokens are replenished continuously over time. When a caller requests",
+      "warm_excerpt": "# Asynchronous Token-Bucket Rate Limiter\n\n## Design Overview\n\nA token bucket allows bursts up to `capacity` and then sustains a steady rate of `rate` tokens per second. Tokens refill continuously over time. The key challenges for an async implementation are:\n\n1. **No busy-waiting**: Waiters must sle"
+    },
+    {
+      "case": "c1024-b4",
+      "concurrency": 4,
+      "repeat": 0,
+      "fixture": "c1024-r0-i0",
+      "exact": false,
+      "text_exact": false,
+      "common_prefix_tokens": 17,
+      "different_positions": 239,
+      "payload_bytes_equal": true,
+      "payload_sha256": "d4ef4086cef068e2fc610fdf62aa3315fddfc6516f21ca60940fabe1edb70c60",
+      "cold_response_sha256": "46f09f1afb08d753c844d66e33980d1c1a9f9ac9bd2ae4357d9b331c25ee3d43",
+      "warm_response_sha256": "df702825a21fa4815b94f7a2ff5907624d1a4ff20f58d9d48ed6bf328307d94d",
+      "cold_excerpt": "# Asynchronous Token-Bucket Rate Limiter\n\n## Design Overview\n\nA token bucket has two parameters:\n- **`rate`**: tokens added per second (float, must be > 0).\n- **`capacity`**: maximum tokens the bucket can hold (int, must be \u2265 1).\n\nTokens are replenished continuously over time. When a caller requests",
+      "warm_excerpt": "# Asynchronous Token-Bucket Rate Limiter\n\n## Design Overview\n\nA token bucket allows bursts up to `capacity` and then sustains a rate of `rate` tokens per second. Tokens refill continuously based on elapsed time. The key challenges for an async implementation are:\n\n1. **No busy-waiting**: Waiters mus"
+    },
+    {
+      "case": "c1024-b4",
+      "concurrency": 4,
+      "repeat": 0,
+      "fixture": "c1024-r0-i1",
+      "exact": false,
+      "text_exact": false,
+      "common_prefix_tokens": 165,
+      "different_positions": 1,
+      "payload_bytes_equal": true,
+      "payload_sha256": "26645e599645d3a1fe8b655d007e80cf0b9f442a69a3de9f8746b8a8e14125c2",
+      "cold_response_sha256": "6443f5772b18eb3a89af67cdad51d72ea5c52517277a44269a83b49b41bfe9b0",
+      "warm_response_sha256": "6c7a79baa4e6ab61f74b9691656a6af4c988d93884e98f9b7d7b59a81e44f2a7",
+      "cold_excerpt": "## Correctness Problems in the Original Code\n\n1. **No synchronization**: `put`, `get`, and `expire` mutate `self.items` (an `OrderedDict`) without a lock. Concurrent calls from multiple threads can corrupt the dict (e.g., `RuntimeError: dictionary changed size during iteration` in `expire`, or lost ",
+      "warm_excerpt": "## Correctness Problems in the Original Code\n\n1. **No synchronization**: `put`, `get`, and `expire` mutate `self.items` (an `OrderedDict`) without a lock. Concurrent calls from multiple threads can corrupt the dict (e.g., `RuntimeError: dictionary changed size during iteration` in `expire`, or lost "
+    },
+    {
+      "case": "c1024-b4",
+      "concurrency": 4,
+      "repeat": 0,
+      "fixture": "c1024-r0-i2",
+      "exact": true,
+      "text_exact": true,
+      "common_prefix_tokens": 256,
+      "different_positions": 0,
+      "payload_bytes_equal": true,
+      "payload_sha256": "ac8d28340c5059cd8d7724daf8c0d71a05ebd4956feadc4ac8f33bc1126f00aa",
+      "cold_response_sha256": "dddca21be8f210d2a0f0eefb0ec10f7014d9ef2bf30f3095c5fc46bf273b9b0e",
+      "warm_response_sha256": "ee94ee9636bd6d594d3458e39b7f7d83fb513f68e7a759ae08a5c4cdb96f25fd",
+      "cold_excerpt": "## The Core Problem: Lost Updates and Phantom Reads\n\nThe current design\u2014two concurrent transactions reading `remaining=1`, performing business logic, and then writing `remaining=0`\u2014suffers from a classic **lost update** (or \"check-then-act\" race). The `CHECK (remaining >= 0)` constraint is a *necess",
+      "warm_excerpt": "## The Core Problem: Lost Updates and Phantom Reads\n\nThe current design\u2014two concurrent transactions reading `remaining=1`, performing business logic, and then writing `remaining=0`\u2014suffers from a classic **lost update** (or \"check-then-act\" race). The `CHECK (remaining >= 0)` constraint is a *necess"
+    },
+    {
+      "case": "c1024-b4",
+      "concurrency": 4,
+      "repeat": 0,
+      "fixture": "c1024-r0-i3",
+      "exact": false,
+      "text_exact": false,
+      "common_prefix_tokens": 18,
+      "different_positions": 191,
+      "payload_bytes_equal": true,
+      "payload_sha256": "2ba1b167728f444fa4abd29e1ebb676561f5d375452d9937562e95a019b2938c",
+      "cold_response_sha256": "fd3a9bc5f19627346f260d1f743c377d1d2a89bd4fd432429765da904cc59580",
+      "warm_response_sha256": "6905ff332b041ba5450f521adb760af31fcbf63b54f2922dbf597d67bbf42baa",
+      "cold_excerpt": "# Migration and Validation Plan: 27B Quantized Model Serving Stack\n\n## 0. Context and Constraints\n*   **Hardware:** 1x 32 GiB GPU, 64 GiB RAM.\n*   **Workload:** Quantized 27B chat model + Draft model (speculative decoding).\n*   **Configuration:** 4 request slots, 8 GiB RAM prefix cache.\n*   **Constr",
+      "warm_excerpt": "# Migration and Validation Plan: 27B Quantized Model Serving Stack\n\n## 1. Context and Constraints\n*   **Hardware:** 1x 32 GiB GPU, 64 GiB RAM.\n*   **Workload:** Quantized 27B chat model, 4 request slots, speculative decoding (draft model), 8 GiB RAM prefix cache.\n*   **Change:** New package alters s"
+    },
+    {
+      "case": "c1024-b4",
+      "concurrency": 4,
+      "repeat": 1,
+      "fixture": "c1024-r1-i0",
+      "exact": false,
+      "text_exact": false,
+      "common_prefix_tokens": 17,
+      "different_positions": 237,
+      "payload_bytes_equal": true,
+      "payload_sha256": "a8a99bb853d62535c6e359d120a851aef8d981f547ca958e94495b721b86ba50",
+      "cold_response_sha256": "4e6bab78f3a57e8894230b5e593e00e132e875749a00f0fd1460fcf42beef175",
+      "warm_response_sha256": "6bc14db5512f3d2b69e1610a127c3aa4fcb612c8b51d2a8d65d07e9836807df0",
+      "cold_excerpt": "# Asynchronous Token-Bucket Rate Limiter\n\n## Design Overview\n\nA token bucket has two parameters:\n- **`rate`**: tokens added per second (float, must be > 0).\n- **`capacity`**: maximum tokens the bucket can hold (int, must be \u2265 1).\n\nTokens are replenished continuously over time. When a caller requests",
+      "warm_excerpt": "# Asynchronous Token-Bucket Rate Limiter\n\n## Design Overview\n\nA token bucket allows bursts up to `capacity` and then sustains a rate of `rate` tokens per second. Tokens refill continuously over time. The key challenges for an async implementation are:\n\n1. **No busy-waiting**: Waiters must sleep unti"
+    },
+    {
+      "case": "c1024-b4",
+      "concurrency": 4,
+      "repeat": 1,
+      "fixture": "c1024-r1-i1",
+      "exact": false,
+      "text_exact": false,
+      "common_prefix_tokens": 13,
+      "different_positions": 243,
+      "payload_bytes_equal": true,
+      "payload_sha256": "5bd7effcad0f1f1b0202779d49fd6ea6b6c82e92961ba9ce2fe9563bc3708e97",
+      "cold_response_sha256": "3b2283c719d78b2bf2b71f3b1606aa13974e7c543c020e1ed37fbf9a2067ba6b",
+      "warm_response_sha256": "d054fbee8f7af901b848883772e57eb9bf76e9766c0304a04ad46fac9c1cf14d",
+      "cold_excerpt": "## Correctness Problems in the Original Code\n\n1. **No synchronization**: `put`, `get`, and `expire` all mutate `self.items` (an `OrderedDict`) without a lock. Concurrent calls from multiple threads can corrupt the internal state (e.g., `RuntimeError: dictionary changed size during iteration` in `exp",
+      "warm_excerpt": "## Correctness Problems in the Original Code\n\n1. **No thread safety**: `get`, `put`, and `expire` all mutate `self.items` without any lock. Concurrent calls can corrupt the `OrderedDict` (e.g., `popitem` during iteration, `move_to_end` on a deleted key, or `del` on a key that was just evicted).\n\n2. "
+    },
+    {
+      "case": "c1024-b4",
+      "concurrency": 4,
+      "repeat": 1,
+      "fixture": "c1024-r1-i2",
+      "exact": false,
+      "text_exact": false,
+      "common_prefix_tokens": 12,
+      "different_positions": 241,
+      "payload_bytes_equal": true,
+      "payload_sha256": "e27568dbcbec6f49bc101bdeb6ec8ad02b8df97292783e0fa5ee9769a873fed5",
+      "cold_response_sha256": "4846cba566119e7acb4a7108cc201d6cdc603a31d01c2b34ebbc59aaa9b4204d",
+      "warm_response_sha256": "96471e464f2c875c0adf6655ae5d6ac76bdf8bcc4ffc6b1c00aa6c8e47d76d01",
+      "cold_excerpt": "## The Core Problem: Lost Updates and Phantom Reads\n\nThe current design\u2014two concurrent requests reading `remaining=1`, performing business logic, and then writing `remaining=0`\u2014suffers from a classic **lost update** (or \"check-then-act\" race). The `CHECK (remaining >= 0)` constraint is a *post-condi",
+      "warm_excerpt": "## The Core Problem: Lost Updates and Phantom Reads\n\nThe scenario describes a classic **lost update** (or \"check-then-act\" race condition) combined with a **phantom read** issue for the reporting transaction.\n\nThe table is:\n```sql\nCREATE TABLE slots (\n    id INTEGER PRIMARY KEY,\n    remaining INTEGE"
+    },
+    {
+      "case": "c1024-b4",
+      "concurrency": 4,
+      "repeat": 1,
+      "fixture": "c1024-r1-i3",
+      "exact": false,
+      "text_exact": false,
+      "common_prefix_tokens": 18,
+      "different_positions": 195,
+      "payload_bytes_equal": true,
+      "payload_sha256": "b19301d9b5c9619ca2ad58b2b8d3077aa0ac799a2abcaf290537c568bafac549",
+      "cold_response_sha256": "29e8cd6854497a7af59d5f341c972b4a0372f9c43619468c8613e0eadbb0dae2",
+      "warm_response_sha256": "07c1621e86c9b79ae588cb4b8e6662904a0a4a466407e63801fa957fa5d37a92",
+      "cold_excerpt": "# Migration and Validation Plan: 27B Quantized Model Serving Stack\n\n## 0. Context and Constraints\n*   **Hardware:** 1x 32 GiB GPU, 64 GiB RAM.\n*   **Workload:** Quantized 27B chat model + Draft model (speculative decoding).\n*   **Configuration:** 4 request slots, 8 GiB RAM prefix cache.\n*   **Constr",
+      "warm_excerpt": "# Migration and Validation Plan: 27B Quantized Model Serving Stack\n\n## 1. Context and Constraints\n*   **Hardware:** 1x 32 GiB GPU, 64 GiB RAM.\n*   **Workload:** Quantized 27B chat model, 4 concurrent request slots, speculative decoding (draft model), 8 GiB RAM prefix cache.\n*   **Change:** New packa"
+    },
+    {
+      "case": "c1024-b4",
+      "concurrency": 4,
+      "repeat": 2,
+      "fixture": "c1024-r2-i0",
+      "exact": false,
+      "text_exact": false,
+      "common_prefix_tokens": 17,
+      "different_positions": 236,
+      "payload_bytes_equal": true,
+      "payload_sha256": "83cfe7ce945ca32c9dffd2ed1841197b5dc139de26779a84b6daa63327a2fbe1",
+      "cold_response_sha256": "13b060ea133797baffe592f67b42702693c7cc864a06fe0ad046f78e66ec34a7",
+      "warm_response_sha256": "2bbaf054789b3001bf3a31daa18d9452be4d4bac4b49810fc9806fa174f1b175",
+      "cold_excerpt": "# Asynchronous Token-Bucket Rate Limiter\n\n## Design Overview\n\nA token bucket has two parameters:\n- **`rate`**: tokens added per second (float, must be > 0).\n- **`capacity`**: maximum tokens the bucket can hold (int, must be \u2265 1).\n\nTokens are replenished continuously over time. When a caller requests",
+      "warm_excerpt": "# Asynchronous Token-Bucket Rate Limiter\n\n## Design Overview\n\nA token bucket allows bursts up to `capacity` and then sustains a steady rate of `rate` tokens per second. Tokens refill continuously over time. The key challenges for an async implementation are:\n\n1. **No busy-waiting**: Waiters must sle"
+    },
+    {
+      "case": "c1024-b4",
+      "concurrency": 4,
+      "repeat": 2,
+      "fixture": "c1024-r2-i1",
+      "exact": false,
+      "text_exact": false,
+      "common_prefix_tokens": 25,
+      "different_positions": 228,
+      "payload_bytes_equal": true,
+      "payload_sha256": "d82893c213aaa1f9491d4e0381adc7362284c4d72bb2ce643e2bac82a6f8beb3",
+      "cold_response_sha256": "4f5ac68c998dcaabc64ad820b55b1acc3de93d832d39adcdc706d420e465aa7d",
+      "warm_response_sha256": "7ee068e10a339d6e6e9ef403446bd20eb33dd7d43914ba07b0731724c6568c2d",
+      "cold_excerpt": "## Correctness Problems in the Original Code\n\n1. **No synchronization**: `put`, `get`, and `expire` all mutate `self.items` (an `OrderedDict`) without a lock. Concurrent calls from multiple threads can corrupt the internal state (e.g., `RuntimeError: dictionary changed size during iteration` in `exp",
+      "warm_excerpt": "## Correctness Problems in the Original Code\n\n1. **No synchronization**: `put`, `get`, and `expire` mutate `self.items` (an `OrderedDict`) without a lock. Concurrent calls from multiple threads can corrupt the dict (e.g., `RuntimeError: dictionary changed size during iteration` in `expire`, or lost "
+    },
+    {
+      "case": "c1024-b4",
+      "concurrency": 4,
+      "repeat": 2,
+      "fixture": "c1024-r2-i2",
+      "exact": false,
+      "text_exact": false,
+      "common_prefix_tokens": 12,
+      "different_positions": 241,
+      "payload_bytes_equal": true,
+      "payload_sha256": "4ff4370fbcfdc570f8a62c695833cdd7a3c6bcd2fa39509e8bd03c7c38b3ca40",
+      "cold_response_sha256": "33f0409d149a60217d6d0c4a3ac2c803f6c3576b8eb637f88452abe03ec714b2",
+      "warm_response_sha256": "d0d8d318b79da095004ea159ebab43e93e322a2abde8dd4a39d472cab795694f",
+      "cold_excerpt": "## The Core Problem: Lost Updates and Phantom Reads\n\nThe current design\u2014two concurrent requests reading `remaining=1`, performing business logic, and then writing `remaining=0`\u2014suffers from a classic **lost update** (or \"check-then-act\" race). The `CHECK (remaining >= 0)` constraint is a *post-condi",
+      "warm_excerpt": "## The Core Problem: Lost Updates and Phantom Reads\n\nThe scenario describes a classic **lost update** (or \"check-then-act\" race condition) combined with a **phantom read** issue for the reporting transaction.\n\nThe table is:\n```sql\nCREATE TABLE slots (\n    id INTEGER PRIMARY KEY,\n    remaining INTEGE"
+    },
+    {
+      "case": "c1024-b4",
+      "concurrency": 4,
+      "repeat": 2,
+      "fixture": "c1024-r2-i3",
+      "exact": false,
+      "text_exact": false,
+      "common_prefix_tokens": 61,
+      "different_positions": 194,
+      "payload_bytes_equal": true,
+      "payload_sha256": "1e50f5a830dc8e5ca4050002a40500dd09f160a672e2c9bb71b59a098d01d144",
+      "cold_response_sha256": "9ba46ddda94f1d2ba34563b6b047390c16ef70ee4040458957269d96d5b0cece",
+      "warm_response_sha256": "69a646c80ca38b30727d0a6140a592f97b89d75dc0c51a7d8c5fbf27f09c14ae",
+      "cold_excerpt": "# Migration and Validation Plan: 27B Quantized Model Serving Stack\n\n## 0. Context and Constraints\n*   **Hardware:** 1x 32 GiB GPU, 64 GiB RAM.\n*   **Workload:** Quantized 27B chat model + Draft model (speculative decoding).\n*   **Configuration:** 4 request slots, 8 GiB RAM prefix cache.\n*   **Constr",
+      "warm_excerpt": "# Migration and Validation Plan: 27B Quantized Model Serving Stack\n\n## 0. Context and Constraints\n*   **Hardware:** 1x 32 GiB GPU, 64 GiB RAM.\n*   **Workload:** Quantized 27B chat model, 4 concurrent request slots, speculative decoding (draft model), 8 GiB RAM prefix cache.\n*   **Change:** New packa"
+    }
+  ],
+  "interpretation": [
+    "All completed outputs are syntactically coherent and stay on the assigned task; no observed cross-task topic contamination. This is not a complete answer-quality evaluation: all outputs are intentionally cut at256 tokens, and wording includes ordinary model mistakes.",
+    "B1 cold/restored outputs diverge reproducibly at token17 despite matched payloads; cold repeats are identical while warm continuations vary. The completed baseline control reproduces this and it remains a cache-path/numerical behavior observation. Do not dismiss as thermal timing or automatically claim corruption.",
+    "B4 offered concurrency is matched, but admission order and active batch composition can differ. Pairwise exact equality is useful additional evidence, not a guaranteed batch-invariance contract.",
+    "This task mix has materially lower speculative acceptance than synthetic document continuation, so its throughput findings apply to different token trajectories. Cold/warm throughput deltas combine saved prefill with changed generated sequences and proposal acceptance.",
+    "Complete baseline control reproduces the salient B1 divergence, proving this particular behavior predates the refresh. Exact numerical cause remains unproven.",
+    "Both arms have verified RAM restores and valid output accounting. Different generated token paths/acceptance can contribute to timing differences; compare cold and warm separately."
+  ],
+  "qualitative_notes": {
+    "implementation": "Cold and warm both discuss token buckets/fairness/cancellation; they choose different outline wording. Warm prose includes a debatable queue-jumping fairness claim; neither256-token excerpt reaches the promised complete implementation/tests.",
+    "debugging": "Outputs discuss threading, expiration iteration, clock and LRU replacement. Claims about DST affecting Unix timestamps and labeling every deletion-during-iteration case undefined behavior are inaccurate/model-level wording issues, not cache-corruption evidence.",
+    "database": "Outputs discuss booking/check-then-act failures, but at least one excerpt overgeneralizes phantom reads and an atomic decrement example; do not score these as verified SQL guidance.",
+    "planning": "Outputs stay on deployment validation. Both use generic nvidia-smi examples despite no GPU vendor in the fixture; no task contamination inferred."
+  },
+  "mutations": "Review JSON only; no HTTP/GPU/server/service execution.",
+  "matched_configuration_review": {
+    "artifact": "/tmp/vllm-v033-qualification/matched-configuration.json",
+    "artifact_sha256": "652aa11c6c5ed6a03092117245149626ceda4639e718b27d64b0b61d7bb22ab0",
+    "independently_checked_argv_recipe_and_reset_override": true,
+    "environment_differences": {
+      "VLLM_CACHE_ROOT": [
+        "/tmp/vllm-v033-qualification/cache/candidate",
+        "/tmp/vllm-v033-qualification/cache/baseline"
+      ],
+      "HOME": [
+        "/tmp/vllm-v033-qualification/cache/candidate",
+        "/tmp/vllm-v033-qualification/cache/baseline"
+      ]
+    },
+    "capacity_note": "Parent reports stable cached-start baseline4.84GiB/149888 attention tokens and candidate4.95GiB/159104. Different capacity is an observed package effect under the same utilization budget, not an unmatched explicit block override."
+  },
+  "arms": {
+    "baseline": {
+      "complete": true,
+      "results_sha256": "a4f206eb25977d6a3dd53d9283108e31a6dddf84e4d86ca0ab0e789a11b7ddaf",
+      "manifest_sha256": "bd9088547319eacc25751611dfca663d1d540aeaa76c72844745d9895bff829b",
+      "requests": 30,
+      "all_valid": true,
+      "waves": [
+        {
+          "case": "c1024-b1/r0-cold/summary.json",
+          "concurrency": 1,
+          "repeat": 0,
+          "phase": "cold",
+          "valid": true,
+          "external_hit_tokens": 0.0,
+          "gpu_hit_tokens": 0.0,
+          "load_bytes": 0,
+          "actual_preemptions": 0.0,
+          "accepted_tokens": 141.0,
+          "draft_tokens": 228.0
+        },
+        {
+          "case": "c1024-b1/r0-warm/summary.json",
+          "concurrency": 1,
+          "repeat": 0,
+          "phase": "warm",
+          "valid": true,
+          "external_hit_tokens": 896.0,
+          "gpu_hit_tokens": 0.0,
+          "load_bytes": 194691104.0,
+          "actual_preemptions": 0.0,
+          "accepted_tokens": 149.0,
+          "draft_tokens": 214.0
+        },
+        {
+          "case": "c1024-b1/r1-cold/summary.json",
+          "concurrency": 1,
+          "repeat": 1,
+          "phase": "cold",
+          "valid": true,
+          "external_hit_tokens": 0.0,
+          "gpu_hit_tokens": 0.0,
+          "load_bytes": 0.0,
+          "actual_preemptions": 0.0,
+          "accepted_tokens": 141.0,
+          "draft_tokens": 228.0
+        },
+        {
+          "case": "c1024-b1/r1-warm/summary.json",
+          "concurrency": 1,
+          "repeat": 1,
+          "phase": "warm",
+          "valid": true,
+          "external_hit_tokens": 896.0,
+          "gpu_hit_tokens": 0.0,
+          "load_bytes": 194691104.0,
+          "actual_preemptions": 0.0,
+          "accepted_tokens": 149.0,
+          "draft_tokens": 212.0
+        },
+        {
+          "case": "c1024-b1/r2-cold/summary.json",
+          "concurrency": 1,
+          "repeat": 2,
+          "phase": "cold",
+          "valid": true,
+          "external_hit_tokens": 0.0,
+          "gpu_hit_tokens": 0.0,
+          "load_bytes": 0.0,
+          "actual_preemptions": 0.0,
+          "accepted_tokens": 141.0,
+          "draft_tokens": 228.0
+        },
+        {
+          "case": "c1024-b1/r2-warm/summary.json",
+          "concurrency": 1,
+          "repeat": 2,
+          "phase": "warm",
+          "valid": true,
+          "external_hit_tokens": 896.0,
+          "gpu_hit_tokens": 0.0,
+          "load_bytes": 194691104.0,
+          "actual_preemptions": 0.0,
+          "accepted_tokens": 146.0,
+          "draft_tokens": 218.0
+        },
+        {
+          "case": "c1024-b4/r0-cold/summary.json",
+          "concurrency": 4,
+          "repeat": 0,
+          "phase": "cold",
+          "valid": true,
+          "external_hit_tokens": 0.0,
+          "gpu_hit_tokens": 0.0,
+          "load_bytes": 0.0,
+          "actual_preemptions": 0.0,
+          "accepted_tokens": 603.0,
+          "draft_tokens": 840.0
+        },
+        {
+          "case": "c1024-b4/r0-warm/summary.json",
+          "concurrency": 4,
+          "repeat": 0,
+          "phase": "warm",
+          "valid": true,
+          "external_hit_tokens": 3584.0,
+          "gpu_hit_tokens": 0.0,
+          "load_bytes": 778764416.0,
+          "actual_preemptions": 0.0,
+          "accepted_tokens": 592.0,
+          "draft_tokens": 858.0
+        },
+        {
+          "case": "c1024-b4/r1-cold/summary.json",
+          "concurrency": 4,
+          "repeat": 1,
+          "phase": "cold",
+          "valid": true,
+          "external_hit_tokens": 0.0,
+          "gpu_hit_tokens": 0.0,
+          "load_bytes": 0.0,
+          "actual_preemptions": 0.0,
+          "accepted_tokens": 594.0,
+          "draft_tokens": 862.0
+        },
+        {
+          "case": "c1024-b4/r1-warm/summary.json",
+          "concurrency": 4,
+          "repeat": 1,
+          "phase": "warm",
+          "valid": true,
+          "external_hit_tokens": 3584.0,
+          "gpu_hit_tokens": 0.0,
+          "load_bytes": 778764416.0,
+          "actual_preemptions": 0.0,
+          "accepted_tokens": 606.0,
+          "draft_tokens": 832.0
+        },
+        {
+          "case": "c1024-b4/r2-cold/summary.json",
+          "concurrency": 4,
+          "repeat": 2,
+          "phase": "cold",
+          "valid": true,
+          "external_hit_tokens": 0.0,
+          "gpu_hit_tokens": 0.0,
+          "load_bytes": 0.0,
+          "actual_preemptions": 0.0,
+          "accepted_tokens": 600.0,
+          "draft_tokens": 852.0
+        },
+        {
+          "case": "c1024-b4/r2-warm/summary.json",
+          "concurrency": 4,
+          "repeat": 2,
+          "phase": "warm",
+          "valid": true,
+          "external_hit_tokens": 3584.0,
+          "gpu_hit_tokens": 0.0,
+          "load_bytes": 778764416.0,
+          "actual_preemptions": 0.0,
+          "accepted_tokens": 597.0,
+          "draft_tokens": 846.0
+        }
+      ],
+      "replay_pairs": [
+        {
+          "case": "c1024-b1/r0-cold/c1024-r0-i0.response.json",
+          "concurrency": 1,
+          "exact": false,
+          "common_prefix_tokens": 17,
+          "payloads_equal": true
+        },
+        {
+          "case": "c1024-b1/r1-cold/c1024-r1-i0.response.json",
+          "concurrency": 1,
+          "exact": false,
+          "common_prefix_tokens": 17,
+          "payloads_equal": true
+        },
+        {
+          "case": "c1024-b1/r2-cold/c1024-r2-i0.response.json",
+          "concurrency": 1,
+          "exact": false,
+          "common_prefix_tokens": 17,
+          "payloads_equal": true
+        },
+        {
+          "case": "c1024-b4/r0-cold/c1024-r0-i0.response.json",
+          "concurrency": 4,
+          "exact": false,
+          "common_prefix_tokens": 74,
+          "payloads_equal": true
+        },
+        {
+          "case": "c1024-b4/r0-cold/c1024-r0-i1.response.json",
+          "concurrency": 4,
+          "exact": false,
+          "common_prefix_tokens": 208,
+          "payloads_equal": true
+        },
+        {
+          "case": "c1024-b4/r0-cold/c1024-r0-i2.response.json",
+          "concurrency": 4,
+          "exact": false,
+          "common_prefix_tokens": 5,
+          "payloads_equal": true
+        },
+        {
+          "case": "c1024-b4/r0-cold/c1024-r0-i3.response.json",
+          "concurrency": 4,
+          "exact": false,
+          "common_prefix_tokens": 18,
+          "payloads_equal": true
+        },
+        {
+          "case": "c1024-b4/r1-cold/c1024-r1-i0.response.json",
+          "concurrency": 4,
+          "exact": false,
+          "common_prefix_tokens": 17,
+          "payloads_equal": true
+        },
+        {
+          "case": "c1024-b4/r1-cold/c1024-r1-i1.response.json",
+          "concurrency": 4,
+          "exact": false,
+          "common_prefix_tokens": 25,
+          "payloads_equal": true
+        },
+        {
+          "case": "c1024-b4/r1-cold/c1024-r1-i2.response.json",
+          "concurrency": 4,
+          "exact": false,
+          "common_prefix_tokens": 12,
+          "payloads_equal": true
+        },
+        {
+          "case": "c1024-b4/r1-cold/c1024-r1-i3.response.json",
+          "concurrency": 4,
+          "exact": false,
+          "common_prefix_tokens": 238,
+          "payloads_equal": true
+        },
+        {
+          "case": "c1024-b4/r2-cold/c1024-r2-i0.response.json",
+          "concurrency": 4,
+          "exact": false,
+          "common_prefix_tokens": 149,
+          "payloads_equal": true
+        },
+        {
+          "case": "c1024-b4/r2-cold/c1024-r2-i1.response.json",
+          "concurrency": 4,
+          "exact": false,
+          "common_prefix_tokens": 25,
+          "payloads_equal": true
+        },
+        {
+          "case": "c1024-b4/r2-cold/c1024-r2-i2.response.json",
+          "concurrency": 4,
+          "exact": false,
+          "common_prefix_tokens": 5,
+          "payloads_equal": true
+        },
+        {
+          "case": "c1024-b4/r2-cold/c1024-r2-i3.response.json",
+          "concurrency": 4,
+          "exact": false,
+          "common_prefix_tokens": 18,
+          "payloads_equal": true
+        }
+      ],
+      "replay_summary": {
+        "b1": {
+          "pairs": 3,
+          "exact": 0,
+          "common_prefix_lengths": [
+            17,
+            17,
+            17
+          ]
+        },
+        "b4": {
+          "pairs": 12,
+          "exact": 0,
+          "common_prefix_lengths": [
+            74,
+            208,
+            5,
+            18,
+            17,
+            25,
+            12,
+            238,
+            149,
+            25,
+            5,
+            18
+          ]
+        }
+      },
+      "actual_preemptions": 0.0,
+      "resources": {
+        "sample_count": 30,
+        "interval_unix": [
+          1794199869.1218896,
+          1794200018.8554916
+        ],
+        "peak_sum_process_rss_kib": 7479004,
+        "peak_sum_process_swap_kib": 0,
+        "peak_sum_unique_client_resident_vram_kib": 29479736,
+        "frequency_mhz_values": [
+          2800
+        ],
+        "throttle_values": [
+          0,
+          1
+        ],
+        "note": "5-second samples restricted to first measured request through last completed response, including gaps between waves. RSS sums include shared pages and are not physical-RAM usage; DRM client IDs deduplicated. Observed sample peaks are not instantaneous maxima.",
+        "throttle_flagged_samples": 12
+      }
+    },
+    "candidate": {
+      "complete": true,
+      "results_sha256": "f5f01f8f5bc0fc74cff1bbd2f34a48906cd4167554f2ed760be39dfb5b48dcdd",
+      "manifest_sha256": "77a42a1fcaf1f27c45707e60969b259de9d23b3ddbb6a65d9b3cf2c29554852e",
+      "requests": 30,
+      "all_valid": true,
+      "waves": [
+        {
+          "case": "c1024-b1/r0-cold/summary.json",
+          "concurrency": 1,
+          "repeat": 0,
+          "phase": "cold",
+          "valid": true,
+          "external_hit_tokens": 0.0,
+          "gpu_hit_tokens": 0.0,
+          "load_bytes": 0.0,
+          "actual_preemptions": 0.0,
+          "accepted_tokens": 141.0,
+          "draft_tokens": 228.0
+        },
+        {
+          "case": "c1024-b1/r0-warm/summary.json",
+          "concurrency": 1,
+          "repeat": 0,
+          "phase": "warm",
+          "valid": true,
+          "external_hit_tokens": 896.0,
+          "gpu_hit_tokens": 0.0,
+          "load_bytes": 194691104.0,
+          "actual_preemptions": 0.0,
+          "accepted_tokens": 149.0,
+          "draft_tokens": 214.0
+        },
+        {
+          "case": "c1024-b1/r1-cold/summary.json",
+          "concurrency": 1,
+          "repeat": 1,
+          "phase": "cold",
+          "valid": true,
+          "external_hit_tokens": 0.0,
+          "gpu_hit_tokens": 0.0,
+          "load_bytes": 0.0,
+          "actual_preemptions": 0.0,
+          "accepted_tokens": 141.0,
+          "draft_tokens": 228.0
+        },
+        {
+          "case": "c1024-b1/r1-warm/summary.json",
+          "concurrency": 1,
+          "repeat": 1,
+          "phase": "warm",
+          "valid": true,
+          "external_hit_tokens": 896.0,
+          "gpu_hit_tokens": 0.0,
+          "load_bytes": 194691104.0,
+          "actual_preemptions": 0.0,
+          "accepted_tokens": 147.0,
+          "draft_tokens": 220.0
+        },
+        {
+          "case": "c1024-b1/r2-cold/summary.json",
+          "concurrency": 1,
+          "repeat": 2,
+          "phase": "cold",
+          "valid": true,
+          "external_hit_tokens": 0.0,
+          "gpu_hit_tokens": 0.0,
+          "load_bytes": 0.0,
+          "actual_preemptions": 0.0,
+          "accepted_tokens": 141.0,
+          "draft_tokens": 228.0
+        },
+        {
+          "case": "c1024-b1/r2-warm/summary.json",
+          "concurrency": 1,
+          "repeat": 2,
+          "phase": "warm",
+          "valid": true,
+          "external_hit_tokens": 896.0,
+          "gpu_hit_tokens": 0.0,
+          "load_bytes": 194691104.0,
+          "actual_preemptions": 0.0,
+          "accepted_tokens": 146.0,
+          "draft_tokens": 220.0
+        },
+        {
+          "case": "c1024-b4/r0-cold/summary.json",
+          "concurrency": 4,
+          "repeat": 0,
+          "phase": "cold",
+          "valid": true,
+          "external_hit_tokens": 0.0,
+          "gpu_hit_tokens": 0.0,
+          "load_bytes": 0.0,
+          "actual_preemptions": 0.0,
+          "accepted_tokens": 595.0,
+          "draft_tokens": 852.0
+        },
+        {
+          "case": "c1024-b4/r0-warm/summary.json",
+          "concurrency": 4,
+          "repeat": 0,
+          "phase": "warm",
+          "valid": true,
+          "external_hit_tokens": 3584.0,
+          "gpu_hit_tokens": 0.0,
+          "load_bytes": 778764416.0,
+          "actual_preemptions": 0.0,
+          "accepted_tokens": 592.0,
+          "draft_tokens": 856.0
+        },
+        {
+          "case": "c1024-b4/r1-cold/summary.json",
+          "concurrency": 4,
+          "repeat": 1,
+          "phase": "cold",
+          "valid": true,
+          "external_hit_tokens": 0.0,
+          "gpu_hit_tokens": 0.0,
+          "load_bytes": 0.0,
+          "actual_preemptions": 1.0,
+          "accepted_tokens": 606.0,
+          "draft_tokens": 838.0
+        },
+        {
+          "case": "c1024-b4/r1-warm/summary.json",
+          "concurrency": 4,
+          "repeat": 1,
+          "phase": "warm",
+          "valid": true,
+          "external_hit_tokens": 3584.0,
+          "gpu_hit_tokens": 0.0,
+          "load_bytes": 778764416.0,
+          "actual_preemptions": 0.0,
+          "accepted_tokens": 607.0,
+          "draft_tokens": 830.0
+        },
+        {
+          "case": "c1024-b4/r2-cold/summary.json",
+          "concurrency": 4,
+          "repeat": 2,
+          "phase": "cold",
+          "valid": true,
+          "external_hit_tokens": 0.0,
+          "gpu_hit_tokens": 0.0,
+          "load_bytes": 0.0,
+          "actual_preemptions": 1.0,
+          "accepted_tokens": 603.0,
+          "draft_tokens": 842.0
+        },
+        {
+          "case": "c1024-b4/r2-warm/summary.json",
+          "concurrency": 4,
+          "repeat": 2,
+          "phase": "warm",
+          "valid": true,
+          "external_hit_tokens": 3584.0,
+          "gpu_hit_tokens": 0.0,
+          "load_bytes": 778764416.0,
+          "actual_preemptions": 0.0,
+          "accepted_tokens": 601.0,
+          "draft_tokens": 840.0
+        }
+      ],
+      "replay_pairs": [
+        {
+          "case": "c1024-b1/r0-cold/c1024-r0-i0.response.json",
+          "concurrency": 1,
+          "exact": false,
+          "common_prefix_tokens": 17,
+          "payloads_equal": true
+        },
+        {
+          "case": "c1024-b1/r1-cold/c1024-r1-i0.response.json",
+          "concurrency": 1,
+          "exact": false,
+          "common_prefix_tokens": 17,
+          "payloads_equal": true
+        },
+        {
+          "case": "c1024-b1/r2-cold/c1024-r2-i0.response.json",
+          "concurrency": 1,
+          "exact": false,
+          "common_prefix_tokens": 17,
+          "payloads_equal": true
+        },
+        {
+          "case": "c1024-b4/r0-cold/c1024-r0-i0.response.json",
+          "concurrency": 4,
+          "exact": false,
+          "common_prefix_tokens": 17,
+          "payloads_equal": true
+        },
+        {
+          "case": "c1024-b4/r0-cold/c1024-r0-i1.response.json",
+          "concurrency": 4,
+          "exact": false,
+          "common_prefix_tokens": 165,
+          "payloads_equal": true
+        },
+        {
+          "case": "c1024-b4/r0-cold/c1024-r0-i2.response.json",
+          "concurrency": 4,
+          "exact": true,
+          "common_prefix_tokens": 256,
+          "payloads_equal": true
+        },
+        {
+          "case": "c1024-b4/r0-cold/c1024-r0-i3.response.json",
+          "concurrency": 4,
+          "exact": false,
+          "common_prefix_tokens": 18,
+          "payloads_equal": true
+        },
+        {
+          "case": "c1024-b4/r1-cold/c1024-r1-i0.response.json",
+          "concurrency": 4,
+          "exact": false,
+          "common_prefix_tokens": 17,
+          "payloads_equal": true
+        },
+        {
+          "case": "c1024-b4/r1-cold/c1024-r1-i1.response.json",
+          "concurrency": 4,
+          "exact": false,
+          "common_prefix_tokens": 13,
+          "payloads_equal": true
+        },
+        {
+          "case": "c1024-b4/r1-cold/c1024-r1-i2.response.json",
+          "concurrency": 4,
+          "exact": false,
+          "common_prefix_tokens": 12,
+          "payloads_equal": true
+        },
+        {
+          "case": "c1024-b4/r1-cold/c1024-r1-i3.response.json",
+          "concurrency": 4,
+          "exact": false,
+          "common_prefix_tokens": 18,
+          "payloads_equal": true
+        },
+        {
+          "case": "c1024-b4/r2-cold/c1024-r2-i0.response.json",
+          "concurrency": 4,
+          "exact": false,
+          "common_prefix_tokens": 17,
+          "payloads_equal": true
+        },
+        {
+          "case": "c1024-b4/r2-cold/c1024-r2-i1.response.json",
+          "concurrency": 4,
+          "exact": false,
+          "common_prefix_tokens": 25,
+          "payloads_equal": true
+        },
+        {
+          "case": "c1024-b4/r2-cold/c1024-r2-i2.response.json",
+          "concurrency": 4,
+          "exact": false,
+          "common_prefix_tokens": 12,
+          "payloads_equal": true
+        },
+        {
+          "case": "c1024-b4/r2-cold/c1024-r2-i3.response.json",
+          "concurrency": 4,
+          "exact": false,
+          "common_prefix_tokens": 61,
+          "payloads_equal": true
+        }
+      ],
+      "replay_summary": {
+        "b1": {
+          "pairs": 3,
+          "exact": 0,
+          "common_prefix_lengths": [
+            17,
+            17,
+            17
+          ]
+        },
+        "b4": {
+          "pairs": 12,
+          "exact": 1,
+          "common_prefix_lengths": [
+            17,
+            165,
+            256,
+            18,
+            17,
+            13,
+            12,
+            18,
+            17,
+            25,
+            12,
+            61
+          ]
+        }
+      },
+      "actual_preemptions": 2.0,
+      "resources": {
+        "sample_count": 30,
+        "interval_unix": [
+          1794199171.080603,
+          1794199321.1601896
+        ],
+        "peak_sum_process_rss_kib": 7491556,
+        "peak_sum_process_swap_kib": 0,
+        "peak_sum_unique_client_resident_vram_kib": 29906040,
+        "frequency_mhz_values": [
+          2800
+        ],
+        "throttle_values": [
+          0,
+          1
+        ],
+        "note": "5-second samples restricted to first measured request through last completed response, including gaps between waves. RSS sums include shared pages and are not physical-RAM usage; DRM client IDs deduplicated. Observed sample peaks are not instantaneous maxima.",
+        "throttle_flagged_samples": 11
+      }
+    }
+  },
+  "cross_release_token_comparison": [
+    {
+      "case": "c1024-b1/r0-cold/c1024-r0-i0.response.json",
+      "concurrency": 1,
+      "phase": "cold",
+      "exact": true,
+      "common_prefix_tokens": 256
+    },
+    {
+      "case": "c1024-b1/r0-warm/c1024-r0-i0.response.json",
+      "concurrency": 1,
+      "phase": "warm",
+      "exact": true,
+      "common_prefix_tokens": 256
+    },
+    {
+      "case": "c1024-b1/r1-cold/c1024-r1-i0.response.json",
+      "concurrency": 1,
+      "phase": "cold",
+      "exact": true,
+      "common_prefix_tokens": 256
+    },
+    {
+      "case": "c1024-b1/r1-warm/c1024-r1-i0.response.json",
+      "concurrency": 1,
+      "phase": "warm",
+      "exact": false,
+      "common_prefix_tokens": 30
+    },
+    {
+      "case": "c1024-b1/r2-cold/c1024-r2-i0.response.json",
+      "concurrency": 1,
+      "phase": "cold",
+      "exact": true,
+      "common_prefix_tokens": 256
+    },
+    {
+      "case": "c1024-b1/r2-warm/c1024-r2-i0.response.json",
+      "concurrency": 1,
+      "phase": "warm",
+      "exact": false,
+      "common_prefix_tokens": 148
+    },
+    {
+      "case": "c1024-b4/r0-cold/c1024-r0-i0.response.json",
+      "concurrency": 4,
+      "phase": "cold",
+      "exact": false,
+      "common_prefix_tokens": 110
+    },
+    {
+      "case": "c1024-b4/r0-cold/c1024-r0-i1.response.json",
+      "concurrency": 4,
+      "phase": "cold",
+      "exact": false,
+      "common_prefix_tokens": 165
+    },
+    {
+      "case": "c1024-b4/r0-cold/c1024-r0-i2.response.json",
+      "concurrency": 4,
+      "phase": "cold",
+      "exact": false,
+      "common_prefix_tokens": 5
+    },
+    {
+      "case": "c1024-b4/r0-cold/c1024-r0-i3.response.json",
+      "concurrency": 4,
+      "phase": "cold",
+      "exact": false,
+      "common_prefix_tokens": 198
+    },
+    {
+      "case": "c1024-b4/r0-warm/c1024-r0-i0.response.json",
+      "concurrency": 4,
+      "phase": "warm",
+      "exact": false,
+      "common_prefix_tokens": 17
+    },
+    {
+      "case": "c1024-b4/r0-warm/c1024-r0-i1.response.json",
+      "concurrency": 4,
+      "phase": "warm",
+      "exact": false,
+      "common_prefix_tokens": 208
+    },
+    {
+      "case": "c1024-b4/r0-warm/c1024-r0-i2.response.json",
+      "concurrency": 4,
+      "phase": "warm",
+      "exact": false,
+      "common_prefix_tokens": 12
+    },
+    {
+      "case": "c1024-b4/r0-warm/c1024-r0-i3.response.json",
+      "concurrency": 4,
+      "phase": "warm",
+      "exact": false,
+      "common_prefix_tokens": 239
+    },
+    {
+      "case": "c1024-b4/r1-cold/c1024-r1-i0.response.json",
+      "concurrency": 4,
+      "phase": "cold",
+      "exact": false,
+      "common_prefix_tokens": 237
+    },
+    {
+      "case": "c1024-b4/r1-cold/c1024-r1-i1.response.json",
+      "concurrency": 4,
+      "phase": "cold",
+      "exact": false,
+      "common_prefix_tokens": 169
+    },
+    {
+      "case": "c1024-b4/r1-cold/c1024-r1-i2.response.json",
+      "concurrency": 4,
+      "phase": "cold",
+      "exact": false,
+      "common_prefix_tokens": 23
+    },
+    {
+      "case": "c1024-b4/r1-cold/c1024-r1-i3.response.json",
+      "concurrency": 4,
+      "phase": "cold",
+      "exact": false,
+      "common_prefix_tokens": 61
+    },
+    {
+      "case": "c1024-b4/r1-warm/c1024-r1-i0.response.json",
+      "concurrency": 4,
+      "phase": "warm",
+      "exact": false,
+      "common_prefix_tokens": 29
+    },
+    {
+      "case": "c1024-b4/r1-warm/c1024-r1-i1.response.json",
+      "concurrency": 4,
+      "phase": "warm",
+      "exact": false,
+      "common_prefix_tokens": 13
+    },
+    {
+      "case": "c1024-b4/r1-warm/c1024-r1-i2.response.json",
+      "concurrency": 4,
+      "phase": "warm",
+      "exact": true,
+      "common_prefix_tokens": 256
+    },
+    {
+      "case": "c1024-b4/r1-warm/c1024-r1-i3.response.json",
+      "concurrency": 4,
+      "phase": "warm",
+      "exact": false,
+      "common_prefix_tokens": 18
+    },
+    {
+      "case": "c1024-b4/r2-cold/c1024-r2-i0.response.json",
+      "concurrency": 4,
+      "phase": "cold",
+      "exact": false,
+      "common_prefix_tokens": 104
+    },
+    {
+      "case": "c1024-b4/r2-cold/c1024-r2-i1.response.json",
+      "concurrency": 4,
+      "phase": "cold",
+      "exact": false,
+      "common_prefix_tokens": 169
+    },
+    {
+      "case": "c1024-b4/r2-cold/c1024-r2-i2.response.json",
+      "concurrency": 4,
+      "phase": "cold",
+      "exact": false,
+      "common_prefix_tokens": 73
+    },
+    {
+      "case": "c1024-b4/r2-cold/c1024-r2-i3.response.json",
+      "concurrency": 4,
+      "phase": "cold",
+      "exact": false,
+      "common_prefix_tokens": 18
+    },
+    {
+      "case": "c1024-b4/r2-warm/c1024-r2-i0.response.json",
+      "concurrency": 4,
+      "phase": "warm",
+      "exact": false,
+      "common_prefix_tokens": 17
+    },
+    {
+      "case": "c1024-b4/r2-warm/c1024-r2-i1.response.json",
+      "concurrency": 4,
+      "phase": "warm",
+      "exact": true,
+      "common_prefix_tokens": 256
+    },
+    {
+      "case": "c1024-b4/r2-warm/c1024-r2-i2.response.json",
+      "concurrency": 4,
+      "phase": "warm",
+      "exact": false,
+      "common_prefix_tokens": 5
+    },
+    {
+      "case": "c1024-b4/r2-warm/c1024-r2-i3.response.json",
+      "concurrency": 4,
+      "phase": "warm",
+      "exact": false,
+      "common_prefix_tokens": 64
+    }
+  ],
+  "performance_comparison": {
+    "artifact": "/tmp/vllm-v033-qualification/perf-chat-comparison.json",
+    "sha256": "acc428b752335333a4ccfd2b7c05a8c80d2bc0236c51b9d9937099e82cbdd1f7",
+    "cells": [
+      {
+        "concurrency": 1,
+        "phase": "cold",
+        "baseline": {
+          "median_wave_output_tokens_per_second": 43.35624513598794,
+          "median_content_ttft_ms": 777.8410541359335,
+          "median_request_decode_tokens_per_second": 49.741238022765785
+        },
+        "candidate": {
+          "median_wave_output_tokens_per_second": 42.94958126432172,
+          "median_content_ttft_ms": 772.2612780053169,
+          "median_request_decode_tokens_per_second": 49.36133798111522
+        },
+        "candidate_over_baseline": {
+          "median_content_ttft_ms": 0.9928265857131764,
+          "median_request_decode_tokens_per_second": 0.9923624731359382,
+          "median_wave_output_tokens_per_second": 0.9906204084234992
+        }
+      },
+      {
+        "concurrency": 1,
+        "phase": "warm",
+        "baseline": {
+          "median_wave_output_tokens_per_second": 49.905785977078104,
+          "median_content_ttft_ms": 248.78068594262004,
+          "median_request_decode_tokens_per_second": 52.99282855529959
+        },
+        "candidate": {
+          "median_wave_output_tokens_per_second": 49.10951593020794,
+          "median_content_ttft_ms": 244.2435990087688,
+          "median_request_decode_tokens_per_second": 51.28549287270368
+        },
+        "candidate_over_baseline": {
+          "median_content_ttft_ms": 0.9817627043005352,
+          "median_request_decode_tokens_per_second": 0.9677817597372773,
+          "median_wave_output_tokens_per_second": 0.9840445344907324
+        }
+      },
+      {
+        "concurrency": 4,
+        "phase": "cold",
+        "baseline": {
+          "median_wave_output_tokens_per_second": 116.07768164477494,
+          "median_content_ttft_ms": 2724.2406014120206,
+          "median_request_decode_tokens_per_second": 43.97479981643768
+        },
+        "candidate": {
+          "median_wave_output_tokens_per_second": 115.26835611497484,
+          "median_content_ttft_ms": 2415.4182400088757,
+          "median_request_decode_tokens_per_second": 42.202070802442265
+        },
+        "candidate_over_baseline": {
+          "median_content_ttft_ms": 0.886639101831506,
+          "median_request_decode_tokens_per_second": 0.9596876160574863,
+          "median_wave_output_tokens_per_second": 0.9930277248965323
+        }
+      },
+      {
+        "concurrency": 4,
+        "phase": "warm",
+        "baseline": {
+          "median_wave_output_tokens_per_second": 156.0498639528971,
+          "median_content_ttft_ms": 525.87400295306,
+          "median_request_decode_tokens_per_second": 43.826680759122354
+        },
+        "candidate": {
+          "median_wave_output_tokens_per_second": 156.0165591284525,
+          "median_content_ttft_ms": 518.2342835469171,
+          "median_request_decode_tokens_per_second": 43.950952137757
+        },
+        "candidate_over_baseline": {
+          "median_content_ttft_ms": 0.9854723386909378,
+          "median_request_decode_tokens_per_second": 1.0028355188319567,
+          "median_wave_output_tokens_per_second": 0.9997865757546918
+        }
+      }
+    ]
+  },
+  "conclusion": "Both completed chat matrices have30 valid requests and verified RAM restore evidence. Candidate median aggregate throughput is within2% of baseline in all four cells, descriptively. The B1 cold/restored token17 branch is inherited and cold outputs match exactly across releases; restored/B4 paths have output variation. No broad statistical equivalence, model-quality, throttle-free or universal TTFT improvement claim is supported.",
+  "performance_interpretation": {
+    "aggregate_throughput": "Candidate median aggregate output throughput is within2% of baseline in every completed chat cell: B1 cold -0.94%, B1 restored -1.60%, B4 cold -0.70%, B4 restored -0.02%. Descriptively similar on this small task mix; not a statistical equivalence claim.",
+    "decode": "Cold B1 uses identical output tokens across releases and median decode rate differs -0.76%. Restored B1 differs -3.22%, but token trajectories and proposal acceptance differ.",
+    "ttft": "Cold B4 median TTFT is11.34% lower for candidate, while admission order/output mix vary. Avoid promoting this small-sample schedule-sensitive result as a general latency gain. Other chat median TTFT differences are below2%.",
+    "preemptions": "Candidate has2 actual preemptions in the measured chat matrix; baseline0. Requests still complete and throughput is similar. Preserve as a scheduler-behavior observation for follow-up rather than omitting it.",
+    "resources": "Both arms report2800MHz in all30 samples, zero process swap, and intermittent throttle flags. The flag is not enough to identify its cause; do not claim throttle-free testing.5-second sampling and arm order limit causal attribution."
+  }
+}

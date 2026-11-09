@@ -1,0 +1,152 @@
+{
+  "baseline-01": {
+    "samples": 70,
+    "first": "2026-11-09T04:43:40.056720+00:00",
+    "last": "2026-11-09T04:49:29.524142+00:00",
+    "sampled_maximum": {
+      "rss_KiB": 8504044,
+      "swap_KiB": 0,
+      "driver_resident_vram_KiB": 29622096
+    },
+    "process_rss_highwater_KiB": {
+      "2746136": 848916,
+      "2746224": 20328872,
+      "2745955": 3077636,
+      "2745998": 973492,
+      "2746223": 15432
+    },
+    "limitations": "Five-second observations, not instantaneous peak proof. RSS includes shared mappings; per-process high-water marks are not simultaneous totals. Driver memory deduplicated by device/client. Foreground runs have no systemd swap cap; actual observed swap is reported.",
+    "performance_windows": {}
+  },
+  "baseline-02": {
+    "samples": 224,
+    "first": "2026-11-09T04:50:02.955039+00:00",
+    "last": "2026-11-09T05:08:42.391240+00:00",
+    "sampled_maximum": {
+      "rss_KiB": 16761084,
+      "swap_KiB": 0,
+      "driver_resident_vram_KiB": 29480696
+    },
+    "process_rss_highwater_KiB": {
+      "2747778": 3077480,
+      "2747935": 20330788,
+      "2747934": 15332
+    },
+    "limitations": "Five-second observations, not instantaneous peak proof. RSS includes shared mappings; per-process high-water marks are not simultaneous totals. Driver memory deduplicated by device/client. Foreground runs have no systemd swap cap; actual observed swap is reported.",
+    "performance_windows": {
+      "perf-unaligned-baseline": {
+        "samples": 16,
+        "start_unix": 1794200811.7536929,
+        "finish_unix": 1794200890.1284928,
+        "sampled_maximum": {
+          "rss_KiB": 7508644,
+          "swap_KiB": 0,
+          "driver_resident_vram_KiB": 29480696
+        }
+      },
+      "perf-baseline": {
+        "samples": 147,
+        "start_unix": 1794200047.9803727,
+        "finish_unix": 1794200782.5713513,
+        "sampled_maximum": {
+          "rss_KiB": 7508644,
+          "swap_KiB": 0,
+          "driver_resident_vram_KiB": 29480696
+        }
+      },
+      "perf-chat-baseline": {
+        "samples": 33,
+        "start_unix": 1794199855.996091,
+        "finish_unix": 1794200022.492887,
+        "sampled_maximum": {
+          "rss_KiB": 7479004,
+          "swap_KiB": 0,
+          "driver_resident_vram_KiB": 29479736
+        }
+      }
+    }
+  },
+  "candidate-01": {
+    "samples": 80,
+    "first": "2026-11-09T04:16:04.025742+00:00",
+    "last": "2026-11-09T04:22:40.720947+00:00",
+    "sampled_maximum": {
+      "rss_KiB": 8003236,
+      "swap_KiB": 0,
+      "driver_resident_vram_KiB": 29910008
+    },
+    "process_rss_highwater_KiB": {
+      "2738173": 20324524,
+      "2737705": 3021092,
+      "2738172": 15444
+    },
+    "limitations": "Five-second observations, not instantaneous peak proof. RSS includes shared mappings; per-process high-water marks are not simultaneous totals. Driver memory deduplicated by device/client. Foreground runs have no systemd swap cap; actual observed swap is reported.",
+    "performance_windows": {}
+  },
+  "candidate-02": {
+    "samples": 206,
+    "first": "2026-11-09T04:25:21.637559+00:00",
+    "last": "2026-11-09T04:42:27.414465+00:00",
+    "sampled_maximum": {
+      "rss_KiB": 7491556,
+      "swap_KiB": 0,
+      "driver_resident_vram_KiB": 29906040
+    },
+    "process_rss_highwater_KiB": {
+      "2741357": 20333052,
+      "2741356": 15424,
+      "2741268": 3065088
+    },
+    "limitations": "Five-second observations, not instantaneous peak proof. RSS includes shared mappings; per-process high-water marks are not simultaneous totals. Driver memory deduplicated by device/client. Foreground runs have no systemd swap cap; actual observed swap is reported.",
+    "performance_windows": {
+      "perf-candidate": {
+        "samples": 146,
+        "start_unix": 1794198341.6396663,
+        "finish_unix": 1794199068.6714606,
+        "sampled_maximum": {
+          "rss_KiB": 7480476,
+          "swap_KiB": 0,
+          "driver_resident_vram_KiB": 29812016
+        }
+      },
+      "perf-chat-candidate": {
+        "samples": 33,
+        "start_unix": 1794199158.164195,
+        "finish_unix": 1794199324.8040667,
+        "sampled_maximum": {
+          "rss_KiB": 7491556,
+          "swap_KiB": 0,
+          "driver_resident_vram_KiB": 29906040
+        }
+      }
+    }
+  },
+  "candidate-03": {
+    "samples": 43,
+    "first": "2026-11-09T05:09:40.465548+00:00",
+    "last": "2026-11-09T05:13:10.658541+00:00",
+    "sampled_maximum": {
+      "rss_KiB": 7348720,
+      "swap_KiB": 0,
+      "driver_resident_vram_KiB": 29797348
+    },
+    "process_rss_highwater_KiB": {
+      "2752232": 15340,
+      "2752233": 20333712,
+      "2752125": 3080908
+    },
+    "limitations": "Five-second observations, not instantaneous peak proof. RSS includes shared mappings; per-process high-water marks are not simultaneous totals. Driver memory deduplicated by device/client. Foreground runs have no systemd swap cap; actual observed swap is reported.",
+    "performance_windows": {
+      "perf-unaligned-candidate": {
+        "samples": 15,
+        "start_unix": 1794201052.4018824,
+        "finish_unix": 1794201129.906591,
+        "sampled_maximum": {
+          "rss_KiB": 7348716,
+          "swap_KiB": 0,
+          "driver_resident_vram_KiB": 29797348
+        }
+      }
+    }
+  }
+}

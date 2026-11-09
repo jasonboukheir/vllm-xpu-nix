@@ -1,0 +1,191 @@
+{
+  "schema": 1,
+  "status": "passed",
+  "checks_total": 16,
+  "checks_passed": 16,
+  "errors": [],
+  "elapsed_seconds": 23.015568471048027,
+  "provenance": {
+    "summary": "/tmp/vllm-v033-qualification/candidate-lifecycle-mixed/summary.json",
+    "summary_sha256": "43a84e000a09e84889c8299ea67cc8f8876ab9a9358ac3e8048f6637ca9fb70c",
+    "script_sha256": "85c480f496030fbe164910adea9e3f53dcdbb28e2bc8cd95f444d4c89a53fdc1",
+    "matching_frozen_sources": [
+      "/tmp/vllm-v033-qualification/candidate-lifecycle-mixed/client-source.py"
+    ],
+    "http_exchange_count": 337,
+    "http_failures": [],
+    "engine_slice_digest_valid": true,
+    "engine_slice_matches_full_log": true,
+    "server_seal": {
+      "pid": 2741268,
+      "exited": true,
+      "stopped_at_unix": 1794199349.7519653,
+      "log_bytes": 338685,
+      "log_sha256": "ec0706ff15167a360a1480bf5bab3f713e3f18a18e7b90f7a778efa892c5ad27"
+    },
+    "server_seal_valid": true,
+    "explicit_error_signature_count": 0
+  },
+  "mixed_source": {
+    "path": "/tmp/vllm-v033-qualification/candidate-lifecycle-mixed/mixed-client-source.py",
+    "sha256": "51795779d916014f98e77d489547b49b333f98ecea8a64d6be8a9f1c0d596fe3",
+    "matches_current_prepared_client": true
+  },
+  "coldness_proof": {
+    "nonce": "30e16811929b40749417fecde83091b0",
+    "prefix_overlaps": {
+      "warm": 5,
+      "ongoing": 5,
+      "short": 5
+    },
+    "note": "The random run nonce precedes token128; cold fixture is never generated before this wave. No cache reset removes the warm fixture."
+  },
+  "stream_results": [
+    {
+      "id": "ongoing",
+      "prompt_tokens": 101,
+      "output_token_count": 512,
+      "first_line": "BIRCH936",
+      "finish_reason": "length",
+      "cancelled": false,
+      "stream_done": true,
+      "ttft_seconds": 0.21478338493034244,
+      "elapsed_seconds": 17.534278220962733,
+      "raw_sse_verified": true,
+      "payload_prompt_matches_fixture": true,
+      "exchange": "/tmp/vllm-v033-qualification/candidate-lifecycle-mixed/http/00014.json"
+    },
+    {
+      "id": "warm",
+      "prompt_tokens": 6145,
+      "output_token_count": 129,
+      "first_line": "MAPLE482",
+      "finish_reason": null,
+      "cancelled": true,
+      "stream_done": false,
+      "ttft_seconds": 2.2762028670404106,
+      "elapsed_seconds": 9.167211666936055,
+      "raw_sse_verified": true,
+      "payload_prompt_matches_fixture": true,
+      "exchange": "/tmp/vllm-v033-qualification/candidate-lifecycle-mixed/http/00017.json"
+    },
+    {
+      "id": "cold",
+      "prompt_tokens": 8193,
+      "output_token_count": 192,
+      "first_line": "CEDAR715",
+      "finish_reason": "length",
+      "cancelled": false,
+      "stream_done": true,
+      "ttft_seconds": 6.180632064817473,
+      "elapsed_seconds": 11.076306000817567,
+      "raw_sse_verified": true,
+      "payload_prompt_matches_fixture": true,
+      "exchange": "/tmp/vllm-v033-qualification/candidate-lifecycle-mixed/http/00018.json"
+    },
+    {
+      "id": "short",
+      "prompt_tokens": 99,
+      "output_token_count": 192,
+      "first_line": "FERN268",
+      "finish_reason": "length",
+      "cancelled": false,
+      "stream_done": true,
+      "ttft_seconds": 0.8352852920070291,
+      "elapsed_seconds": 11.01965971593745,
+      "raw_sse_verified": true,
+      "payload_prompt_matches_fixture": true,
+      "exchange": "/tmp/vllm-v033-qualification/candidate-lifecycle-mixed/http/00016.json"
+    }
+  ],
+  "overlap": {
+    "metrics_samples": 312,
+    "peak_running": 4.0,
+    "ongoing_tokens_observed_between_cold_request_start_and_first_token": 25,
+    "interpretation": "The ongoing stream advanced during the cold request TTFT window while the server reported four running requests. HTTP evidence does not directly trace kernel execution overlap."
+  },
+  "seed_delta": {
+    "kv_offload_load_bytes": 0.0,
+    "external_prefix_cache_hits": 0.0,
+    "spec_decode_num_drafts": 12.0,
+    "spec_decode_num_draft_tokens": 24.0,
+    "spec_decode_num_accepted_tokens": 19.0,
+    "num_preemptions": 0.0,
+    "host": 0.0,
+    "external_unspecified": 0.0,
+    "device": 0.0
+  },
+  "mixed_wave_delta": {
+    "kv_offload_load_bytes": 288817184.0,
+    "external_prefix_cache_hits": 6144.0,
+    "spec_decode_num_drafts": 467.0,
+    "spec_decode_num_draft_tokens": 934.0,
+    "spec_decode_num_accepted_tokens": 556.0,
+    "num_preemptions": 0.0,
+    "host": 6144.0,
+    "external_unspecified": 0.0,
+    "device": 0.0
+  },
+  "post_cancel_replay_delta": {
+    "kv_offload_load_bytes": 288817184.0,
+    "external_prefix_cache_hits": 6144.0,
+    "spec_decode_num_drafts": 6.0,
+    "spec_decode_num_draft_tokens": 12.0,
+    "spec_decode_num_accepted_tokens": 10.0,
+    "num_preemptions": 0.0,
+    "host": 6144.0,
+    "external_unspecified": 0.0,
+    "device": 0.0
+  },
+  "post_replay_health_delta": {
+    "kv_offload_load_bytes": 0.0,
+    "external_prefix_cache_hits": 0.0,
+    "spec_decode_num_drafts": 1.0,
+    "spec_decode_num_draft_tokens": 2.0,
+    "spec_decode_num_accepted_tokens": 2.0,
+    "num_preemptions": 0.0,
+    "host": 0.0,
+    "external_unspecified": 0.0,
+    "device": 0.0
+  },
+  "post_cancel_replay": {
+    "text": "MAPLE482\n\nA healthy forest is not merely a collection of trees",
+    "usage": {
+      "prompt_tokens": 6145,
+      "total_tokens": 6161,
+      "completion_tokens": 16,
+      "prompt_tokens_details": null,
+      "completion_tokens_details": null
+    },
+    "finish_reason": "length"
+  },
+  "final_health": "HEALTHY",
+  "idle_gauges": {
+    "after_wave": {
+      "vllm:num_requests_running": 0.0,
+      "vllm:num_requests_waiting": 0.0,
+      "vllm:kv_cache_usage_perc": 0.0
+    },
+    "after_replay": {
+      "vllm:num_requests_running": 0.0,
+      "vllm:num_requests_waiting": 0.0,
+      "vllm:kv_cache_usage_perc": 0.0
+    },
+    "after_health": {
+      "vllm:num_requests_running": 0.0,
+      "vllm:num_requests_waiting": 0.0,
+      "vllm:kv_cache_usage_perc": 0.0
+    }
+  },
+  "preemption": {
+    "before": 3.0,
+    "after": 3.0,
+    "during_mixed": 0.0,
+    "note": "Three earlier lifetime preemptions are visible, but this mixed run adds none; those earlier events belong to separately executed qualification, not this test."
+  },
+  "limitations": [
+    "Cancel observed after 129 decoded token IDs means the client closed then; an asynchronous server can have computed additional tokens already. No exact server-side abort token boundary is claimed.",
+    "The unique early nonce and less-than-one-page shared prefixes establish cold fixture separation probabilistically against other random runs.",
+    "No cross-batch exact-token invariance assumption; isolation and distinct semantic markers are checked."
+  ]
+}

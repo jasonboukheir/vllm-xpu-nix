@@ -1,0 +1,8 @@
+{
+  "owned_server_parents_exited": true,
+  "service_states_equal_entry": true,
+  "entry": "Id=vllm-xpu-chat.service\nActiveState=inactive\nSubState=dead\nMainPID=0\n\nId=vllm-xpu-embedding.service\nActiveState=inactive\nSubState=dead\nMainPID=0\n\nId=vllm-xpu-stt.service\nActiveState=inactive\nSubState=dead\nMainPID=0\n\nId=jellyfin.service\nActiveState=active\nSubState=running\nMainPID=1712587\n",
+  "exit": "Id=vllm-xpu-chat.service\nActiveState=inactive\nSubState=dead\nMainPID=0\n\nId=vllm-xpu-embedding.service\nActiveState=inactive\nSubState=dead\nMainPID=0\n\nId=vllm-xpu-stt.service\nActiveState=inactive\nSubState=dead\nMainPID=0\n\nId=jellyfin.service\nActiveState=active\nSubState=running\nMainPID=1712587\n",
+  "all_recorded_server_and_child_pids_exited": true,
+  "recorded_process_count": 17
+}

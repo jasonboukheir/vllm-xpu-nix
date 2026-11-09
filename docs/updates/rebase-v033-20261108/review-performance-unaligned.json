@@ -1,0 +1,436 @@
+{
+  "schema": 1,
+  "status": "complete independent targeted unaligned-prefix audit",
+  "fixture_sha256": "a5e86d622ba0b3e643a8b18e04f50a7aea3ad4efd1008c46a2641941cda431bc",
+  "client_sha256": "06444aabf72a78108181e668075e2d4cc49db67e521434e966eb13ee1f862b8f",
+  "comparison_sha256": "a84ef875b00b94b2d5627a735f468df62144d76d38aa0da47612d8b6cfbd6b21",
+  "same_serving_argv_tail_and_recipe": true,
+  "arms": {
+    "baseline": {
+      "server_run": "baseline-02",
+      "results_sha256": "acc615d442eb5bb51e7129f271555edd4c90fd0a33ae4859ade73bfde16dfaad",
+      "manifest_sha256": "e550b089a726170af6f84bd99e7ba6547cfb04035d117398738f4fc56c470ba2",
+      "waves": [
+        {
+          "phase": "cold",
+          "repeat": 0,
+          "valid": true,
+          "content_ttft_ms": 2902.6884860359132,
+          "wave_output_tokens_per_second": 37.72129205242622,
+          "decode_tokens_per_second": 65.65751152297007,
+          "external_hit_tokens": 0.0,
+          "gpu_hit_tokens": 0.0,
+          "load_bytes": 0.0,
+          "store_bytes": 264732704.0,
+          "actual_preemptions": 0.0,
+          "allocation_failures": 0,
+          "accepted_tokens": 170.0,
+          "draft_tokens": 170.0
+        },
+        {
+          "phase": "warm",
+          "repeat": 0,
+          "valid": true,
+          "content_ttft_ms": 247.06835206598043,
+          "wave_output_tokens_per_second": 62.51546299081212,
+          "decode_tokens_per_second": 66.27184203839516,
+          "external_hit_tokens": 3968.0,
+          "gpu_hit_tokens": 0.0,
+          "load_bytes": 259571744.0,
+          "store_bytes": 0.0,
+          "actual_preemptions": 0.0,
+          "allocation_failures": 0,
+          "accepted_tokens": 170.0,
+          "draft_tokens": 170.0
+        },
+        {
+          "phase": "cold",
+          "repeat": 1,
+          "valid": true,
+          "content_ttft_ms": 2906.17589908652,
+          "wave_output_tokens_per_second": 37.85142216332852,
+          "decode_tokens_per_second": 66.11374087594453,
+          "external_hit_tokens": 0.0,
+          "gpu_hit_tokens": 0.0,
+          "load_bytes": 0.0,
+          "store_bytes": 264732704.0,
+          "actual_preemptions": 0.0,
+          "allocation_failures": 0,
+          "accepted_tokens": 170.0,
+          "draft_tokens": 170.0
+        },
+        {
+          "phase": "warm",
+          "repeat": 1,
+          "valid": true,
+          "content_ttft_ms": 248.6762199550867,
+          "wave_output_tokens_per_second": 61.8528374325661,
+          "decode_tokens_per_second": 65.5519174101863,
+          "external_hit_tokens": 3968.0,
+          "gpu_hit_tokens": 0.0,
+          "load_bytes": 259571744.0,
+          "store_bytes": 0.0,
+          "actual_preemptions": 0.0,
+          "allocation_failures": 0,
+          "accepted_tokens": 170.0,
+          "draft_tokens": 170.0
+        },
+        {
+          "phase": "cold",
+          "repeat": 2,
+          "valid": true,
+          "content_ttft_ms": 2907.5870998203754,
+          "wave_output_tokens_per_second": 37.72806062123961,
+          "decode_tokens_per_second": 65.767102739883,
+          "external_hit_tokens": 0.0,
+          "gpu_hit_tokens": 0.0,
+          "load_bytes": 0.0,
+          "store_bytes": 264732704.0,
+          "actual_preemptions": 0.0,
+          "allocation_failures": 0,
+          "accepted_tokens": 170.0,
+          "draft_tokens": 170.0
+        },
+        {
+          "phase": "warm",
+          "repeat": 2,
+          "valid": true,
+          "content_ttft_ms": 248.7633628770709,
+          "wave_output_tokens_per_second": 61.87405270228927,
+          "decode_tokens_per_second": 65.57739225215488,
+          "external_hit_tokens": 3968.0,
+          "gpu_hit_tokens": 0.0,
+          "load_bytes": 259571744.0,
+          "store_bytes": 0.0,
+          "actual_preemptions": 0.0,
+          "allocation_failures": 0,
+          "accepted_tokens": 170.0,
+          "draft_tokens": 170.0
+        }
+      ],
+      "requests": 6,
+      "all_valid": true,
+      "resets": 3,
+      "all_resets_succeeded": true,
+      "replay_pairs": [
+        {
+          "case": "c4097-b1/r0-cold/c4097-r0-i0.response.json",
+          "exact": true,
+          "common_prefix_tokens": 256,
+          "payloads_equal": true
+        },
+        {
+          "case": "c4097-b1/r1-cold/c4097-r1-i0.response.json",
+          "exact": true,
+          "common_prefix_tokens": 256,
+          "payloads_equal": true
+        },
+        {
+          "case": "c4097-b1/r2-cold/c4097-r2-i0.response.json",
+          "exact": true,
+          "common_prefix_tokens": 256,
+          "payloads_equal": true
+        }
+      ],
+      "exact_cold_warm_pairs": 3,
+      "resources": {
+        "samples": 12,
+        "frequency_mhz_values": [
+          1967,
+          2800
+        ],
+        "throttle_flagged_samples": 6,
+        "maximum_process_swap_sum_kib": 0
+      }
+    },
+    "candidate": {
+      "server_run": "candidate-03",
+      "results_sha256": "3dcdc966a66f50559c40613a0d2435a3734640bb7b3b3c4e81802ee387bb4298",
+      "manifest_sha256": "7d40c412c4f580bcae392d4ad88c894986f4be30142df527399cd3e2abb415da",
+      "waves": [
+        {
+          "phase": "cold",
+          "repeat": 0,
+          "valid": true,
+          "content_ttft_ms": 2723.349979845807,
+          "wave_output_tokens_per_second": 38.807192399393145,
+          "decode_tokens_per_second": 65.83670572835875,
+          "external_hit_tokens": 0.0,
+          "gpu_hit_tokens": 0.0,
+          "load_bytes": 0,
+          "store_bytes": 264732704.0,
+          "actual_preemptions": 0.0,
+          "allocation_failures": 0,
+          "accepted_tokens": 170.0,
+          "draft_tokens": 170.0
+        },
+        {
+          "phase": "warm",
+          "repeat": 0,
+          "valid": true,
+          "content_ttft_ms": 230.14578921720386,
+          "wave_output_tokens_per_second": 61.99334999072991,
+          "decode_tokens_per_second": 65.39809780810425,
+          "external_hit_tokens": 4096.0,
+          "gpu_hit_tokens": 0.0,
+          "load_bytes": 261292064.0,
+          "store_bytes": 0.0,
+          "actual_preemptions": 0.0,
+          "allocation_failures": 0,
+          "accepted_tokens": 170.0,
+          "draft_tokens": 172.0
+        },
+        {
+          "phase": "cold",
+          "repeat": 1,
+          "valid": true,
+          "content_ttft_ms": 2722.292482852936,
+          "wave_output_tokens_per_second": 38.86763774253966,
+          "decode_tokens_per_second": 65.99382601947283,
+          "external_hit_tokens": 0.0,
+          "gpu_hit_tokens": 0.0,
+          "load_bytes": 0.0,
+          "store_bytes": 264732704.0,
+          "actual_preemptions": 0.0,
+          "allocation_failures": 0,
+          "accepted_tokens": 170.0,
+          "draft_tokens": 170.0
+        },
+        {
+          "phase": "warm",
+          "repeat": 1,
+          "valid": true,
+          "content_ttft_ms": 145.40558587759733,
+          "wave_output_tokens_per_second": 63.296125251444266,
+          "decode_tokens_per_second": 65.402318634876,
+          "external_hit_tokens": 4096.0,
+          "gpu_hit_tokens": 0.0,
+          "load_bytes": 261292064.0,
+          "store_bytes": 0.0,
+          "actual_preemptions": 0.0,
+          "allocation_failures": 0,
+          "accepted_tokens": 170.0,
+          "draft_tokens": 172.0
+        },
+        {
+          "phase": "cold",
+          "repeat": 2,
+          "valid": true,
+          "content_ttft_ms": 2726.3375679031014,
+          "wave_output_tokens_per_second": 38.87249345154758,
+          "decode_tokens_per_second": 66.08159776953006,
+          "external_hit_tokens": 0.0,
+          "gpu_hit_tokens": 0.0,
+          "load_bytes": 0.0,
+          "store_bytes": 264732704.0,
+          "actual_preemptions": 0.0,
+          "allocation_failures": 0,
+          "accepted_tokens": 170.0,
+          "draft_tokens": 170.0
+        },
+        {
+          "phase": "warm",
+          "repeat": 2,
+          "valid": true,
+          "content_ttft_ms": 145.690037868917,
+          "wave_output_tokens_per_second": 62.93375322585542,
+          "decode_tokens_per_second": 65.01941107030153,
+          "external_hit_tokens": 4096.0,
+          "gpu_hit_tokens": 0.0,
+          "load_bytes": 261292064.0,
+          "store_bytes": 0.0,
+          "actual_preemptions": 0.0,
+          "allocation_failures": 0,
+          "accepted_tokens": 170.0,
+          "draft_tokens": 172.0
+        }
+      ],
+      "requests": 6,
+      "all_valid": true,
+      "resets": 3,
+      "all_resets_succeeded": true,
+      "replay_pairs": [
+        {
+          "case": "c4097-b1/r0-cold/c4097-r0-i0.response.json",
+          "exact": true,
+          "common_prefix_tokens": 256,
+          "payloads_equal": true
+        },
+        {
+          "case": "c4097-b1/r1-cold/c4097-r1-i0.response.json",
+          "exact": true,
+          "common_prefix_tokens": 256,
+          "payloads_equal": true
+        },
+        {
+          "case": "c4097-b1/r2-cold/c4097-r2-i0.response.json",
+          "exact": true,
+          "common_prefix_tokens": 256,
+          "payloads_equal": true
+        }
+      ],
+      "exact_cold_warm_pairs": 3,
+      "resources": {
+        "samples": 12,
+        "frequency_mhz_values": [
+          2800
+        ],
+        "throttle_flagged_samples": 5,
+        "maximum_process_swap_sum_kib": 0
+      }
+    }
+  },
+  "cross_release_tokens": [
+    {
+      "case": "c4097-b1/r0-cold/c4097-r0-i0.response.json",
+      "exact": true,
+      "common_prefix_tokens": 256,
+      "payloads_equal": true
+    },
+    {
+      "case": "c4097-b1/r0-warm/c4097-r0-i0.response.json",
+      "exact": true,
+      "common_prefix_tokens": 256,
+      "payloads_equal": true
+    },
+    {
+      "case": "c4097-b1/r1-cold/c4097-r1-i0.response.json",
+      "exact": true,
+      "common_prefix_tokens": 256,
+      "payloads_equal": true
+    },
+    {
+      "case": "c4097-b1/r1-warm/c4097-r1-i0.response.json",
+      "exact": true,
+      "common_prefix_tokens": 256,
+      "payloads_equal": true
+    },
+    {
+      "case": "c4097-b1/r2-cold/c4097-r2-i0.response.json",
+      "exact": true,
+      "common_prefix_tokens": 256,
+      "payloads_equal": true
+    },
+    {
+      "case": "c4097-b1/r2-warm/c4097-r2-i0.response.json",
+      "exact": true,
+      "common_prefix_tokens": 256,
+      "payloads_equal": true
+    }
+  ],
+  "cross_release_exact": 6,
+  "cells": [
+    {
+      "phase": "cold",
+      "baseline": {
+        "median_wave_output_tokens_per_second": 37.72806062123961,
+        "median_content_ttft_ms": 2906.17589908652,
+        "median_request_decode_tokens_per_second": 65.767102739883
+      },
+      "candidate": {
+        "median_wave_output_tokens_per_second": 38.86763774253966,
+        "median_content_ttft_ms": 2723.349979845807,
+        "median_request_decode_tokens_per_second": 65.99382601947283
+      },
+      "candidate_over_baseline": {
+        "median_content_ttft_ms": 0.9370905528126567,
+        "median_request_decode_tokens_per_second": 1.0034473660864545,
+        "median_wave_output_tokens_per_second": 1.0302050278369863
+      }
+    },
+    {
+      "phase": "warm",
+      "baseline": {
+        "median_wave_output_tokens_per_second": 61.87405270228927,
+        "median_content_ttft_ms": 248.6762199550867,
+        "median_request_decode_tokens_per_second": 65.57739225215488
+      },
+      "candidate": {
+        "median_wave_output_tokens_per_second": 62.93375322585542,
+        "median_content_ttft_ms": 145.690037868917,
+        "median_request_decode_tokens_per_second": 65.39809780810425
+      },
+      "candidate_over_baseline": {
+        "median_content_ttft_ms": 0.5858623630970021,
+        "median_request_decode_tokens_per_second": 0.9972659107370233,
+        "median_wave_output_tokens_per_second": 1.0171267353160938
+      }
+    }
+  ],
+  "upstream_mechanism": {
+    "commit": "0bfeb8d0e367c21d4406c87d0807729cc8787322",
+    "symbols": [
+      "SpeculativeConfig.needs_eagle_block_drop",
+      "SpeculativeConfig.use_eagle_block_drop"
+    ],
+    "integration": [
+      "KVCacheCoordinator.drop_eagle_group_ids",
+      "KVCacheCoordinator.cache_blocks",
+      "replay_boundaries"
+    ],
+    "observed": "All candidate warm repetitions restore4096 external tokens, versus3968 baseline, for4097input tokens. This avoids128tokens of repeated prefill and leaves1 versus129uncached input tokens. Both have positive actual CPU-to-GPU load bytes."
+  },
+  "interpretation": [
+    "Restored median content TTFT falls from248.676ms to145.690ms(-41.41%) for this4097-token boundary probe. Preserve all candidate samples230.146/145.406/145.690ms and baseline247.068/248.676/248.763ms; do not remove the first-restore overhead sample.",
+    "The +128restored-token counter change matches the upstream DFlash trailing-block fix and its local integration. Whole-package timing is consistent with less recomputation, but this is not an isolated single-commit ablation.",
+    "Restored aggregate output throughput increases1.71%;256output tokens dilute the saved prefill time. Decode median is effectively flat(-0.27%). Cold control throughput increases3.02% and TTFT falls6.29% in this ordered run; avoid generalizing those small-sample deltas.",
+    "Baseline runs before candidate03, reversing the main arm order. Candidate03 is a cached restart with identical serving argv/profile; first external restore still has extra latency. Three repeats do not establish p99, statistical significance or universal TTFT improvement.",
+    "This is a synthetic boundary probe with near-100% speculative acceptance. Main and meaningful-chat results remain separate, with all16aggregate cells within2% descriptively.",
+    "Resource snapshots are spaced5seconds; flag counts are observations, not proof of instantaneous frequency/temperature or absence of unsampled throttling."
+  ],
+  "five_server_log_seals": [
+    {
+      "run": "candidate-01",
+      "stopped_record_sha256": "0745bc7e17fdb7c0f81c1dc608772d959336b437b4da3730aaf74028673d2bb4",
+      "recorded_exited": true,
+      "recorded_log_bytes": 153513,
+      "actual_log_bytes": 153513,
+      "recorded_log_sha256": "291ddabc39210a97a35d0be08920863f9269bdc08f58f407123070411885ec72",
+      "actual_log_sha256": "291ddabc39210a97a35d0be08920863f9269bdc08f58f407123070411885ec72",
+      "matches": true
+    },
+    {
+      "run": "candidate-02",
+      "stopped_record_sha256": "f8e8ab42958d2c0baad14147074c39036aa328a3737dac2165cfce7d76785948",
+      "recorded_exited": true,
+      "recorded_log_bytes": 338685,
+      "actual_log_bytes": 338685,
+      "recorded_log_sha256": "ec0706ff15167a360a1480bf5bab3f713e3f18a18e7b90f7a778efa892c5ad27",
+      "actual_log_sha256": "ec0706ff15167a360a1480bf5bab3f713e3f18a18e7b90f7a778efa892c5ad27",
+      "matches": true
+    },
+    {
+      "run": "candidate-03",
+      "stopped_record_sha256": "287d44639d2bb40263b0de6d8f405bef541d4729fbd0c6abe49139fd44c4650b",
+      "recorded_exited": true,
+      "recorded_log_bytes": 90228,
+      "actual_log_bytes": 90228,
+      "recorded_log_sha256": "410d77847aa5fe5fbb734f9fef1ab8959a7598abf1c3c57e86acc1b5cfa8cec7",
+      "actual_log_sha256": "410d77847aa5fe5fbb734f9fef1ab8959a7598abf1c3c57e86acc1b5cfa8cec7",
+      "matches": true
+    },
+    {
+      "run": "baseline-01",
+      "stopped_record_sha256": "bcd936de32065c509035d7957bb7f6d584e7c7da46988c4f7fa5f87c0c71a2fb",
+      "recorded_exited": true,
+      "recorded_log_bytes": 148211,
+      "actual_log_bytes": 148211,
+      "recorded_log_sha256": "26d8624cd3b28b20b0488e81586c5c77235135b1c7f89d125c69ad202c99eadd",
+      "actual_log_sha256": "26d8624cd3b28b20b0488e81586c5c77235135b1c7f89d125c69ad202c99eadd",
+      "matches": true
+    },
+    {
+      "run": "baseline-02",
+      "stopped_record_sha256": "9a0233ff06d6e86dac4bf347c33990ec22c8a9db74d6ab20065818afef6c9502",
+      "recorded_exited": true,
+      "recorded_log_bytes": 285985,
+      "actual_log_bytes": 285985,
+      "recorded_log_sha256": "60f3197c28e8fceefc0852ce684b669d10f2cfd4abbc3b0a9db786898ec45fc7",
+      "actual_log_sha256": "60f3197c28e8fceefc0852ce684b669d10f2cfd4abbc3b0a9db786898ec45fc7",
+      "matches": true
+    }
+  ],
+  "combined_conclusion": "All126 measured requests per arm across main, chat and targeted probe are valid. Broad measured aggregate throughput is similar on the selected main/chat workloads, attention capacity rises6.15% under the same budget, and the4097-token replay case demonstrates128fewer recomputed tokens with41.4%lower median restored TTFT. Preserve inherited realistic-chat replay variation and all sampling/order limitations.",
+  "mutations": "Review JSON only; no HTTP/GPU/server/service execution.",
+  "acceptance_note": "Candidate warm accepted170/172 draft tokens(98.837%) in each repeat; baseline warm accepted170/170(100%). All generated256token outputs still match exactly. Increased acceptance does not explain the observed candidate restored TTFT reduction."
+}

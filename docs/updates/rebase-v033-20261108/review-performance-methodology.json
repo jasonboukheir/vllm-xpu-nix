@@ -1,0 +1,143 @@
+{
+  "schema": 1,
+  "reviewer": "/root/audit_vllm_kvarn",
+  "status": "Methodology executed by parent; independent main/chat/unaligned reviews and all five engine-log seals complete. Reviewer performed no HTTP/GPU/server/service execution.",
+  "baseline": "/nix/store/abyydgnrgglvviif8193zanhw6j1swch-python3.12-vllm-xpu-0.32.0+unstable.2026.10.20.gc0722c9",
+  "candidate": "/nix/store/5jvmvr89c90f4j1lry5l3a0xr8jp0gfw-python3.12-vllm-xpu-0.33.0+unstable.2026.11.08.g066206b",
+  "client": {
+    "path": "/tmp/vllm-v033-qualification/perf_check.py",
+    "sha256": "06444aabf72a78108181e668075e2d4cc49db67e521434e966eb13ee1f862b8f",
+    "dependencies": "Python standard library only; invoke through the existing venv Python.",
+    "prepare": "One /tokenize call creates sealed deterministic token-id fixtures. Both arms subsequently consume the same fixture bytes and client implementation without retokenizing.",
+    "run": "HTTP requests only. No server launch, process/service mutation, GPU imports or native commands. The executed client resets local/external caches through the parent-owned isolated server.",
+    "compare": "Requires complete runs and equal fixture/client hashes and matrix/warmup settings; compares each cold/warm workload separately."
+  },
+  "matrix": {
+    "input_tokens": [
+      512,
+      4096,
+      16384
+    ],
+    "offered_concurrency": [
+      1,
+      4
+    ],
+    "repeats_per_shape": 3,
+    "output_tokens": 256,
+    "cache_modes": [
+      "cold",
+      "warm"
+    ],
+    "measured_waves_per_arm": 36,
+    "measured_requests_per_arm": 90,
+    "warmup_requests_per_arm": 15,
+    "warmup_output_tokens": 64,
+    "sampling": "temperature=0, top_p=1, ignore_eos=true; sealed per-request seeds; fixed token-id inputs; return_token_ids=true; stream_options.include_usage=true",
+    "prompt_scope": "Synthetic natural-language document spans. These are direct completions and do not qualify representative chat/tool/image performance or general DFlash acceptance."
+  },
+  "matched_configuration": [
+    "Both packages run today's host recipe: RedHatAI/Qwen3.8-27B-INT4 bf08f3dbd9a324e53956920aad378a1f1b6dd24a; target compact K4V2; BF16 activations; V2 eager; pinned syvai DFlash2 W4A16 with two proposals and BF16 draft KV.",
+    "Keep max_model_len=131072, max_num_seqs=4, gpu_memory_utilization=0.93, max_num_batched_tokens=2048, long_prefill_token_threshold=1024 and the 8GiB active_only independent CPU offloader identical, including during concurrency-one tests.",
+    "Use the same port18000 client path, device, environment, model files and cached-start policy. Preserve inactive chat/embedding/STT services throughout the parent-owned test.",
+    "Record startup attention/recurrent/draft capacities and all server arguments. Do not substitute the historical release's 262K/.98 results for a current matched baseline.",
+    "If startup JIT changes profiled memory, retain first-start evidence and apply the same cached-restart policy to both arms. Do not selectively restart the worse arm or force equal block overrides after seeing a result. Remaining capacity differences are part of observed runtime behavior.",
+    "Keep context-ceiling correctness stress separate from this throughput matrix. Four 16K inputs are moderate aggregate residency, not a claim that four maximum-length requests fit."
+  ],
+  "cache_and_warmup": [
+    "For each shape, issue a full offered-width warmup with64 output tokens, then reset caches before measured work. This warms execution paths without turning cold-prefill samples into prefix hits.",
+    "Wait for scheduler running/waiting gauges to reach zero and reported offload-byte counters to stabilize. These observations are not a transfer fence by themselves.",
+    "Before each cold repeat POST /reset_prefix_cache?reset_external=true and require JSON success=true, retrying transient false responses while idle. Both installed versions expose this reset contract. A local-only reset leaves the RAM prefix cache populated.",
+    "Each cold wave uses independent per-row/repeat cache salts; warm immediately replays the same inputs/salts after idle settling. Baseline and candidate use identical salts and seeds.",
+    "Capture full before/after metrics. A warm label needs actual prefix/external-hit or CPU-to-GPU load evidence; elapsed time alone does not prove a RAM restore. Missing or delayed metrics are a qualification gap to investigate.",
+    "The client retains raw metric series and deltas, including offload loads/stores/allocation failures, prefix/external hits, speculative acceptance, scheduler counts and preemptions. Parent resource samples should be aligned using request wall timestamps."
+  ],
+  "metric_semantics": [
+    "Visible-content TTFT measures first nonempty completion text from client request start. Token TTFT separately records the first token-ID-bearing event; special or non-visible tokens can separate them.",
+    "SSE event count is never treated as token count. Both releases support return_token_ids; stream deltas must sum exactly to usage.completion_tokens and requested256 tokens. Prompt usage must match the fixed token-id length.",
+    "Decode delivery rate is generated tokens after the first token-bearing event divided by time from that event to the last token-bearing event. It accounts for multiple speculative tokens in one event and excludes prefill/TTFT.",
+    "Inter-content-event gaps are explicitly event gaps, not per-token ITL. Do not apply the older harness's len(itls)/sum(itls) decode-rate calculation to DFlash bursts.",
+    "Wave output throughput is completed output tokens divided by elapsed time from first HTTP request start to final HTTP completion. It includes prefill and client/server overhead, while excluding resets, settling and warmup.",
+    "Report per-shape median wave throughput, median content TTFT, median request decode rate and individual repeats. Three B1 observations cannot support p99 or a formal noninferiority conclusion.",
+    "Any failed/truncated request invalidates its performance cell; the client preserves failure artifacts and refuses a partial-success throughput claim."
+  ],
+  "interpretation": {
+    "comparison": "Candidate/baseline >1 is faster for throughput/decode, <1 is faster for latency. Keep cold and warm results separate and inspect cache/speculation/preemption evidence before attributing changes.",
+    "repeat_trigger": "A roughly5% throughput/decode drop or10% TTFT rise is a practical signal to rerun the affected shape with balanced package order, not a statistical pass/fail threshold from the small initial sample.",
+    "order": "A balanced A-B-B-A sequence is preferable when time permits. If the initial run is candidate then baseline, explicitly retain order/thermal/background drift as a confounder and rerun materially changed cells in reversed order.",
+    "memory": "Compare startup physical pool capacities and parent-sampled RSS/swap/DRM memory. Equal utilization budgets can yield changed capacity rather than lower allocated VRAM. Five-second samples are observed peaks, not a proof of the instantaneous maximum.",
+    "historical_harness": "scripts/kvarn_perf_run.py is designed for old auto/native arms, K4V4, V1 and an AEON checkpoint with immutable experiment launchers. Its evidence sealing and warmup principles are useful, but invoking it unchanged would compare a different profile. The release manifest references a prior finish-performance-review artifact that is absent from this checkout; no unavailable historical measurement was inferred."
+  },
+  "offline_validation": [
+    "Compiled client source in memory using the existing .venv/bin/python.",
+    "Exercised SSE parsing with an empty-text two-token event followed by a one-token content event, final usage and DONE. Verified content/token timing distinction and exact token counting.",
+    "Checked labeled Prometheus series parsing, idle gauge summation and exclusion of non-finite values.",
+    "No HTTP requests or GPU/server/service actions executed by reviewer."
+  ],
+  "awaiting": null,
+  "supplementary_chat_matrix": {
+    "builder": "/tmp/vllm-v033-qualification/prepare_chat_fixtures.py",
+    "builder_sha256": "5fc092c530fa2b9fefe4bb98a25f6d752ccd7e2ef2adab917159386e25a06d5d",
+    "fixtures": "/tmp/vllm-v033-qualification/perf-chat-fixtures.json",
+    "client_unchanged": true,
+    "input_tokens": 1024,
+    "offered_concurrency": [
+      1,
+      4
+    ],
+    "repeats_per_shape": 3,
+    "output_tokens": 256,
+    "cache_modes": [
+      "cold",
+      "warm"
+    ],
+    "tasks": [
+      "async token-bucket implementation with cancellation and tests",
+      "thread-safe LRU/TTL cache debugging and corrected code",
+      "SQL transaction isolation and booking interleavings",
+      "model-service migration and validation planning"
+    ],
+    "chat_template": "Each complete system/user task is tokenized via messages with add_generation_prompt=true and chat_template_kwargs.enable_thinking=false. The original template/task token sequence is preserved; bounded background tokens plus a separator are inserted at the beginning of user content to produce exactly 1024 tokens. No task or assistant prefix truncation.",
+    "calls": "Seven /tokenize calls by parent only: empty chat, background text, separator, and four full tasks. Request/response bytes and SHA256 values are sealed. No HTTP execution by reviewer.",
+    "scope": "A small meaningful task mix to complement the synthetic document continuation that produced near-100% speculative acceptance. B1 always uses implementation task row0; B4 uses all four tasks. Repeats change cache salts/seeds, not task content. This is not a broad production workload distribution or a response-quality evaluation.",
+    "validation": "Compiled builder source in memory and checked exact-length/original-token-preservation/separator behavior using offline synthetic token arrays. Frozen perf client validates fixture hash and consumes its compatible schema.",
+    "fixture_sha256": "71cce78c73fbf9a97ad256693e46d38d1435f33ebf0e44124171ed20717f74c6",
+    "builder_correction": {
+      "initial_builder_sha256": "d1c01870624d6cca9fe9dc4b7014ad2a8ff879d94ead4df8cafb3b5be37628b3",
+      "failure": "Initial 721-token background bank could not pad the complete251-token task to1024. Builder failed before fixture sealing or model completions.",
+      "fix": "Parent doubled BACKGROUND text before tokenization, creating1442 background tokens; complete tasks/template remain intact.",
+      "evidence": "/tmp/vllm-v033-qualification/chat-fixture-builder-correction.json",
+      "frozen_performance_client_unchanged": true
+    }
+  },
+  "unaligned_boundary_probe": {
+    "input_tokens": 4097,
+    "concurrency": 1,
+    "repeats": 3,
+    "output_tokens": 256,
+    "phases": [
+      "cold",
+      "warm"
+    ],
+    "fixture_sha256": "a5e86d622ba0b3e643a8b18e04f50a7aea3ad4efd1008c46a2641941cda431bc",
+    "execution": "Parent runs baseline after main matrix, then candidate03 cached restart, same host recipe and frozenclient. Reviewer does not execute HTTP/GPU.",
+    "upstream_commit": "0bfeb8d0e367c21d4406c87d0807729cc8787322",
+    "upstream_symbols": [
+      "SpeculativeConfig.needs_eagle_block_drop",
+      "SpeculativeConfig.use_eagle_block_drop"
+    ],
+    "local_integration_symbols": [
+      "KVCacheCoordinator.cache_blocks",
+      "replay_boundaries",
+      "KVCacheCoordinator.drop_eagle_group_ids"
+    ],
+    "hypothesis": "DFlash no longer discards the trailing matched block.4097-token prompt can restore4096tokens on candidate versus3968 on baseline, leaving1 versus129uncached tokens. Verify actual external-hit and load-byte deltas; do not assume the counts.",
+    "primary_metric": "Restored content TTFT;256-token end-to-end throughput dilutes one avoided128-token prefill. Cold control and token/acceptance evidence should be retained.",
+    "causal_scope": "Counter delta plus matched package timing supports the mechanism, but this is a whole-package comparison, not an isolated single-commit ablation."
+  },
+  "completed_reviews": [
+    "review-performance-main.json",
+    "review-performance-chat.json",
+    "review-performance-unaligned.json"
+  ],
+  "final_measured_requests_per_arm": 126
+}

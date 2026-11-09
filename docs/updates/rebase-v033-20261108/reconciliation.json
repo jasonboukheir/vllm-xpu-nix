@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "status": "All 12 original commits audited; five vLLM commits replayed, seven kernel commits retained unchanged; 2009 distinct CPU source regressions pass; GPU qualification pending",
+  "status": "All 12 original commits audited; five vLLM commits replayed and seven kernel commits retained; 2009 distinct CPU source regressions and Brutus GPU qualification complete",
   "kernel_pair_decision": "Retain exact0.1.15.4 kernel base/tip after independent newer-release reviews",
   "rows": [
     {
@@ -168,7 +168,7 @@
     "Adapt independent pools to lookahead hashes and sync-load signature",
     "Preserve compressed-tensors draft mapping without duplicate ModelOpt mapping"
   ],
-  "gpu": "deferred until user frees device",
+  "gpu": "Qualified current Brutus profile; see gpu-qualification.json. Source/package implementation required no further changes during GPU testing.",
   "minimization": [
     "Removed superseded local worker-projection preservation in favor of upstream planner/global groups.",
     "Kept upstream explicit is_draft tags and DFlash no-drop semantics; removed positional assumptions.",

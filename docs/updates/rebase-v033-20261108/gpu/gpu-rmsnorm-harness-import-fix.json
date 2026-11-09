@@ -1,0 +1,32 @@
+{
+  "change": "Import installed vllm.config before RMSNorm test helper module, as normal tests/conftest.py does.",
+  "reason": "Direct bounded harness bypassed pytest root conftest initialization. Importing model_arch_config_convertor first caused a circular import through vllm.config.model before MODEL_ARCH_CONFIG_CONVERTORS was defined.",
+  "scope": "Harness only; source/package/native implementation/test copies/plan unchanged.",
+  "original_failure": {
+    "gpu-rmsnorm-initial-import-failure.log": "708a2cf01fc3beeb87c9134ea703e3c86b788f148df8861c21a1272146515d48",
+    "gpu-rmsnorm-initial-import-failure.json": "e413617ae29d29513a989fc4a77e02dd621f2eb89c48222e7b23cea3b92333f9"
+  },
+  "offline_checks": {
+    "baseline": {
+      "mode": "broken",
+      "expected_import_failure_reproduced": true,
+      "error": "cannot import name 'MODEL_ARCH_CONFIG_CONVERTORS' from partially initialized module 'vllm.transformers_utils.model_arch_config_convertor' (most likely due to a circular import) (/nix/store/5jvmvr89c90f4j1lry5l3a0xr8jp0gfw-python3.12-vllm-xpu-0.33.0+unstable.2026.11.08.g066206b/lib/python3.12/site-packages/vllm/transformers_utils/model_arch_config_convertor.py)",
+      "gpu_initialized": false
+    },
+    "fixed": {
+      "mode": "fixed",
+      "module_import_passed": true,
+      "gpu_initialized": false,
+      "gpu_tests_executed": false,
+      "module": "/tmp/vllm-v033-qualification/installed-tests/tests/v1/determinism/test_rms_norm_batch_invariant.py"
+    }
+  },
+  "gpu_execution_by_agent": false,
+  "pending": null,
+  "harness_sha256": "2cfb2cfe990db1ab13a3b89ced78701f4479e51a9a600336877fb3ddbe40292f",
+  "followup": {
+    "executed_by": "parent",
+    "passed_gpu_cases": 7,
+    "evidence": "gpu-rmsnorm.json"
+  }
+}

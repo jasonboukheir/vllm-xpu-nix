@@ -37,9 +37,10 @@
       "source": "https://github.com/vllm-project/vllm/commit/0bfeb8d0e367c21d4406c87d0807729cc8787322"
     },
     {
-      "feature": "Incremental qwen3_xml tool arguments",
-      "impact": "Earlier usable streamed tool arguments; does not imply faster token generation",
-      "source": "https://github.com/vllm-project/vllm/commit/5c1c903501927ea7c6c699aabd4c271015e66e71"
+      "feature": "Incremental open-value processing in qwen3_xml tool arguments",
+      "impact": "Avoids repeatedly converting accumulated text while a tool argument grows. Both 0.32 and 0.33 already streamed the same five fragments in the GPU qualification fixture; the short sample does not establish a parser speedup.",
+      "source": "https://github.com/vllm-project/vllm/commit/5c1c903501927ea7c6c699aabd4c271015e66e71",
+      "qualification_evidence": "gpu/tool-stream-comparison.json"
     },
     {
       "feature": "Request-scoped prefix eviction order",
@@ -71,5 +72,10 @@
     "Matched throughput, TTFT, decode latency, draft acceptance, peak device/host memory",
     "DFlash zero-draft context-only step followed by resumed drafting"
   ],
-  "measured_performance_delta": null
+  "measured_performance_delta": {
+    "kv_capacity_percent": 6.148590947907771,
+    "main_and_chat_throughput": "Within2% descriptively across16cells",
+    "warm_4097_token_ttft": "Median248.676ms\u2192145.690ms; extra128tokens restored. Boundary-specific, three repeats."
+  },
+  "gpu_followup": "gpu-qualification.json"
 }

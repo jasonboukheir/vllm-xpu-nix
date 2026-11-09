@@ -1,0 +1,586 @@
+{
+  "schema": "v033-lifecycle-evidence-review-v1",
+  "status": "passed_for_observed_candidate_cases_including_mixed_followup",
+  "method": "Read-only JSON/raw HTTP/SSE/fixture/metric/engine-log inspection; no GPU, network, server or production actions.",
+  "scope": {
+    "recorded_check_count": 41,
+    "checks_passed": 41,
+    "captured_errors": 0,
+    "generation_requests": 21,
+    "completed_generation_requests": 20,
+    "intentionally_cancelled_requests": 1,
+    "server_package": "/nix/store/5jvmvr89c90f4j1lry5l3a0xr8jp0gfw-python3.12-vllm-xpu-0.33.0+unstable.2026.11.08.g066206b",
+    "max_model_len": 131072,
+    "max_num_seqs": 4
+  },
+  "provenance": [
+    {
+      "directory": "/tmp/vllm-v033-qualification/candidate-lifecycle-first",
+      "summary_sha256": "2d67ffcc74bfa5e898247714155034a39636207ab469c1cfb20f203974272794",
+      "checks": 12,
+      "all_checks_passed": true,
+      "errors": [],
+      "recorded_http_exchanges": 35,
+      "all_recorded_http_statuses_200": true,
+      "engine_slice_matches_sealed_log": true,
+      "engine_slice_digest_valid": true,
+      "recorded_script_sha256": "f7b272d42e7dfcf0215b8ec0217787c069a6257f91e0bb8a091982454c08e795",
+      "run_local_client_source_copy_present": false,
+      "matching_frozen_global_client_sources": [
+        {
+          "path": "/tmp/vllm-v033-qualification/lifecycle_first_client.py",
+          "sha256": "f7b272d42e7dfcf0215b8ec0217787c069a6257f91e0bb8a091982454c08e795"
+        }
+      ],
+      "frozen_client_source_available": true
+    },
+    {
+      "directory": "/tmp/vllm-v033-qualification/candidate-lifecycle-vision-tools",
+      "summary_sha256": "70e841cb18efc29c2a7eee981911d67536097b0293d2a5cb12e6c664e7c0a2ad",
+      "checks": 6,
+      "all_checks_passed": true,
+      "errors": [],
+      "recorded_http_exchanges": 14,
+      "all_recorded_http_statuses_200": true,
+      "engine_slice_matches_sealed_log": true,
+      "engine_slice_digest_valid": true,
+      "recorded_script_sha256": "f7b272d42e7dfcf0215b8ec0217787c069a6257f91e0bb8a091982454c08e795",
+      "run_local_client_source_copy_present": false,
+      "matching_frozen_global_client_sources": [
+        {
+          "path": "/tmp/vllm-v033-qualification/lifecycle_first_client.py",
+          "sha256": "f7b272d42e7dfcf0215b8ec0217787c069a6257f91e0bb8a091982454c08e795"
+        }
+      ],
+      "frozen_client_source_available": true
+    },
+    {
+      "directory": "/tmp/vllm-v033-qualification/candidate-lifecycle-ram-ceiling",
+      "summary_sha256": "9114469e7f7d3186d5d1665454384a5831a209a8d99af0095e495235021d2d6b",
+      "checks": 23,
+      "all_checks_passed": true,
+      "errors": [],
+      "recorded_http_exchanges": 49,
+      "all_recorded_http_statuses_200": true,
+      "engine_slice_matches_sealed_log": true,
+      "engine_slice_digest_valid": true,
+      "recorded_script_sha256": "9b3104f43b1b94b500044687a01a412504012a1d18edb5ec906e79d5ea7895a5",
+      "run_local_client_source_copy_present": false,
+      "matching_frozen_global_client_sources": [
+        {
+          "path": "/tmp/vllm-v033-qualification/lifecycle_full_client.py",
+          "sha256": "9b3104f43b1b94b500044687a01a412504012a1d18edb5ec906e79d5ea7895a5"
+        }
+      ],
+      "frozen_client_source_available": true
+    }
+  ],
+  "raw_evidence_crosschecks": {
+    "ram_and_ceiling_responses_equal_raw_http_bodies": true,
+    "ram_and_ceiling_request_prompt_ids_equal_fixtures": true,
+    "tool_events_equal_raw_sse_events": true
+  },
+  "shutdown": {
+    "sealed_metadata": "/tmp/vllm-v033-qualification/candidate-01/stopped.json",
+    "exited": true,
+    "log_bytes": 153513,
+    "size_matches_seal": true,
+    "sha256": "291ddabc39210a97a35d0be08920863f9269bdc08f58f407123070411885ec72",
+    "digest_matches_seal": true,
+    "clean_worker_and_server_teardown_logged": true,
+    "explicit_error_signature_matches": []
+  },
+  "concurrency": {
+    "requests": 4,
+    "prompt_tokens": [
+      58,
+      61,
+      61,
+      59
+    ],
+    "output_tokens_each": 192,
+    "total_output_tokens": 768,
+    "observed_peak_running": 4.0,
+    "metrics_samples_until_overlap": 4,
+    "elapsed_seconds": 7.405524021945894,
+    "distinct_expected_markers_observed": [
+      "ASTRA482",
+      "BIRCH715",
+      "CORAL936",
+      "DELTA268"
+    ],
+    "quality_findings": [],
+    "counter_deltas": {
+      "kv_offload_load_bytes": 0,
+      "kv_offload_store_bytes": 40435840.0,
+      "external_prefix_cache_hits": 0.0,
+      "prefix_cache_hits": 0.0,
+      "spec_decode_num_drafts": 366.0,
+      "spec_decode_num_draft_tokens": 732.0,
+      "spec_decode_num_accepted_tokens": 401.0,
+      "num_preemptions": 0.0,
+      "host_cached_tokens": 0.0,
+      "unspecified_cached_tokens": 0.0
+    },
+    "after_idle_gauges": {
+      "vllm:num_requests_running": 0.0,
+      "vllm:num_requests_waiting": 0.0,
+      "vllm:kv_cache_usage_perc": 0.0
+    },
+    "limitation": "All prompts were58-61tokens, so this is concurrent decode/isolation evidence, not a meaningful mixed long-prefill/decode or RAM-restore wave."
+  },
+  "ram_restore": {
+    "requests": 7,
+    "actual_restoring_requests": 6,
+    "cases": [
+      {
+        "case": "aligned-seed",
+        "prompt_tokens": 4096,
+        "completion_tokens": 7,
+        "text": "ORCHID482",
+        "token_ids": [
+          842,
+          2080,
+          887,
+          19,
+          23,
+          17,
+          248046
+        ],
+        "finish_reason": "stop",
+        "counter_deltas": {
+          "kv_offload_load_bytes": 0,
+          "kv_offload_store_bytes": 261292064.0,
+          "external_prefix_cache_hits": 0.0,
+          "prefix_cache_hits": 0.0,
+          "spec_decode_num_drafts": 3.0,
+          "spec_decode_num_draft_tokens": 6.0,
+          "spec_decode_num_accepted_tokens": 4.0,
+          "num_preemptions": 0.0,
+          "host_cached_tokens": 0.0,
+          "unspecified_cached_tokens": 0.0
+        },
+        "idle_gauges": {
+          "vllm:num_requests_running": 0.0,
+          "vllm:num_requests_waiting": 0.0,
+          "vllm:kv_cache_usage_perc": 0.0
+        }
+      },
+      {
+        "case": "aligned-replay",
+        "prompt_tokens": 4096,
+        "completion_tokens": 7,
+        "text": "ORCHID482",
+        "token_ids": [
+          842,
+          2080,
+          887,
+          19,
+          23,
+          17,
+          248046
+        ],
+        "finish_reason": "stop",
+        "counter_deltas": {
+          "kv_offload_load_bytes": 259571744.0,
+          "kv_offload_store_bytes": 0.0,
+          "external_prefix_cache_hits": 3968.0,
+          "prefix_cache_hits": 0.0,
+          "spec_decode_num_drafts": 3.0,
+          "spec_decode_num_draft_tokens": 6.0,
+          "spec_decode_num_accepted_tokens": 4.0,
+          "num_preemptions": 0.0,
+          "host_cached_tokens": 3968.0,
+          "unspecified_cached_tokens": 0.0
+        },
+        "idle_gauges": {
+          "vllm:num_requests_running": 0.0,
+          "vllm:num_requests_waiting": 0.0,
+          "vllm:kv_cache_usage_perc": 0.0
+        }
+      },
+      {
+        "case": "unaligned-seed",
+        "prompt_tokens": 4095,
+        "completion_tokens": 7,
+        "text": "ORCHID482",
+        "token_ids": [
+          842,
+          2080,
+          887,
+          19,
+          23,
+          17,
+          248046
+        ],
+        "finish_reason": "stop",
+        "counter_deltas": {
+          "kv_offload_load_bytes": 259571744.0,
+          "kv_offload_store_bytes": 1720320.0,
+          "external_prefix_cache_hits": 3968.0,
+          "prefix_cache_hits": 0.0,
+          "spec_decode_num_drafts": 3.0,
+          "spec_decode_num_draft_tokens": 6.0,
+          "spec_decode_num_accepted_tokens": 4.0,
+          "num_preemptions": 0.0,
+          "host_cached_tokens": 3968.0,
+          "unspecified_cached_tokens": 0.0
+        },
+        "idle_gauges": {
+          "vllm:num_requests_running": 0.0,
+          "vllm:num_requests_waiting": 0.0,
+          "vllm:kv_cache_usage_perc": 0.0
+        }
+      },
+      {
+        "case": "unaligned-replay",
+        "prompt_tokens": 4095,
+        "completion_tokens": 7,
+        "text": "ORCHID482",
+        "token_ids": [
+          842,
+          2080,
+          887,
+          19,
+          23,
+          17,
+          248046
+        ],
+        "finish_reason": "stop",
+        "counter_deltas": {
+          "kv_offload_load_bytes": 259571744.0,
+          "kv_offload_store_bytes": 0.0,
+          "external_prefix_cache_hits": 3968.0,
+          "prefix_cache_hits": 0.0,
+          "spec_decode_num_drafts": 3.0,
+          "spec_decode_num_draft_tokens": 6.0,
+          "spec_decode_num_accepted_tokens": 4.0,
+          "num_preemptions": 0.0,
+          "host_cached_tokens": 3968.0,
+          "unspecified_cached_tokens": 0.0
+        },
+        "idle_gauges": {
+          "vllm:num_requests_running": 0.0,
+          "vllm:num_requests_waiting": 0.0,
+          "vllm:kv_cache_usage_perc": 0.0
+        }
+      },
+      {
+        "case": "growing-prefix",
+        "prompt_tokens": 6145,
+        "completion_tokens": 7,
+        "text": "ORCHID482",
+        "token_ids": [
+          842,
+          2080,
+          887,
+          19,
+          23,
+          17,
+          248046
+        ],
+        "finish_reason": "stop",
+        "counter_deltas": {
+          "kv_offload_load_bytes": 259571744.0,
+          "kv_offload_store_bytes": 227098624.0,
+          "external_prefix_cache_hits": 3968.0,
+          "prefix_cache_hits": 0.0,
+          "spec_decode_num_drafts": 3.0,
+          "spec_decode_num_draft_tokens": 6.0,
+          "spec_decode_num_accepted_tokens": 4.0,
+          "num_preemptions": 0.0,
+          "host_cached_tokens": 3968.0,
+          "unspecified_cached_tokens": 0.0
+        },
+        "idle_gauges": {
+          "vllm:num_requests_running": 0.0,
+          "vllm:num_requests_waiting": 0.0,
+          "vllm:kv_cache_usage_perc": 0.0
+        }
+      },
+      {
+        "case": "growing-replay",
+        "prompt_tokens": 6145,
+        "completion_tokens": 7,
+        "text": "ORCHID482",
+        "token_ids": [
+          842,
+          2080,
+          887,
+          19,
+          23,
+          17,
+          248046
+        ],
+        "finish_reason": "stop",
+        "counter_deltas": {
+          "kv_offload_load_bytes": 288817184.0,
+          "kv_offload_store_bytes": 0.0,
+          "external_prefix_cache_hits": 6144.0,
+          "prefix_cache_hits": 0.0,
+          "spec_decode_num_drafts": 4.0,
+          "spec_decode_num_draft_tokens": 8.0,
+          "spec_decode_num_accepted_tokens": 4.0,
+          "num_preemptions": 0.0,
+          "host_cached_tokens": 6144.0,
+          "unspecified_cached_tokens": 0.0
+        },
+        "idle_gauges": {
+          "vllm:num_requests_running": 0.0,
+          "vllm:num_requests_waiting": 0.0,
+          "vllm:kv_cache_usage_perc": 0.0
+        }
+      },
+      {
+        "case": "aligned-after-growth",
+        "prompt_tokens": 4096,
+        "completion_tokens": 7,
+        "text": "ORCHID482",
+        "token_ids": [
+          842,
+          2080,
+          887,
+          19,
+          23,
+          17,
+          248046
+        ],
+        "finish_reason": "stop",
+        "counter_deltas": {
+          "kv_offload_load_bytes": 259571744.0,
+          "kv_offload_store_bytes": 0.0,
+          "external_prefix_cache_hits": 3968.0,
+          "prefix_cache_hits": 0.0,
+          "spec_decode_num_drafts": 3.0,
+          "spec_decode_num_draft_tokens": 6.0,
+          "spec_decode_num_accepted_tokens": 4.0,
+          "num_preemptions": 0.0,
+          "host_cached_tokens": 3968.0,
+          "unspecified_cached_tokens": 0.0
+        },
+        "idle_gauges": {
+          "vllm:num_requests_running": 0.0,
+          "vllm:num_requests_waiting": 0.0,
+          "vllm:kv_cache_usage_perc": 0.0
+        }
+      }
+    ],
+    "total_cpu_to_gpu_bytes": 1586675904.0,
+    "total_external_hit_tokens": 25984.0,
+    "total_host_attributed_hit_tokens": 25984.0,
+    "device_prefix_hit_tokens": 0.0,
+    "unspecified_hit_tokens": 0.0,
+    "grown_fixture_shared_prefix_tokens": 4069,
+    "all_seven_token_id_sequences_equal": true,
+    "interpretation": "Modern CPU-to-GPU byte counters increase after active_only returns to zeroGPUcache usage; external hit tokens equal HOST tier counts and device hits stay0. This proves actual RAM reuse, including growing-prefix and return-after-growth cases, even though the earlier client version asserted load growth only on explicitly named replay cases. Legacy deprecated transfer-byte counters stay0 and must not replace the modern active counters."
+  },
+  "cancellation": {
+    "requested_max_tokens": 512,
+    "closed_after_tokens": 32,
+    "stream_done": false,
+    "finish_reason": null,
+    "stream_elapsed_seconds": 0.8951299788895994,
+    "after_cancel_idle_gauges": {
+      "vllm:num_requests_running": 0.0,
+      "vllm:num_requests_waiting": 0.0,
+      "vllm:kv_cache_usage_perc": 0.0
+    },
+    "health_answer": "HEALTHY",
+    "draft_activity_on_health": {
+      "kv_offload_load_bytes": 0,
+      "kv_offload_store_bytes": 0.0,
+      "external_prefix_cache_hits": 0.0,
+      "prefix_cache_hits": 0.0,
+      "spec_decode_num_drafts": 1.0,
+      "spec_decode_num_draft_tokens": 2.0,
+      "spec_decode_num_accepted_tokens": 2.0,
+      "num_preemptions": 0.0,
+      "host_cached_tokens": 0.0,
+      "unspecified_cached_tokens": 0.0
+    },
+    "limitation": "The canceled request had58prompttokens and32observeddecode tokens, below one128token page; it did not prove cancellation of a restored long prefix or after a newly completed decode page."
+  },
+  "vision": {
+    "cases": [
+      {
+        "id": "two-images",
+        "answer": "SUN 482\nMOON 715",
+        "usage": {
+          "prompt_tokens": 425,
+          "total_tokens": 439,
+          "completion_tokens": 14,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "stream_done": true,
+        "stream_valid": true,
+        "term_check": true
+      },
+      {
+        "id": "multi-turn",
+        "answer": "blue",
+        "usage": {
+          "prompt_tokens": 272,
+          "total_tokens": 274,
+          "completion_tokens": 2,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "stream_done": true,
+        "stream_valid": true,
+        "term_check": true
+      },
+      {
+        "id": "text-reuse",
+        "answer": "42",
+        "usage": {
+          "prompt_tokens": 26,
+          "total_tokens": 29,
+          "completion_tokens": 3,
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "stream_done": true,
+        "stream_valid": true,
+        "term_check": true
+      }
+    ],
+    "interpretation": "Two images returned SUN482 then MOON715; image conversation reuse returned blue; following text request returned42. These are concise OCR/image-reuse checks, not broad vision quality or concurrent vision qualification."
+  },
+  "tool_stream": {
+    "event_count": 9,
+    "tool_fragments": [
+      {
+        "seconds": 0.5794289619661868,
+        "id": "chatcmpl-tool-9e56598e7f51db6d",
+        "type": "function",
+        "index": 0,
+        "function": {
+          "name": "get_temperature"
+        }
+      },
+      {
+        "seconds": 0.6256854329258204,
+        "index": 0,
+        "function": {
+          "arguments": "{\"city\": \""
+        }
+      },
+      {
+        "seconds": 0.6712566518690437,
+        "index": 0,
+        "function": {
+          "arguments": "Oslo"
+        }
+      },
+      {
+        "seconds": 0.8543900370132178,
+        "index": 0,
+        "function": {
+          "arguments": "\", \"unit\": \"c"
+        }
+      },
+      {
+        "seconds": 0.9000977408140898,
+        "index": 0,
+        "function": {
+          "arguments": "elsius"
+        }
+      },
+      {
+        "seconds": 0.9920099698938429,
+        "index": 0,
+        "function": {
+          "arguments": "\"}"
+        }
+      }
+    ],
+    "argument_fragment_count": 5,
+    "reconstructed_calls": {
+      "0": {
+        "id": "chatcmpl-tool-9e56598e7f51db6d",
+        "name": "get_temperature",
+        "arguments": "{\"city\": \"Oslo\", \"unit\": \"celsius\"}"
+      }
+    },
+    "done": true,
+    "finish_reason": "tool_calls",
+    "followup_answer": "Oslo: 22\u00b0C",
+    "interpretation": "One named function call plus five argument fragments reconstruct valid JSON with city=Oslo/unit=celsius. The unit string crosses a c/elsius fragment boundary. The tool reply is consumed to answer Oslo:22\u00b0C."
+  },
+  "context_ceiling": {
+    "prompt_tokens": 131070,
+    "completion_tokens": 2,
+    "total_tokens": 131072,
+    "output_token_ids": [
+      842,
+      2080
+    ],
+    "text": "ORCH",
+    "finish_reason": "length",
+    "phase_elapsed_seconds": 130.78061595303006,
+    "request_and_health_elapsed_seconds": 130.2431760909967,
+    "counter_deltas_during_ceiling": {
+      "kv_offload_load_bytes": 259571744.0,
+      "kv_offload_store_bytes": 1876885504.0,
+      "external_prefix_cache_hits": 3968.0,
+      "prefix_cache_hits": 0.0,
+      "spec_decode_num_drafts": 0.0,
+      "spec_decode_num_draft_tokens": 0.0,
+      "spec_decode_num_accepted_tokens": 0.0,
+      "num_preemptions": 0.0,
+      "host_cached_tokens": 3968.0,
+      "unspecified_cached_tokens": 0.0
+    },
+    "counter_deltas_during_health": {
+      "kv_offload_load_bytes": 0.0,
+      "kv_offload_store_bytes": 0.0,
+      "external_prefix_cache_hits": 0.0,
+      "prefix_cache_hits": 0.0,
+      "spec_decode_num_drafts": 1.0,
+      "spec_decode_num_draft_tokens": 2.0,
+      "spec_decode_num_accepted_tokens": 2.0,
+      "num_preemptions": 0.0,
+      "host_cached_tokens": 0.0,
+      "unspecified_cached_tokens": 0.0
+    },
+    "after_ceiling_idle_gauges": {
+      "vllm:num_requests_running": 0.0,
+      "vllm:num_requests_waiting": 0.0,
+      "vllm:kv_cache_usage_perc": 0.0
+    },
+    "after_health_idle_gauges": {
+      "vllm:num_requests_running": 0.0,
+      "vllm:num_requests_waiting": 0.0,
+      "vllm:kv_cache_usage_perc": 0.0
+    },
+    "health_answer": "HEALTHY",
+    "interpretation": "Exact131070+2 length completed and returned idle. Draft counters remained433/866/502 throughout the ceiling request; health moved them to434/868/504, proving proposal and acceptance resumed afterward. This supports the intended no-drafts-at-ceiling behavior but does not directly trace K=0 internal branches or inspect every context-only draft cache write. The test loaded3968host tokens, so its remainder was long prefill rather than a fully cold131070token prompt."
+  },
+  "additional_qualification": {
+    "mixed_prefill_decode_restore": "Completed and independently reviewed: candidate-lifecycle-mixed passed all 16 checks in 23.016 seconds; cold8193 plus restored6145, four running, 25 ongoing tokens during cold TTFT, cancel after129 output IDs, two real288817184-byte restores, final HEALTHY/idle. See mixed-lifecycle-review.json.",
+    "preemption": "Initial three candidate lifecycle stages have zero cumulative preemptions. Mixed stage has 3 before and 3 after (zero delta), which must not be credited to this test; separate qualification owns earlier events.",
+    "deterministic_replay": "No additional cross-batch exacttoken check required for this configuration because batch invariance is not established. The seven serialRAMcases already have identical token IDs. A matched baseline/high-entropy semantic or logprob comparison is separate model quality evidence, not a prerequisite to these lifecycle claims."
+  },
+  "limitations": [
+    "RAM prompts use repeated neutral filler and one retrieval key; not a broad long-context benchmark or stochastic/crossbatch correctness proof.",
+    "Store-byte snapshots can lag while deferred stores drain; this review relies on observed positive loadbytes and hit attribution, not final stored-byte totals equaling predicted memory usage.",
+    "The source-level sync_load_budget_bytes/Mamba alignment hazard remains outside enabled host configuration.",
+    "Candidate evidence spans two server lifetimes, two four-request waves, two cancellations and one ceiling request. No sustained soak, multiworker/PP or hybrid synchronous-load qualification. The mixed run has zero preemption delta; earlier lifetime preemptions require their separate evidence."
+  ],
+  "provenance_correction": "Exact frozen global client sources exist and their SHA-256 hashes match all three initial summaries. Absence of a run-local copy is not a source-provenance gap.",
+  "mixed_followup_review": "/tmp/vllm-v033-qualification/mixed-lifecycle-review.json",
+  "baseline_review": "/tmp/vllm-v033-qualification/baseline-lifecycle-review.json",
+  "combined_candidate_scope": {
+    "checks_total": 57,
+    "checks_passed": 57,
+    "generation_requests": 28,
+    "completed_generation_requests": 26,
+    "intentionally_cancelled_requests": 2,
+    "captured_errors": 0,
+    "server_lifetimes": 2
+  }
+}

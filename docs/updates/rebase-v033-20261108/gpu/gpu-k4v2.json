@@ -1,0 +1,182 @@
+{
+  "package": "/nix/store/5jvmvr89c90f4j1lry5l3a0xr8jp0gfw-python3.12-vllm-xpu-0.33.0+unstable.2026.11.08.g066206b",
+  "vllm_module": "/nix/store/5jvmvr89c90f4j1lry5l3a0xr8jp0gfw-python3.12-vllm-xpu-0.33.0+unstable.2026.11.08.g066206b/lib/python3.12/site-packages/vllm/__init__.py",
+  "kernels_module": "/nix/store/nsa1yrpwwb87nsk13f611zr50rz38ri3-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.g05d4536/lib/python3.12/site-packages/vllm_xpu_kernels/__init__.py",
+  "native_fa_library": "/nix/store/nsa1yrpwwb87nsk13f611zr50rz38ri3-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.g05d4536/lib/python3.12/site-packages/vllm_xpu_kernels/_vllm_fa2_C.abi3.so",
+  "native_fa_library_resolved": "/nix/store/nsa1yrpwwb87nsk13f611zr50rz38ri3-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.g05d4536/lib/python3.12/site-packages/vllm_xpu_kernels/_vllm_fa2_C.abi3.so",
+  "device": "Intel(R) Arc(TM) Pro B70 Graphics",
+  "suite": "k4v2",
+  "tests_manifest": "/tmp/vllm-v033-qualification/gpu-regression-plan.json",
+  "results": [
+    {
+      "test": "tests.flash_attn.test_kvarn_k4v2_xpu.test_balanced_writer_matches_independent_bytes_and_preserves_other_pages",
+      "parameters": {
+        "bits": "2",
+        "stride": "26880"
+      },
+      "status": "passed",
+      "seconds": 0.03362236893735826
+    },
+    {
+      "test": "tests.flash_attn.test_kvarn_k4v2_xpu.test_dequant_and_materialize_match_independent_cpu_records",
+      "parameters": {
+        "bits": "2",
+        "stride": "26880",
+        "dpas": "False"
+      },
+      "status": "passed",
+      "seconds": 0.025215905159711838
+    },
+    {
+      "test": "tests.flash_attn.test_kvarn_k4v2_xpu.test_dequant_and_materialize_match_independent_cpu_records",
+      "parameters": {
+        "bits": "2",
+        "stride": "26880",
+        "dpas": "True"
+      },
+      "status": "passed",
+      "seconds": 0.021820744965225458
+    },
+    {
+      "test": "tests.flash_attn.test_kvarn_k4v2_xpu.test_balanced_writer_matches_independent_bytes_and_preserves_other_pages",
+      "parameters": {
+        "bits": "2",
+        "stride": "32768"
+      },
+      "status": "passed",
+      "seconds": 0.007815217832103372
+    },
+    {
+      "test": "tests.flash_attn.test_kvarn_k4v2_xpu.test_dequant_and_materialize_match_independent_cpu_records",
+      "parameters": {
+        "bits": "2",
+        "stride": "32768",
+        "dpas": "False"
+      },
+      "status": "passed",
+      "seconds": 0.0220128339715302
+    },
+    {
+      "test": "tests.flash_attn.test_kvarn_k4v2_xpu.test_dequant_and_materialize_match_independent_cpu_records",
+      "parameters": {
+        "bits": "2",
+        "stride": "32768",
+        "dpas": "True"
+      },
+      "status": "passed",
+      "seconds": 0.019614988937973976
+    },
+    {
+      "test": "tests.flash_attn.test_kvarn_k4v2_xpu.test_ragged_decode_and_fp16_tail_match_independent_attention",
+      "parameters": {
+        "bits": "2",
+        "batch": "1",
+        "splits": "1"
+      },
+      "status": "passed",
+      "seconds": 0.25125270895659924
+    },
+    {
+      "test": "tests.flash_attn.test_kvarn_k4v2_xpu.test_ragged_decode_and_fp16_tail_match_independent_attention",
+      "parameters": {
+        "bits": "2",
+        "batch": "4",
+        "splits": "1"
+      },
+      "status": "passed",
+      "seconds": 0.02415524097159505
+    },
+    {
+      "test": "tests.flash_attn.test_kvarn_k4v2_xpu.test_ragged_decode_and_fp16_tail_match_independent_attention",
+      "parameters": {
+        "bits": "2",
+        "batch": "4",
+        "splits": "4"
+      },
+      "status": "passed",
+      "seconds": 0.023571559926494956
+    },
+    {
+      "test": "tests.flash_attn.test_kvarn_k4v2_xpu.test_resident_pages_and_offset_tail_views_match_independent_attention",
+      "parameters": {
+        "bits": "2",
+        "splits": "1",
+        "unrotate": "False",
+        "dtype": "torch.float16"
+      },
+      "status": "passed",
+      "seconds": 0.14870168105699122
+    },
+    {
+      "test": "tests.flash_attn.test_kvarn_k4v2_xpu.test_resident_pages_and_offset_tail_views_match_independent_attention",
+      "parameters": {
+        "bits": "2",
+        "splits": "24",
+        "unrotate": "False",
+        "dtype": "torch.float16"
+      },
+      "status": "passed",
+      "seconds": 0.0648731030523777
+    },
+    {
+      "test": "tests.flash_attn.test_kvarn_k4v2_xpu.test_resident_pages_and_offset_tail_views_match_independent_attention",
+      "parameters": {
+        "bits": "2",
+        "splits": "32",
+        "unrotate": "False",
+        "dtype": "torch.float16"
+      },
+      "status": "passed",
+      "seconds": 0.06346521899104118
+    },
+    {
+      "test": "tests.flash_attn.test_kvarn_k4v2_xpu.test_resident_pages_and_offset_tail_views_match_independent_attention",
+      "parameters": {
+        "bits": "2",
+        "splits": "16",
+        "unrotate": "True",
+        "dtype": "torch.bfloat16"
+      },
+      "status": "passed",
+      "seconds": 0.0667824549600482
+    },
+    {
+      "test": "tests.flash_attn.test_kvarn_k4v2_xpu.test_mismatched_format_is_rejected_before_launch",
+      "parameters": {
+        "bits": "3",
+        "stride": "35072"
+      },
+      "status": "passed",
+      "seconds": 0.0019776190165430307
+    },
+    {
+      "test": "tests.flash_attn.test_kvarn_k4v2_xpu.test_mismatched_format_is_rejected_before_launch",
+      "parameters": {
+        "bits": "2",
+        "stride": "26876"
+      },
+      "status": "passed",
+      "seconds": 0.00026762112975120544
+    },
+    {
+      "test": "tests.flash_attn.test_kvarn_k4v2_xpu.test_mismatched_format_is_rejected_before_launch",
+      "parameters": {
+        "bits": "2",
+        "stride": "26882"
+      },
+      "status": "passed",
+      "seconds": 0.00029340898618102074
+    },
+    {
+      "test": "tests.flash_attn.test_kvarn_k4v2_xpu.test_mismatched_format_is_rejected_before_launch",
+      "parameters": {
+        "bits": "4",
+        "stride": "26880"
+      },
+      "status": "passed",
+      "seconds": 0.00026402296498417854
+    }
+  ],
+  "passed": true,
+  "test_method": "Explicit bounded calls to existing unmodified test functions; required native fixtures performed here. Test marks do not reduce coverage silently."
+}

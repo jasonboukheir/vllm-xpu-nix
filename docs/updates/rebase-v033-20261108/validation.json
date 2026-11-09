@@ -1,7 +1,14 @@
 {
   "schema": 1,
-  "status": "Ready for operator GPU handoff: source and installed CPU checks pass, exact Brutus Nix package built successfully",
-  "gpu": "Not run; no GPU compute or service changes. Correctness, performance, memory and TTFT qualification pending.",
+  "status": "GPU-qualified: exact Brutus candidate passed native, service, cache, context-boundary and paired performance checks",
+  "gpu": {
+    "report": "gpu-qualification.json",
+    "native_checks_passed": 52,
+    "candidate_service_checks_passed": 57,
+    "measured_requests_both_arms": 252,
+    "production_services": "Preserved inactive handoff; all foreground processes stopped",
+    "baseline_control": "40/41 checks; sole HOST-attribution assertion fails because old manager labels RAM as EXTERNAL_UNSPECIFIED. Actual transfers and functional checks pass."
+  },
   "cpu_harness": {
     "path": "/tmp/vllm-v033-cpu-pytest",
     "python": "uv-created .venv/bin/python 3.12",
@@ -139,6 +146,7 @@
     "private_plan": "/tmp/vllm-v033-qualification/launch-plan.json",
     "arguments": 41,
     "test_port": 18000,
-    "status": "prepared, not executed"
+    "status": "prepared, not executed",
+    "qualification_report": "gpu-qualification.json"
   }
 }

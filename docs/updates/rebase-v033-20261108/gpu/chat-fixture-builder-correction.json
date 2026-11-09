@@ -1,0 +1,61 @@
+{
+  "scope": "HTTP fixture builder only; no serving/package/source change",
+  "initial_failure": "Background token bank too short to pad 251-token task to exact1024 context; no fixtures sealed and no model completions requested",
+  "initial_background_tokens": 721,
+  "initial_builder_sha256": "d1c01870624d6cca9fe9dc4b7014ad2a8ff879d94ead4df8cafb3b5be37628b3",
+  "correction": "Double the background text before tokenizing, retaining complete task and chat template unchanged",
+  "final_builder_sha256": "5fc092c530fa2b9fefe4bb98a25f6d752ccd7e2ef2adab917159386e25a06d5d",
+  "final_seal": {
+    "builder_sha256": "5fc092c530fa2b9fefe4bb98a25f6d752ccd7e2ef2adab917159386e25a06d5d",
+    "client_sha256": "06444aabf72a78108181e668075e2d4cc49db67e521434e966eb13ee1f862b8f",
+    "created_unix": 1794199155.5062337,
+    "schema": 1,
+    "sha256": "71cce78c73fbf9a97ad256693e46d38d1435f33ebf0e44124171ed20717f74c6",
+    "tokenize_calls": 7,
+    "tokenize_records": [
+      {
+        "name": "empty-chat",
+        "request_sha256": "a67c724613d40a773c4a38a681775d892dd5b84ded24202816876eaa8bce29f9",
+        "response_sha256": "6461741d00bc74e2d8d157c914adc842a34e5d91788746d3293271bcb442bc20",
+        "tokens": 68
+      },
+      {
+        "name": "background",
+        "request_sha256": "a2cba6fcd812d94f36f799b4d0ae220eaa01c7586ab6b7726fae1aed24536046",
+        "response_sha256": "1805a007a444f9bf00d5ae2ff2093f21cc5ad97b150f6e8a44e1446f35971df5",
+        "tokens": 1442
+      },
+      {
+        "name": "separator",
+        "request_sha256": "b04d500572f800781230133b1ebaac2077c2811904bd94e2bd14acddb3759b72",
+        "response_sha256": "1abe262349ac44882a500f2759f021ff73abdc25e0c991e67510d82b7c4f9933",
+        "tokens": 1
+      },
+      {
+        "name": "task-0",
+        "request_sha256": "d8077dd1d1d646513ba395407c5d3a4d1cb2e0908da646e0060efa029bfec55c",
+        "response_sha256": "ccba458753d4de87799fc10746ddb5269eeda4720a77cfc6b7cc8663ac121351",
+        "tokens": 251
+      },
+      {
+        "name": "task-1",
+        "request_sha256": "bec240a2646c99a52a609356893c9b888129c3d2ff6394270bdb1bbb3258e5ee",
+        "response_sha256": "c15288be9719c1a60e8fefc00e187acc64ca5a704f6a11cb69d8e60088c2ba0b",
+        "tokens": 354
+      },
+      {
+        "name": "task-2",
+        "request_sha256": "cb70b58e313640c36f2ac383afcc64b0f84f8c6d403487d13c5da3db6e805652",
+        "response_sha256": "9587cfc557cffa977bf56935dc9423ccb1af69c6ed775852d86d1b6ad79de505",
+        "tokens": 268
+      },
+      {
+        "name": "task-3",
+        "request_sha256": "166745df7cbfb784184414a2396b420006e67870050dadd963f32f0c32966444",
+        "response_sha256": "262be4b1ce7e4b1c4f537df88be572e34d13eaa724bd433cd089dead6399a314",
+        "tokens": 314
+      }
+    ]
+  },
+  "frozen_performance_client_changed": false
+}

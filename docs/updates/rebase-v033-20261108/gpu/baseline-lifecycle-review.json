@@ -1,0 +1,603 @@
+{
+  "schema": 1,
+  "status": "functional_checks_passed_observability_check_failed_preserved",
+  "method": "Read-only source and saved artifact inspection; no network, server, GPU or model execution. Original summaries and checks are unchanged.",
+  "recorded_status": "failed",
+  "checks_total": 41,
+  "checks_passed": 40,
+  "failed_checks": [
+    {
+      "name": "host-tier-attribution",
+      "passed": false,
+      "evidence": {
+        "before": 0,
+        "after": 0.0
+      }
+    }
+  ],
+  "captured_errors": [],
+  "provenance": {
+    "summary": "/tmp/vllm-v033-qualification/baseline-lifecycle/summary.json",
+    "summary_sha256": "407db6abc125a6c13049143cea75bef53c256ca05eb03aaab8a957dd7cff2fee",
+    "script_sha256": "9b3104f43b1b94b500044687a01a412504012a1d18edb5ec906e79d5ea7895a5",
+    "matching_frozen_sources": [
+      "/tmp/vllm-v033-qualification/lifecycle_full_client.py"
+    ],
+    "http_exchange_count": 94,
+    "http_failures": [],
+    "engine_slice_digest_valid": true,
+    "engine_slice_matches_full_log": true,
+    "server_seal": {
+      "pid": 2745955,
+      "exited": true,
+      "stopped_at_unix": 1794199771.990962,
+      "log_bytes": 148211,
+      "log_sha256": "26d8624cd3b28b20b0488e81586c5c77235135b1c7f89d125c69ad202c99eadd"
+    },
+    "server_seal_valid": true,
+    "explicit_error_signature_count": 0
+  },
+  "raw_response_crosscheck": {
+    "response_count": 9,
+    "all_exactly_equal_saved_http_bodies": true
+  },
+  "ram": {
+    "cases": [
+      {
+        "name": "aligned-seed",
+        "prompt_tokens": 4096,
+        "output_token_ids": [
+          842,
+          2080,
+          887,
+          19,
+          23,
+          17,
+          248046
+        ],
+        "text": "ORCHID482",
+        "finish_reason": "stop",
+        "metric_delta": {
+          "kv_offload_load_bytes": 0,
+          "external_prefix_cache_hits": 0.0,
+          "spec_decode_num_drafts": 3.0,
+          "spec_decode_num_draft_tokens": 6.0,
+          "spec_decode_num_accepted_tokens": 4.0,
+          "num_preemptions": 0.0,
+          "host": 0.0,
+          "external_unspecified": 0.0,
+          "device": 0.0
+        },
+        "idle_gauges": {
+          "vllm:num_requests_running": 0.0,
+          "vllm:num_requests_waiting": 0.0,
+          "vllm:kv_cache_usage_perc": 0.0
+        }
+      },
+      {
+        "name": "aligned-replay",
+        "prompt_tokens": 4096,
+        "output_token_ids": [
+          842,
+          2080,
+          887,
+          19,
+          23,
+          17,
+          248046
+        ],
+        "text": "ORCHID482",
+        "finish_reason": "stop",
+        "metric_delta": {
+          "kv_offload_load_bytes": 259571744.0,
+          "external_prefix_cache_hits": 3968.0,
+          "spec_decode_num_drafts": 3.0,
+          "spec_decode_num_draft_tokens": 6.0,
+          "spec_decode_num_accepted_tokens": 4.0,
+          "num_preemptions": 0.0,
+          "host": 0.0,
+          "external_unspecified": 3968.0,
+          "device": 0.0
+        },
+        "idle_gauges": {
+          "vllm:num_requests_running": 0.0,
+          "vllm:num_requests_waiting": 0.0,
+          "vllm:kv_cache_usage_perc": 0.0
+        }
+      },
+      {
+        "name": "unaligned-seed",
+        "prompt_tokens": 4095,
+        "output_token_ids": [
+          842,
+          2080,
+          887,
+          19,
+          23,
+          17,
+          248046
+        ],
+        "text": "ORCHID482",
+        "finish_reason": "stop",
+        "metric_delta": {
+          "kv_offload_load_bytes": 259571744.0,
+          "external_prefix_cache_hits": 3968.0,
+          "spec_decode_num_drafts": 3.0,
+          "spec_decode_num_draft_tokens": 6.0,
+          "spec_decode_num_accepted_tokens": 4.0,
+          "num_preemptions": 0.0,
+          "host": 0.0,
+          "external_unspecified": 3968.0,
+          "device": 0.0
+        },
+        "idle_gauges": {
+          "vllm:num_requests_running": 0.0,
+          "vllm:num_requests_waiting": 0.0,
+          "vllm:kv_cache_usage_perc": 0.0
+        }
+      },
+      {
+        "name": "unaligned-replay",
+        "prompt_tokens": 4095,
+        "output_token_ids": [
+          842,
+          2080,
+          887,
+          19,
+          23,
+          17,
+          248046
+        ],
+        "text": "ORCHID482",
+        "finish_reason": "stop",
+        "metric_delta": {
+          "kv_offload_load_bytes": 259571744.0,
+          "external_prefix_cache_hits": 3968.0,
+          "spec_decode_num_drafts": 3.0,
+          "spec_decode_num_draft_tokens": 6.0,
+          "spec_decode_num_accepted_tokens": 4.0,
+          "num_preemptions": 0.0,
+          "host": 0.0,
+          "external_unspecified": 3968.0,
+          "device": 0.0
+        },
+        "idle_gauges": {
+          "vllm:num_requests_running": 0.0,
+          "vllm:num_requests_waiting": 0.0,
+          "vllm:kv_cache_usage_perc": 0.0
+        }
+      },
+      {
+        "name": "growing-prefix",
+        "prompt_tokens": 6145,
+        "output_token_ids": [
+          842,
+          2080,
+          887,
+          19,
+          23,
+          17,
+          248046
+        ],
+        "text": "ORCHID482",
+        "finish_reason": "stop",
+        "metric_delta": {
+          "kv_offload_load_bytes": 259571744.0,
+          "external_prefix_cache_hits": 3968.0,
+          "spec_decode_num_drafts": 3.0,
+          "spec_decode_num_draft_tokens": 6.0,
+          "spec_decode_num_accepted_tokens": 4.0,
+          "num_preemptions": 0.0,
+          "host": 0.0,
+          "external_unspecified": 3968.0,
+          "device": 0.0
+        },
+        "idle_gauges": {
+          "vllm:num_requests_running": 0.0,
+          "vllm:num_requests_waiting": 0.0,
+          "vllm:kv_cache_usage_perc": 0.0
+        }
+      },
+      {
+        "name": "growing-replay",
+        "prompt_tokens": 6145,
+        "output_token_ids": [
+          842,
+          2080,
+          887,
+          19,
+          23,
+          17,
+          248046
+        ],
+        "text": "ORCHID482",
+        "finish_reason": "stop",
+        "metric_delta": {
+          "kv_offload_load_bytes": 287096864.0,
+          "external_prefix_cache_hits": 6016.0,
+          "spec_decode_num_drafts": 3.0,
+          "spec_decode_num_draft_tokens": 6.0,
+          "spec_decode_num_accepted_tokens": 4.0,
+          "num_preemptions": 0.0,
+          "host": 0.0,
+          "external_unspecified": 6016.0,
+          "device": 0.0
+        },
+        "idle_gauges": {
+          "vllm:num_requests_running": 0.0,
+          "vllm:num_requests_waiting": 0.0,
+          "vllm:kv_cache_usage_perc": 0.0
+        }
+      },
+      {
+        "name": "aligned-after-growth",
+        "prompt_tokens": 4096,
+        "output_token_ids": [
+          842,
+          2080,
+          887,
+          19,
+          23,
+          17,
+          248046
+        ],
+        "text": "ORCHID482",
+        "finish_reason": "stop",
+        "metric_delta": {
+          "kv_offload_load_bytes": 259571744.0,
+          "external_prefix_cache_hits": 3968.0,
+          "spec_decode_num_drafts": 3.0,
+          "spec_decode_num_draft_tokens": 6.0,
+          "spec_decode_num_accepted_tokens": 4.0,
+          "num_preemptions": 0.0,
+          "host": 0.0,
+          "external_unspecified": 3968.0,
+          "device": 0.0
+        },
+        "idle_gauges": {
+          "vllm:num_requests_running": 0.0,
+          "vllm:num_requests_waiting": 0.0,
+          "vllm:kv_cache_usage_perc": 0.0
+        }
+      }
+    ],
+    "total_metric_delta": {
+      "kv_offload_load_bytes": 1584955584.0,
+      "external_prefix_cache_hits": 25856.0,
+      "spec_decode_num_drafts": 21.0,
+      "spec_decode_num_draft_tokens": 42.0,
+      "spec_decode_num_accepted_tokens": 28.0,
+      "num_preemptions": 0.0,
+      "host": 0.0,
+      "external_unspecified": 25856.0,
+      "device": 0.0
+    },
+    "actual_restore_count": 6,
+    "all_outputs_identical": true,
+    "elapsed_seconds": 9.794378820806742
+  },
+  "context_ceiling": {
+    "usage": {
+      "prompt_tokens": 131070,
+      "total_tokens": 131072,
+      "completion_tokens": 2,
+      "prompt_tokens_details": null,
+      "completion_tokens_details": null
+    },
+    "output_token_ids": [
+      842,
+      2080
+    ],
+    "text": "ORCH",
+    "finish_reason": "length",
+    "elapsed_seconds": 137.17674517817795,
+    "metric_delta_during_ceiling": {
+      "kv_offload_load_bytes": 287096864.0,
+      "external_prefix_cache_hits": 6016.0,
+      "spec_decode_num_drafts": 0.0,
+      "spec_decode_num_draft_tokens": 0.0,
+      "spec_decode_num_accepted_tokens": 0.0,
+      "num_preemptions": 0.0,
+      "host": 0.0,
+      "external_unspecified": 6016.0,
+      "device": 0.0
+    },
+    "metric_delta_following_health": {
+      "kv_offload_load_bytes": 0.0,
+      "external_prefix_cache_hits": 0.0,
+      "spec_decode_num_drafts": 1.0,
+      "spec_decode_num_draft_tokens": 2.0,
+      "spec_decode_num_accepted_tokens": 2.0,
+      "num_preemptions": 0.0,
+      "host": 0.0,
+      "external_unspecified": 0.0,
+      "device": 0.0
+    },
+    "health_text": "HEALTHY",
+    "idle_after_ceiling": {
+      "vllm:num_requests_running": 0.0,
+      "vllm:num_requests_waiting": 0.0,
+      "vllm:kv_cache_usage_perc": 0.0
+    },
+    "idle_after_health": {
+      "vllm:num_requests_running": 0.0,
+      "vllm:num_requests_waiting": 0.0,
+      "vllm:kv_cache_usage_perc": 0.0
+    }
+  },
+  "attribution_finding": {
+    "classification": "Existing baseline BytePool observability defect fixed in candidate",
+    "cause": "IndependentCPUOffloadingSpec constructs BytePoolOffloadingManager. Baseline BytePool implements lookup but inherits OffloadingManager.get_load_source, which returns EXTERNAL_UNSPECIFIED. The offloading scheduler asks that method for each loaded range. The logger eagerly creates every source label, so a present zero HOST counter does not demonstrate that no RAM was used. Candidate BytePool overrides get_load_source to return HOST.",
+    "not_a_lookup_result_field": "LookupResult is an enum (HIT/HIT_PENDING/MISS/RETRY); attribution comes from get_load_source, not a missing CacheHitSource field on the lookup result.",
+    "source_evidence": [
+      {
+        "relative_path": "v1/kv_offload/cpu/independent.py",
+        "baseline": {
+          "path": "/nix/store/abyydgnrgglvviif8193zanhw6j1swch-python3.12-vllm-xpu-0.32.0+unstable.2026.10.20.gc0722c9/lib/python3.12/site-packages/vllm/v1/kv_offload/cpu/independent.py",
+          "sha256": "5e5fba937e195c3d0216792e33fd0d41f87119b09bc1e3e5cac869112f9197da",
+          "references": [
+            {
+              "line": 46,
+              "text": "def get_manager(self) -> BytePoolOffloadingManager:"
+            },
+            {
+              "line": 48,
+              "text": "self._manager = BytePoolOffloadingManager("
+            }
+          ]
+        },
+        "candidate": {
+          "path": "/nix/store/5jvmvr89c90f4j1lry5l3a0xr8jp0gfw-python3.12-vllm-xpu-0.33.0+unstable.2026.11.08.g066206b/lib/python3.12/site-packages/vllm/v1/kv_offload/cpu/independent.py",
+          "sha256": "ea37d943c711d423f45a517cf21b695334027221e6151da70d1feb57af279e24",
+          "references": [
+            {
+              "line": 46,
+              "text": "def get_manager(self) -> BytePoolOffloadingManager:"
+            },
+            {
+              "line": 48,
+              "text": "self._manager = BytePoolOffloadingManager("
+            }
+          ]
+        }
+      },
+      {
+        "relative_path": "v1/kv_offload/cpu/byte_pool.py",
+        "baseline": {
+          "path": "/nix/store/abyydgnrgglvviif8193zanhw6j1swch-python3.12-vllm-xpu-0.32.0+unstable.2026.10.20.gc0722c9/lib/python3.12/site-packages/vllm/v1/kv_offload/cpu/byte_pool.py",
+          "sha256": "87b4495afaf7092b0d10342f7b0b951d5bc2d573b10558a12fa810d5aa7db24a",
+          "references": [
+            {
+              "line": 49,
+              "text": "class BytePoolOffloadingManager(OffloadingManager):"
+            },
+            {
+              "line": 133,
+              "text": "def lookup(self, key: OffloadKey, req_context: ReqContext) -> LookupResult:"
+            }
+          ]
+        },
+        "candidate": {
+          "path": "/nix/store/5jvmvr89c90f4j1lry5l3a0xr8jp0gfw-python3.12-vllm-xpu-0.33.0+unstable.2026.11.08.g066206b/lib/python3.12/site-packages/vllm/v1/kv_offload/cpu/byte_pool.py",
+          "sha256": "77af2efc5baa2e57cbe26b66ccba0a8d42cfe87ffaa08df16ff422fc4d8920f9",
+          "references": [
+            {
+              "line": 76,
+              "text": "class BytePoolOffloadingManager(OffloadingManager):"
+            },
+            {
+              "line": 164,
+              "text": "def lookup(self, key: OffloadKey, req_context: ReqContext) -> LookupResult:"
+            },
+            {
+              "line": 170,
+              "text": "def get_load_source("
+            },
+            {
+              "line": 173,
+              "text": "return CacheHitSource.HOST"
+            }
+          ]
+        }
+      },
+      {
+        "relative_path": "v1/kv_offload/base.py",
+        "baseline": {
+          "path": "/nix/store/abyydgnrgglvviif8193zanhw6j1swch-python3.12-vllm-xpu-0.32.0+unstable.2026.10.20.gc0722c9/lib/python3.12/site-packages/vllm/v1/kv_offload/base.py",
+          "sha256": "8dea4e6cf774b15aa0fe0f9399f5ae53d32d976489f3251cf8d5620fe9e059dd",
+          "references": [
+            {
+              "line": 252,
+              "text": "def get_load_source("
+            },
+            {
+              "line": 262,
+              "text": "return CacheHitSource.EXTERNAL_UNSPECIFIED"
+            }
+          ]
+        },
+        "candidate": {
+          "path": "/nix/store/5jvmvr89c90f4j1lry5l3a0xr8jp0gfw-python3.12-vllm-xpu-0.33.0+unstable.2026.11.08.g066206b/lib/python3.12/site-packages/vllm/v1/kv_offload/base.py",
+          "sha256": "4e31225e36047d72e46abe5bd3b8e3d6a51f94245340ea80b02f8af561e969a9",
+          "references": [
+            {
+              "line": 320,
+              "text": "def get_load_source("
+            },
+            {
+              "line": 330,
+              "text": "return CacheHitSource.EXTERNAL_UNSPECIFIED"
+            }
+          ]
+        }
+      },
+      {
+        "relative_path": "distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py",
+        "baseline": {
+          "path": "/nix/store/abyydgnrgglvviif8193zanhw6j1swch-python3.12-vllm-xpu-0.32.0+unstable.2026.10.20.gc0722c9/lib/python3.12/site-packages/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py",
+          "sha256": "0d0e4f1c30ef8fb4613bcf1a5b49ed1973f493a1e6d372ff96e924efca6c0a25",
+          "references": [
+            {
+              "line": 1116,
+              "text": "def get_external_cache_hit_sources("
+            },
+            {
+              "line": 1143,
+              "text": "self.manager.get_load_source(key, req_status.req_context)"
+            }
+          ]
+        },
+        "candidate": {
+          "path": "/nix/store/5jvmvr89c90f4j1lry5l3a0xr8jp0gfw-python3.12-vllm-xpu-0.33.0+unstable.2026.11.08.g066206b/lib/python3.12/site-packages/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py",
+          "sha256": "fc1aa3b8fb0f7ca4fdccfa3b0a89d8e43e7de6e74fa41799a80b9e22aed0d5c3",
+          "references": [
+            {
+              "line": 1321,
+              "text": "def get_external_cache_hit_sources("
+            },
+            {
+              "line": 1348,
+              "text": "self.manager.get_load_source(key, req_status.req_context)"
+            }
+          ]
+        }
+      },
+      {
+        "relative_path": "v1/metrics/loggers.py",
+        "baseline": {
+          "path": "/nix/store/abyydgnrgglvviif8193zanhw6j1swch-python3.12-vllm-xpu-0.32.0+unstable.2026.10.20.gc0722c9/lib/python3.12/site-packages/vllm/v1/metrics/loggers.py",
+          "sha256": "a17291f044251f1586457b6bd1542f98660724dd07a426d61ce852186b95b9e1",
+          "references": [
+            {
+              "line": 782,
+              "text": "name=\"vllm:prompt_tokens_cached_by_source\","
+            },
+            {
+              "line": 792,
+              "text": "for source in CacheHitSource:"
+            },
+            {
+              "line": 794,
+              "text": "self.counter_prompt_tokens_cached_by_source.labels("
+            },
+            {
+              "line": 1175,
+              "text": "self.counter_prompt_tokens_cached_by_source.labels("
+            },
+            {
+              "line": 1188,
+              "text": "self.counter_prompt_tokens_cached_by_source.labels("
+            }
+          ]
+        },
+        "candidate": {
+          "path": "/nix/store/5jvmvr89c90f4j1lry5l3a0xr8jp0gfw-python3.12-vllm-xpu-0.33.0+unstable.2026.11.08.g066206b/lib/python3.12/site-packages/vllm/v1/metrics/loggers.py",
+          "sha256": "a17291f044251f1586457b6bd1542f98660724dd07a426d61ce852186b95b9e1",
+          "references": [
+            {
+              "line": 782,
+              "text": "name=\"vllm:prompt_tokens_cached_by_source\","
+            },
+            {
+              "line": 792,
+              "text": "for source in CacheHitSource:"
+            },
+            {
+              "line": 794,
+              "text": "self.counter_prompt_tokens_cached_by_source.labels("
+            },
+            {
+              "line": 1175,
+              "text": "self.counter_prompt_tokens_cached_by_source.labels("
+            },
+            {
+              "line": 1188,
+              "text": "self.counter_prompt_tokens_cached_by_source.labels("
+            }
+          ]
+        }
+      }
+    ],
+    "baseline_totals": {
+      "kv_offload_load_bytes": 1584955584.0,
+      "external_prefix_cache_hits": 25856.0,
+      "spec_decode_num_drafts": 21.0,
+      "spec_decode_num_draft_tokens": 42.0,
+      "spec_decode_num_accepted_tokens": 28.0,
+      "num_preemptions": 0.0,
+      "host": 0.0,
+      "external_unspecified": 25856.0,
+      "device": 0.0
+    },
+    "candidate_totals": {
+      "kv_offload_load_bytes": 1586675904.0,
+      "external_prefix_cache_hits": 25984.0,
+      "spec_decode_num_drafts": 22.0,
+      "spec_decode_num_draft_tokens": 44.0,
+      "spec_decode_num_accepted_tokens": 28.0,
+      "num_preemptions": 0.0,
+      "host": 25984.0,
+      "external_unspecified": 0.0,
+      "device": 0.0
+    },
+    "runtime_conclusion": "Both runs show six positive CPU-to-GPU load deltas and correct serial RAM responses. Preserve the baseline failed host-tier-attribution assertion; classify it separately from functional restore success.",
+    "cross_version_difference": "Candidate growing replay reuses 6144 tokens versus baseline 6016, one extra 128-token page and 1720320 load bytes. This observation is separate from relabeling hits; no causal or performance attribution is made from this single trial."
+  },
+  "other_functional_evidence": {
+    "four_active_requests": {
+      "fixture_ids": [
+        "ASTRA482",
+        "BIRCH715",
+        "CORAL936",
+        "DELTA268"
+      ],
+      "required_running": 4,
+      "peak_running": 4.0,
+      "peak_metrics": {
+        "vllm:num_requests_running": 4.0,
+        "vllm:num_requests_waiting": 0.0,
+        "vllm:kv_cache_usage_perc": 0.75
+      },
+      "metrics_samples": 4,
+      "required_overlap_observed": true,
+      "elapsed_seconds": 5.024144536117092,
+      "quality_failures": []
+    },
+    "cancelled_token_count": 32,
+    "post_cancel_text": "HEALTHY",
+    "vision_outputs": [
+      {
+        "id": "two-images",
+        "content": "SUN 482\nMOON 715",
+        "valid": true,
+        "semantic": true
+      },
+      {
+        "id": "multi-turn",
+        "content": "blue",
+        "valid": true,
+        "semantic": true
+      },
+      {
+        "id": "text-reuse",
+        "content": "42",
+        "valid": true,
+        "semantic": true
+      }
+    ],
+    "tool_calls": {
+      "0": {
+        "id": "chatcmpl-tool-a04ad5d8ad7c44d2",
+        "name": "get_temperature",
+        "arguments": "{\"city\": \"Oslo\", \"unit\": \"celsius\"}"
+      }
+    },
+    "tool_finish_reason": "tool_calls",
+    "tool_followup": "Oslo: 22\u00b0C"
+  },
+  "limitations": [
+    "One bounded lifecycle run; neither a quality benchmark nor a controlled latency comparison.",
+    "The baseline mixed wave is outside this review unless executed separately.",
+    "No induced preemption in this baseline lifecycle run."
+  ]
+}

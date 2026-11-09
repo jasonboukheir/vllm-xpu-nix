@@ -1,0 +1,116 @@
+{
+  "package": "/nix/store/5jvmvr89c90f4j1lry5l3a0xr8jp0gfw-python3.12-vllm-xpu-0.33.0+unstable.2026.11.08.g066206b",
+  "vllm_module": "/nix/store/5jvmvr89c90f4j1lry5l3a0xr8jp0gfw-python3.12-vllm-xpu-0.33.0+unstable.2026.11.08.g066206b/lib/python3.12/site-packages/vllm/__init__.py",
+  "kernels_module": "/nix/store/nsa1yrpwwb87nsk13f611zr50rz38ri3-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.g05d4536/lib/python3.12/site-packages/vllm_xpu_kernels/__init__.py",
+  "native_fa_library": "/nix/store/nsa1yrpwwb87nsk13f611zr50rz38ri3-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.g05d4536/lib/python3.12/site-packages/vllm_xpu_kernels/_vllm_fa2_C.abi3.so",
+  "native_fa_library_resolved": "/nix/store/nsa1yrpwwb87nsk13f611zr50rz38ri3-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.g05d4536/lib/python3.12/site-packages/vllm_xpu_kernels/_vllm_fa2_C.abi3.so",
+  "device": "Intel(R) Arc(TM) Pro B70 Graphics",
+  "suite": "dtype",
+  "tests_manifest": "/tmp/vllm-v033-qualification/gpu-regression-plan.json",
+  "results": [
+    {
+      "test": "tests.v1.attention.test_xpu_unquantized_cache.test_explicit_unquantized_cache_preserves_values_and_sparse_slots",
+      "parameters": {
+        "dtype_name": "bfloat16",
+        "strided": "False"
+      },
+      "status": "passed",
+      "seconds": 0.10915855783969164
+    },
+    {
+      "test": "tests.v1.attention.test_xpu_unquantized_cache.test_explicit_unquantized_cache_preserves_values_and_sparse_slots",
+      "parameters": {
+        "dtype_name": "bfloat16",
+        "strided": "True"
+      },
+      "status": "passed",
+      "seconds": 0.058875184040516615
+    },
+    {
+      "test": "tests.v1.attention.test_xpu_unquantized_cache.test_explicit_unquantized_cache_preserves_values_and_sparse_slots",
+      "parameters": {
+        "dtype_name": "float16",
+        "strided": "False"
+      },
+      "status": "passed",
+      "seconds": 0.06775444210506976
+    },
+    {
+      "test": "tests.v1.attention.test_xpu_unquantized_cache.test_explicit_unquantized_cache_preserves_values_and_sparse_slots",
+      "parameters": {
+        "dtype_name": "float16",
+        "strided": "True"
+      },
+      "status": "passed",
+      "seconds": 0.004402233986184001
+    },
+    {
+      "test": "tests.v1.attention.test_xpu_unquantized_cache.test_bf16_draft_paged_attention_matches_independent_causal_reference",
+      "parameters": {
+        "batch_size": "1",
+        "query_len": "1",
+        "padding": "0.0",
+        "strided": "False"
+      },
+      "status": "passed",
+      "seconds": 2.2512516169808805
+    },
+    {
+      "test": "tests.v1.attention.test_xpu_unquantized_cache.test_bf16_draft_paged_attention_matches_independent_causal_reference",
+      "parameters": {
+        "batch_size": "4",
+        "query_len": "1",
+        "padding": "123.0",
+        "strided": "True"
+      },
+      "status": "passed",
+      "seconds": 0.05246322997845709
+    },
+    {
+      "test": "tests.v1.attention.test_xpu_unquantized_cache.test_bf16_draft_paged_attention_matches_independent_causal_reference",
+      "parameters": {
+        "batch_size": "1",
+        "query_len": "3",
+        "padding": "123.0",
+        "strided": "True"
+      },
+      "status": "passed",
+      "seconds": 0.1324576169718057
+    },
+    {
+      "test": "tests.v1.attention.test_xpu_unquantized_cache.test_bf16_draft_paged_attention_matches_independent_causal_reference",
+      "parameters": {
+        "batch_size": "4",
+        "query_len": "3",
+        "padding": "0.0",
+        "strided": "False"
+      },
+      "status": "passed",
+      "seconds": 0.011481384979560971
+    },
+    {
+      "test": "tests.v1.attention.test_xpu_unquantized_cache.test_bf16_draft_paged_attention_matches_independent_causal_reference",
+      "parameters": {
+        "batch_size": "1",
+        "query_len": "129",
+        "padding": "0.0",
+        "strided": "False"
+      },
+      "status": "passed",
+      "seconds": 0.10719886096194386
+    },
+    {
+      "test": "tests.v1.attention.test_xpu_unquantized_cache.test_bf16_draft_paged_attention_matches_independent_causal_reference",
+      "parameters": {
+        "batch_size": "4",
+        "query_len": "129",
+        "padding": "123.0",
+        "strided": "True"
+      },
+      "status": "passed",
+      "seconds": 0.06295460485853255
+    }
+  ],
+  "passed": true,
+  "test_method": "Explicit bounded calls to existing unmodified test functions; required native fixtures performed here. Test marks do not reduce coverage silently."
+}

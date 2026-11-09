@@ -1,0 +1,302 @@
+{
+  "schema": 1,
+  "agent": "/root/review_v033_scheduler",
+  "candidate": "066206bafebe124485a69e13dcb975a2afc55ad2",
+  "baseline_source": "6b3d89e6e64f1e9c4f44c68c93af84e1504ef6f0",
+  "status": "NO_REBASE_REGRESSION_ESTABLISHED_BASELINE_MEASUREMENT_PENDING",
+  "conclusion": "The observed small-B4 preemptions are consistent with transient recurrent-state pressure under asynchronous overlap. Source and CPU allocation evidence show this pressure mechanism already exists with the old fork checkpoint boundary; neither new pool sizing nor extra offload reference pins are demonstrated. Do not change the fork reservation policy from this evidence alone.",
+  "observed": {
+    "engine_log": "/tmp/vllm-v033-qualification/candidate-02/engine.log",
+    "performance_root": "/tmp/vllm-v033-qualification/perf-candidate",
+    "c512_b4_cold_preemptions": [
+      1,
+      1,
+      0
+    ],
+    "c512_b4_cold_load_bytes": [
+      177324064,
+      177324064,
+      0
+    ],
+    "c512_b4_warm_load_bytes_per_trial": 709296256,
+    "c4096_b4_trials": "Cold and warm r0-r2 completed with zero preemptions at review time.",
+    "correctness": "All inspected trials report success; preempted cold trials complete all four requests.",
+    "interpretation": "177324064 is exactly one quarter of the warm B4 reload volume, consistent with one preempted request being restored. Metric deltas do not reveal exact allocator ordering or prove which pool rejected allocation."
+  },
+  "pool_accounting": {
+    "mamba": {
+      "groups": [
+        0
+      ],
+      "layers": 48,
+      "per_layer_page_bytes": 3248128,
+      "physical_page_bytes": 155910144,
+      "physical_blocks": 17,
+      "null_blocks": 1,
+      "usable_blocks": 16,
+      "max_request_blocks": 4,
+      "allocated_bytes": 2650472448
+    },
+    "attention": {
+      "groups": [
+        1
+      ],
+      "layers": 16,
+      "physical_page_bytes": 1720320,
+      "physical_blocks": 1244,
+      "usable_blocks": 1243,
+      "capacity_tokens": 159104,
+      "allocated_bytes": 2140078080
+    },
+    "draft": {
+      "groups": [
+        2
+      ],
+      "layers": 5,
+      "physical_page_bytes": 2621440,
+      "physical_blocks": 201,
+      "usable_blocks": 200,
+      "max_request_blocks": 50,
+      "allocated_bytes": 526909440
+    },
+    "total_allocated_bytes": 5317459968,
+    "sizing_source": "_get_independent_kv_cache_config (kv_cache_planning.py:1978) reserves one null plus max_num_seqs * _physical_blocks_per_request for every Mamba/SWA pool. MambaSpec.max_memory_usage_bytes (kv_cache_interface.py:1158) uses 2 + num_speculative_blocks + num_prefill_checkpoint_blocks; observed four equals 2+2+0.",
+    "old_fork_comparison": "Same sizing and no-extra-checkpoint policy existed in old kv_cache_utils.get_kv_cache_config_from_groups. Extra recurrent prefix slots are intentionally reserved only without IndependentCPUOffloadingSpec.",
+    "what_num_gpu_blocks_means": "Legacy scalar config.num_blocks is min(pool counts), hence 17; attention capacity is 1243 usable 128-token pages, not 17 pages."
+  },
+  "profile_margin": {
+    "suggested_kv_cache_bytes": 5161183826,
+    "explicit_upstream_redundancy_buffer_bytes": 157286400,
+    "reconstructed_profile_budget_bytes": 5318470226,
+    "unused_planner_rounding_bytes": 1010258,
+    "explanation": "gpu_worker.py:1056-1076 subtracts 150 MiB only when reporting the later suggested explicit --kv-cache-memory value. The original profiled available budget excludes this advice-only margin. It is not a missing null-page charge; all physical pool allocations fit the reconstructed profile budget.",
+    "coincidence": "One Mamba physical page 155910144 bytes is close to, but not equal to,150MiB157286400bytes."
+  },
+  "lifecycle_comparison": {
+    "ast_identical_old_to_candidate": [
+      "MambaManager.allocate_new_blocks",
+      "MambaManager.remove_skipped_blocks",
+      "MambaManager._remove_blocks_in_range",
+      "MambaManager.cap_future_reservation",
+      "MambaManager._needs_internal_checkpoint",
+      "MambaManager.get_num_skipped_tokens"
+    ],
+    "changed_boundary": "Old DFlash use_eagle_block_drop was true by default, so a 512-token prompt stopped at256. Upstream 0.33 excludes DFlash from last-block dropping, moving that checkpoint to384. Hash lookahead is 0 with this KV connector. The shift changes timing, not the fixed planner formula.",
+    "offload_fencing": "Ordinary stores use _block_id_to_pending_jobs to fence reuse, rather than taking additional BlockPool reference pins. For aligned512-token prompts with128-token hash and state blocks, producer partial-tail COW is not expected. Extra pin pressure has not been demonstrated.",
+    "async_overlap": "VllmConfig.max_concurrent_batches returns pp_size+1 for V2 async scheduling, i.e. 2 at PP1. Mamba retirement uses processed computed tokens, so an older state cannot be retired while its final prefill is in flight."
+  },
+  "cpu_allocation_probe": {
+    "command": "/tmp/vllm-v033-cpu-pytest -q -s /tmp/test_v033_recurrent_probe.py --tb=short",
+    "test_file": "/tmp/test_v033_recurrent_probe.py",
+    "log": "/tmp/vllm-v033-qualification/recurrent-cpu-probe.log",
+    "passed": 2,
+    "failed": 0,
+    "seconds": 2.73,
+    "gpu_guard": "Same CPU-platform harness with cuda/xpu lazy_init hard errors; probe creates only real manager/request/config objects and block metadata, no device tensors.",
+    "traces": [
+      {
+        "boundary": 256,
+        "trace": [
+          {
+            "label": "all_first_prefill_chunks_complete",
+            "free": 4,
+            "request_blocks": [
+              3,
+              3,
+              3,
+              3
+            ]
+          },
+          {
+            "label": "three_final_prefills_in_flight_fourth_at_boundary",
+            "free": 1,
+            "request_blocks": [
+              4,
+              4,
+              4,
+              3
+            ]
+          },
+          {
+            "label": "first_optimistic_decode_allocated",
+            "free": 0,
+            "request_blocks": [
+              5,
+              4,
+              4,
+              3
+            ]
+          },
+          {
+            "label": "second_optimistic_decode_rejected",
+            "free": 0,
+            "request_blocks": [
+              5,
+              4,
+              4,
+              3
+            ]
+          },
+          {
+            "label": "after_final_prefill_completion",
+            "free": 0,
+            "request_blocks": [
+              5,
+              4,
+              4,
+              3
+            ]
+          }
+        ]
+      },
+      {
+        "boundary": 384,
+        "trace": [
+          {
+            "label": "all_first_prefill_chunks_complete",
+            "free": 4,
+            "request_blocks": [
+              3,
+              3,
+              3,
+              3
+            ]
+          },
+          {
+            "label": "three_final_prefills_in_flight_fourth_at_boundary",
+            "free": 1,
+            "request_blocks": [
+              4,
+              4,
+              4,
+              3
+            ]
+          },
+          {
+            "label": "first_optimistic_decode_allocated",
+            "free": 0,
+            "request_blocks": [
+              5,
+              4,
+              4,
+              3
+            ]
+          },
+          {
+            "label": "second_optimistic_decode_rejected",
+            "free": 0,
+            "request_blocks": [
+              5,
+              4,
+              4,
+              3
+            ]
+          },
+          {
+            "label": "after_final_prefill_completion",
+            "free": 0,
+            "request_blocks": [
+              5,
+              4,
+              4,
+              3
+            ]
+          }
+        ]
+      }
+    ],
+    "meaning": "Both old 256 and new 384 boundary variants produce identical allocation traces: [3,3,3,3] states after first chunks; [4,4,4,3] with three final prefills in flight; [5,4,4,3] after one optimistic decode; another decode allocation fails until processed-prefix progress permits recycling.",
+    "limitation": "This deliberately controlled manager trace proves a pre-existing possible allocation bottleneck. It does not reproduce actual Scheduler ordering or establish that this exact interleaving caused the GPU trial preemption. Old source behavior is inferred from AST-identical allocation/retirement routines and the old-boundary variant, not from running the full old package in this probe."
+  },
+  "shared_prefix_checkpoint_feature": {
+    "setting": "enable_mamba_shared_prefix_checkpoint",
+    "existed_in_old_fork": true,
+    "current_effect": "Inactive. Scheduler requires hash_block_size < mamba block size and coordinator partial hits. Current profile uses 128 for both, with flag false.",
+    "purpose": "Opt-in extra recurrent checkpoint at an observed shared-prefix junction, improving reusable sibling prefixes in qualifying fine-grained cache profiles. It does not add physical pool capacity and is not a remedy for this transient-pressure observation.",
+    "recommendation": "Do not treat this as a newly available performance improvement for the current unchanged profile. Changing prefix granularity and checkpoint behavior would be a separate measured experiment."
+  },
+  "headroom_options": {
+    "dedicated_knob": "No dedicated extra-Mamba-pool-slots knob found. With IndependentCPUOffloadingSpec, increasing --kv-cache-memory or --num-gpu-blocks-override grows full-attention capacity while recurrent pool remains max_num_seqs times fixed per-request cost.",
+    "one_extra_page_tradeoff": "A hypothetical one-page recurrent reserve costs 155910144 bytes, approximately 91 full-attention pages or 11648 tokens at current layout and rounding. This is a policy change, not an existing independent headroom setting; do not silently add it during the rebase.",
+    "diagnostic_only": "--no-async-scheduling reduces PP1 max_concurrent_batches from 2 to 1 and can isolate overlap pressure. It may reduce throughput; no recommendation to deploy it without paired measurement."
+  },
+  "next_evidence": [
+    "Complete matched baseline trials first and compare preemption/load deltas, not only TTFT averages.",
+    "If differential preemptions persist, record per-pool required/free blocks and request computed/in-flight tokens at the allocator failure; current metrics lack this causal detail.",
+    "A focused CPU scheduler regression can hold three final prefill outputs in flight while a fourth remains at the checkpoint, then advance outputs deterministically; exercise both 256 and 384 boundaries and assert exact state ownership/recycling and forward progress. Avoid asserting zero preemptions until the intended policy is agreed."
+  ],
+  "changes": "No repository code, host settings, or services changed. Only a temporary CPU diagnostic and this report were written.",
+  "capacity_comparison": {
+    "status": "CAPACITY_DELTA_REPEATED_ACROSS_TWO_STARTS_PER_ARM",
+    "logs": [
+      "/tmp/vllm-v033-qualification/baseline-01/engine.log",
+      "/tmp/vllm-v033-qualification/baseline-02/engine.log",
+      "/tmp/vllm-v033-qualification/candidate-01/engine.log",
+      "/tmp/vllm-v033-qualification/candidate-02/engine.log"
+    ],
+    "candidate_01_and_02": {
+      "available_kv_gib_display": 4.95,
+      "capacity_tokens": 159104,
+      "mamba_physical_blocks": 17,
+      "attention_physical_blocks": 1244,
+      "draft_physical_blocks": 201,
+      "profile_budget_bytes": 5318470226,
+      "allocated_total_bytes": 5317459968,
+      "rounding_slack_bytes": 1010258,
+      "suggested_explicit_kv_bytes": 5161183826,
+      "weights_plus_non_torch_consumed_gib_display": 22.84,
+      "model_loading_gib_display": 18.73,
+      "peak_activation_gib_display": 0.38
+    },
+    "delta": {
+      "attention_pages": 72,
+      "attention_tokens": 9216,
+      "attention_capacity_percent": 6.148590947907762,
+      "allocated_bytes": 123863040,
+      "profile_budget_bytes_baseline_01": 123785216,
+      "profile_budget_mib_baseline_01": 118.05078125,
+      "profile_budget_bytes_baseline_02": 123789312,
+      "profile_budget_mib_baseline_02": 118.0546875,
+      "rounding_difference_bytes_baseline_01": 77824,
+      "rounding_difference_bytes_baseline_02": 73728
+    },
+    "explanation": "Both arms reserve exactly the same recurrent and draft capacities with identical layer counts, page sizes and total bytes. The extra candidate capacity is entirely 72 full-attention pages obtained by spending an approximately 118.05 MiB larger measured KV budget. The suggested explicit budgets (plus the same 150 MiB advice-only buffer) account for the difference to page-rounding precision. This is an observed profiling-budget improvement under this host profile, not a changed planner reservation. Logs show lower candidate consumed weights+non-torch memory while displayed weight-loading and activation figures match; the exact component responsible for the 118 MiB reduction has not been traced.",
+    "source_trace": "memory_profiling in vllm/utils/mem_utils.py and XPU worker implementation are unchanged old fork to candidate. total_consumed is measured from before-create free memory minus after-profile free memory, after garbage collection and allocator empty_cache; transient peak headroom is added separately. Independent pool planning preserves fixed Mamba/draft reserves and converts the remainder to full-attention pages. New upstream V2 sampler profiling executes an additional sampler-warmup parameter pass, but source inspection alone does not justify attributing the observed 118 MiB reduction to it.",
+    "limits": "Two starts per arm establish repeatability for these launches, not a general memory guarantee across hardware or workloads. The exact source of lower persistent/non-KV consumption remains untraced; do not attribute it to a particular upstream commit or kernel. Matched baseline performance/preemption measurements remain pending. No source edits, GPU work, service operations or network access were performed for this follow-up.",
+    "baseline_01": {
+      "available_kv_gib_display": 4.84,
+      "capacity_tokens": 149888,
+      "mamba_physical_blocks": 17,
+      "attention_physical_blocks": 1172,
+      "draft_physical_blocks": 201,
+      "mamba_allocated_bytes": 2650472448,
+      "attention_allocated_bytes": 2016215040,
+      "draft_allocated_bytes": 526909440,
+      "profile_budget_bytes": 5194685010,
+      "allocated_total_bytes": 5193596928,
+      "rounding_slack_bytes": 1088082,
+      "suggested_explicit_kv_bytes": 5037398610,
+      "weights_plus_non_torch_consumed_gib_display": 22.96,
+      "model_loading_gib_display": 18.73,
+      "peak_activation_gib_display": 0.38
+    },
+    "baseline_02": {
+      "available_kv_gib_display": 4.84,
+      "capacity_tokens": 149888,
+      "mamba_physical_blocks": 17,
+      "attention_physical_blocks": 1172,
+      "draft_physical_blocks": 201,
+      "mamba_allocated_bytes": 2650472448,
+      "attention_allocated_bytes": 2016215040,
+      "draft_allocated_bytes": 526909440,
+      "profile_budget_bytes": 5194680914,
+      "allocated_total_bytes": 5193596928,
+      "rounding_slack_bytes": 1083986,
+      "suggested_explicit_kv_bytes": 5037394514,
+      "weights_plus_non_torch_consumed_gib_display": 22.96,
+      "model_loading_gib_display": 18.73,
+      "peak_activation_gib_display": 0.38
+    },
+    "repeatability": "Baseline01 and cached baseline02 both allocate 149888 attention tokens (1172 physical pages); candidate01 and cached candidate02 both allocate 159104 tokens (1244 physical pages). Baseline suggested budget varies by 4096 bytes, which does not change page count. The observed 9216-token (6.15%) capacity increase is stable across these two starts per arm."
+  }
+}

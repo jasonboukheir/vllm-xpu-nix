@@ -1,0 +1,201 @@
+{
+  "checked_utc": "2026-11-09T17:08:38.316866+00:00",
+  "release": "xpu-v1.14.0",
+  "repositories": {
+    "vllm": {
+      "expected_commit": "066206bafebe124485a69e13dcb975a2afc55ad2",
+      "refs": {
+        "refs/heads/main": "066206bafebe124485a69e13dcb975a2afc55ad2",
+        "refs/heads/releases/xpu-v1.14.0": "066206bafebe124485a69e13dcb975a2afc55ad2",
+        "refs/tags/xpu-v1.14.0": "3454cdc10cae18a02693b9cb9650c8c0782ee2fb",
+        "refs/tags/xpu-v1.14.0^{}": "066206bafebe124485a69e13dcb975a2afc55ad2"
+      },
+      "local_branch": "main"
+    },
+    "vllm-xpu-kernels": {
+      "expected_commit": "05d4536b2440db171741b5de5c148cdc834bd692",
+      "refs": {
+        "refs/heads/main": "05d4536b2440db171741b5de5c148cdc834bd692",
+        "refs/heads/releases/xpu-v1.14.0": "05d4536b2440db171741b5de5c148cdc834bd692",
+        "refs/tags/xpu-v1.14.0": "2db78769bc2217004f1e8504761bba9019828d83",
+        "refs/tags/xpu-v1.14.0^{}": "05d4536b2440db171741b5de5c148cdc834bd692"
+      },
+      "local_branch": "main"
+    },
+    "vllm-xpu-nix": {
+      "expected_commit": "1f0179f8a34e15bd98599772cb6c0237f4a394d2",
+      "refs": {
+        "refs/heads/main": "1f0179f8a34e15bd98599772cb6c0237f4a394d2",
+        "refs/heads/releases/xpu-v1.14.0": "1f0179f8a34e15bd98599772cb6c0237f4a394d2",
+        "refs/tags/xpu-v1.14.0": "8249ddd37e770aa6f3131d2d76f45b66bb921587",
+        "refs/tags/xpu-v1.14.0^{}": "1f0179f8a34e15bd98599772cb6c0237f4a394d2"
+      },
+      "local_branch": "main"
+    }
+  },
+  "all_published_refs_match": true,
+  "prior_approval_rejection_resolved_by": "User explicitly requested publication straight to main.",
+  "host_commit": "9b8bdb707ac88e6a19b1ffa47acba26cc2c11d86",
+  "built_system": "/nix/store/lcd1hi0crwiiby8pix468lp0s1nsa2n1-nixos-system-brutus-26.05.20261015.26f4107",
+  "qualified_package": "/nix/store/5jvmvr89c90f4j1lry5l3a0xr8jp0gfw-python3.12-vllm-xpu-0.33.0+unstable.2026.11.08.g066206b",
+  "actual_host_drv": "/nix/store/1zx6swwn83jq2rl9kf1nnz6yrjicmm0q-python3.12-vllm-xpu-0.33.0+unstable.2026.11.08.g066206b.drv",
+  "actual_host_package_identical": true,
+  "host_worktree_clean": true,
+  "host_pin_scope": [
+    "vllm-xpu-release",
+    "vllm-xpu-unstable-src",
+    "vllm-xpu-kernels-unstable-src"
+  ],
+  "host_formatting_hook": "passed",
+  "activation_status": "user completed authenticated nixos-rebuild switch",
+  "live_api_status": "passed",
+  "prepared_host_commit": "6ab03e9503577dfba1741d1100da23366161f55f",
+  "verified_live_utc": "2026-11-09T21:10:55.002250+00:00",
+  "active_system": "/nix/store/r8vrf9vapsidj8w12q1jb80z8q1i2cig-nixos-system-brutus-26.05.20261015.26f4107",
+  "active_configuration": {
+    "configurationRevision": "9b8bdb707ac88e6a19b1ffa47acba26cc2c11d86",
+    "nixosVersion": "26.05.20261015.26f4107",
+    "nixpkgsRevision": "26f4107e47e3ad0ffd0db220469ba83b6f6d96e8"
+  },
+  "services": {
+    "vllm-xpu-chat.service": {
+      "ActiveState": "active",
+      "SubState": "running",
+      "MainPID": "2922892",
+      "NRestarts": "0",
+      "MemorySwapMax": "0"
+    },
+    "vllm-xpu-embedding.service": {
+      "ActiveState": "inactive",
+      "SubState": "dead",
+      "MainPID": "0",
+      "NRestarts": "0",
+      "MemorySwapMax": "infinity"
+    },
+    "vllm-xpu-stt.service": {
+      "ActiveState": "inactive",
+      "SubState": "dead",
+      "MainPID": "0",
+      "NRestarts": "0",
+      "MemorySwapMax": "infinity"
+    },
+    "jellyfin.service": {
+      "ActiveState": "active",
+      "SubState": "running",
+      "MainPID": "1712587",
+      "NRestarts": "0",
+      "MemorySwapMax": "infinity"
+    }
+  },
+  "running_process_package_identical": true,
+  "active_unit_package_identical": true,
+  "production_dev_mode_absent": true,
+  "smoke": {
+    "checked_utc": "2026-11-09T21:09:50.156469+00:00",
+    "endpoint": "http://127.0.0.1:8000",
+    "health": "passed",
+    "version": {
+      "version": "0.33.0+unstable.2026.11.08.g066206b"
+    },
+    "models": {
+      "object": "list",
+      "data": [
+        {
+          "id": "sunny-chat",
+          "object": "model",
+          "created": 1794258586,
+          "owned_by": "vllm",
+          "root": "RedHatAI/Qwen3.8-27B-INT4",
+          "parent": null,
+          "max_model_len": 131072,
+          "permission": [
+            {
+              "id": "modelperm-beb3530961fcc7b3",
+              "object": "model_permission",
+              "created": 1794258586,
+              "allow_create_engine": false,
+              "allow_sampling": true,
+              "allow_logprobs": true,
+              "allow_search_indices": false,
+              "allow_view": true,
+              "allow_fine_tuning": false,
+              "organization": "*",
+              "group": null,
+              "is_blocking": false
+            }
+          ]
+        }
+      ]
+    },
+    "request": {
+      "model": "sunny-chat",
+      "messages": [
+        {
+          "role": "user",
+          "content": "What is 17 plus 25? Answer with just the number."
+        }
+      ],
+      "temperature": 0,
+      "max_tokens": 32,
+      "chat_template_kwargs": {
+        "enable_thinking": false
+      }
+    },
+    "response": {
+      "id": "chatcmpl-ad77462186471d6a",
+      "object": "chat.completion",
+      "created": 1794258586,
+      "model": "sunny-chat",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "42",
+            "refusal": null,
+            "annotations": null,
+            "audio": null,
+            "function_call": null,
+            "reasoning": null
+          },
+          "logprobs": null,
+          "finish_reason": "stop",
+          "stop_reason": null,
+          "token_ids": null,
+          "routed_experts": null,
+          "weight_versions": null
+        }
+      ],
+      "service_tier": null,
+      "system_fingerprint": "vllm-0.33.0+unstable.2026.11.08.g066206b-3f0e191e",
+      "usage": {
+        "prompt_tokens": 28,
+        "total_tokens": 31,
+        "completion_tokens": 3,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "prompt_logprobs": null,
+      "prompt_token_ids": null,
+      "prompt_text": null,
+      "kv_transfer_params": null,
+      "ec_transfer_params": null,
+      "metrics": null
+    },
+    "generation_elapsed_seconds": 3.863561305915937,
+    "status": "passed"
+  },
+  "post_smoke_metrics": [
+    "vllm:spec_decode_num_drafts_total{engine=\"0\",model_name=\"sunny-chat\"} 277.0",
+    "vllm:spec_decode_num_draft_tokens_total{engine=\"0\",model_name=\"sunny-chat\"} 554.0",
+    "vllm:spec_decode_num_accepted_tokens_total{engine=\"0\",model_name=\"sunny-chat\"} 444.0",
+    "vllm:num_requests_running{engine=\"0\",model_name=\"sunny-chat\"} 0.0",
+    "vllm:num_requests_waiting{engine=\"0\",model_name=\"sunny-chat\"} 0.0",
+    "vllm:num_preemptions_total{engine=\"0\",model_name=\"sunny-chat\"} 0.0"
+  ],
+  "jellyfin_original_process_preserved": true,
+  "initial_pre_activation_monitor": "Expired while waiting for the user switch; a fresh post-switch probe passed.",
+  "deployment_limits": "Direct local API smoke and current service state; earlier full GPU qualification remains separate. No new performance benchmark or overnight idle claim."
+}

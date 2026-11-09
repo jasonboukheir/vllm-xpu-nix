@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "checked_utc": "2026-11-09T17:03:49.986063+00:00",
+  "status": "prebuilt; publication and privileged activation pending",
+  "running_system": "/nix/store/kqvrv5jpqch50mgb5xlbyd3bb5pz331f-nixos-system-brutus-26.05.20261015.26f4107",
+  "running_host_revision": "65d3318016761d65e38ba43cc5c2f4c775aeb943",
+  "prebuilt_system": "/nix/store/jdwgigrq4q35vakq28yzb8j1dz4pp4wx-nixos-system-brutus-26.05.20261015.26f4107",
+  "method": "Current host flake extended with only services.vllm-xpu.package overridden to qualified local candidate; final published release host will be rebuilt and compared separately.",
+  "qualified_package": "/nix/store/5jvmvr89c90f4j1lry5l3a0xr8jp0gfw-python3.12-vllm-xpu-0.33.0+unstable.2026.11.08.g066206b",
+  "exact_package_in_unit": true,
+  "production_dev_mode_absent": true,
+  "changed_unit_contents": [
+    "systemd-tmpfiles-resetup.service",
+    "vllm-xpu-chat.service"
+  ],
+  "jellyfin_unit_unchanged": true,
+  "prebuild_log_sha256": "5df6cb0ec92ab6c5f73691d72e1645810781cec048a66133dd58ec4b7a7d684d",
+  "approval_review": {
+    "action": "publish rebased source main and permanent release refs",
+    "status": "rejected pending explicit user approval",
+    "remote_mutations_performed": false
+  },
+  "activation_privileges": "sudo requires interactive authentication"
+}

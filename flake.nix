@@ -21,7 +21,7 @@
     vllm-xpu-kernels-unstable-src = {
       type = "git";
       url = "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm-xpu-kernels.git";
-      ref = "refs/tags/xpu-v1.13.0";
+      ref = "refs/tags/xpu-v1.14.0";
       submodules = true;
       flake = false;
     };
@@ -35,11 +35,8 @@
 
     vllm-xpu-unstable-src = {
       type = "git";
-      # Local preparation pin; publish and replace with the release ref only
-      # after this exact candidate passes the Brutus GPU handoff.
-      url = "file:///home/jasonbk/Projects/vllm";
-      ref = "refs/heads/rebase/v0.33-20261108";
-      rev = "066206bafebe124485a69e13dcb975a2afc55ad2";
+      url = "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm.git";
+      ref = "refs/tags/xpu-v1.14.0";
       flake = false;
     };
 

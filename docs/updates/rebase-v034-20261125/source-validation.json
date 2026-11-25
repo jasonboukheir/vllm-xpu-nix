@@ -61,9 +61,12 @@
       "evidence": "source-vmm-torch215.log"
     },
     {
-      "runtime": "Torch 2.14 and candidate allocator extension",
+      "runtime": "Torch 2.14 and 2.15, each with a freshly compiled candidate allocator extension",
       "check": "Unequal target, draft and fixed state pools, token quanta, measured physical footprint, rebind after growth, stable addresses and data. Two allocator cap tests plus mixed-pool XPU test passed. CUDA variant skipped.",
-      "evidence": "source-core-pooled-hw.log"
+      "evidence": [
+        "source-core-pooled-hw.log",
+        "source-pooled-torch215.log"
+      ]
     },
     {
       "runtime": "Torch 2.14, candidate offloader and allocator, deployed 0.1.15.4 native DMA op",

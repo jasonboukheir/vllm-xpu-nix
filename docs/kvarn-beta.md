@@ -35,6 +35,20 @@ performance and memory with the K4V2 target held fixed. The MTP layer has its
 own attention weights and KV contents; choosing the same format does not make
 the target's cache reusable by the drafter.
 
+## Size the GPU cache after warmup on vLLM 0.34
+
+Add `"--enable-extensible-kv-cache"` to the instance's existing `extraArgs`.
+The B70 worker reserves virtual addresses for each physical cache pool before
+warmup, measures the remaining memory, then maps physical pages at those
+addresses. The recurrent and sliding-window pools keep the slots required by
+the configured concurrency and draft lookahead. Full attention can use the
+remaining budget. The final capacity is reported at startup.
+
+Keep the existing `IndependentCPUOffloadingSpec` arguments to use RAM prefix
+offload alongside this setting. The XPU implementation supports in-process
+transfers. Use the fixed allocator when specifying a cache size or block-count
+override, or when a connector requires exported GPU memory handles.
+
 ## Store reusable prefixes in system RAM
 
 The `xpu-v1.12.2` RAM prefix-cache backend uses `OffloadingConnector` with

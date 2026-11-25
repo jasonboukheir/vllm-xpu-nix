@@ -1244,6 +1244,7 @@ def _validate_correctness_phase(
     request_stable_rmsnorm: str,
     metadata_lifecycle: str,
     *,
+    model_runner: str,
     owner: Path,
 ) -> dict[str, Any]:
     path, phase = _json_artifact(value, name=f"{phase_name} phase", owner=owner)
@@ -1510,7 +1511,7 @@ def _validate_correctness_phase(
         != profile.get("request_stable_projection_rows_environment")
         or captured_environment.get("KVARN_REQUEST_STABLE_RMSNORM")
         != profile.get("request_stable_rmsnorm_environment")
-        or captured_environment.get("VLLM_USE_V2_MODEL_RUNNER") != "0"
+        or captured_environment.get("VLLM_USE_V2_MODEL_RUNNER") != model_runner
         or profile.get("variant_provenance") != expected_variant
     ):
         raise GateError(f"{owner}: {phase_name} layout profile differs")
@@ -1713,6 +1714,7 @@ def validate_correctness_gate_evidence(
     decode_fp16_low_water_blocks: str = "0",
     request_stable_projection_rows: str = "1",
     request_stable_rmsnorm: str = "1",
+    model_runner: str = "1",
 ) -> None:
     """Validate the meaning of one hashed correctness-gate artifact."""
     selected_splits = DEFAULT_NATIVE_SPLITS if native_splits is None else native_splits
@@ -1875,6 +1877,7 @@ def validate_correctness_gate_evidence(
             request_stable_projection_rows,
             request_stable_rmsnorm,
             metadata_lifecycle,
+            model_runner=model_runner,
             owner=path,
         )
 
@@ -3172,6 +3175,12 @@ def _load_correctness(path: Path) -> tuple[dict[str, Any], str]:
     decode_flush_scope = document.get("decode_flush_scope")
     if decode_flush_scope not in DECODE_FLUSH_SCOPES:
         raise GateError(f"{path}: decode flush scope is unsupported")
+    # Correctness schema 1 records were qualified with the retired V1
+    # runner. Keep their phases bound to V1 when auditing older releases.
+    schema_version = document.get("schema_version", 1)
+    if type(schema_version) is not int or schema_version not in (1, 2):
+        raise GateError(f"{path}: unsupported correctness manifest schema")
+    model_runner = "0" if schema_version == 1 else "1"
     service_controls = document.get("service_controls")
     correctness_onednn = (
         service_controls.get("kvarn_onednn_deterministic")
@@ -3229,7 +3238,7 @@ def _load_correctness(path: Path) -> tuple[dict[str, Any], str]:
         "kvarn_onednn_deterministic": correctness_onednn,
         "kvarn_request_stable_projection_rows": correctness_projection_rows,
         "kvarn_request_stable_rmsnorm": correctness_rmsnorm,
-        "vllm_use_v2_model_runner": "0",
+        "vllm_use_v2_model_runner": model_runner,
     }
     if service_controls != expected_service_controls:
         raise GateError(f"{path}: correctness service controls are inconsistent")
@@ -3412,6 +3421,7 @@ def _load_correctness(path: Path) -> tuple[dict[str, Any], str]:
             decode_fp16_low_water_blocks=decode_fp16_low_water_blocks_text,
             request_stable_projection_rows=correctness_projection_rows,
             request_stable_rmsnorm=correctness_rmsnorm,
+            model_runner=model_runner,
         )
         if name.startswith("native_decode_"):
             library_path, library_sha256 = _artifact_reference(

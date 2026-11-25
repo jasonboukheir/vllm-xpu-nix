@@ -111,7 +111,7 @@ PROFILE = {
     "decode_flush_scope_environment": "per_row",
     "decode_fp16_low_water_blocks_environment": "0",
     "decode_fp16_window_blocks_environment": "0",
-    "vllm_use_v2_model_runner_environment": "0",
+    "vllm_use_v2_model_runner_environment": "1",
     "variant_provenance": {
         "kernel_strategy": "vllm_auto",
         "split_policy": "neutral_1",
@@ -492,7 +492,7 @@ def test_exploratory_plan_session_has_no_formal_claims(
         "kvarn_onednn_deterministic": "1",
         "kvarn_request_stable_projection_rows": "1",
         "kvarn_request_stable_rmsnorm": "1",
-        "vllm_use_v2_model_runner": "0",
+        "vllm_use_v2_model_runner": "1",
     }
     assert len(session["plan"]) == 4
     assert "correctness_artifact" not in session
@@ -1179,7 +1179,7 @@ def test_profile_verification_uses_actual_argv_and_environment(tmp_path: Path) -
         "VLLM_CACHE_ROOT": str(args.runtime_cache / "vllm-xpu-brutus-kvarn"),
         "VLLM_TARGET_DEVICE": "xpu",
         "VLLM_KVARN_DEFER_PREFILL_FLUSH": None,
-        "VLLM_USE_V2_MODEL_RUNNER": "0",
+        "VLLM_USE_V2_MODEL_RUNNER": "1",
         "VLLM_XPU_ENABLE_XPU_GRAPH": None,
         "XDG_CACHE_HOME": str(args.runtime_cache),
     }
@@ -1220,10 +1220,10 @@ def test_profile_verification_uses_actual_argv_and_environment(tmp_path: Path) -
     with pytest.raises(RunnerError, match="profile mismatch"):
         verify_service_profile(argv, environment, run, args)
     environment["KVARN_ONEDNN_DETERMINISTIC"] = "1"
-    environment["VLLM_USE_V2_MODEL_RUNNER"] = "1"
+    environment["VLLM_USE_V2_MODEL_RUNNER"] = "0"
     with pytest.raises(RunnerError, match="profile mismatch"):
         verify_service_profile(argv, environment, run, args)
-    environment["VLLM_USE_V2_MODEL_RUNNER"] = "0"
+    environment["VLLM_USE_V2_MODEL_RUNNER"] = "1"
 
     for offload in (
         ["--cpu-offload-gb", "4"],
@@ -1263,7 +1263,7 @@ def test_process_capture_includes_bounded_window_and_full_defer_state() -> None:
     environment["KVARN_REQUEST_STABLE_PROJECTION_ROWS"] = "0"
     environment["KVARN_REQUEST_STABLE_RMSNORM"] = "1"
     environment["VLLM_KVARN_DEFER_PREFILL_FLUSH"] = "0"
-    environment["VLLM_USE_V2_MODEL_RUNNER"] = "0"
+    environment["VLLM_USE_V2_MODEL_RUNNER"] = "1"
     process = subprocess.Popen(
         [sys.executable, "-c", "import time; time.sleep(30)"],
         env=environment,
@@ -1283,7 +1283,7 @@ def test_process_capture_includes_bounded_window_and_full_defer_state() -> None:
     assert captured["KVARN_REQUEST_STABLE_PROJECTION_ROWS"] == "0"
     assert captured["KVARN_REQUEST_STABLE_RMSNORM"] == "1"
     assert captured["VLLM_KVARN_DEFER_PREFILL_FLUSH"] == "0"
-    assert captured["VLLM_USE_V2_MODEL_RUNNER"] == "0"
+    assert captured["VLLM_USE_V2_MODEL_RUNNER"] == "1"
 
 
 def test_service_environment_pins_window_and_scrubs_full_defer(
@@ -2698,7 +2698,7 @@ def test_matched_profile_normalizes_only_declared_arm_differences(
         "KVARN_NATIVE_XPU_SPLITS": "1",
         "KVARN_NATIVE_XPU_SPLIT_POLICY": "fixed",
         "HF_HOME": str(args.hf_home),
-        "VLLM_USE_V2_MODEL_RUNNER": "0",
+        "VLLM_USE_V2_MODEL_RUNNER": "1",
     }
     reference = service_profile_evidence(argv, environment)
     argv[argv.index("--kv-cache-dtype") + 1] = "kvarn_k4v4_g128_compact"
@@ -2717,7 +2717,7 @@ def test_matched_profile_normalizes_only_declared_arm_differences(
     assert reference["native_layout"] == "natural"
     assert candidate["native_layout"] == "natural"
     assert reference["onednn_deterministic_environment"] == "1"
-    assert reference["vllm_use_v2_model_runner_environment"] == "0"
+    assert reference["vllm_use_v2_model_runner_environment"] == "1"
     assert "2048" in reference["redacted_argv"]
     assert "KVARN_NATIVE_XPU_SPLITS" in reference["allowed_arm_environment_differences"]
     assert (

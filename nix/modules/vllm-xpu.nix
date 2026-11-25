@@ -256,7 +256,7 @@ let
             drafter, model-aware fast path. Use this for
             Qwen3.6-35B-A3B (the model card's recommendation).
           - `eagle` / `eagle3` — separate draft model.
-          For KVarN with Model Runner V1 use `method = "mtp"` and
+          For KVarN with bundled MTP use `method = "mtp"` and
           `num_speculative_tokens = 2` with BF16 compute and eager execution.
           Compact K4V2 supports local
           prefix caching on the qualified Qwen3.5 TP1/PP1 profile. The B70

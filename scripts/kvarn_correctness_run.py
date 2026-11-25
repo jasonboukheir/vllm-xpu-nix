@@ -2263,7 +2263,7 @@ def build_manifest(
         for name in REQUIRED_GATES
     }
     manifest = {
-        "schema_version": 1,
+        "schema_version": 2,
         "status": "passed",
         "candidate_id": str(args.candidate_env),
         "native_dispatch_verified": True,

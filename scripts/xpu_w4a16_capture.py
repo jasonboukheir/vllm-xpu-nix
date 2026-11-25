@@ -49,7 +49,7 @@ def main():
     shutil.copy2(__file__, args.output / "capture-source.py")
     # Install hooks in the worker's process before any model loading.
     os.environ["VLLM_ENABLE_V1_MULTIPROCESSING"] = "0"
-    os.environ["VLLM_USE_V2_MODEL_RUNNER"] = "0"
+    os.environ["VLLM_USE_V2_MODEL_RUNNER"] = "1"
     import vllm
     import vllm_xpu_kernels._xpu_C as kernels
     from vllm import LLM, SamplingParams

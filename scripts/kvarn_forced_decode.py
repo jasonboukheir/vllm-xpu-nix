@@ -29,11 +29,13 @@ if kernel_library := os.environ.get("VLLM_XPU_KERNELS_LIBRARY"):
     torch.ops.load_library(kernel_library)
 
 from vllm import LLM, SamplingParams, TokensPrompt
+from vllm.config import VllmConfig
 from vllm.exceptions import VLLMValidationError
 from vllm.logprobs import FlatLogprobs, SampleLogprobs
-from vllm.v1.sample.logits_processor import (
-    AdapterLogitsProcessor,
-    RequestLogitsProcessor,
+from vllm.v1.worker.gpu.sample.logits_processor import (
+    LogitsContext,
+    LogitsProcessor,
+    LogitsProcRequestState,
 )
 
 
@@ -41,7 +43,7 @@ class _ForceTokenSequence:
     def __init__(self, token_ids: list[int]) -> None:
         self.token_ids = token_ids
 
-    def __call__(self, output_ids: list[int], logits: torch.Tensor) -> torch.Tensor:
+    def __call__(self, step: int, logits: torch.Tensor) -> torch.Tensor:
         if os.environ.get("KVARN_FORCED_VALIDATE_FINITE", "0") == "1":
             nan_count = int(torch.isnan(logits).sum().item())
             posinf_count = int(torch.isposinf(logits).sum().item())
@@ -52,19 +54,24 @@ class _ForceTokenSequence:
                 neginf_count = int(torch.isneginf(logits).sum().item())
                 raise RuntimeError(
                     "forced-decode received invalid model logits before "
-                    f"forcing step {len(output_ids)}: nan={nan_count} "
+                    f"forcing step {step}: nan={nan_count} "
                     f"posinf={posinf_count} neginf={neginf_count} "
                     f"total={logits.numel()}"
                 )
-        token_id = self.token_ids[len(output_ids)]
+        token_id = self.token_ids[step]
         value = logits[token_id].clone()
         logits.fill_(float("-inf"))
         logits[token_id] = value
         return logits
 
 
-class ForcedTokenSequenceLogitsProcessor(AdapterLogitsProcessor):
+class ForcedTokenSequenceLogitsProcessor(LogitsProcessor):
     """Force ``extra_args['forced_token_ids']`` in order for each request."""
+
+    def __init__(self, vllm_config: VllmConfig, req_states: LogitsProcRequestState):
+        super().__init__(vllm_config, req_states)
+        self.req_states = req_states
+        self.by_slot: dict[int, _ForceTokenSequence] = {}
 
     @classmethod
     def validate_params(cls, params: SamplingParams) -> None:
@@ -82,22 +89,32 @@ class ForcedTokenSequenceLogitsProcessor(AdapterLogitsProcessor):
                 "forced_token_ids must be a non-empty list of non-negative integers"
             )
 
-    def is_argmax_invariant(self) -> bool:
-        return False
+    def add_request(self, req_idx: int, sampling_params: SamplingParams) -> bool:
+        self.validate_params(sampling_params)
+        token_ids = (sampling_params.extra_args or {}).get("forced_token_ids")
+        if token_ids is None:
+            self.by_slot.pop(req_idx, None)
+            return False
+        if max(token_ids) >= self.req_states.vocab_size:
+            raise VLLMValidationError("forced_token_ids exceeds the model vocabulary")
+        self.by_slot[req_idx] = _ForceTokenSequence(token_ids)
+        return True
 
-    def new_req_logits_processor(
-        self, params: SamplingParams
-    ) -> RequestLogitsProcessor | None:
-        self.validate_params(params)
-        token_ids = params.extra_args and params.extra_args.get("forced_token_ids")
-        return None if token_ids is None else _ForceTokenSequence(token_ids)
-
-
-def _read_token_ids(path: Path) -> list[int]:
-    value = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(value, list) or any(not isinstance(item, int) for item in value):
-        raise ValueError(f"{path} must contain a JSON list of integer token IDs")
-    return value
+    def apply(self, logits: torch.Tensor, ctx: LogitsContext) -> torch.Tensor:
+        if not any(slot in self.by_slot for slot in ctx.idx_mapping_np):
+            return logits
+        rows = torch.stack((ctx.expanded_idx_mapping, ctx.pos), dim=1).cpu().tolist()
+        for row, (slot, position) in enumerate(rows):
+            sequence = self.by_slot.get(slot)
+            if sequence is None:
+                continue
+            # The last prompt token predicts output token zero. Partial
+            # prefill chunks and speculative rows beyond the requested output
+            # do not produce a teacher-forced token.
+            step = position + 1 - int(self.req_states.prompt_len.np[slot])
+            if 0 <= step < len(sequence.token_ids):
+                sequence(step, logits[row])
+        return logits
 
 
 def _logit_rows(

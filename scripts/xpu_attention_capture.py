@@ -37,7 +37,7 @@ def main():
     plan = json.loads(plan_path.read_text())
     shutil.copy2(plan_path, args.output / "plan.json")
     os.environ["VLLM_ENABLE_V1_MULTIPROCESSING"] = "0"
-    os.environ["VLLM_USE_V2_MODEL_RUNNER"] = "0"
+    os.environ["VLLM_USE_V2_MODEL_RUNNER"] = "1"
     import torch
     import vllm
     import vllm._xpu_ops as xpu_module

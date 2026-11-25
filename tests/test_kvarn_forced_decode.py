@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 import torch
@@ -17,18 +19,41 @@ from scripts.kvarn_forced_decode import (
 def test_force_sequence_advances_from_persistent_output_state():
     processor = _ForceTokenSequence([2, 0])
 
-    first = processor([], torch.tensor([1.0, 2.0, 3.0]))
-    second = processor([2], torch.tensor([4.0, 5.0, 6.0]))
+    first = processor(0, torch.tensor([1.0, 2.0, 3.0]))
+    second = processor(1, torch.tensor([4.0, 5.0, 6.0]))
 
     torch.testing.assert_close(first, torch.tensor([-torch.inf, -torch.inf, 3.0]))
     torch.testing.assert_close(second, torch.tensor([4.0, -torch.inf, -torch.inf]))
+
+
+def test_force_sequence_tracks_mrv2_slots_positions_and_recycling():
+    state = SimpleNamespace(prompt_len=SimpleNamespace(np=[4, 2]), vocab_size=3)
+    proc = ForcedTokenSequenceLogitsProcessor(None, state)
+    assert proc.add_request(0, SamplingParams(extra_args={"forced_token_ids": [1, 2]}))
+    assert proc.add_request(1, SamplingParams(extra_args={"forced_token_ids": [0]}))
+    ctx = SimpleNamespace(
+        idx_mapping_np=np.array([1, 0]),
+        expanded_idx_mapping=torch.tensor([1, 0, 0, 0]),
+        pos=torch.tensor([1, 2, 3, 4]),
+    )
+    logits = torch.ones((4, 3))
+    actual = proc.apply(logits, ctx)
+    assert torch.isfinite(actual).tolist() == [
+        [True, False, False],
+        [True, True, True],
+        [False, True, False],
+        [False, False, True],
+    ]
+    assert not proc.add_request(1, SamplingParams())
+    actual = proc.apply(torch.ones((4, 3)), ctx)
+    assert torch.all(actual[0] == 1)
 
 
 def test_force_sequence_validation_allows_masking_negative_infinity(monkeypatch):
     monkeypatch.setenv("KVARN_FORCED_VALIDATE_FINITE", "1")
     processor = _ForceTokenSequence([0])
 
-    result = processor([], torch.tensor([1.0, -torch.inf]))
+    result = processor(0, torch.tensor([1.0, -torch.inf]))
 
     torch.testing.assert_close(result, torch.tensor([1.0, -torch.inf]))
 
@@ -41,7 +66,7 @@ def test_force_sequence_validation_rejects_nan_and_positive_infinity(
     processor = _ForceTokenSequence([0])
 
     with pytest.raises(RuntimeError, match="invalid model logits"):
-        processor([], torch.tensor([1.0, invalid]))
+        processor(0, torch.tensor([1.0, invalid]))
 
 
 @pytest.mark.parametrize("value", [[], [1, -1], [1, "2"], "1,2"])

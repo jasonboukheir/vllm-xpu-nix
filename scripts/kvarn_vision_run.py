@@ -665,7 +665,7 @@ def main() -> None:
     selected_env.update(
         {
             "VLLM_TARGET_DEVICE": "xpu",
-            "VLLM_USE_V2_MODEL_RUNNER": "0",
+            "VLLM_USE_V2_MODEL_RUNNER": perf.VLLM_USE_V2_MODEL_RUNNER,
             "HF_HOME": "/var/cache/huggingface",
             "HF_HUB_OFFLINE": "1",
             "VLLM_CACHE_ROOT": str(output / "runtime-cache"),

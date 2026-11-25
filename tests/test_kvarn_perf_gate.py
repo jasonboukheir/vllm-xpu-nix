@@ -325,7 +325,9 @@ def _correctness(
     request_stable_projection_rows: str = "1",
     request_stable_rmsnorm: str = "1",
     metadata_lifecycle: str = "reference",
+    schema_version: int = 2,
 ) -> Path:
+    model_runner = "0" if schema_version == 1 else "1"
     selected_splits = (
         dict(gate_module.B70_Q6_SPLITS) if native_splits is None else native_splits
     )
@@ -490,7 +492,7 @@ def _correctness(
                             "request_stable_projection_rows"
                         ],
                         "KVARN_REQUEST_STABLE_RMSNORM": spec["request_stable_rmsnorm"],
-                        "VLLM_USE_V2_MODEL_RUNNER": "0",
+                        "VLLM_USE_V2_MODEL_RUNNER": model_runner,
                     },
                     "variant_provenance": variant,
                 }
@@ -1002,6 +1004,7 @@ def _correctness(
         prefill_store=prefill_store,
     )
     document = {
+        "schema_version": schema_version,
         "status": "passed",
         "candidate_id": candidate_id,
         "native_layout": native_layout,
@@ -1048,7 +1051,7 @@ def _correctness(
             "kvarn_onednn_deterministic": "1",
             "kvarn_request_stable_projection_rows": (request_stable_projection_rows),
             "kvarn_request_stable_rmsnorm": request_stable_rmsnorm,
-            "vllm_use_v2_model_runner": "0",
+            "vllm_use_v2_model_runner": model_runner,
         },
         "native_scratch_max_splits": gate_module.split_policy.split_policy_contract(
             native_split_policy, selected_splits or None
@@ -1635,7 +1638,7 @@ def _result(
             if request_stable_projection_rows == "1" and request_stable_rmsnorm == "1"
             else "replay-qualified"
         ),
-        "kvarn_vllm_use_v2_model_runner": "0",
+        "kvarn_vllm_use_v2_model_runner": "1",
         "kvarn_matched_profile_sha256": "c" * 64,
         "kvarn_accelerator": "xpu",
         "kvarn_xpu_available": "1",
@@ -2696,6 +2699,16 @@ def test_gate_rejects_incompatible_or_unmarked_factory_selection(
     )
     with pytest.raises(GateError, match="exact factory marker"):
         _compare(arms)
+
+
+def test_correctness_schema_binds_historical_and_current_model_runner(tmp_path: Path) -> None:
+    path = _correctness(tmp_path / "correctness.json", schema_version=1)
+    _load_correctness(path)
+    document = json.loads(path.read_text(encoding="utf-8"))
+    document["schema_version"] = 2
+    path.write_text(json.dumps(document), encoding="utf-8")
+    with pytest.raises(GateError, match="service controls"):
+        _load_correctness(path)
 
 
 def test_correctness_manifest_binds_dpas_service_plan(tmp_path: Path) -> None:

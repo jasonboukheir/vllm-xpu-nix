@@ -1,0 +1,46 @@
+{
+  "schema": 1,
+  "agent": "/root/bench",
+  "repository": "vllm",
+  "commit": "f057cf93b0a2f797d6b23164359fda2f0624f8d5",
+  "parent": "4ba787ec9959e566d3b587a796dff07673324da5",
+  "subject": "fix(xpu): strip graph padding from GDN index tensors",
+  "patch_id": "7b058e6e36a1f421c703182bbcb8e48992ab1128",
+  "old_base": "4ba787ec9959e566d3b587a796dff07673324da5",
+  "old_tip": "066206bafebe124485a69e13dcb975a2afc55ad2",
+  "target": "62d4bc3c7e33b1b6c906e233e6af2d3506c482ca",
+  "target_tag": "v0.34.0",
+  "companion": {
+    "repository": "vllm-xpu-kernels",
+    "old_base": "ddf336d86e3c8602888572a3502f951abd51df12",
+    "old_tip": "05d4536b2440db171741b5de5c148cdc834bd692",
+    "target": "6a1ec18b69b00eaf67a457e0bdd40e72632feaae",
+    "tag": "v0.1.17"
+  },
+  "inventory": "../discovery.json",
+  "prior_evidence": "docs/updates/rebase-v033-20261108/audits/vllm-5673b4b.json",
+  "disposition": "KEEP",
+  "requirement": "On Intel XPU, a Qwen GDN request batch staged for a larger graph may supply more metadata rows than the number of live ordinary or speculative requests. The SYCL interface raises a shape error in this case. Pass same-storage views limited to live rows at the native boundary while preserving all speculative rollback columns, input token extent, data tensors and optional absent fields.",
+  "upstream_coverage": [
+    "The v0.33.0 and v0.34.0 versions of vllm/_xpu_ops.py have identical blob 166534e5b1a78c28fe4820005835959758bae20c. At the target, _gdn_attention_core_xpu_impl lines 178–267 forwards the five index/count tensors directly to torch.ops._xpu_C.gdn_attention. QwenGatedDeltaNetAttention.forward_xpu still selects this operator on the SYCL backend. Auto selects SYCL when the operator is available.",
+    "The selected target removed Model Runner V1 in aac1b2a4f36e742c1f55bcb34ca9aaa5e6e02592. GDNAttentionMetadataBuilder.build still stages state indices, accepted counts and query starts at m.num_reqs or m.num_reqs+1 and fills trailing rows after the live count. See vllm/v1/attention/backends/gdn_attn.py:626–687. The XPU metadata reuse change d42c8a8d8fea2b82612bc9410b72b12cd28f8271 adds update_block_table, which re-stages and fills padded state indices at lines 779–797. The adaptive verification change cebe1097232eaaba46aeae230dfe0887c88f634f preserves this graph staging.",
+    "At kernels v0.1.17, csrc/xpu/gdn_attn/gdn_attn_interface.cpp still checks spec query-start length at line 70, spec state rows at 94, accepted rows at 119, non-spec query-start length at 304 and non-spec state rows at 333 against exact live counts. The ragged speculative traversal change da16a5595c105605bcd44b558c7933b934a05f85 addresses variable per-request query length. Null-state change b73bdc317dd9f38f905a866e579855cec8459a08 skips sentinel rows inside kernels after interface validation. Neither covers mismatched input shapes."
+  ],
+  "minimum_residual": "Retain the five optional leading-dimension slices together before the native invocation and the existing five-case test_xpu_gdn_adapter_trims_only_request_padding regression. No kernel change belongs to this fix.",
+  "dependencies": [
+    "No prerequisite local commit or ABI/schema change. The next vLLM commit 10ba7ce16b1fbad0723a44db4e8dc8e2e517a3c0 adds split_mixed_non_spec after normalization. It is a separate mixed-arithmetic requirement. The remaining vLLM commits leave the slices intact in the final fork tip.",
+    "Preserve the null-state kernel guard in the new upstream base. Retaining the Python slices permits use of the exact upstream operator signature and protects alternate graph configurations independently of the deployed eager profile."
+  ],
+  "validation": {
+    "observed": [
+      "Recomputed the assigned stable patch ID, compared upstream adapter blob identity, inspected target graph staging and native operator argument checks, and verified the old-tip adapter diff retains all slices.",
+      "This is source evidence. No candidate binary or B70 test was run for this audit."
+    ],
+    "required": [
+      "Run the fork regression tests/v1/attention/test_gdn_metadata_builder.py::test_xpu_gdn_adapter_trims_only_request_padding against the assembled release candidate. With the test ported alone, the bare target passes padded views in the four tensor-present cases. With the production change, the test should pass all five cases, including preservation of storage and rollback columns.",
+      "Run padded pure-decode and speculative-decode graph shapes through the actual B70 SYCL path and compare live outputs and state with unpadded runs. Exercise V2 DFlash2 on Brutus during paired qualification and retain upstream null-block padding checks."
+    ],
+    "performance": "The slice operation creates tensor views. No standalone throughput claim.",
+    "uncertainty": "The frequency of mismatched shapes under the deployed eager profile was not measured."
+  }
+}

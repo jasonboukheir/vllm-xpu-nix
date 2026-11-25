@@ -1,0 +1,45 @@
+{
+  "agent": "/root/native_kvarn",
+  "repository": "vllm-xpu-kernels",
+  "commit": "05d4536b2440db171741b5de5c148cdc834bd692",
+  "parent": "348a8b91e4c301ff3c94b0fce68a4cda7a591bfc",
+  "patch_id": "4ff4c3eb11770280350fa8f4739b6edee6cacff4",
+  "subject": "feat(attn): add native KVarN cache and compact K4V2 attention",
+  "old_base": "ddf336d86e3c8602888572a3502f951abd51df12",
+  "old_tip": "05d4536b2440db171741b5de5c148cdc834bd692",
+  "target_tag": "v0.1.17",
+  "target": "6a1ec18b69b00eaf67a457e0bdd40e72632feaae",
+  "companion": {
+    "old_base": "4ba787ec9959e566d3b587a796dff07673324da5",
+    "tip": "066206bafebe124485a69e13dcb975a2afc55ad2",
+    "target": "62d4bc3c7e33b1b6c906e233e6af2d3506c482ca",
+    "tag": "v0.34.0",
+    "inventories": "../discovery.json"
+  },
+  "disposition": "ADAPT",
+  "requirement": "The final old kernel commit supplies Xe2 K4V4 and K4V2 packed KV writers, Hadamard/scatter, decode with scratch and bounded materialization, DPAS record layout, and numerical/reference coverage. The active Qwen W4A16 target uses K4V2 D256/G128 with FP16 resident tails. Four KV heads and a six-query-head group are part of the qualified writer/decoder geometry. No later local commit supersedes the feature.",
+  "upstream_evidence": [
+    "The target contains no KVarN implementation under csrc. Ordinary paged_decode_xe2 reads its own KV representation. The SYCL cache operations concat_and_cache_mla and cp_gather_cache at csrc/torch_bindings.cpp operate on MLA or context-parallel caches. Neither implements balanced record quantization, the mixed packed plus FP16 resident-tail read, the 26880-byte K4V2 record, or the expected operator ABI. Adaptive-verification changes in 470c19fe019ddcf7c4783bd01884be0c7f53c74d change standard FlashAttention dispatch, without providing those records.",
+    "6f5935cfc219251cd4362df7d10ce837521f0ac3 introduces block_2d_align.hpp. In chunk_prefill_epilogue.hpp, FMHAFwdEpilogue and both DecodeFwdEpilogue store paths construct an aligned O surface and shift its V coordinates. This preserves the address of a non-64-byte-aligned head and prevents cross-head reads or writes on affected devices. Selecting the old header wholesale would regress the new path.",
+    "The fork adds ScalarOutput to DecodeFwdEpilogue for an exceptional six-row tile, a 3x128 output subtile, explicit cross-subgroup reduction, empty-split LSE handling and scalar output stores. These changes are independent of the upstream ordinary block-copy alignment improvement. The retained kernel's Q6 scalar scatter writes original tensor coordinates directly."
+  ],
+  "minimum_residual": [
+    "Keep the native KVarN translation units, packed ABI and independent tests together. Port the shared epilogue onto the target: keep its aligned ordinary FMHA store, retain align_block_2d_base and make_shifted_identity_tensor in the ordinary decode block-copy and sink-coordinate paths, and restrict direct coordinate writes and specialized reduction to ScalarOutput. Preserve zero-sum guards and split LSE ownership. Keep upstream adaptive-verification dispatch.",
+    "Build against Torch 2.15 and SYCL-TLA 7b56b936b87f799f80dde60c2fd8d11c1128cebb. Keep the fork's MIXED_GRF_SIZE option scoped to the selected attention library; target cmake/utils.cmake still forces all Xe2 AOT kernels to large GRF without this option. Exercise the new CUTE/CUTLASS headers and the Nix split library's CMake inputs.",
+    "Keep the separately measured reducer and resident-load variants until matched Qwen benchmarks justify removal. A native Inkling KVarN variant would require new geometry and cache semantics and has no coverage in this patch."
+  ],
+  "dependencies": "Coordinate the _vllm_fa2_C schemas in csrc/flash_attn/flash_api.cpp with the port of vLLM 066206b, including value_bits, compact strides, ownership of sink/tail slots, output and split scratch. The sealed old kernel commit also introduces tests and an Xe2 CMake build hook. Keep other GDN, W4A16 and FlashAttention-test requirements independently attributed to their own commits.",
+  "observed": [
+    "Verified the patch ID, inspected the fork and upstream diffs in the colliding header, read block_2d_align.hpp and both sets of operator registrations. The parent mechanical replay reports one conflict at csrc/xpu/attn/xe_2/collective/chunk_prefill_epilogue.hpp.",
+    "The previous release's gpu/gpu-k4v2.json records 17 installed B70 cases with the old native library. The previous source audit records 33 CPU contract/layout checks. These describe the baseline."
+  ],
+  "required_validation": [
+    "On the newly built split package, verify schema loading and BMG AOT launch, compact writer bytes and canaries, natural/DPAS packing, Q6 output and split LSE against independent reference, empty and partially resident pages, misaligned tails and K4V4/K4V2 replay. Include standard block-copy attention with a misaligned head (e.g. H72) and sink as a control for the upstream alignment fix.",
+    "Requalify the paired vLLM service for target/draft rollback, context capacity and RAM-prefix round trips, then compare decode, prefill and memory under matched Qwen settings. No build, GPU execution or new performance run was performed during this audit."
+  ],
+  "prior_evidence": [
+    "../../rebase-v033-20261108/audits/kernels-05d4536.json",
+    "../../rebase-v033-20261108/gpu/gpu-k4v2.json",
+    "../mechanical-replay.json"
+  ]
+}

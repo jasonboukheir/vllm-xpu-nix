@@ -1,0 +1,39 @@
+{
+  "schema": 1,
+  "agent": "/root/barrier",
+  "repository": "vllm-xpu-kernels",
+  "repository_instructions": "../vllm-xpu-kernels/AGENTS.md",
+  "commit": "ad5d9e16721f5c219de65c8d408c02edab104919",
+  "parent": "63a31d01e8fcf44a7b08f8e76e85ec40a208b6f1",
+  "subject": "fix(gdn): order fresh-state prefill output reads",
+  "patch_id": "be4c0310f7f161dda8916d4d75bfd15db795f471",
+  "old_base": "ddf336d86e3c8602888572a3502f951abd51df12",
+  "old_tip": "05d4536b2440db171741b5de5c148cdc834bd692",
+  "target": "6a1ec18b69b00eaf67a457e0bdd40e72632feaae",
+  "target_tag": "v0.1.17",
+  "companion": {
+    "repository": "vllm",
+    "old_base": "4ba787ec9959e566d3b587a796dff07673324da5",
+    "old_tip": "066206bafebe124485a69e13dcb975a2afc55ad2",
+    "target": "62d4bc3c7e33b1b6c906e233e6af2d3506c482ca",
+    "target_tag": "v0.34.0"
+  },
+  "both_inventories": "../discovery.json",
+  "disposition": "KEEP",
+  "requirement": "Preserve fresh-request output and recurrent-state reproducibility in native Xe2 GDN prefill. The B70 Qwen3.8-27B BF16 TP1 projection has 16 K heads, 48 V heads, D128 and 64-token chunks. The first chunk with no prior state shares its O2 matrix across subgroups.",
+  "upstream_coverage": [
+    "At v0.1.17, csrc/xpu/gdn_attn/xe_2/chunk_gated_delta_rule_kernels_xe2.hpp is blob b457f3d06213cf141dfed99d0ed1a6a4b387dc7f, identical to the frozen old upstream base. In gdn::chunk_fwd_o_kernel, subgroup writes to O2 at 1086–1087 precede reads via gemm_TTS at 1223. The barrier at 1160 only executes with previous state. The fresh first chunk has no cross-subgroup fence after the writes. Its branch condition is uniform across the workgroup.",
+    "Kernel commits b73bdc317dd9f38f905a866e579855cec8459a08 (null state), 11c79175cddab23e76b7bfaf6b3df2538185e888 (convolution layout), daf624051e617bac77c4e1de6f13c6a1d83f9e57 (64-bit convolution offsets) and 78799feacc02fd2fd52fe01b847ae5ae681b9627 (speculative RecoverSSM) preserve this non-speculative prefill path. At the target, gdn_attn_interface.cpp:811–817 still dispatches prefill to chunk_gated_delta_rule_xe2.",
+    "In vLLM v0.34.0, _resolve_gdn_prefill_backend in qwen_gdn_linear_attn.py retains the auto-selected SYCL path when the native op is available. Qwen forward calls gdn_attention_core_xpu at 1461, and vllm/_xpu_ops.py:233 calls torch.ops._xpu_C.gdn_attention. An explicit Triton backend can bypass this path; the shipped Xe2 native path still requires synchronization."
+  ],
+  "minimum_residual": "Keep sycl::group_barrier(item.get_group()) immediately inside if (!has_prev_state), before the output dv loop, together with fresh-state, split/carry and asynchronous replay tests in tests/gdn_attn/test_gdn_attn.py. The current fix is already scoped to that branch.",
+  "dependencies": "Independent native ordering fix. Parent 63a31d0 guards a different kernel. Some replay tests also exercise e50d437 deterministic W4A16 projections. Neither those changes nor d8e1f69 mixed-batch dispatch orders O2. No changes to PyTorch operator schema or vLLM ABI are required. The fixed header blob 2db48c2fed78a6bcc92356d1431261704848c2af remains present at the final old kernel tip.",
+  "validation": {
+    "performed": [
+      "Confirmed blob identity and inspected both fresh and carried-state branches, source dispatch chain, and relevant upstream commit history.",
+      "git apply --check of the complete ad5d9e1 diff succeeded against the isolated v0.1.17 source."
+    ],
+    "historical": "../../rebase-v033-20261108/gpu/gpu-gdn.json records passing fresh-state T=63/64/65/104/107/162, batch-separability, carry-boundary and T=107 async-chain checks on the deployed 0.33/0.1.15.4 B70 pair.",
+    "pending": "Run those cases on newly rebuilt v0.34.0/v0.1.17 with explicit native dispatch and instrument a matched upstream-only control if contemplating removal. Compare real Qwen/DFlash2 prefill speed and stability under the existing release protocol. No new GPU tests or barrier performance measurement were performed in this audit."
+  }
+}

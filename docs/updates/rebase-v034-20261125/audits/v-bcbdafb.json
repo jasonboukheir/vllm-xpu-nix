@@ -1,0 +1,42 @@
+{
+  "schema": 1,
+  "agent": "/root/dtype",
+  "repository": "vllm",
+  "commit": "bcbdafbc60fc4cb28e23d3ea0594817363c404ce",
+  "parent": "e0b1f16e795760480e71542a59ee6cf0fe4fa3b6",
+  "patch_id": "6f704ef6d098637584d969bf3fe2b27a26615957",
+  "subject": "fix(xpu): accept explicit unquantized KV cache dtypes",
+  "old_base": "4ba787ec9959e566d3b587a796dff07673324da5",
+  "old_tip": "066206bafebe124485a69e13dcb975a2afc55ad2",
+  "target_tag": "v0.34.0",
+  "target": "62d4bc3c7e33b1b6c906e233e6af2d3506c482ca",
+  "companion": {
+    "repository": "vllm-xpu-kernels",
+    "old_base": "ddf336d86e3c8602888572a3502f951abd51df12",
+    "old_tip": "05d4536b2440db171741b5de5c148cdc834bd692",
+    "target_tag": "v0.1.17",
+    "target": "6a1ec18b69b00eaf67a457e0bdd40e72632feaae"
+  },
+  "inventory": "../discovery.json",
+  "disposition": "KEEP",
+  "requirement": "Explicit FP16/BF16 cache selection on XPU must preserve the configured dtype through model setup and write matching key, value, and both cache tensors through the native FlashAttention operator. This is needed for ordinary unquantized caches and Brutus's independently configured BF16 DFlash2 draft cache.",
+  "upstream_coverage": [
+    "At the target, vllm/model_executor/layers/attention/attention.py:297 and :309 honor checkpoint quantization metadata for auto. Globally replacing the requested dtype with auto could trigger checkpoint FP8. VllmConfig._reject_mismatched_float_kv_cache checks configuration against model dtype and cannot validate the actual four tensors.",
+    "vllm/v1/attention/backends/flash_attn.py:1465 splits the transposed cache and passes self.kv_cache_dtype to reshape_and_cache_flash. The XPU branch in fa_utils.py:34 binds that call to vllm._custom_ops.reshape_and_cache_flash. The target wrapper at :2564 forwards the literal dtype string to the native op, exactly as on the old base. Model Runner V1 removal in aac1b2a4f36e742c1f55bcb34ca9aaa5e6e02592 retained this path.",
+    "Kernels v0.1.17 registers reshape_and_cache_flash for XPU at csrc/torch_bindings.cpp:333. Both contiguous and strided arms of csrc/cache.cpp:1160 dispatch through DISPATCH_BY_KV_CACHE_DTYPE. Its header csrc/quantization/fp8/quant_utils.h is blob 7b214c0059cf92ad791aca263c13cadd31f79491 on both kernel bases. Line 82 selects input-matching half/bfloat16 storage only for auto. The literal float16 or bfloat16 reaches the unsupported dtype error at line 114."
+  ],
+  "minimum_residual": "Replay the original 14-line XPU-only boundary normalization and its two parameterized test functions. They exercise sparse writes, strided storage and causal BF16 attention while rejecting a fallback to reference attention.",
+  "dependencies": [
+    "There is no operator schema change, kernel prerequisite or fold. A future kernel-side implementation would need to validate storage dtypes and accept both literals on contiguous and strided paths.",
+    "The following KVarN commit 066206bafebe124485a69e13dcb975a2afc55ad2 uses explicit BF16 for the separate draft pool. It leaves both owned files byte-identical."
+  ],
+  "validation": {
+    "performed": [
+      "Recomputed the stable patch ID, compared both upstream wrapper bodies and kernel header object IDs, and traced the target writer caller, registration, layout dispatch and dtype check.",
+      "git apply --check of the complete assigned patch against the pristine v0.34.0 target passed, with only a line-number offset in _custom_ops.py. The v0.1.17 reference-fallback symbol patched out by the tests is still present.",
+      "Previous qualification docs/updates/rebase-v033-20261108/gpu/gpu-dtype.json records ten selected B70 cases passing, including both dtypes and layouts. These results apply to xpu-v1.14.0."
+    ],
+    "required": "Run the four sparse writes and 24 BF16 causal-attention cases in tests/v1/attention/test_xpu_unquantized_cache.py on the paired candidate, keeping fallback rejection. Verify the actual configured BF16 DFlash2 draft under cold and restored prefixes. The bare upstream writer should reject the explicit strings; the port should reject mismatched tensors and pass matching tensors to the native auto path.",
+    "limitations": "Source audit only for the new pair. No new B70 execution or throughput claim."
+  }
+}

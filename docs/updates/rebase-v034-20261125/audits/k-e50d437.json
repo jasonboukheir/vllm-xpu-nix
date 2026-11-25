@@ -1,0 +1,50 @@
+{
+  "schema": 1,
+  "agent": "onednn",
+  "repository": "vllm-xpu-kernels",
+  "commit": "e50d437ee5560e5b5f12581ee61b1bddab157733",
+  "parent": "ddf336d86e3c8602888572a3502f951abd51df12",
+  "subject": "fix(onednn): make W4A16 matmul deterministic",
+  "patch_id": "7ea50ac3b0ceb331108743cc12894af0bd2fce23",
+  "old_base": "ddf336d86e3c8602888572a3502f951abd51df12",
+  "old_tip": "05d4536b2440db171741b5de5c148cdc834bd692",
+  "target_tag": "v0.1.17",
+  "target": "6a1ec18b69b00eaf67a457e0bdd40e72632feaae",
+  "companion": {
+    "repository": "vllm",
+    "old_base": "4ba787ec9959e566d3b587a796dff07673324da5",
+    "old_tip": "066206bafebe124485a69e13dcb975a2afc55ad2",
+    "target": "62d4bc3c7e33b1b6c906e233e6af2d3506c482ca",
+    "target_tag": "v0.34.0"
+  },
+  "inventory": "../discovery.json",
+  "requirement": "Repeated BF16 group-128 W4A16 projections on B70 must give bitwise-identical output at fixed primitive shape after pointer reuse or scratch reallocation. The oneDNN primitive needs deterministic accumulation. The fork also tests cross-batch numerical agreement. This applies to the compressed-tensors Qwen target and drafter.",
+  "upstream_coverage": [
+    {
+      "source": "csrc/xpu/onednn/int4_gemm_w4a16.h:dnnl_matmul_w4a16_int4; csrc/xpu/onednn/onednn_ext.h:814; csrc/xpu/onednn/onednn_matmul.cpp:274",
+      "finding": "Old and new upstream W4A16 header blobs match at 88cff6b258645c656887abad597cf31cfdf87fdf. The target constructs a primitive_attr and invokes the callback with scratchpad, scales, zero points, and float-math mode. Neither path sets the deterministic attribute. Only the FP8 W8A8/W8A16 wrappers changed in the oneDNN directory between releases (52103aeac773a5cba0d986c3f72cd66abe4e7ffe and 9185e996e3a8d5d1354ed4f8384ca1e466f1f7d5)."
+    },
+    {
+      "source": "vllm/model_executor/kernels/linear/mixed_precision/xpu.py:XPUwNa16LinearKernel.apply_weights in v0.34.0",
+      "finding": "Calls torch.ops._xpu_C.int4_gemm_w4a16 with the seven existing arguments. XPUW4A8IntLinearKernel separately quantizes activations and does not provide the same W4A16 execution contract."
+    },
+    {
+      "source": "tests/test_int4_gemm_onednn.py:test_int4_gemm_w4a16",
+      "finding": "The upstream test compares a single result with a dequantized matmul within tolerance. It does not check fixed-shape repeated execution, alternate layer pointers, or output allocation pressure."
+    }
+  ],
+  "disposition": "KEEP",
+  "minimum_residual": "Retain primitive_attr::set_deterministic(true), its explanatory comment and the 15 parameterized replay and batch-separability cases. No changes required to the native schema or vLLM caller.",
+  "dependencies": "No other fork commit is required or folds into this one. All six later kernel commits leave both files untouched. Keep oneDNN enabled for the qualified dense W4A16 profile. The finding concerns Qwen linear layers. It establishes no throughput or accuracy claim for Inkling expert kernels.",
+  "validation": {
+    "observed": [
+      "Compared native header blobs and inspected primitive creation, launcher, v0.34 vLLM caller and upstream tests. Confirmed the dominant fork header remains blob 48b136b3d58f752c975e9f35c0e9d69fd89acaa8.",
+      "Prior evidence is in ../../rebase-v033-20261108/audits/kernels-e50d437.json. No candidate GPU checks run."
+    ],
+    "required": [
+      "Build with the selected oneDNN source, Torch 2.15 and BMG AOT, then run tests/test_int4_gemm_determinism.py. Require exact equality in the nine fixed-shape cases, and the existing numerical tolerances in the six M=4 versus M=1 comparisons.",
+      "For a proposed removal, use the same candidate compiled with the attribute off, identical seeds and shapes, and compare both fixed-shape replay and timing. Confirm text/service behavior independently."
+    ],
+    "limitations": "The commit requests oneDNN determinism for a fixed shape. Whole-model determinism and the performance cost on the new stack are unmeasured."
+  }
+}

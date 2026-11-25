@@ -1,0 +1,55 @@
+{
+  "schema": 1,
+  "agent": "/root/mixed",
+  "repository": "vllm-xpu-kernels",
+  "commit": "d8e1f69699496beeda61da9a544f49d9b6378d73",
+  "parent": "ad5d9e16721f5c219de65c8d408c02edab104919",
+  "subject": "fix(gdn): preserve cached decode arithmetic in mixed batches",
+  "patch_id": "21d478c5a5c87f2f04d87acf4cb3b4a0e21e8672",
+  "old_base": "ddf336d86e3c8602888572a3502f951abd51df12",
+  "old_tip": "05d4536b2440db171741b5de5c148cdc834bd692",
+  "target_tag": "v0.1.17",
+  "target": "6a1ec18b69b00eaf67a457e0bdd40e72632feaae",
+  "companion": {
+    "repository": "vllm",
+    "old_base": "4ba787ec9959e566d3b587a796dff07673324da5",
+    "old_tip": "066206bafebe124485a69e13dcb975a2afc55ad2",
+    "target": "62d4bc3c7e33b1b6c906e233e6af2d3506c482ca",
+    "target_tag": "v0.34.0",
+    "paired_caller": "10ba7ce16b1fbad0723a44db4e8dc8e2e517a3c0"
+  },
+  "inventory": "../discovery.json",
+  "prior_audit": "../../rebase-v033-20261108/audits/kernels-d8e1f69.json",
+  "requirement": "Ordinary decode-first non-speculative Qwen GDN batches on B70 must produce identical cached decode and fresh prefill outputs, convolution state and SSM state whether separately submitted or sharing a batch. The former single dispatch routes the cached decode through different recurrent arithmetic when a prefill joins it.",
+  "upstream_coverage": [
+    {
+      "source": "6a1ec18b69b00eaf67a457e0bdd40e72632feaae",
+      "finding": "The fused gdn_attention and gated_delta_rule_non_spec functions in csrc/xpu/gdn_attn/gdn_attn_interface.cpp are byte-identical across upstream bases. At line 979 gdn_attention submits a single non-spec chain. The delta wrapper selects the Xe2 chunk route when there is a prefill. csrc/xpu/gdn_attn/xe_2/chunk_gated_delta_rule_kernels_xe2.hpp:1530 and gated_delta_rule.hpp:704 still guard their decode-only branch with num_prefills == 0 && num_decodes > 0. The fused schema ends in reorder_input."
+    },
+    {
+      "source": "78799feacc02fd2fd52fe01b847ae5ae681b9627",
+      "finding": "RecoverSSM uses a separate speculative entry point. The ordinary mixed route remains reachable from the v0.34 _gdn_attention_core_xpu_impl at vllm/_xpu_ops.py:233."
+    },
+    {
+      "source": "b73bdc317dd9f38f905a866e579855cec8459a08",
+      "finding": "NULL_BLOCK_ID row skipping covers vacant state slots. The mixed-call problem involves two valid and distinct state slots; skipping null rows supplies no arithmetic separation. Changes to state offset width and DS layout also preserve the existing fused dispatch."
+    }
+  ],
+  "disposition": "KEEP",
+  "minimal_residual": "Replay the Xe2-only split in the fused operator, trailing bool split_mixed_non_spec=False, declarations, and exact mixed-vs-isolated regression. Preserve validation of contiguity and absent speculation, view slicing, prefill offset rebasing and lifetimes through both async enqueues.",
+  "dependencies": [
+    "Companion 10ba7ce enables the argument only for contiguous ordinary decode-first one-token rows with complete metadata. Its removal strands the feature; removing the kernel keyword breaks the caller. Existing callers retain the default-false path.",
+    "63a31d0 and ad5d9e1 protect the prefill kernels called by the split, and f057cf9 normalizes padded metadata at the adapter. These independent fixes remain distinct. The four touched kernel paths were unchanged between this commit and the old tip."
+  ],
+  "validation": {
+    "observed": [
+      "Compared full upstream fused and non-spec delta functions programmatically at both immutable bases. Confirmed the four assigned paths are byte-identical at this commit and at the old fork tip. Source traces verified the schema, branch and vLLM call path."
+    ],
+    "required": [
+      "On the new installed B70 pair run tests/gdn_attn/test_gdn_attn.py::test_qwen38_gdn_cached_decode_is_exact_in_mixed_prefill. Compare one cached token plus 127 fresh prefill tokens against separate execution for output, z, conv and SSM states. A paired upstream control with the split disabled distinguishes retained behavior.",
+      "Exercise the paired vLLM mixed/graph-padded/spec-indexed adapter checks and confirm unchanged pure decode, pure prefill and speculative behavior. Compare mixed-batch latency separately if changing dispatch."
+    ],
+    "limits": "No new native build or runtime trial. No measured speed improvement is attributed to this correctness fix."
+  },
+  "new_commit": null
+}

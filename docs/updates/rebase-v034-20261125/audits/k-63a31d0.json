@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "repository": "vllm-xpu-kernels",
+  "sha": "63a31d01e8fcf44a7b08f8e76e85ec40a208b6f1",
+  "parent": "e50d437ee5560e5b5f12581ee61b1bddab157733",
+  "subject": "fix(gdn): disable unstable tiled causal-convolution prefill",
+  "patch_id": "f7fd14e5d76964b1426c46ae21f46913f227194d",
+  "old_base": "ddf336d86e3c8602888572a3502f951abd51df12",
+  "old_tip": "05d4536b2440db171741b5de5c148cdc834bd692",
+  "target": "6a1ec18b69b00eaf67a457e0bdd40e72632feaae",
+  "target_tag": "v0.1.17",
+  "paired_inventory": "../discovery.json",
+  "disposition": "KEEP",
+  "requirement": "On B70/Xe2, tiled BF16 Qwen GDN fresh convolution prefills produced corrupt Q/K/V and unstable replay under oneAPI 2026.0. The fork forces untiled prefill and checks bitwise intermediates, z and final state across recycled-cache fills. Both the dispatch guard and regression persist in the deployed tip.",
+  "upstream_coverage": [
+    "In the frozen v0.34.0 vLLM adapter vllm/_xpu_ops.py:233 the SYCL path calls _xpu_C.gdn_attention. At the paired v0.1.17 target csrc/xpu/gdn_attn/gdn_attn_interface.cpp:980 enters causal_conv1d_non_spec; lines 473\u2013478 select chunk_causal_conv1d_tiled_xe2 whenever non_spec_token >= conv1d_tile_size (8 in xe_2/chunk_causal_conv1d_tiled_xe2.hpp:10). The regression's 162 live tokens still select tiled dispatch.",
+    "The old/new tiled implementation diff adds 64-bit slot arithmetic (daf624051e617bac77c4e1de6f13c6a1d83f9e57), strided DS/SD state handling (11c79175cddab23e76b7bfaf6b3df2538185e888), and null-slot skipping (b73bdc317dd9f38f905a866e579855cec8459a08). The reproducer uses slot 1, contiguous SD state, small offsets and has_initial_state=false. Those addressing changes leave the observable addressing here equivalent and the cooperative tiled Q/K/V path active. No target-side replacement guard was found."
+  ],
+  "minimum_residual": "Preserve the use_tiled gate and focused test, retaining upstream's stride, null-slot and 64-bit fixes. Retire the gate if paired real-device evidence validates the tiled path.",
+  "dependencies": "No public schema changes or new operators. The separate ad5d9e16721f5c219de65c8d408c02edab104919 barrier governs a later GDN stage. d8e1f69699496beeda61da9a544f49d9b6378d73 splits mixed native batches and still dispatches prefill to this operator; vLLM 10ba7ce16b1fbad0723a44db4e8dc8e2e517a3c0 supplies the paired scheduling policy.",
+  "validation": {
+    "observed": [
+      "Inspected old-to-new tiled kernel, target dispatch chain and regression shape. The replay test file has no changes between this commit and old tip.",
+      "Retained B70 result in ../../rebase-v033-20261108/gpu/gpu-gdn.json records passed for test_qwen38_fresh_prefill_replay_is_exact(num_tokens=162) on xpu-v1.14.0."
+    ],
+    "candidate": "No new runtime tests or performance measurements. The new compiler/kernel pair could change historical behavior.",
+    "required": "Compare candidate and pristine v0.1.17 with the same B70 toolchain. Check fresh/cached state, repeatability with different poison, absolute numerical reference, thresholds 7/8/9 and 162 tokens, and realistic mixed Qwen prefills. Measure cold prefill/TTFT before re-enabling tiled dispatch."
+  }
+}

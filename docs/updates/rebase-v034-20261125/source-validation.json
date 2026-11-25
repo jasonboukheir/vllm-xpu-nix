@@ -1,0 +1,80 @@
+{
+  "stage": "source and isolated device validation",
+  "candidate": {
+    "vllm": "b18eee6e90c77a08b05d687cc9b47ebdd08cfc3e",
+    "vllm-xpu-kernels": "65eb2861dd3a885be0850e459b51562832a65bfb"
+  },
+  "host": "brutus",
+  "device": "Intel Arc Pro B70",
+  "nix": {
+    "torch": "2.15.0+xpu",
+    "triton": "3.9.0+xpu",
+    "dle": "2026.1.3.17",
+    "compiler": "icpx 2026.1.1",
+    "compatibility": "Compared 54 Intel runtime wheel payloads to the SDK. Each payload matched by SHA-256. Both old stable derivation paths are preserved. Four packaging checks passed."
+  },
+  "source_checks": [
+    {
+      "area": "planner, cache utilities and single-type manager",
+      "passed": 335,
+      "runtime": "Torch 2.14 on CPU",
+      "evidence": "source-core-qualified.log"
+    },
+    {
+      "area": "scheduler and prefix caching",
+      "passed": 536,
+      "runtime": "Torch 2.14 on CPU",
+      "detail": "535 in one run and the DP loopback port case in a separate run",
+      "evidence": "source-scheduler-final.log"
+    },
+    {
+      "area": "worker, attention and quantization",
+      "passed": 526,
+      "skipped": 14,
+      "runtime": "Torch 2.14 on CPU",
+      "evidence": "source-worker-regressions.log"
+    },
+    {
+      "area": "extensible KV configuration and worker suite",
+      "passed": 28,
+      "skipped": 42,
+      "runtime": "Torch 2.14 on CPU",
+      "evidence": "source-ext-config-rerun.log"
+    },
+    {
+      "area": "offload configuration and canonical page mapping",
+      "passed": 111,
+      "runtime": "Torch 2.14 on CPU",
+      "evidence": "source-offload-config.log"
+    },
+    {
+      "area": "offload fences, strides and packed/sink bytes",
+      "passed": 6,
+      "runtime": "Torch 2.14 on CPU",
+      "evidence": "source-offload-regressions.log"
+    }
+  ],
+  "isolated_b70": [
+    {
+      "runtime": "Torch 2.15, DLE 2026.1.3.17 and freshly compiled allocator extension",
+      "check": "Stable virtual tensor addresses and retained values across physical growth, release, zeroing and remap. Intel driver granule 64 KiB, vLLM commit granule 2 MiB.",
+      "evidence": "source-vmm-torch215.log"
+    },
+    {
+      "runtime": "Torch 2.14 and candidate allocator extension",
+      "check": "Unequal target, draft and fixed state pools, token quanta, measured physical footprint, rebind after growth, stable addresses and data. Two allocator cap tests plus mixed-pool XPU test passed. CUDA variant skipped.",
+      "evidence": "source-core-pooled-hw.log"
+    },
+    {
+      "runtime": "Torch 2.14, candidate offloader and allocator, deployed 0.1.15.4 native DMA op",
+      "check": "Strided mixed-size cache DMA from XPU through pinned RAM and back to different page IDs passed with and without sink bytes.",
+      "evidence": "source-offload-device-dma.log"
+    }
+  ],
+  "evidence_directory": "benchmark-results/rebase-v034-20261125",
+  "qualification_pending": [
+    "Full native BMG 0.1.17 package build",
+    "Full Qwen 131072-token serving profile and B70 performance comparison",
+    "Coordinated release and Brutus pin"
+  ]
+}

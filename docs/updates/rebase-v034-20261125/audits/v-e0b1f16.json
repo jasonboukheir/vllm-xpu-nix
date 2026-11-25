@@ -1,0 +1,40 @@
+{
+  "schema": 1,
+  "agent": "/root/rms",
+  "repository": "vllm",
+  "commit": "e0b1f16e795760480e71542a59ee6cf0fe4fa3b6",
+  "parent": "10ba7ce16b1fbad0723a44db4e8dc8e2e517a3c0",
+  "subject": "fix(xpu): preserve functional batch-invariant residual RMSNorm",
+  "patch_id": "b19479b47e1d751c7ca2d336ab440780db34855b",
+  "old_base": "4ba787ec9959e566d3b587a796dff07673324da5",
+  "old_tip": "066206bafebe124485a69e13dcb975a2afc55ad2",
+  "target": "62d4bc3c7e33b1b6c906e233e6af2d3506c482ca",
+  "target_tag": "v0.34.0",
+  "companion": {
+    "repository": "vllm-xpu-kernels",
+    "old_base": "ddf336d86e3c8602888572a3502f951abd51df12",
+    "target": "6a1ec18b69b00eaf67a457e0bdd40e72632feaae",
+    "target_tag": "v0.1.17",
+    "old_tip": "05d4536b2440db171741b5de5c148cdc834bd692"
+  },
+  "disposition": "KEEP",
+  "requirement": "The optional request-stable XPU residual RMSNorm helper returns two independent outputs, preserves its input tensors and weights, adds in FP32 before reducing and weighting, and uses the same row-local reduction order across batch sizes. The scoped AEON GemmaRMSNorm caller still calls the helper on the final fork tip. The RedHat DFlash2 production profile does not activate it.",
+  "upstream_coverage": [
+    "At 62d4bc3, vllm/model_executor/determinism/batch_invariant.py:1106-1113 unconditionally passes a residual to ops.fused_add_rms_norm and returns the input tensors. Upstream commits 57371c4e28, ba2d99fd4a and 829902026f update other functions in this file; the old-to-new diff leaves the helper untouched.",
+    "vllm/model_executor/layers/layernorm.py:RMSNorm.forward_xpu uses the native IR implementation for its own batch-invariant residual path. vllm/ir/ops/layernorm.py:fused_add_rms_norm uses FP32 addition and PyTorch mean, then rounds to the weight dtype before multiplication. This covers some ownership/precision needs but supplies no fixed reduction tree and does not fix the separate helper called directly by the fork's GemmaRMSNorm.request_invariant_apply_once. Neither alternate implementation changed between 0.33 and 0.34.",
+    "At 6a1ec18, csrc/torch_bindings.cpp:34 registers the mutable fused_add_rms_norm XPU operation. csrc/layernorm.cpp:772 changes max block size at 256 tokens, adds in scalar_t in its scalar/vector variants and writes through both input pointers. layernorm.cpp has identical blob fd504487cfff6257859966e1a1084ad963f2a559 in old and new kernel releases."
+  ],
+  "minimum_residual": "Replay the XPU-only fixed-tree Triton helper, residual dispatch and regression tests intact. Preserve upstream's non-XPU dispatch and the normal RMSNorm.forward_xpu IR path. No new operator or native schema is needed.",
+  "dependencies": "Later vLLM fork commit 066206bafe adds the scoped request-stability caller. Subsequent fork commits do not change batch_invariant.py; no folds or paired kernel edits are needed for this fix.",
+  "validation": {
+    "observed": [
+      "git apply --check of the assigned patch succeeded against the isolated unpatched v0.34.0 checkout. Compared exact old/new helper diffs, caller implementations and kernel blob IDs.",
+      "Historical evidence ../rebase-v033-20261108/gpu/gpu-rmsnorm.json records seven passing tests with the installed v0.33 package on the B70."
+    ],
+    "candidate_pending": [
+      "Run test_non_xpu_residual_rms_norm_preserves_native_dispatch and the full parameter matrix of test_xpu_residual_rms_norm_is_functional_and_batch_invariant against the rebuilt v0.34 package, including noncontiguous operands, FP32/absent weights and the 255/256/257 row boundary.",
+      "Qualify optional request-stability mode independently before making model-level claims."
+    ],
+    "limits": "Source review only for v0.34. No GPU execution or throughput claim."
+  }
+}

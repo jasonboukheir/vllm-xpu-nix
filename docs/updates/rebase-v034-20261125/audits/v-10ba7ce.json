@@ -1,0 +1,71 @@
+{
+  "schema": 1,
+  "agent": "/root/quality",
+  "repository": "vllm",
+  "commit": "10ba7ce16b1fbad0723a44db4e8dc8e2e517a3c0",
+  "parent": "f057cf93b0a2f797d6b23164359fda2f0624f8d5",
+  "subject": "fix(xpu): stabilize Qwen GDN prefill and mixed scheduling",
+  "patch_id": "fba79b0381d71d3cf8ea553264707231f2c0c179",
+  "old_base": "4ba787ec9959e566d3b587a796dff07673324da5",
+  "old_tip": "066206bafebe124485a69e13dcb975a2afc55ad2",
+  "target_tag": "v0.34.0",
+  "target": "62d4bc3c7e33b1b6c906e233e6af2d3506c482ca",
+  "companion": {
+    "repository": "vllm-xpu-kernels",
+    "old_base": "ddf336d86e3c8602888572a3502f951abd51df12",
+    "old_tip": "05d4536b2440db171741b5de5c148cdc834bd692",
+    "target_tag": "v0.1.17",
+    "target": "6a1ec18b69b00eaf67a457e0bdd40e72632feaae"
+  },
+  "inventory": "../discovery.json",
+  "prior_rationale": "../../rebase-v033-20261108/audits/vllm-efddf80.json",
+  "requirement": [
+    "On XPU, for Qwen GDN text-only, non-speculative, cache-mode=none, keep non-final prefills on the absolute 64-token arithmetic grid even when mixed-batch scheduling reduces the available token budget. Preserve final tails and progress. Existing cache/checkpoint alignment in other modes stays in force.",
+    "For ordinary mixed native SYCL batches, process contiguous cached one-token decodes with decode arithmetic ahead of prefill work. Otherwise a peer prefill changes recurrent arithmetic, output and subsequent state. The Qwen-specific grid excludes the deployed multimodal V2/DFlash2 configuration. Mixed dispatch is guarded by the actual batch metadata."
+  ],
+  "upstream_coverage": [
+    {
+      "commit": "d42c8a8d8fea2b82612bc9410b72b12cd28f8271",
+      "finding": "The exact target GDNAttentionMetadataBuilder can reuse metadata on XPU. Its ordinary branch computes decode/prefill counts and removes trailing padding. It does not split the fused SYCL dispatch. Preserve metadata reuse and all four counts. Target QwenGatedDeltaNetAttention.forward_xpu still calls torch.ops.vllm.gdn_attention_core_xpu on the SYCL path at qwen_gdn_linear_attn.py:1461. Both upstream bases have identical vllm/_xpu_ops.py blob 166534e5b1a78c28fe4820005835959758bae20c."
+    },
+    {
+      "commit": "cebe1097232eaaba46aeae230dfe0887c88f634f",
+      "finding": "Adaptive verification permits CPU/device length differences and makes uniform-spec assumptions conditional. This code handles speculative batches. Keep the fork keyword false on speculative, indexed, masked, multi-token decode and incomplete counts; no change to adaptive verification."
+    },
+    {
+      "commit": "aac1b2a4f36e742c1f55bcb34ca9aaa5e6e02592",
+      "finding": "After runner V1 removal the V2 scheduler still enables _mamba_block_aligned_split only for mamba_cache_mode=='align' (scheduler.py:442); it rounds using cache block size. Running and waiting admissions call it conditionally at 876 and 1400. XPUPlatform special-cases the generic GDN name at xpu.py:494 for cache block size, which cannot constrain mode=none scheduler chunks. FLA_CHUNK_SIZE remains 64. Target vllm contains neither QWEN_GDN_ATTN nor get_required_prefill_chunk_size."
+    },
+    {
+      "commit": "4d1376a4922e28d814d79fae3b16d8de9d2d46cf",
+      "finding": "derive_mamba_conv_split now handles dim-first and state-first conv layouts, shared with Mooncake. Its allowed enum set and the GDN Q/K/V decomposition still recognize GDN_ATTN alone. Add the new XPU-specific Qwen identity to both sites, preserving upstream layout/TP logic."
+    },
+    {
+      "commit": "6a1ec18b69b00eaf67a457e0bdd40e72632feaae",
+      "repository": "vllm-xpu-kernels",
+      "finding": "torch_bindings.cpp:277 schema ends in bool reorder_input, with no mixed split switch. Xe2 chunk_gated_delta_rule_kernels_xe2.hpp:1530 and gated_delta_rule.hpp:704 choose decode-only arithmetic for num_prefills==0 && num_decodes>0. Classifying and counting mixed tokens alone does not give them this arithmetic."
+    }
+  ],
+  "disposition": "KEEP",
+  "minimal_residual": [
+    "Retain Qwen's XPU-only GDN class/enum, backend arithmetic-chunk hook, XPU platform/transfer aliases, scheduler alignment split and starvation guards. Preserve upstream hashing, checkpoint, multimodal and resumed-request paths. Non-XPU layers keep the inherited generic GDN identity.",
+    "Retain conservative split_mixed_non_spec keyword and paired native schema. Replay after the padding-trim fix. Preserve current SYCL/Triton selection, V2 adaptive metadata and upstream transfer layout handling. No upstream equivalent was identified for either behavior."
+  ],
+  "dependencies": [
+    "f057cf93b0a2f797d6b23164359fda2f0624f8d5 trims graph padding at the same native call; maintain both in dependency order.",
+    "d8e1f69699496beeda61da9a544f49d9b6378d73 supplies native split_mixed_non_spec; both halves must agree on the argument and default. Kernel release bump alone does not provide it.",
+    "066206bafebe124485a69e13dcb975a2afc55ad2 changes scheduler allocation and tests later, but leaves the assigned adapter, Qwen model and transfer implementation unchanged. Its KVarN changes are independently owned."
+  ],
+  "validation": {
+    "observed": [
+      "Verified assigned stable patch ID, inspected assigned patch and later touched paths, read frozen v0.34 Python and v0.1.17 C++ dispatch/schema and scheduler code, compared upstream adapter blobs, and searched target for both missing backend symbols and the native keyword.",
+      "Recorded v0.33 validation includes 738 scheduler/cache/prefix/GDN metadata cases and two XPU-only Qwen identity cases (../../rebase-v033-20261108/validation.json). This is historical coverage."
+    ],
+    "proposed": [
+      "Run committed tests/v1/core/test_mamba_align_chunk_split.py, scheduler/prefix suites, test_ssu_dispatch.py, connector HMA/conv decomposition tests on both layouts, and test_qwen_gdn_uses_distinct_backend_only_on_xpu. Ragged non-final chunks align. Final tails survive. Budgets and thresholds that would starve a request fail closed. Rejected profiles keep existing behavior.",
+      "Run test_gdn_adapter_splits_only_ordinary_mixed_non_spec on the installed pair and kernel tests/gdn_attn/test_gdn_attn.py on B70 against isolated cached decode, checking output, continued recurrent/conv state, and correct handling of speculation and padding. Run a second actual text-only non-spec mode=none mixed workload along with normal Brutus V2/DFlash2 qualification."
+    ],
+    "limitations": "This source audit ran no new GPU, CPU unit or timing trials. Exact mixed-batch whole-model tokens and performance on the new binary remain unverified."
+  },
+  "new_commit": null
+}

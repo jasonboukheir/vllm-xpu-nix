@@ -1,0 +1,34 @@
+{
+  "schema": 1,
+  "agent": "/root/fa",
+  "repository": "vllm-xpu-kernels",
+  "commit": "348a8b91e4c301ff3c94b0fce68a4cda7a591bfc",
+  "parent": "7d72670ba22c67480a4805a2d418beb19f83d004",
+  "subject": "test(attn): cover native FlashAttention replay determinism",
+  "patch_id": "43a970403358d0f0303a73a99af6367d7a0e5012",
+  "old_base": "ddf336d86e3c8602888572a3502f951abd51df12",
+  "old_tip": "05d4536b2440db171741b5de5c148cdc834bd692",
+  "target_tag": "v0.1.17",
+  "target": "6a1ec18b69b00eaf67a457e0bdd40e72632feaae",
+  "companion": {
+    "repository": "vllm",
+    "old_base": "4ba787ec9959e566d3b587a796dff07673324da5",
+    "old_tip": "066206bafebe124485a69e13dcb975a2afc55ad2",
+    "target": "62d4bc3c7e33b1b6c906e233e6af2d3506c482ca"
+  },
+  "disposition": "KEEP",
+  "requirement": "Detect order- and allocation-sensitive corruption in Xe2 native BF16 FlashAttention for B70 Qwen and the first-chunk dense KVarN helper. Five native-only cases cover three dense prefill lengths (104, 107, 162), paged prefill (162) and paged decode (1 query token, 162 cached). They use 24 query heads, four KV heads, dimension 256 and 64-token pages. Each compares to a CPU FP32 reference, then checks exact BF16 output bits over eight eager repeats after decoy calls and allocator churn.",
+  "upstream_coverage": [
+    "Target tests/flash_attn/test_flash_attn_varlen_func.py retains ref_paged_attn. Commits 09a289e408a80dc1e2936ceb66a194df4b9804ed and 470c19fe019ddcf7c4783bd01884be0c7f53c74d add graph-mode and ragged speculative verification. test_spec_decode_varlen_graph_replay compares active rows to a numerical oracle and requires zero padded outputs with changing metadata. It does not exercise repeated identical eager inputs under allocation churn. 6f5935cfc219251cd4362df7d10ce837521f0ac3 covers unaligned head sizes for MoonViT.",
+    "At v0.34.0 vllm/v1/attention/backends/fa_utils.py still binds XPU flash_attn_varlen_func to xpu_ops. Kernel v0.1.17 flash_attn_interface.py still offers flash_attn_varlen_func and calls _fallback_varlen_attn on the fallback path, so the existing fixture that rejects fallback remains applicable."
+  ],
+  "minimum_residual": "Retain tests/flash_attn/test_flash_attn_determinism.py as a standalone regression commit. It changes test coverage only. It introduces no operator, ABI, runtime dependency or performance claim.",
+  "dependencies": "Reuses upstream ref_paged_attn and the native FA wrapper. The subsequent local KVarN kernel commit leaves this file byte-identical. No other local patch is a prerequisite and no repair needs folding.",
+  "validation": {
+    "performed": [
+      "Recomputed the stable patch ID and verified zero diff for the test file between the assigned commit and the old integration tip.",
+      "git apply --check succeeded against the frozen v0.1.17 checkout."
+    ],
+    "pending": "Run the five tests from tests/flash_attn/test_flash_attn_determinism.py on the rebuilt B70 package with its actual AOT attention variants and native fallback rejection. This audit did not execute GPU tests."
+  }
+}

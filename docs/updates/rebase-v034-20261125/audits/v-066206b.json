@@ -1,0 +1,114 @@
+{
+  "run": "rebase-v034-20261125",
+  "agent": "/root/kernels",
+  "repository": "vllm",
+  "commit": "066206bafebe124485a69e13dcb975a2afc55ad2",
+  "parent": "bcbdafbc60fc4cb28e23d3ea0594817363c404ce",
+  "subject": "feat(xpu): integrate KVarN hybrid caching with V2 DFlash2",
+  "patch_id": "4ffaab1b24fcd127bc17b6c6e72043bc639688d3",
+  "old_base": "4ba787ec9959e566d3b587a796dff07673324da5",
+  "old_tip": "066206bafebe124485a69e13dcb975a2afc55ad2",
+  "target_tag": "v0.34.0",
+  "target": "62d4bc3c7e33b1b6c906e233e6af2d3506c482ca",
+  "companion": {
+    "repository": "vllm-xpu-kernels",
+    "old_base": "ddf336d86e3c8602888572a3502f951abd51df12",
+    "old_tip": "05d4536b2440db171741b5de5c148cdc834bd692",
+    "target_tag": "v0.1.17",
+    "target": "6a1ec18b69b00eaf67a457e0bdd40e72632feaae"
+  },
+  "frozen_inventories": "../discovery.json",
+  "disposition": "ADAPT",
+  "requirement": "Final feature commit in the old stack. Compact K4V2/K4V4 packed KV, native eager Xe2 fast path, independent target/recurrent/draft pools, transactional byte-budgeted CPU RAM prefixes with sink retention, mixed request admission, rollback and context ceilings. Current B70 is Qwen3.8-27B INT4 with two DFlash2 proposals, BF16 draft KV, four slots sharing capacity, 131072 context, 8 GiB RAM tier and 0.93 memory utilization. The old feature also supports combinations that depend on V1, including bundled Qwen MTP and K4V4. No later local commits supersede it.",
+  "observed": [
+    "git show | git patch-id --stable matches the inventory. Old feature changes 102 paths (+23572/-325). Case-insensitive git grep for kvarn in the target vLLM source and in the target kernels csrc yields no matches. Inspected the alternative quant specs, planning, workers, connector and buffers at the exact tags.",
+    "Prior hardware evidence in ../../rebase-v033-20261108/gpu-qualification.json covers the assigned old tip plus kernel 05d4536: 17 K4V2, 18 GDN, 10 dtype and 7 RMSNorm native checks and 57 candidate service checks. Candidate v0.34 runtime tests, builds and benchmarks are outstanding."
+  ],
+  "upstream_coverage": [
+    {
+      "area": "Packing and per-layer dtype",
+      "shas": [
+        "8530a778f78dc7cd9a31e108ebc035c4b27ceb3c"
+      ],
+      "evidence": "vllm/v1/kv_cache_interface.py:get_kv_quant_mode recognizes NVFP4, TurboQuant, Octave, UltraQuant and FP8, with distinct formats. vllm/model_executor/layers/attention/attention.py:Attention.__init__ and get_kv_cache_spec now resolve layer-local quantization and backend-customized sliding-window specs. There is no KVarN packed record, sink or append/materialize contract.",
+      "residual": "Add KVarN through the target per-layer spec/backend registration. Preserve explicit independent BF16 draft dtype, checkpoint fallback, sliding-window packing and encoder-only exclusions. Keep existing compact/natural/scoped paths and native fallbacks, including eager metadata and the qualified B70 guard."
+    },
+    {
+      "area": "Runner and supported configurations",
+      "shas": [
+        "aac1b2a4f36e742c1f55bcb34ca9aaa5e6e02592",
+        "42379a4c246ce48472f165571d89f962e6c8d97e",
+        "f352490fc0b5180c6e13a064dafe2e84ef5fa8f4",
+        "c9fce07da3b824cbfa929bf86a41e91ee160cad9"
+      ],
+      "evidence": "Target removed vllm/v1/worker/gpu_model_runner.py, cpu_model_runner.py, and V1 spec_decode/{dflash,gemma4,llm_base_proposer,step3p5}. XPUModelRunner now inherits vllm/v1/worker/gpu/model_runner.py:GPUModelRunner. Old platforms/xpu.py:_check_kvarn_beta_unsupported_config accepts bundled MTP1/2 only on V1; its V2 branch admits only Qwen compact K4V2. xpu_worker.py:_check_kvarn_worker_model_runner has the same V1 dependency. tests/v1/attention/test_kvarn_native_xpu_dispatch.py also contains prerequisite coverage and must be reconciled with its owning fixes.",
+      "residual": "Drop obsolete V1 implementation hooks. Port their supported behaviors and tests through the surviving MRV2 speculator/metadata/worker paths, including K4V4, bundled MTP and vision. Reuse the new DFlash2SpeculatorConfig. Removing a historically supported profile would be a separate scope/version decision. Do not report feature preservation based only on the active K4V2 no-spec smoke."
+    },
+    {
+      "area": "Planner and physical ownership",
+      "shas": [
+        "860da3dafdbb1e24a6aef821b4ca7bceeb9b87d8",
+        "8cf1277362aef963a71cf6860c28387acf6ecb90",
+        "3204273e8d5eacada60976c7a0102c6d95064c44",
+        "507a3f7f1254b62a694e010ac630c493bea039a3",
+        "8278030ebab51176ab87e9d93345c7ff1f300844",
+        "518c624a1c731cfc6c73369ced6351cb03754ddf"
+      ],
+      "evidence": "vllm/config/vllm.py:VllmConfig._resolve_extensible_kv_cache excludes non-CUDA/ROCm platforms. KVCacheConfig.num_blocks_of returns one shared device num_blocks, with only HiSparse host capacity separate. kv_cache_coordinator.py allocates a single BlockPool and passes it into the type managers. kv_cache_planning.py builds ordinary capacity from bytes_per_block, reconciles the scalar per-rank minimum, and adds warmup shrink/refit. vllm/v1/worker/utils.py:KVBlockZeroer.zero_block_ids receives an unqualified list of block IDs.",
+      "residual": "Keep the KVarN-only physical group capacities, per-pool null pages, overrides and rank reconciliation, namespace-aware zero/COW/frees/resets/admission for reusable and future pages. Use target per-layer stride, mixed precision handling, prefill lookahead/checkpoint fields and builder hooks. Leave default and HiSparse planning intact. Explicitly handle KVarN CUDA planning with post-warmup shrinking or keep it off the unsupported extensible-cache path with a tested compatibility guard. On B70 the stock resolver already selects fixed capacity."
+    },
+    {
+      "area": "RAM transfer ABI, replay and recency",
+      "shas": [
+        "80ca61b6d9b9349c9b50b064f6af275be3c78d04",
+        "75be1384286d6f4c5ca3ad493bc9390159d93f5b",
+        "482e473253dfeeb7af4badf5bf5174d04afc6743",
+        "01b6a05b7b43f75a3f8a0f91e7b71f9776012170",
+        "43067f6df60e2eafba5797908484cc1c12e4a48b",
+        "b022bb7a4873a47cdcdf474edf3bd499c221f40d",
+        "5d55ef1590c92213e3893dc8e8712f7f2e0bc508",
+        "8210387296f61997474cad69b1f236edf4922c20"
+      ],
+      "evidence": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/worker.py now resolves GPULoadStoreSpec into DevicePointers before calling the worker. vllm/v1/kv_offload/base.py:DevicePointers carries raw addresses, byte sizes, group_counts and logical indices, without the physical block_ids the old IndependentCPUOffloadingWorker._transfer uses for sink ownership. The scheduler's reachable_boundaries fallback still uses (req.num_prompt_tokens - 1,); its allocation and pending-job fences are keyed by numeric IDs. Target LRUCachePolicy retains request-ranked access/finalization, while its public touch() was removed. Generic CPU offload still allocates equal-size chunks, rather than the group's variable packed record and optional sink bytes.",
+      "residual": "Use the target pointer resolver for bank payloads and retain group-qualified physical IDs only where required for the sink writer/restore hook (carry explicit metadata; do not infer IDs from logical offsets). Preserve packed committed bytes plus FP16 sink atomically, async/sync lifecycle and HOST hit attribution. Connect exact RAM tail windows to coordinator.replay_boundaries and drop_eagle_group_ids, alongside upstream sparse junction/partial-tail and lookahead-hash controls. Keep the byte allocator and transaction/rank semantics; omit its dead touch shim/tests. Exercise preemption, failed stores and reset between submission and completion."
+    },
+    {
+      "area": "DFlash and mutable metadata",
+      "shas": [
+        "d3a3230931f3815f3d2e06ff93caf10055f453ba",
+        "cfc9f681e9f3c101c87ed43b658ebc8c43f30a3e",
+        "458334f00f7cbff7c8a1feae449656aa7343c476",
+        "c9fce07da3b824cbfa929bf86a41e91ee160cad9"
+      ],
+      "evidence": "vllm/v1/worker/gpu/spec_decode/dflash/speculator.py:_prepare_dflash_inputs_kernel q_resident is is_query & (q_block_id != 0). query_pos is clamped later for position output, which does not suppress the slot write. vllm/v1/worker/gpu/model_runner.py zeroes IDs before prepare_attn, builds metadata before connector.pre_forward in eager mode, and retains post_forward/finalize_step ordering. vllm/v1/worker/gpu/kv_connector.py has no prepare_cache_update. qwen3_dflash.py:DFlashQwen3Model keeps map_draft_quant_config and an optional quant_config_mapper defaulting to None; no Qwen3 packed mapping update in that path.",
+      "residual": "Keep per-request ceiling masking including mixed requests with rejected drafts, target/draft builder isolation, eager pre-reuse store fences and restores ahead of mutable metadata. Preserve warmup budget fixes, graph and default connector timing for other backends. Retain the packed and renamed compressed-tensors mapping for the W4A16 drafter where required, using the upstream mapper where it already handles the format. Check the actual pinned drafter and ModelOpt for single application."
+    }
+  ],
+  "dependencies": [
+    {
+      "commit": "05d4536b2440db171741b5de5c148cdc834bd692",
+      "contract": "Keep paired _vllm_fa2_C native compact writer, decode and materialization ABI and record/D256 layout. Rebuild against matching kernels v0.1.17+residual and Torch 2.15 XPU."
+    },
+    {
+      "commits": [
+        "f057cf93b0a2f797d6b23164359fda2f0624f8d5",
+        "10ba7ce16b1fbad0723a44db4e8dc8e2e517a3c0",
+        "e0b1f16e795760480e71542a59ee6cf0fe4fa3b6",
+        "bcbdafbc60fc4cb28e23d3ea0594817363c404ce"
+      ],
+      "contract": "Retain independently audited GDN live/rollback metadata and scheduling, optional functional residual RMSNorm, and explicit BF16 draft KV handling. Check eager Qwen mixed arithmetic against the paired native split flag in kernel d8e1f696."
+    },
+    {
+      "commit": "e50d437ee5560e5b5f12581ee61b1bddab157733",
+      "contract": "Preserve the native deterministic oneDNN selection and scoped worker initialization for the opt-in request stability paths."
+    }
+  ],
+  "minimum_residual": "Fold the KVarN record/backend, scoped execution policy, per-pool scheduler/worker ownership and RAM integration into a coherent adapted feature commit. Retire only obsolete runner infrastructure and superseded generic plumbing. The candidate cannot be qualified by restoring pre-0.34 scheduler files wholesale.",
+  "validation_required": [
+    "Run installed CPU suites for quant record/reference and platform guards, target/draft metadata and packed mapper, physical quotas and overrides, default and HiSparse planning, mixed-precision zeroing, COW, upper-bound and rank convergence.",
+    "Reproduce the independent RAM transfer ABI with real source and destination IDs, equal numeric IDs in different pools, exact sink bytes, rolling/unaligned prefixes, pending store fences, failed load/store, reset and resume. Re-run existing byte-arena pressure, prefix order, and HOST attribution cases on v0.34.",
+    "Build the exact paired Nix BMG package. Check native K4V2/K4V4 decode, writer, bounded verification, poison rejected tails, GDN rollback, multimodal, MTP/draft-context edge cases; prove execution on intended backend. Run released B70 128K/four-slot eager DFlash2 profile with mixed requests, warm and RAM-replayed prefixes and tool streaming, plus previously V1-only supported combinations moved to MRV2.",
+    "Compare latency, decode tokens/s, peak VRAM/RAM, actual admitted context pool and four-request service under matched loads with xpu-v1.14.0. New release status stays pending until independent feature/ABI gates pass."
+  ],
+  "outside_this_replay": "Inkling2 is not a qualification proxy for this commit. Its D128/8-KV-head geometry and relative-bias/window/short-conv path need new model integration. The old qualified Xe2 DPAS layout checks D256 and the native writer requires four KV heads."
+}

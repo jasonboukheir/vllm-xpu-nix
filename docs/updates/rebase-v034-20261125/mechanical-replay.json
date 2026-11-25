@@ -1,0 +1,105 @@
+{
+  "method": "In disposable shared clones, apply the old commits in order by three-way merge of trees using the recorded parent. Stop each series on its first conflict. No source branch was rewritten; clean replay does not establish semantic compatibility.",
+  "repositories": {
+    "vllm": [
+      {
+        "commit": "f057cf93b0a2f797d6b23164359fda2f0624f8d5",
+        "clean": true,
+        "conflicting_paths": []
+      },
+      {
+        "commit": "10ba7ce16b1fbad0723a44db4e8dc8e2e517a3c0",
+        "clean": true,
+        "conflicting_paths": []
+      },
+      {
+        "commit": "e0b1f16e795760480e71542a59ee6cf0fe4fa3b6",
+        "clean": true,
+        "conflicting_paths": []
+      },
+      {
+        "commit": "bcbdafbc60fc4cb28e23d3ea0594817363c404ce",
+        "clean": true,
+        "conflicting_paths": []
+      },
+      {
+        "commit": "066206bafebe124485a69e13dcb975a2afc55ad2",
+        "clean": false,
+        "conflicting_paths": [
+          "tests/test_config.py",
+          "tests/v1/attention/test_attention_splitting.py",
+          "tests/v1/core/test_kv_cache_planning.py",
+          "tests/v1/core/test_prefix_caching.py",
+          "tests/v1/core/test_scheduler.py",
+          "tests/v1/kv_connector/unit/offloading_connector/test_scheduler.py",
+          "tests/v1/kv_offload/cpu/test_gpu_worker.py",
+          "tests/v1/spec_decode/test_dflash_prepare_inputs.py",
+          "tests/v1/spec_decode/test_draft_attention_backend_override.py",
+          "tests/v1/spec_decode/test_eagle.py",
+          "tests/v1/spec_decode/test_llm_base_proposer.py",
+          "tests/v1/worker/test_gpu_model_runner.py",
+          "tests/v1/worker/test_gpu_model_runner_v2.py",
+          "tests/v1/worker/test_gpu_worker.py",
+          "vllm/config/vllm.py",
+          "vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py",
+          "vllm/model_executor/models/qwen3_dflash.py",
+          "vllm/v1/core/block_pool.py",
+          "vllm/v1/core/kv_cache_planning.py",
+          "vllm/v1/core/kv_cache_utils.py",
+          "vllm/v1/core/sched/scheduler.py",
+          "vllm/v1/kv_cache_interface.py",
+          "vllm/v1/spec_decode/dflash.py",
+          "vllm/v1/spec_decode/gemma4.py",
+          "vllm/v1/spec_decode/llm_base_proposer.py",
+          "vllm/v1/spec_decode/step3p5.py",
+          "vllm/v1/worker/cpu_model_runner.py",
+          "vllm/v1/worker/gpu/model_runner.py",
+          "vllm/v1/worker/gpu/warmup.py",
+          "vllm/v1/worker/gpu_model_runner.py",
+          "vllm/v1/worker/gpu_worker.py",
+          "vllm/v1/worker/ubatch_utils.py",
+          "vllm/v1/worker/utils.py"
+        ]
+      }
+    ],
+    "vllm-xpu-kernels": [
+      {
+        "commit": "e50d437ee5560e5b5f12581ee61b1bddab157733",
+        "clean": true,
+        "conflicting_paths": []
+      },
+      {
+        "commit": "63a31d01e8fcf44a7b08f8e76e85ec40a208b6f1",
+        "clean": true,
+        "conflicting_paths": []
+      },
+      {
+        "commit": "ad5d9e16721f5c219de65c8d408c02edab104919",
+        "clean": true,
+        "conflicting_paths": []
+      },
+      {
+        "commit": "d8e1f69699496beeda61da9a544f49d9b6378d73",
+        "clean": true,
+        "conflicting_paths": []
+      },
+      {
+        "commit": "7d72670ba22c67480a4805a2d418beb19f83d004",
+        "clean": true,
+        "conflicting_paths": []
+      },
+      {
+        "commit": "348a8b91e4c301ff3c94b0fce68a4cda7a591bfc",
+        "clean": true,
+        "conflicting_paths": []
+      },
+      {
+        "commit": "05d4536b2440db171741b5de5c148cdc834bd692",
+        "clean": false,
+        "conflicting_paths": [
+          "csrc/xpu/attn/xe_2/collective/chunk_prefill_epilogue.hpp"
+        ]
+      }
+    ]
+  }
+}

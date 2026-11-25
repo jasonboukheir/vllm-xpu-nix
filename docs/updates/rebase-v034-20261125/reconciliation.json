@@ -1,0 +1,144 @@
+{
+  "recovery_branches": [
+    "backup/main-pre-rebase-20261125T230000Z",
+    "backup/origin-main-pre-rebase-20261125T230000Z"
+  ],
+  "rows": [
+    {
+      "repository": "vllm",
+      "sha": "f057cf93b0a2f797d6b23164359fda2f0624f8d5",
+      "subject": "fix(xpu): strip graph padding from GDN index tensors",
+      "audit": "audits/v-f057cf9.json",
+      "disposition": "KEEP",
+      "parent": "4ba787ec9959e566d3b587a796dff07673324da5",
+      "old_patch_id": "7b058e6e36a1f421c703182bbcb8e48992ab1128",
+      "new_sha": "d268f0e61be50c4d7c0a4ecc4dea89c6a435d761"
+    },
+    {
+      "repository": "vllm",
+      "sha": "10ba7ce16b1fbad0723a44db4e8dc8e2e517a3c0",
+      "subject": "fix(xpu): stabilize Qwen GDN prefill and mixed scheduling",
+      "audit": "audits/v-10ba7ce.json",
+      "disposition": "KEEP",
+      "parent": "f057cf93b0a2f797d6b23164359fda2f0624f8d5",
+      "old_patch_id": "fba79b0381d71d3cf8ea553264707231f2c0c179",
+      "new_sha": "47de8dace632edab01fd9a37ce92fc4fa2ffead3"
+    },
+    {
+      "repository": "vllm",
+      "sha": "e0b1f16e795760480e71542a59ee6cf0fe4fa3b6",
+      "subject": "fix(xpu): preserve functional batch-invariant residual RMSNorm",
+      "audit": "audits/v-e0b1f16.json",
+      "disposition": "KEEP",
+      "parent": "10ba7ce16b1fbad0723a44db4e8dc8e2e517a3c0",
+      "old_patch_id": "b19479b47e1d751c7ca2d336ab440780db34855b",
+      "new_sha": "e478080884b525b579f8d4c5631e2e415b6b90c1"
+    },
+    {
+      "repository": "vllm",
+      "sha": "bcbdafbc60fc4cb28e23d3ea0594817363c404ce",
+      "subject": "fix(xpu): accept explicit unquantized KV cache dtypes",
+      "audit": "audits/v-bcbdafb.json",
+      "disposition": "KEEP",
+      "parent": "e0b1f16e795760480e71542a59ee6cf0fe4fa3b6",
+      "old_patch_id": "6f704ef6d098637584d969bf3fe2b27a26615957",
+      "new_sha": "c3229e83f7fca3fd4770800ef474fcb756b26627"
+    },
+    {
+      "repository": "vllm",
+      "sha": "066206bafebe124485a69e13dcb975a2afc55ad2",
+      "subject": "feat(xpu): integrate KVarN hybrid caching with V2 DFlash2",
+      "audit": "audits/v-066206b.json",
+      "disposition": "ADAPT",
+      "parent": "bcbdafbc60fc4cb28e23d3ea0594817363c404ce",
+      "old_patch_id": "4ffaab1b24fcd127bc17b6c6e72043bc639688d3",
+      "new_sha": "004cc9ce295136cecfb50b5626e2bd589744d75d"
+    },
+    {
+      "repository": "vllm-xpu-kernels",
+      "sha": "e50d437ee5560e5b5f12581ee61b1bddab157733",
+      "subject": "fix(onednn): make W4A16 matmul deterministic",
+      "audit": "audits/k-e50d437.json",
+      "disposition": "KEEP",
+      "parent": "ddf336d86e3c8602888572a3502f951abd51df12",
+      "old_patch_id": "7ea50ac3b0ceb331108743cc12894af0bd2fce23",
+      "new_sha": "ded4fe7ffdcac69c1e030b890c2f38e7cceb243e"
+    },
+    {
+      "repository": "vllm-xpu-kernels",
+      "sha": "63a31d01e8fcf44a7b08f8e76e85ec40a208b6f1",
+      "subject": "fix(gdn): disable unstable tiled causal-convolution prefill",
+      "audit": "audits/k-63a31d0.json",
+      "disposition": "KEEP",
+      "parent": "e50d437ee5560e5b5f12581ee61b1bddab157733",
+      "old_patch_id": "f7fd14e5d76964b1426c46ae21f46913f227194d",
+      "new_sha": "5944b803d7d66494641cd3c7983b8b89f6ccda00"
+    },
+    {
+      "repository": "vllm-xpu-kernels",
+      "sha": "ad5d9e16721f5c219de65c8d408c02edab104919",
+      "subject": "fix(gdn): order fresh-state prefill output reads",
+      "audit": "audits/k-ad5d9e1.json",
+      "disposition": "KEEP",
+      "parent": "63a31d01e8fcf44a7b08f8e76e85ec40a208b6f1",
+      "old_patch_id": "be4c0310f7f161dda8916d4d75bfd15db795f471",
+      "new_sha": "58e82ec1424fe0843f750a249d04e4474de781f6"
+    },
+    {
+      "repository": "vllm-xpu-kernels",
+      "sha": "d8e1f69699496beeda61da9a544f49d9b6378d73",
+      "subject": "fix(gdn): preserve cached decode arithmetic in mixed batches",
+      "audit": "audits/k-d8e1f69.json",
+      "disposition": "KEEP",
+      "parent": "ad5d9e16721f5c219de65c8d408c02edab104919",
+      "old_patch_id": "21d478c5a5c87f2f04d87acf4cb3b4a0e21e8672",
+      "new_sha": "d68b3eca8034665cc7674b3efab3ad9cab53b96e"
+    },
+    {
+      "repository": "vllm-xpu-kernels",
+      "sha": "7d72670ba22c67480a4805a2d418beb19f83d004",
+      "subject": "test(gdn): preserve shortened-query rollback and storage guards",
+      "audit": "audits/k-7d72670.json",
+      "disposition": "ADAPT",
+      "parent": "d8e1f69699496beeda61da9a544f49d9b6378d73",
+      "old_patch_id": "8ff0d6efd5b31d2320987b2995329a9841856343",
+      "new_sha": "1ed288f2afdcecd7fc9379f793d1546df172b4ac"
+    },
+    {
+      "repository": "vllm-xpu-kernels",
+      "sha": "348a8b91e4c301ff3c94b0fce68a4cda7a591bfc",
+      "subject": "test(attn): cover native FlashAttention replay determinism",
+      "audit": "audits/k-348a8b9.json",
+      "disposition": "KEEP",
+      "parent": "7d72670ba22c67480a4805a2d418beb19f83d004",
+      "old_patch_id": "43a970403358d0f0303a73a99af6367d7a0e5012",
+      "new_sha": "ad2d3e38b58f54f6c3c4be579b7ab8f2176d8cb8"
+    },
+    {
+      "repository": "vllm-xpu-kernels",
+      "sha": "05d4536b2440db171741b5de5c148cdc834bd692",
+      "subject": "feat(attn): add native KVarN cache and compact K4V2 attention",
+      "audit": "audits/k-05d4536.json",
+      "disposition": "ADAPT",
+      "parent": "348a8b91e4c301ff3c94b0fce68a4cda7a591bfc",
+      "old_patch_id": "4ff4c3eb11770280350fa8f4739b6edee6cacff4",
+      "new_sha": "b8d43c50ae49871103cfc0856183362015fb1b09"
+    }
+  ],
+  "schema": 1,
+  "stage": "rolling source mains published",
+  "additional_changes": {
+    "vllm": {
+      "sha": "b18eee6e90c77a08b05d687cc9b47ebdd08cfc3e",
+      "subject": "feat(xpu): enable in-process extensible KV reservations through SYCL"
+    },
+    "vllm-xpu-kernels": {
+      "sha": "65eb2861dd3a885be0850e459b51562832a65bfb",
+      "subject": "Add XPU virtual-memory backing for extensible KV tensors"
+    }
+  },
+  "tips": {
+    "vllm": "b18eee6e90c77a08b05d687cc9b47ebdd08cfc3e",
+    "vllm-xpu-kernels": "65eb2861dd3a885be0850e459b51562832a65bfb"
+  }
+}

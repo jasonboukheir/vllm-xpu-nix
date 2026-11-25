@@ -1,0 +1,108 @@
+{
+  "checked_on": "2026-11-25",
+  "deployed": "xpu-v1.14.0",
+  "upstream_requirements": {
+    "torch": "2.15.0",
+    "triton": "3.9.0+xpu",
+    "vllm_xpu_kernels": "0.1.17"
+  },
+  "status": "discovery only; candidate not qualified",
+  "repositories": {
+    "vllm": {
+      "old_base": "4ba787ec9959e566d3b587a796dff07673324da5",
+      "integration_tip": "066206bafebe124485a69e13dcb975a2afc55ad2",
+      "verified_origin_main": "066206bafebe124485a69e13dcb975a2afc55ad2",
+      "target_tag": "v0.34.0",
+      "tag_object": "0c57b4195da4a6b69a7725908e428053e51e51b8",
+      "target": "62d4bc3c7e33b1b6c906e233e6af2d3506c482ca",
+      "release_url": "https://github.com/vllm-project/vllm/releases/tag/v0.34.0",
+      "merge_base": "4135590ffe0119dab806d78a7eee6dff3be2618e",
+      "inventory": [
+        {
+          "sha": "f057cf93b0a2f797d6b23164359fda2f0624f8d5",
+          "parent": "4ba787ec9959e566d3b587a796dff07673324da5",
+          "subject": "fix(xpu): strip graph padding from GDN index tensors",
+          "patch_id": "7b058e6e36a1f421c703182bbcb8e48992ab1128"
+        },
+        {
+          "sha": "10ba7ce16b1fbad0723a44db4e8dc8e2e517a3c0",
+          "parent": "f057cf93b0a2f797d6b23164359fda2f0624f8d5",
+          "subject": "fix(xpu): stabilize Qwen GDN prefill and mixed scheduling",
+          "patch_id": "fba79b0381d71d3cf8ea553264707231f2c0c179"
+        },
+        {
+          "sha": "e0b1f16e795760480e71542a59ee6cf0fe4fa3b6",
+          "parent": "10ba7ce16b1fbad0723a44db4e8dc8e2e517a3c0",
+          "subject": "fix(xpu): preserve functional batch-invariant residual RMSNorm",
+          "patch_id": "b19479b47e1d751c7ca2d336ab440780db34855b"
+        },
+        {
+          "sha": "bcbdafbc60fc4cb28e23d3ea0594817363c404ce",
+          "parent": "e0b1f16e795760480e71542a59ee6cf0fe4fa3b6",
+          "subject": "fix(xpu): accept explicit unquantized KV cache dtypes",
+          "patch_id": "6f704ef6d098637584d969bf3fe2b27a26615957"
+        },
+        {
+          "sha": "066206bafebe124485a69e13dcb975a2afc55ad2",
+          "parent": "bcbdafbc60fc4cb28e23d3ea0594817363c404ce",
+          "subject": "feat(xpu): integrate KVarN hybrid caching with V2 DFlash2",
+          "patch_id": "4ffaab1b24fcd127bc17b6c6e72043bc639688d3"
+        }
+      ]
+    },
+    "vllm-xpu-kernels": {
+      "old_base": "ddf336d86e3c8602888572a3502f951abd51df12",
+      "integration_tip": "05d4536b2440db171741b5de5c148cdc834bd692",
+      "verified_origin_main": "05d4536b2440db171741b5de5c148cdc834bd692",
+      "target_tag": "v0.1.17",
+      "tag_object": "6a1ec18b69b00eaf67a457e0bdd40e72632feaae",
+      "target": "6a1ec18b69b00eaf67a457e0bdd40e72632feaae",
+      "release_url": "https://github.com/vllm-project/vllm-xpu-kernels/releases/tag/v0.1.17",
+      "merge_base": "1c7cbeee1cd0c1481d48f5031f679a47f3f0ef45",
+      "inventory": [
+        {
+          "sha": "e50d437ee5560e5b5f12581ee61b1bddab157733",
+          "parent": "ddf336d86e3c8602888572a3502f951abd51df12",
+          "subject": "fix(onednn): make W4A16 matmul deterministic",
+          "patch_id": "7ea50ac3b0ceb331108743cc12894af0bd2fce23"
+        },
+        {
+          "sha": "63a31d01e8fcf44a7b08f8e76e85ec40a208b6f1",
+          "parent": "e50d437ee5560e5b5f12581ee61b1bddab157733",
+          "subject": "fix(gdn): disable unstable tiled causal-convolution prefill",
+          "patch_id": "f7fd14e5d76964b1426c46ae21f46913f227194d"
+        },
+        {
+          "sha": "ad5d9e16721f5c219de65c8d408c02edab104919",
+          "parent": "63a31d01e8fcf44a7b08f8e76e85ec40a208b6f1",
+          "subject": "fix(gdn): order fresh-state prefill output reads",
+          "patch_id": "be4c0310f7f161dda8916d4d75bfd15db795f471"
+        },
+        {
+          "sha": "d8e1f69699496beeda61da9a544f49d9b6378d73",
+          "parent": "ad5d9e16721f5c219de65c8d408c02edab104919",
+          "subject": "fix(gdn): preserve cached decode arithmetic in mixed batches",
+          "patch_id": "21d478c5a5c87f2f04d87acf4cb3b4a0e21e8672"
+        },
+        {
+          "sha": "7d72670ba22c67480a4805a2d418beb19f83d004",
+          "parent": "d8e1f69699496beeda61da9a544f49d9b6378d73",
+          "subject": "test(gdn): preserve shortened-query rollback and storage guards",
+          "patch_id": "8ff0d6efd5b31d2320987b2995329a9841856343"
+        },
+        {
+          "sha": "348a8b91e4c301ff3c94b0fce68a4cda7a591bfc",
+          "parent": "7d72670ba22c67480a4805a2d418beb19f83d004",
+          "subject": "test(attn): cover native FlashAttention replay determinism",
+          "patch_id": "43a970403358d0f0303a73a99af6367d7a0e5012"
+        },
+        {
+          "sha": "05d4536b2440db171741b5de5c148cdc834bd692",
+          "parent": "348a8b91e4c301ff3c94b0fce68a4cda7a591bfc",
+          "subject": "feat(attn): add native KVarN cache and compact K4V2 attention",
+          "patch_id": "4ff4c3eb11770280350fa8f4739b6edee6cacff4"
+        }
+      ]
+    }
+  }
+}

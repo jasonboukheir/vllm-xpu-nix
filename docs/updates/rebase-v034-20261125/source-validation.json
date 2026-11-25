@@ -79,5 +79,36 @@
     "Full native BMG 0.1.17 package build",
     "Full Qwen 131072-token serving profile and B70 performance comparison",
     "Coordinated release and Brutus pin"
-  ]
+  ],
+  "configuration_checks": [
+    {
+      "profile": "production Qwen + DFlash2",
+      "result": "pass",
+      "target_context": 131072,
+      "max_sequences": 4,
+      "cache_dtype": "kvarn_k4v2_g128_compact",
+      "draft_cache_dtype": "bfloat16",
+      "draft_tokens": 2,
+      "extensible": true,
+      "cpu_offload_bytes": 8589934592,
+      "evidence": "primary-config-check.json",
+      "scope": "EngineArgs configuration with cached model metadata, no model generation."
+    },
+    {
+      "profile": "compact K4V4 and bundled MTP2",
+      "result": "pass",
+      "target_context": 4096,
+      "prefix_caching": false,
+      "extensible": true,
+      "evidence": "mtp-supplement-config.json",
+      "scope": "EngineArgs configuration with cached model metadata, no model generation."
+    }
+  ],
+  "packaging_tools": {
+    "passed": 595,
+    "skipped": 1,
+    "subtests": 8,
+    "excluded": "Two unrelated quantizer suites require auto_round and llmcompressor.",
+    "evidence": "packaging-tools-tests.log"
+  }
 }

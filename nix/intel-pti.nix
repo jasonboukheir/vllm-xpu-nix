@@ -1,5 +1,6 @@
 {
   lib,
+  torch215 ? false,
   stdenv,
   fetchurl,
   unzip,
@@ -10,11 +11,19 @@
 
 stdenv.mkDerivation rec {
   pname = "intel-pti";
-  version = "1.0.1";
+  version = if torch215 then "1.1.0" else "1.0.1";
 
   src = fetchurl {
-    url = "https://files.pythonhosted.org/packages/46/d4/48737239235707852fef380005f53405740b08dc5f3700c72e5b43946452/intel_pti-${version}-py2.py3-none-manylinux_2_28_x86_64.whl";
-    hash = "sha256-TnrZ6VXS2tjkHNldIuirHkdrri5uNR8Oi0ZT/nerLgw=";
+    url =
+      if torch215 then
+        "https://files.pythonhosted.org/packages/80/60/a94fd058dfed6c774ab376279a38c1e8822b9b7ab4a9c8e0f5b960f3a8e3/intel_pti-1.1.0-py2.py3-none-manylinux_2_28_x86_64.whl"
+      else
+        "https://files.pythonhosted.org/packages/46/d4/48737239235707852fef380005f53405740b08dc5f3700c72e5b43946452/intel_pti-${version}-py2.py3-none-manylinux_2_28_x86_64.whl";
+    hash =
+      if torch215 then
+        "sha256-Yrs3QGjV5DI523p10Z5nPiG+aGAwkt5iOFIsrU6oyco="
+      else
+        "sha256-TnrZ6VXS2tjkHNldIuirHkdrri5uNR8Oi0ZT/nerLgw=";
   };
 
   nativeBuildInputs = [

@@ -1,0 +1,70 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index e4a27fb..3d248b9 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -419,6 +419,20 @@ set(GDN_ATTN_LIB_NAME "")
+ set(MQA_LOGITS_LIB_NAME "")
+ set(MHC_LIB_NAME "")
+
++function(add_split_kernel name directory)
++  string(TOUPPER "${name}" upper_name)
++  set(prebuilt "VLLM_XPU_PREBUILT_${upper_name}_LIB")
++  if(DEFINED ENV{${prebuilt}})
++    add_library(${name} SHARED IMPORTED GLOBAL)
++    get_filename_component(parent "${directory}" DIRECTORY)
++    set_target_properties(${name} PROPERTIES
++      IMPORTED_LOCATION "$ENV{${prebuilt}}"
++      INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_SOURCE_DIR}/${directory};${CMAKE_SOURCE_DIR}/${parent};${CMAKE_SOURCE_DIR}")
++  else()
++    add_subdirectory(${directory})
++  endif()
++endfunction()
++
+ if(BUILD_SYCL_TLA_KERNELS)
+
+   set(SYCL_TLA_INCLUDE_DIRS
+@@ -435,23 +449,23 @@ if(BUILD_SYCL_TLA_KERNELS)
+   if(VLLM_XPU_ENABLE_XE2)
+     include_directories(${CMAKE_SOURCE_DIR}/csrc)
+     if(MOE_KERNELS_ENABLED)
+-      add_subdirectory(csrc/xpu/grouped_gemm/xe_2)
++      add_split_kernel(grouped_gemm_xe_2 csrc/xpu/grouped_gemm/xe_2)
+       list(APPEND GROUPED_GEMM_LIB_NAME "grouped_gemm_xe_2")
+     endif()
+     if(FA2_KERNELS_ENABLED)
+-      add_subdirectory(csrc/xpu/attn/xe_2)
++      add_split_kernel(attn_kernels_xe_2 csrc/xpu/attn/xe_2)
+       list(APPEND ATTN_KERNEL_LIB_NAME "attn_kernels_xe_2")
+     endif()
+     if(GDN_KERNELS_ENABLED)
+-      add_subdirectory(csrc/xpu/gdn_attn/xe_2)
++      add_split_kernel(gdn_attn_kernels_xe_2 csrc/xpu/gdn_attn/xe_2)
+       list(APPEND GDN_ATTN_LIB_NAME "gdn_attn_kernels_xe_2")
+     endif()
+     if(MQA_LOGITS_KERNELS_ENABLED)
+-      add_subdirectory(csrc/xpu/mqa_logits/xe_2)
++      add_split_kernel(mqa_logits_kernels_xe_2 csrc/xpu/mqa_logits/xe_2)
+       list(APPEND MQA_LOGITS_LIB_NAME "mqa_logits_kernels_xe_2")
+     endif()
+     if(MHC_KERNELS_ENABLED)
+-      add_subdirectory(csrc/xpu/mhc/xe_2)
++      add_split_kernel(mhc_kernels_xe_2 csrc/xpu/mhc/xe_2)
+       list(APPEND MHC_LIB_NAME "mhc_kernels_xe_2")
+     endif()
+     list(APPEND SYCL_TLA_COMPILE_OPTIONS -DVLLM_XPU_ENABLE_XE2)
+diff --git a/setup.py b/setup.py
+index dcba853..c136d41 100755
+--- a/setup.py
++++ b/setup.py
+@@ -220,6 +220,11 @@ class cmake_build_ext(build_ext):
+             cmake_args.append(
+                 '-DVLLM_CHUNK_PREFILL_CONFIG={}'.format(_chunk_prefill_config))
+
++        # Packagers can provide an offline oneDNN source tree.
++        for opt in ("FETCHCONTENT_SOURCE_DIR_ONEDNN", "FETCHCONTENT_FULLY_DISCONNECTED"):
++            if opt in os.environ:
++                cmake_args.append('-D{}={}'.format(opt, os.environ[opt]))
++
+         # Override the base directory for FetchContent downloads to $ROOT/.deps
+         # This allows sharing dependencies between profiles,
+         # and plays more nicely with sccache.

@@ -40,6 +40,11 @@
       flake = false;
     };
 
+    sycl-tla-unstable-src = {
+      url = "github:intel/sycl-tla/7b56b936b87f799f80dde60c2fd8d11c1128cebb";
+      flake = false;
+    };
+
     sycl-tla-src = {
       url = "github:intel/sycl-tla/87f6850680a580654b9ea2c80dbc01aeb36ad231";
       flake = false;
@@ -56,6 +61,7 @@
       vllm-xpu-src,
       vllm-xpu-unstable-src,
       sycl-tla-src,
+      sycl-tla-unstable-src,
     }:
     let
       systemOutputs = flake-utils.lib.eachSystem [ "x86_64-linux" ] (
@@ -88,7 +94,7 @@
           kernelsUnstableVersion = mkInputVersion {
             name = "vllm-xpu-kernels-unstable-src";
             input = vllm-xpu-kernels-unstable-src;
-            base = "0.1.15.4";
+            base = "0.1.17";
             unstable = true;
           };
           vllmStableVersion = mkInputVersion {
@@ -98,47 +104,117 @@
           vllmUnstableVersion = mkInputVersion {
             name = "vllm-xpu-unstable-src";
             input = vllm-xpu-unstable-src;
-            base = "0.33.0";
+            base = "0.34.0";
             unstable = true;
           };
 
           # ---- toolchain + base substrate ----
-          intel-oneapi = import ./nix/intel-oneapi.nix { inherit pkgs; };
+          mkSubstrate =
+            torch215:
+            let
+              intel-oneapi = import ./nix/intel-oneapi.nix { inherit pkgs; };
 
-          intel-pti = pkgs.callPackage ./nix/intel-pti.nix {
-            intel-oneapi-base = intel-oneapi;
-          };
+              intel-pti = pkgs.callPackage ./nix/intel-pti.nix {
+                inherit torch215;
+                intel-oneapi-base = intel-oneapi;
+              };
 
-          triton-xpu = pkgs.callPackage ./nix/triton-xpu.nix {
-            intel-oneapi-base = intel-oneapi;
-            inherit intel-pti;
-            python3Packages = pkgs.python312Packages;
-          };
+              triton-xpu = pkgs.callPackage ./nix/triton-xpu.nix {
+                inherit torch215;
+                intel-oneapi-base = intel-oneapi;
+                inherit intel-pti;
+                python3Packages = pkgs.python312Packages;
+              };
 
-          torch-xpu = pkgs.callPackage ./nix/torch-xpu.nix {
-            intel-oneapi-base = intel-oneapi;
-            inherit intel-pti triton-xpu;
-            python3Packages = pkgs.python312Packages;
-          };
+              torch-xpu = pkgs.callPackage ./nix/torch-xpu.nix {
+                inherit torch215;
+                intel-oneapi-base = intel-oneapi;
+                inherit intel-pti triton-xpu;
+                filelock = if torch215 then python312PackagesXpu.filelock else pkgs.python312Packages.filelock;
+                python3Packages = pkgs.python312Packages;
+              };
 
-          torchvision-xpu = pkgs.callPackage ./nix/torchvision-xpu.nix {
-            inherit torch-xpu;
-            python3Packages = pkgs.python312Packages;
-          };
+              torchvision-xpu = pkgs.callPackage ./nix/torchvision-xpu.nix {
+                inherit torch215 torch-xpu;
+                python3Packages = pkgs.python312Packages;
+              };
 
-          python312PackagesXpu = import ./nix/python-xpu.nix {
-            inherit
-              pkgs
-              torch-xpu
-              triton-xpu
-              torchvision-xpu
-              ;
-          };
+              basePython = import ./nix/python-xpu.nix {
+                inherit
+                  pkgs
+                  torch-xpu
+                  triton-xpu
+                  torchvision-xpu
+                  ;
+              };
 
-          flash-linear-attention = pkgs.callPackage ./nix/flash-linear-attention.nix {
-            inherit torch-xpu triton-xpu;
-            python3Packages = python312PackagesXpu;
-          };
+              flash-linear-attention = pkgs.callPackage ./nix/flash-linear-attention.nix {
+                inherit torch-xpu triton-xpu;
+                python3Packages = python312PackagesXpu;
+              };
+
+              python312PackagesXpu =
+                if torch215 then
+                  basePython.overrideScope (import ./nix/python-v034.nix { inherit pkgs; })
+                else
+                  basePython;
+              inherit
+                (import ./nix/mk-kernels.nix {
+                  inherit
+                    pkgs
+                    intel-oneapi
+                    intel-pti
+                    torch-xpu
+                    ;
+                  cutlass-src = if torch215 then sycl-tla-unstable-src else sycl-tla-src;
+                })
+                mkKernelLibs
+                mkVllmXpuKernels
+                ;
+
+              mkVllm = import ./nix/mk-vllm.nix {
+                inherit
+                  pkgs
+                  intel-oneapi
+                  intel-pti
+                  torch-xpu
+                  triton-xpu
+                  flash-linear-attention
+                  ;
+                python3Packages = python312PackagesXpu;
+              };
+
+            in
+            {
+              inherit
+                intel-oneapi
+                intel-pti
+                triton-xpu
+                torch-xpu
+                torchvision-xpu
+                python312PackagesXpu
+                flash-linear-attention
+                mkVllmXpuKernels
+                mkKernelLibs
+                mkVllm
+                ;
+            };
+          legacy = mkSubstrate false;
+          current = mkSubstrate true;
+          inherit (legacy)
+            intel-oneapi
+            intel-pti
+            torch-xpu
+            triton-xpu
+            torchvision-xpu
+            python312PackagesXpu
+            flash-linear-attention
+            ;
+          mkVllm =
+            args: (if pkgs.lib.versionAtLeast args.version "0.34.0" then current else legacy).mkVllm args;
+          mkVllmXpuKernels =
+            args:
+            (if pkgs.lib.versionAtLeast args.version "0.1.17" then current else legacy).mkVllmXpuKernels args;
 
           auto-round-xpu = pkgs.callPackage ./nix/auto-round-xpu.nix {
             inherit torch-xpu triton-xpu flash-linear-attention;
@@ -162,31 +238,11 @@
           };
 
           # ---- kernel + vllm build factories ----
-          inherit
-            (import ./nix/mk-kernels.nix {
-              inherit
-                pkgs
-                intel-oneapi
-                intel-pti
-                torch-xpu
-                ;
-              cutlass-src = sycl-tla-src;
-            })
-            mkKernelLibs
-            mkVllmXpuKernels
-            ;
-
-          stableLibs = mkKernelLibs {
+          stableLibs = legacy.mkKernelLibs {
             src = vllm-xpu-kernels-src';
             version = kernelsStableVersion;
             sourceRevision = sourceRevision vllm-xpu-kernels-src;
           };
-          unstableLibs = mkKernelLibs {
-            src = vllm-xpu-kernels-unstable-src';
-            version = kernelsUnstableVersion;
-            sourceRevision = sourceRevision vllm-xpu-kernels-unstable-src;
-          };
-
           vllm-xpu-kernels = mkVllmXpuKernels {
             src = vllm-xpu-kernels-src';
             version = kernelsStableVersion;
@@ -196,18 +252,6 @@
             src = vllm-xpu-kernels-unstable-src';
             version = kernelsUnstableVersion;
             sourceRevision = sourceRevision vllm-xpu-kernels-unstable-src;
-          };
-
-          mkVllm = import ./nix/mk-vllm.nix {
-            inherit
-              pkgs
-              intel-oneapi
-              intel-pti
-              torch-xpu
-              triton-xpu
-              flash-linear-attention
-              ;
-            python3Packages = python312PackagesXpu;
           };
 
           vllm-xpu = mkVllm {
@@ -220,7 +264,7 @@
             src = vllm-xpu-unstable-src;
             version = vllmUnstableVersion;
             kernels = vllm-xpu-kernels-unstable;
-            mcpPackage = python312PackagesXpu.mcp-v2;
+            mcpPackage = current.python312PackagesXpu.mcp-v2;
             withTorchvision = true;
           };
 

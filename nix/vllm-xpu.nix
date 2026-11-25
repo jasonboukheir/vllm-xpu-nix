@@ -260,7 +260,12 @@ python3Packages.buildPythonPackage {
       # XPU uses a newer Torch release than the common CUDA build metadata.
       grep -Fx 'torch==${lib.head (lib.splitString "+" torch-xpu.version)}' requirements/xpu.txt
       ${
-        if lib.versionOlder version "0.33.0" then
+        if lib.versionAtLeast version "0.34.0" then
+          ''
+            substituteInPlace pyproject.toml \
+              --replace-fail '"torch == 2.14.0"' '"torch == ${lib.head (lib.splitString "+" torch-xpu.version)}"'
+          ''
+        else if lib.versionOlder version "0.33.0" then
           ''
             substituteInPlace pyproject.toml \
               --replace-fail '"torch == 2.13.0"' '"torch == ${lib.head (lib.splitString "+" torch-xpu.version)}"'

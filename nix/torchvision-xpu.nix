@@ -1,5 +1,6 @@
 {
   lib,
+  torch215 ? false,
   fetchurl,
   python3Packages,
   autoPatchelfHook,
@@ -11,12 +12,20 @@
 python3Packages.buildPythonPackage rec {
   pname = "torchvision";
   # Stable XPU wheel paired with torch 2.14.0+xpu.
-  version = "0.29.0+xpu";
+  version = if torch215 then "0.29.2+xpu" else "0.29.0+xpu";
   format = "wheel";
 
   src = fetchurl {
-    url = "https://download-r2.pytorch.org/whl/xpu/torchvision-0.29.0%2Bxpu-cp312-cp312-manylinux_2_28_x86_64.whl";
-    hash = "sha256-582JITCsz2pFaZhPOCHU4DzudeBQMsS9YhS+5kImcZ8=";
+    url =
+      if torch215 then
+        "https://download-r2.pytorch.org/whl/xpu/torchvision-0.29.2%2Bxpu-py3-none-manylinux_2_28_x86_64.whl"
+      else
+        "https://download-r2.pytorch.org/whl/xpu/torchvision-0.29.0%2Bxpu-cp312-cp312-manylinux_2_28_x86_64.whl";
+    hash =
+      if torch215 then
+        "sha256-sVKV8DlTgPHEYDFeEWVIr7ZuHdqqXuKGLMy9zRGbjHs="
+      else
+        "sha256-582JITCsz2pFaZhPOCHU4DzudeBQMsS9YhS+5kImcZ8=";
   };
 
   nativeBuildInputs = [

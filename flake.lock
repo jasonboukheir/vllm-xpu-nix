@@ -39,6 +39,7 @@
         "flake-utils": "flake-utils",
         "nixpkgs": "nixpkgs",
         "sycl-tla-src": "sycl-tla-src",
+        "sycl-tla-unstable-src": "sycl-tla-unstable-src",
         "vllm-xpu-kernels-src": "vllm-xpu-kernels-src",
         "vllm-xpu-kernels-unstable-src": "vllm-xpu-kernels-unstable-src",
         "vllm-xpu-src": "vllm-xpu-src",
@@ -59,6 +60,23 @@
         "owner": "intel",
         "repo": "sycl-tla",
         "rev": "87f6850680a580654b9ea2c80dbc01aeb36ad231",
+        "type": "github"
+      }
+    },
+    "sycl-tla-unstable-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1790147606,
+        "narHash": "sha256-HOUvysPiTdsJaP2gxfq0MTVOyJF4wmZ7wHDUrIfzlSE=",
+        "owner": "intel",
+        "repo": "sycl-tla",
+        "rev": "7b56b936b87f799f80dde60c2fd8d11c1128cebb",
+        "type": "github"
+      },
+      "original": {
+        "owner": "intel",
+        "repo": "sycl-tla",
+        "rev": "7b56b936b87f799f80dde60c2fd8d11c1128cebb",
         "type": "github"
       }
     },

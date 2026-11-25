@@ -26,7 +26,7 @@
   mqa-logits-kernels-xe-2,
   mhc-kernels-xe-2,
   grouped-gemm-xe-2,
-  grouped-gemm-xe-default,
+  grouped-gemm-xe-default ? null,
   # SYCL AOT target list. Exported as VLLM_XPU_AOT_DEVICES /
   # VLLM_XPU_XE2_AOT_DEVICES (upstream's CMakeLists honours both at
   # ~line 186).
@@ -50,7 +50,7 @@
   withMqaLogitsLibrary ? true,
   withMhcLibrary ? true,
   withGroupedGemmXe2Library ? true,
-  withGroupedGemmXeDefaultLibrary ? true,
+  withGroupedGemmXeDefaultLibrary ? grouped-gemm-xe-default != null,
   pythonImportsCheck ? [ "vllm_xpu_kernels" ],
 }:
 
@@ -123,7 +123,12 @@ python3Packages.buildPythonPackage (
     dontUseCmakeConfigure = true;
 
     patches = [
-      ./patches/0001-split-kernel-libs.patch
+      (
+        if lib.versionAtLeast (builtins.unsafeDiscardStringContext version) "0.1.17" then
+          ./patches/0001-split-kernel-libs-v017.patch
+        else
+          ./patches/0001-split-kernel-libs.patch
+      )
       ./patches/0004-skip-prebuilt-additional-libs.patch
       ./patches/0006-forward-mhc-feature-flag.patch
     ];

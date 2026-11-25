@@ -1,5 +1,6 @@
 {
   lib,
+  torch215 ? false,
   fetchurl,
   python3Packages,
   autoPatchelfHook,
@@ -11,6 +12,7 @@
   ocl-icd,
   zlib,
   triton-xpu,
+  filelock ? python3Packages.filelock,
 }:
 
 let
@@ -19,16 +21,26 @@ let
   # loader path, so point the tiny pure-Python binding at the Nix package.
   pyzes = python3Packages.buildPythonPackage rec {
     pname = "pyzes";
-    version = "0.1.2";
+    version = if torch215 then "0.1.3" else "0.1.2";
     format = "wheel";
 
     src = fetchurl {
-      url = "https://files.pythonhosted.org/packages/74/46/90e1741b3926e3b8590dfaa819439891865568fc5c90a0f5596b76ee6bff/pyzes-${version}-py3-none-any.whl";
-      hash = "sha256-VjhoQ5kEmUBBQHGvr/+R7ofxiAdFezyw0xzV1aC32yM=";
+      url =
+        if torch215 then
+          "https://files.pythonhosted.org/packages/e3/96/90c5794cb26d046b3c0958551117ab7305cac9b61140f096d2289066269e/pyzes-0.1.3-py3-none-any.whl"
+        else
+          "https://files.pythonhosted.org/packages/74/46/90e1741b3926e3b8590dfaa819439891865568fc5c90a0f5596b76ee6bff/pyzes-${version}-py3-none-any.whl";
+      hash =
+        if torch215 then
+          "sha256-YeP0XYX5fhHeWmcU0p8YE/6UVM1lChD2AOth3m29xRg="
+        else
+          "sha256-VjhoQ5kEmUBBQHGvr/+R7ofxiAdFezyw0xzV1aC32yM=";
     };
 
     postInstall = ''
-      substituteInPlace "$out/${python3Packages.python.sitePackages}/pyzes.py" \
+      substituteInPlace "$out/${python3Packages.python.sitePackages}/${
+        if torch215 then "pyzes/__init__.py" else "pyzes.py"
+      }" \
         --replace-fail \
           'libName = "/usr/lib/x86_64-linux-gnu/lib" + libName + ".so.1"' \
           'libName = "${lib.getLib level-zero}/lib/libze_loader.so.1"'
@@ -47,12 +59,20 @@ in
 python3Packages.buildPythonPackage rec {
   pname = "torch";
   # vLLM 0.31 pairs Torch 2.14 with Triton 3.8 and oneAPI 2026.1.
-  version = "2.14.0+xpu";
+  version = if torch215 then "2.15.0+xpu" else "2.14.0+xpu";
   format = "wheel";
 
   src = fetchurl {
-    url = "https://download-r2.pytorch.org/whl/xpu/torch-2.14.0%2Bxpu-cp312-cp312-manylinux_2_28_x86_64.whl";
-    hash = "sha256-BfjxMOJcJNT3kDJmrxZRRekjT66M5z7CYTrfwBXLo0o=";
+    url =
+      if torch215 then
+        "https://download-r2.pytorch.org/whl/xpu/torch-2.15.0%2Bxpu-cp312-cp312-manylinux_2_28_x86_64.whl"
+      else
+        "https://download-r2.pytorch.org/whl/xpu/torch-2.14.0%2Bxpu-cp312-cp312-manylinux_2_28_x86_64.whl";
+    hash =
+      if torch215 then
+        "sha256-fM/nvREiMv3a+2RGVujxAEXuW8goQHZ4xYpzrGuG/1g="
+      else
+        "sha256-BfjxMOJcJNT3kDJmrxZRRekjT66M5z7CYTrfwBXLo0o=";
   };
 
   nativeBuildInputs = [
@@ -70,7 +90,7 @@ python3Packages.buildPythonPackage rec {
   ];
 
   propagatedBuildInputs = with python3Packages; [
-    filelock
+    (filelock)
     typing-extensions
     sympy
     networkx

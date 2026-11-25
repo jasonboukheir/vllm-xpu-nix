@@ -88,7 +88,12 @@ let
         ;
       # The split factory composes Xe2/default libraries. Upstream's Xe3p
       # default also changes the common SYCL target and adds CRI AOT devices.
-      featureFlags = featureFlags ++ [ "-DVLLM_XPU_ENABLE_XE3P=OFF" ];
+      featureFlags =
+        (pkgs.lib.filter (
+          flag:
+          pkgs.lib.versionOlder version "0.1.17" || !(pkgs.lib.hasPrefix "-DVLLM_XPU_ENABLE_XE_DEFAULT=" flag)
+        ) featureFlags)
+        ++ [ "-DVLLM_XPU_ENABLE_XE3P=OFF" ];
       # These selectors mutate/reference attention config files.  Keeping them
       # out of sibling derivations avoids both false invalidation and missing
       # paths in their filtered sources.
@@ -230,6 +235,7 @@ let
         libName = "gdn_attn_kernels_xe_2";
         featureFlags = gdnAttnFlags;
       };
+      hasXeDefault = pkgs.lib.versionOlder version "0.1.17";
       groupedGemmXeDefault = mkLib {
         libName = "grouped_gemm_xe_default";
         featureFlags = groupedGemmXeDefaultFlags;
@@ -238,7 +244,7 @@ let
       groupedGemmXe2 = mkLib {
         libName = "grouped_gemm_xe_2";
         featureFlags = groupedGemmXe2Flags;
-        buildDependencies = [ groupedGemmXeDefault ];
+        buildDependencies = [ (if hasXeDefault then groupedGemmXeDefault else gdnAttn) ];
       };
       mhc = mkLib {
         libName = "mhc_kernels_xe_2";
@@ -262,12 +268,12 @@ let
     in
     {
       gdn-attn-kernels-xe-2 = gdnAttn;
-      grouped-gemm-xe-default = groupedGemmXeDefault;
       grouped-gemm-xe-2 = groupedGemmXe2;
       mhc-kernels-xe-2 = mhc;
       mqa-logits-kernels-xe-2 = mqaLogits;
       attn-kernels-xe-2 = attn;
-    };
+    }
+    // pkgs.lib.optionalAttrs hasXeDefault { grouped-gemm-xe-default = groupedGemmXeDefault; };
 
   # Overridable via the standard nixpkgs `.override` mechanism:
   #
@@ -351,7 +357,7 @@ let
             BUILD_SYCL_TLA_KERNELS = true;
             VLLM_XPU_ENABLE_XE2 = true;
             VLLM_XPU_ENABLE_XE3P = false;
-            VLLM_XPU_ENABLE_XE_DEFAULT = true;
+
             BASIC_KERNELS_ENABLED = true;
             FA2_KERNELS_ENABLED = false;
             MOE_KERNELS_ENABLED = true;
@@ -361,7 +367,8 @@ let
             XPU_SPECIFIC_KERNELS_ENABLED = true;
             XPUMEM_ALLOCATOR_ENABLED = true;
             VLLM_XPU_ENABLE_ONEDNN = true;
-          };
+          }
+          // pkgs.lib.optionalAttrs (libs ? grouped-gemm-xe-default) { VLLM_XPU_ENABLE_XE_DEFAULT = true; };
           withAttnLibrary = false;
         }
       );
@@ -377,7 +384,7 @@ let
               BUILD_SYCL_TLA_KERNELS = true;
               VLLM_XPU_ENABLE_XE2 = true;
               VLLM_XPU_ENABLE_XE3P = false;
-              VLLM_XPU_ENABLE_XE_DEFAULT = false;
+
               BASIC_KERNELS_ENABLED = false;
               FA2_KERNELS_ENABLED = true;
               MOE_KERNELS_ENABLED = false;
@@ -387,7 +394,8 @@ let
               XPU_SPECIFIC_KERNELS_ENABLED = false;
               XPUMEM_ALLOCATOR_ENABLED = false;
               VLLM_XPU_ENABLE_ONEDNN = false;
-            };
+            }
+            // pkgs.lib.optionalAttrs (libs ? grouped-gemm-xe-default) { VLLM_XPU_ENABLE_XE_DEFAULT = false; };
             withGdnAttnLibrary = false;
             withMqaLogitsLibrary = false;
             withMhcLibrary = false;

@@ -14,6 +14,19 @@ let
     };
 in
 {
+  # virtualenv is a build/test tool here. Its pinned 21.6.1 requires filelock <4.
+  inherit (pkgs.python312Packages) virtualenv;
+  # NumPy has no Python runtime dependency. Reuse the already-qualified package
+  # in Torch rather than introduce a second NumPy through pytest's filelock.
+  numpy =
+    let
+      stock = pkgs.python312Packages.numpy;
+    in
+    assert
+      stock.version == prev.numpy.version
+      && toString stock.src == toString prev.numpy.src
+      && (stock.dependencies or [ ]) == [ ];
+    stock;
   click = final.buildPythonPackage {
     pname = "click";
     version = "8.4.2";

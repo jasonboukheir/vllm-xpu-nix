@@ -112,7 +112,7 @@
           mkSubstrate =
             torch215:
             let
-              intel-oneapi = import ./nix/intel-oneapi.nix { inherit pkgs; };
+              intel-oneapi = import ./nix/intel-oneapi.nix { inherit pkgs torch215; };
 
               intel-pti = pkgs.callPackage ./nix/intel-pti.nix {
                 inherit torch215;

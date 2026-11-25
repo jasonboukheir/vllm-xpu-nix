@@ -1,5 +1,10 @@
-# Torch 2.14 requires the oneAPI 2026.1 runtime and matching compiler.
-{ pkgs }:
+# The Torch 2.15 Linux build uses Intel Deep Learning Essentials 2026.1.3.
+# Its 2026.1.1+325 compiler components contain the same SYCL, UR, OpenMP,
+# OpenCL and compiler runtime DSOs as Intel’s 2026.1.2 PyPI wheels.
+{
+  pkgs,
+  torch215 ? false,
+}:
 (pkgs.intel-oneapi-toolkit.override {
   components = [
     "intel.oneapi.lin.dpcpp-cpp-compiler"
@@ -11,12 +16,19 @@
   (old: {
     versionYear = "2026";
     versionMajor = "1";
-    versionMinor = "0";
-    versionRel = "192";
-    src = pkgs.fetchurl {
-      url = "https://registrationcenter-download.intel.com/akdlm/IRC_NAS/33cb2a22-ddf1-4aa9-8d68-1f5a118acaf2/intel-oneapi-toolkit-2026.1.0.192_offline.sh";
-      hash = "sha256-KJEZ4us+D37l0fO4muyyDWLgy3lkHKmSJfbR/6MEgW8=";
-    };
+    versionMinor = if torch215 then "3" else "0";
+    versionRel = if torch215 then "17" else "192";
+    src =
+      if torch215 then
+        pkgs.fetchurl {
+          url = "https://registrationcenter-download.intel.com/akdlm/IRC_NAS/bedab612-cf6b-4ece-872e-e72e9534ccab/intel-deep-learning-essentials-2026.1.3.17_offline.sh";
+          hash = "sha256-A4Ae7ToORKK2wkyuoVVz4FG4LP/mT7NtTgdo/Rra0X4=";
+        }
+      else
+        pkgs.fetchurl {
+          url = "https://registrationcenter-download.intel.com/akdlm/IRC_NAS/33cb2a22-ddf1-4aa9-8d68-1f5a118acaf2/intel-oneapi-toolkit-2026.1.0.192_offline.sh";
+          hash = "sha256-KJEZ4us+D37l0fO4muyyDWLgy3lkHKmSJfbR/6MEgW8=";
+        };
     # nixpkgs' intel-oneapi-toolkit has no `depsByComponent.ccl` entry
     # (only dpcpp-cpp-compiler / mpi / pti / vtune / mkl / etc.), so
     # adding the ccl component to the install list pulls the binaries

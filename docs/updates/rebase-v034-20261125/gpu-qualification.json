@@ -1,0 +1,520 @@
+{
+  "schema": 1,
+  "host": "brutus",
+  "reviewed_findings": [
+    "Both engines completed all 60 primary lifecycle checks, including a 131,070-token prompt with two generated tokens, four concurrent requests, and replay after cancellation.",
+    "The extensible candidate committed 5.15 GiB after warmup. Its full-attention pool gained 63 usable 128-token blocks, increasing capacity from 159,104 to 167,168 tokens. Mamba and sliding-window capacities stayed constant.",
+    "Single-request median decode rose 8.2% to 9.8% at 512 to 4,097 tokens across the measured workloads. At 16,384 tokens, single-request decode rose 0.3% cold and 1.2% warm. Four-request cold chat was the largest decline, with 1.5% lower per-request decode and 1.8% lower wave throughput.",
+    "All 48 aligned and unaligned cold responses matched the baseline token for token, as did the corresponding warm responses. For 1,024-token chat, 5 of 15 cold comparisons matched and 0 of 15 warm comparisons matched. Within each version, all 15 cold/warm chat pairs diverged at median token index 17.",
+    "The candidate skipped synthetic mixed warmup because that batch requested 21 Mamba blocks from a pool of 17 physical blocks. The real mixed lifecycle passed all 16 checks, including concurrent decode and external RAM restoration."
+  ],
+  "device": "Intel(R) Arc(TM) Pro B70 Graphics",
+  "qualification_scope": "One B70. Sequential matched production-recipe foreground arms with separate private cache directories.",
+  "packages": {
+    "baseline": {
+      "output": "/nix/store/5jvmvr89c90f4j1lry5l3a0xr8jp0gfw-python3.12-vllm-xpu-0.33.0+unstable.2026.11.08.g066206b",
+      "kernel_output": "/nix/store/nsa1yrpwwb87nsk13f611zr50rz38ri3-vllm-xpu-kernels-0.1.15.4+unstable.2026.10.10.g05d4536",
+      "vllm_revision": "066206bafebe124485a69e13dcb975a2afc55ad2",
+      "kernels_revision": "05d4536b2440db171741b5de5c148cdc834bd692"
+    },
+    "candidate": {
+      "qualification_packaging_revision": "d3c750fc6c5b3135fe9f3890a7598b7c0aa4af9e",
+      "equivalent_local_prebuild_revision": "01bcdd9b4ae6455bb9d3fd70ed1343e8701fa5e7",
+      "candidate_output": "/nix/store/dnfw57y3q63l6hd21gcr3k8a5pf8bmv4-python3.12-vllm-xpu-0.34.0+unstable.2026.11.25.gb18eee6",
+      "source_revision": "b18eee6e90c77a08b05d687cc9b47ebdd08cfc3e",
+      "kernel_revision": "65eb2861dd3a885be0850e459b51562832a65bfb",
+      "kernel_output": "/nix/store/llvj537qyzqj7vbaklgyz0ryaxnga81f-vllm-xpu-kernels-0.1.17+unstable.2026.11.25.g65eb286"
+    }
+  },
+  "profile": {
+    "model": "RedHatAI/Qwen3.8-27B-INT4",
+    "revision": "bf08f3dbd9a324e53956920aad378a1f1b6dd24a",
+    "dtype": "bfloat16",
+    "quantization": "compressed-tensors",
+    "kv_cache_dtype": "kvarn_k4v2_g128_compact",
+    "speculative_config": {
+      "kv_cache_dtype": "bfloat16",
+      "method": "dflash",
+      "model": "syvai/Qwen3.8-27B-DFlash2-W4A16",
+      "num_speculative_tokens": 2,
+      "revision": "4d30ec736ffc6b8688dc2ae2b502d9b48bdec279"
+    },
+    "connector": {
+      "kv_connector": "OffloadingConnector",
+      "kv_connector_extra_config": {
+        "cpu_bytes_to_use": 8589934592,
+        "gpu_cache_policy": "active_only",
+        "offload_prompt_only": false,
+        "spec_name": "IndependentCPUOffloadingSpec"
+      },
+      "kv_role": "kv_both"
+    },
+    "max_num_seqs": 4,
+    "gpu_memory_utilization": 0.93,
+    "candidate_additional_option": "--enable-extensible-kv-cache"
+  },
+  "foreground_runs": {
+    "baseline": {
+      "started_utc": "2026-11-26T02:54:54.937737+00:00",
+      "engine_manifest": {
+        "path": "benchmark-results/rebase-v034-20261125/baseline/01/manifest.json",
+        "sha256": "ead2293f9d9dc88974bb7cfbcc4765d47dfdd981f3f8f6f112a54828943a56f2"
+      },
+      "engine_log": {
+        "path": "benchmark-results/rebase-v034-20261125/baseline/01/engine.log",
+        "sha256": "9a8441e25ed8c8024c38f162e0d9e036e1a5243183903640b9ce4c9ba699733c"
+      },
+      "lifecycle_checks_passed": {
+        "lifecycle-first": 12,
+        "lifecycle-vision-tools": 6,
+        "lifecycle-ram-ceiling": 26,
+        "mixed": 16
+      },
+      "lifecycle_summary_sha256": {
+        "lifecycle-first": "aa764bf606c2d8893521583ca208be0645d29ab7954c7f0af70dee736350e75f",
+        "lifecycle-vision-tools": "892e53fa2110f7cd33f2ccd942829b1ff92fdc99da38dc3f16e7161005351cd1",
+        "lifecycle-ram-ceiling": "b1cf55dc75986183b8a1988b15eab94a5894b16340adc407dc9010f493fdd6db",
+        "mixed": "59dfe8ac1f4113870812578d178bf8382170d158ed37816914cca67ca53272a6"
+      },
+      "capacity_tokens": 159104,
+      "max_session_tokens": 131072,
+      "max_session_concurrency": 1.21,
+      "pools": {
+        "MambaSpec": {
+          "physical_blocks": 17,
+          "usable_blocks": 16,
+          "allocated_bytes": 2650472448
+        },
+        "FullAttentionSpec": {
+          "physical_blocks": 1244,
+          "usable_blocks": 1243,
+          "allocated_bytes": 2140078080
+        },
+        "SlidingWindowSpec": {
+          "physical_blocks": 201,
+          "usable_blocks": 200,
+          "allocated_bytes": 526909440
+        }
+      },
+      "ceiling": {
+        "usage": {
+          "prompt_tokens": 131070,
+          "completion_tokens": 2,
+          "total_tokens": 131072
+        },
+        "elapsed_seconds": 130.42665343091357,
+        "subsequent_health_response": "HEALTHY"
+      },
+      "ram": {
+        "load_bytes": 1586675904,
+        "store_bytes": 490111008,
+        "host_cached_prompt_tokens": 25984,
+        "draft_tokens": 44,
+        "accepted_tokens": 28,
+        "replay_load_bytes": {
+          "aligned-replay": 259571744,
+          "unaligned-replay": 259571744,
+          "growing-replay": 288817184
+        }
+      },
+      "mixed": {
+        "seed_store_bytes": 288817184,
+        "mixed_load_bytes": 288817184,
+        "post_cancel_replay_load_bytes": 288817184,
+        "host_cached_prompt_tokens": 12288
+      }
+    },
+    "candidate": {
+      "started_utc": "2026-11-26T02:32:32.149742+00:00",
+      "engine_manifest": {
+        "path": "benchmark-results/rebase-v034-20261125/candidate/01/manifest.json",
+        "sha256": "55aed9379d6b4135e5d5bf711b5d8b0e70bccbef52e1543e43dccb14c560bea5"
+      },
+      "engine_log": {
+        "path": "benchmark-results/rebase-v034-20261125/candidate/01/engine.log",
+        "sha256": "3cbb5995d612b942045ba5e9660818418c668597a1245afb036fbccd5299156c"
+      },
+      "lifecycle_checks_passed": {
+        "lifecycle-first": 12,
+        "lifecycle-vision-tools": 6,
+        "lifecycle-ram-ceiling": 26,
+        "mixed": 16
+      },
+      "lifecycle_summary_sha256": {
+        "lifecycle-first": "54411b8594f36fb4e4b0c22526019c562f94ce9dea8e0ddf934e73d81d439ffa",
+        "lifecycle-vision-tools": "02ae938a0f08a0d287c54c1bc9c21dae854f97b7157de464f03f7b310fb63550",
+        "lifecycle-ram-ceiling": "76c15ce1e596bf1adece377bcf8b52862de21ff92103b554c8a0a34b2c9ae01c",
+        "mixed": "65b5791428250522ca7203ecace6d170dc933d174e914ba0e6022de2c4dd472c"
+      },
+      "capacity_tokens": 167168,
+      "max_session_tokens": 131072,
+      "max_session_concurrency": 1.28,
+      "pools": {
+        "MambaSpec": {
+          "physical_blocks": 17,
+          "usable_blocks": 16,
+          "allocated_bytes": 2650472448
+        },
+        "FullAttentionSpec": {
+          "physical_blocks": 1307,
+          "usable_blocks": 1306,
+          "allocated_bytes": 2248458240
+        },
+        "SlidingWindowSpec": {
+          "physical_blocks": 201,
+          "usable_blocks": 200,
+          "allocated_bytes": 526909440
+        }
+      },
+      "ceiling": {
+        "usage": {
+          "prompt_tokens": 131070,
+          "completion_tokens": 2,
+          "total_tokens": 131072
+        },
+        "elapsed_seconds": 130.3281290520681,
+        "subsequent_health_response": "HEALTHY"
+      },
+      "ram": {
+        "load_bytes": 1586675904,
+        "store_bytes": 490111008,
+        "host_cached_prompt_tokens": 25984,
+        "draft_tokens": 44,
+        "accepted_tokens": 28,
+        "replay_load_bytes": {
+          "aligned-replay": 259571744,
+          "unaligned-replay": 259571744,
+          "growing-replay": 288817184
+        }
+      },
+      "mixed": {
+        "seed_store_bytes": 288817184,
+        "mixed_load_bytes": 288817184,
+        "post_cancel_replay_load_bytes": 288817184,
+        "host_cached_prompt_tokens": 12288
+      }
+    }
+  },
+  "candidate_extensible_kv": {
+    "commit": {
+      "budget": "Memory after warmup: 4.38 GiB free, 3.06 GiB committed to the KV cache, 0.38 GiB kept for transient activations (0.38 GiB allocated at peak, 0.0 GiB of torch reservation growth); 1307 KV cache blocks (5.15 GiB) fit",
+      "committed": "Extended KV cache to 1307 blocks (5.15 GiB)"
+    },
+    "runtime_checks_passed": [
+      "sealed_engine_log",
+      "completed_candidate",
+      "production_profile",
+      "engine_version",
+      "xpu_kvarn_backend",
+      "compact_k4v2",
+      "native_kvarn_read",
+      "native_packed_writer",
+      "native_cached_prefill",
+      "independent_host_spec",
+      "post_warmup_physical_commit",
+      "independent_pools",
+      "ram_same_run",
+      "mixed_same_run",
+      "ram_and_speculation_deltas",
+      "ram_replays_transfer_bytes",
+      "mixed_restore_and_cancellation",
+      "full_window"
+    ],
+    "materializer_log_markers": {
+      "native_xe2": 16,
+      "reference": 0
+    }
+  },
+  "installed_native_cases": {
+    "vmm": 1,
+    "offload": 2,
+    "k4v2": 17,
+    "gdn": 18,
+    "dtype": 10,
+    "rmsnorm": 7
+  },
+  "matched_performance": {
+    "repeats_per_cell": 3,
+    "output_tokens_per_request": 256,
+    "metric_order": [
+      "median_per_request_decode_tokens_per_second",
+      "median_wave_output_tokens_per_second",
+      "median_content_time_to_first_token_ms"
+    ],
+    "row_order": [
+      "fixture",
+      "input_tokens",
+      "concurrency",
+      "cache",
+      "baseline",
+      "candidate",
+      "candidate_divided_by_baseline"
+    ],
+    "rows": [
+      ["perf", 512, 1, "cold", [64.39936590275974, 57.289098359587705, 490.74865400325507], [70.30572402765063, 62.164683001778414, 490.844423067756], [1.091714538522153, 1.0851049288921957, 1.000195148909161]],
+      ["perf", 512, 1, "warm", [64.46644480356649, 61.022203327234564, 243.17340401466936], [70.4336650537631, 66.14721824628377, 238.34151402115822], [1.0925631973095324, 1.0839860680147202, 0.9801298583079436]],
+      ["perf", 512, 4, "cold", [55.95888795818773, 163.24750006601187, 1485.208723519463], [55.9040723211278, 163.35965139916487, 1482.4649945367128], [0.9990204301933074, 1.0006870018414227, 0.9981526307115618]],
+      ["perf", 512, 4, "warm", [56.29530494139435, 200.8153863222271, 515.2901034452952], [56.59682594974498, 200.7578522615522, 497.9323784937151], [1.0053560595979456, 0.9997134977467185, 0.9663146549186096]],
+      ["perf", 4096, 1, "cold", [63.777801300524644, 37.75338602796097, 2782.4459999101236], [69.35576492033579, 39.675309067966445, 2773.9406269975007], [1.087459327635449, 1.050907302422677, 0.9969432028823209]],
+      ["perf", 4096, 1, "warm", [63.652474494662236, 60.218158070910775, 244.3371919216588], [69.33116530734148, 65.39908658226518, 236.31573398597538], [1.0892139835530736, 1.0860359844493006, 0.9671705405444156]],
+      ["perf", 4096, 4, "cold", [34.678831846765505, 62.39329696296858, 8706.222548964433], [34.67378521790769, 62.41871111169675, 8689.033765462227], [0.9998544752349182, 1.000407321779185, 0.9980256898550968]],
+      ["perf", 4096, 4, "warm", [50.860708258498605, 179.7380983708934, 575.5562400445342], [50.718470321869646, 179.6327312583968, 567.9006630089134], [0.997203382699548, 0.999413774188936, 0.9866988201969135]],
+      ["perf", 16384, 1, "cold", [62.586464059480164, 16.472070567744925, 11463.169762981124], [62.75943882933255, 16.481047344039045, 11456.293408060446], [1.0027637728453231, 1.0005449695141362, 0.9994001349484604]],
+      ["perf", 16384, 1, "warm", [62.72350120670057, 58.511629380909426, 303.7737419363111], [63.464699535291835, 59.32734149030426, 294.106345041655], [1.0118169157386272, 1.013941025365822, 0.968175666425168]],
+      ["perf", 16384, 4, "cold", [18.38232674727471, 18.956989659375214, 34853.8186425576], [18.510653625381714, 18.98098285182108, 34820.955339004286], [1.0069809921165735, 1.0012656646902796, 0.9990571103875204]],
+      ["perf", 16384, 4, "warm", [38.43564638116398, 136.25222297891668, 757.8499995288439], [38.4484101394322, 136.3595608359738, 748.729421000462], [1.0003320812701222, 1.0007877879326323, 0.9879651929352086]],
+      ["perf-chat", 1024, 1, "cold", [48.22600653926982, 42.19531976857426, 777.5814810302109], [52.74574455859852, 45.67768950771346, 770.025543984957], [1.0937199312916017, 1.082529762974631, 0.9902827713499002]],
+      ["perf-chat", 1024, 1, "warm", [49.76941489568886, 47.647596869604364, 248.69460391346365], [54.62531335313189, 52.14932226716187, 240.16137898433954], [1.0975679233444968, 1.0944795895977133, 0.9656879369522092]],
+      ["perf-chat", 1024, 4, "cold", [41.43424330569253, 116.84130754016915, 2260.363002482336], [40.81991792821657, 114.78758430771563, 2252.4798894883133], [0.9851734862648845, 0.9824229694472781, 0.9965124570764229]],
+      ["perf-chat", 1024, 4, "warm", [43.28043691241561, 152.91618608895652, 516.8546305503696], [44.23223321307164, 153.5463529080345, 510.0142630399205], [1.0219913745922236, 1.0041209948743515, 0.9867653937758761]],
+      ["perf-unaligned", 4097, 1, "cold", [64.1713482713031, 38.12707437820751, 2737.4062549788505], [69.45574439289489, 39.98316497663401, 2729.116525966674], [1.0823482171396877, 1.048681694798156, 0.9969716847847853]],
+      ["perf-unaligned", 4097, 1, "warm", [63.43054637186765, 61.38244324467447, 150.31509497202933], [68.78100397121688, 66.57894547338162, 137.49930798076093], [1.0843514348431063, 1.0846577938905682, 0.9147405189501882]]
+    ]
+  },
+  "token_ids": {
+    "perf": {
+      "cold_vs_cold": {
+        "identical": 45,
+        "total": 45,
+        "median_first_difference_zero_based_among_mismatches": null
+      },
+      "warm_vs_warm": {
+        "identical": 45,
+        "total": 45,
+        "median_first_difference_zero_based_among_mismatches": null
+      },
+      "candidate_cold_vs_warm": {
+        "identical": 45,
+        "total": 45,
+        "median_first_difference_zero_based_among_mismatches": null
+      },
+      "baseline_cold_vs_warm": {
+        "identical": 45,
+        "total": 45,
+        "median_first_difference_zero_based_among_mismatches": null
+      }
+    },
+    "perf-chat": {
+      "cold_vs_cold": {
+        "identical": 5,
+        "total": 15,
+        "median_first_difference_zero_based_among_mismatches": 121.5
+      },
+      "warm_vs_warm": {
+        "identical": 0,
+        "total": 15,
+        "median_first_difference_zero_based_among_mismatches": 18
+      },
+      "candidate_cold_vs_warm": {
+        "identical": 0,
+        "total": 15,
+        "median_first_difference_zero_based_among_mismatches": 17
+      },
+      "baseline_cold_vs_warm": {
+        "identical": 0,
+        "total": 15,
+        "median_first_difference_zero_based_among_mismatches": 17
+      }
+    },
+    "perf-unaligned": {
+      "cold_vs_cold": {
+        "identical": 3,
+        "total": 3,
+        "median_first_difference_zero_based_among_mismatches": null
+      },
+      "warm_vs_warm": {
+        "identical": 3,
+        "total": 3,
+        "median_first_difference_zero_based_among_mismatches": null
+      },
+      "candidate_cold_vs_warm": {
+        "identical": 3,
+        "total": 3,
+        "median_first_difference_zero_based_among_mismatches": null
+      },
+      "baseline_cold_vs_warm": {
+        "identical": 3,
+        "total": 3,
+        "median_first_difference_zero_based_among_mismatches": null
+      }
+    }
+  },
+  "fixtures": {
+    "perf": {
+      "contexts": [
+        512,
+        4096,
+        16384
+      ],
+      "concurrency": [
+        1,
+        4
+      ],
+      "repeats": 3,
+      "output_tokens": 256,
+      "fixture_sha256": "19b637b2f61a0c5d2c7b60f97af3a0953c800c772359f7d965ddfea32169eb50",
+      "client_sha256": "06444aabf72a78108181e668075e2d4cc49db67e521434e966eb13ee1f862b8f",
+      "comparison_sha256": {
+        "perf-matched.json": "3bb44e0aff0b0c547550eb8b12e3276aa7c6348eb6595e249e70449c7874e9cb",
+        "perf-historical.json": "20c165363c1c9e59c33f1ace671d464f11b4dfdf67786e974697f376576950d2",
+        "perf-token-comparison.json": "8c9225f66f9b55f6c925a113d8f2e45534f61bd4ee1ef9ebbbd6f67a645e030a"
+      }
+    },
+    "perf-chat": {
+      "contexts": [
+        1024
+      ],
+      "concurrency": [
+        1,
+        4
+      ],
+      "repeats": 3,
+      "output_tokens": 256,
+      "fixture_sha256": "71cce78c73fbf9a97ad256693e46d38d1435f33ebf0e44124171ed20717f74c6",
+      "client_sha256": "06444aabf72a78108181e668075e2d4cc49db67e521434e966eb13ee1f862b8f",
+      "comparison_sha256": {
+        "perf-chat-matched.json": "42a89dbbbd646cee2aafefab40a5b1027eb4a8e4eae4c6a58a65c82784af8084",
+        "perf-chat-historical.json": "28b48da7da86808a25a8b1b84248b171ecc94c32b0eca355fe6ccda1d37af0ef",
+        "perf-chat-token-comparison.json": "6d0282788e1077c5f21fe3ca3b829338874fe669a6572a6fcefe7f13dab7c79d"
+      }
+    },
+    "perf-unaligned": {
+      "contexts": [
+        4097
+      ],
+      "concurrency": [
+        1
+      ],
+      "repeats": 3,
+      "output_tokens": 256,
+      "fixture_sha256": "a5e86d622ba0b3e643a8b18e04f50a7aea3ad4efd1008c46a2641941cda431bc",
+      "client_sha256": "06444aabf72a78108181e668075e2d4cc49db67e521434e966eb13ee1f862b8f",
+      "comparison_sha256": {
+        "perf-unaligned-matched.json": "3cf670b365d00b354c2f1f5528f7837308f1eab25d94a58b9978545e0f3ab509",
+        "perf-unaligned-historical.json": "9d0b33ac2c263a2019a9343fecadb9c248f2e6267e83c87d76cb51257fb3dd4d",
+        "perf-unaligned-token-comparison.json": "cfc619f9476ef8de2953db0e52d1cb685bb4c6b1b7f42cfc4c37b1c855f3ee17"
+      }
+    }
+  },
+  "historical_comparison": {
+    "control": "Archived November 8 v0.33 candidate on Brutus. Token inputs and performance client carry matching SHA-256 digests. The earlier service lacked the explicit chat template.",
+    "decode_sample_row_order": [
+      "fixture",
+      "input_tokens",
+      "concurrency",
+      "cache",
+      "old_decode_tps",
+      "candidate_decode_tps",
+      "candidate_divided_by_old"
+    ],
+    "decode_samples": [
+      [
+        "perf",
+        512,
+        1,
+        "cold",
+        66.0,
+        70.31,
+        1.0651935916551705
+      ],
+      [
+        "perf",
+        16384,
+        4,
+        "cold",
+        18.5,
+        18.51,
+        1.0004749111497402
+      ],
+      [
+        "perf-chat",
+        1024,
+        1,
+        "cold",
+        49.36,
+        52.75,
+        1.0685639149161255
+      ],
+      [
+        "perf-chat",
+        1024,
+        4,
+        "cold",
+        42.2,
+        40.82,
+        0.9672491693429957
+      ],
+      [
+        "perf-unaligned",
+        4097,
+        1,
+        "warm",
+        65.4,
+        68.78,
+        1.0517278984633311
+      ]
+    ],
+    "observation": "Relative to the archived v0.33 run, single-request decode improved 5.2% to 6.9% at the tested 512 to 4,097 token depths. The largest per-request decline was 3.3% on cold four-request chat. Short synthetic token IDs matched on every cold/warm comparison. Historical chat had 3 of 15 cold and 1 of 15 warm cross-version matches.",
+    "review": {
+      "path": "benchmark-results/rebase-v034-20261125/candidate-01-historical-only/review.json",
+      "sha256": "b062a4ebb9ab12d23dbbcb14e54542882276b891d01f736bb1ec443a3cd16aa1"
+    }
+  },
+  "supplemental_mtp": {
+    "scope": "two bounded semantic requests; startup evidence and observed drafting",
+    "context_limit": 4096,
+    "cache_dtype_target_and_draft": "kvarn_k4v4_g128_compact",
+    "speculative_config": {
+      "method": "mtp",
+      "num_speculative_tokens": 2,
+      "kv_cache_dtype": "kvarn_k4v4_g128_compact"
+    },
+    "prefix_caching": false,
+    "host_replay": false,
+    "speculative_counters": {
+      "num_drafts": 6.0,
+      "num_draft_tokens": 12.0,
+      "num_accepted_tokens": 12.0
+    },
+    "semantic_responses": {
+      "text-reuse": "42",
+      "two-images": "SUN 482\nMOON 715"
+    },
+    "term_checks": {
+      "text-reuse": true,
+      "two-images": true
+    },
+    "summary": {
+      "path": "benchmark-results/rebase-v034-20261125/mtp/01/mtp-smoke/summary.json",
+      "sha256": "289d650bb3b63264ca97648d81ddc6e0e7e059f6e8bab1922917871f62c72536"
+    },
+    "engine_log": {
+      "path": "benchmark-results/rebase-v034-20261125/mtp/01/engine.log",
+      "sha256": "d4035e7f19cb30584b381bf13320497b9b4d56e175c83cbda1cbe763f4a002ec"
+    },
+    "engine_manifest": {
+      "path": "benchmark-results/rebase-v034-20261125/mtp/01/manifest.json",
+      "sha256": "4634f1d16ec399186346bb74ec07d248445cfeec38b1a29a0854aa1c884f7ec9"
+    }
+  },
+  "evidence": {
+    "tracked_related_records": [
+      "native-qualification.json",
+      "source-validation.json",
+      "reconciliation.json",
+      "discovery.json",
+      "../rebase-v033-20261108/gpu-qualification.json"
+    ],
+    "local_offline_review": {
+      "path": "benchmark-results/rebase-v034-20261125/release-review.json",
+      "sha256": "a0ee8d3f7a64e41b0ecdb85de0eb742c545bd150416a290ab6e3db7e9ce4f3a9"
+    },
+    "raw_local_directory": "benchmark-results/rebase-v034-20261125",
+    "integrity": "Engine logs were hashed after shutdown. Manifests, benchmark inputs and comparisons carry SHA-256 digests. Raw host files are retained locally."
+  },
+  "limits": [
+    "One host, eager execution, candidate first, and three repetitions per cell. Median throughput and latency are descriptive. Four concurrent requests share capacity.",
+    "The benchmark stops at 256 output tokens. Identical IDs are a strict replay check. Divergent greedy continuations and brief, on-topic responses do not measure complete task quality.",
+    "The K4V4 MTP2 supplement probes two bounded text/image cases. It supplies no long-window or throughput comparison for that profile."
+  ]
+}

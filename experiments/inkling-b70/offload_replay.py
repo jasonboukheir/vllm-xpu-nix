@@ -25,6 +25,9 @@ SERIES = {
 }
 CODE = "ORCHID482"
 BUDGET = 8 * 1024**3
+MODEL_ID = "thinkingmachines/Inkling-2-Mini"
+MODEL_REVISION = "ed40e7da625f594fc9c4990f5f66be24873c22d7"
+SNAPSHOT_ROOT = f"/var/cache/huggingface/hub/models--{MODEL_ID.replace('/', '--')}/snapshots/{MODEL_REVISION}"
 
 
 def parse_metrics(body):
@@ -51,6 +54,10 @@ def diff(after, before, key):
 
 class Trial:
     def __init__(self, args):
+        if args.port not in (18001, 18002):
+            raise ValueError(
+                "Cache-reset tests require an isolated loopback trial on port 18001 or 18002"
+            )
         self.args = args
         self.output = args.output
         self.output.mkdir(parents=True, exist_ok=False)
@@ -101,6 +108,24 @@ class Trial:
         if configs:
             self.doc["offload_configuration"] = configs
         return vals
+
+    def verify_model(self):
+        models = self.request("/v1/models")["data"]
+        if (
+            len(models) != 1
+            or not self.args.model
+            or models[0].get("id") != self.args.model
+        ):
+            raise ValueError(
+                f"Expected the single trial alias {self.args.model!r}, got {models}"
+            )
+        model = models[0]
+        if model.get("root") not in (MODEL_ID, SNAPSHOT_ROOT) or model.get(
+            "revision"
+        ) not in (None, MODEL_REVISION):
+            raise ValueError(f"Unexpected Inkling checkpoint root or revision: {model}")
+        self.doc["models"] = models
+        return model
 
     def reset(self, external):
         deadline = time.monotonic() + 25
@@ -396,18 +421,11 @@ class Trial:
         }
 
     def run(self):
-        models = self.request("/v1/models")["data"]
-        if (
-            [m["id"] for m in models] != [self.args.model]
-            or "inkling" not in self.args.model.lower()
-            or "trial" not in self.args.model.lower()
-        ):
-            raise ValueError(f"Dedicated Inkling trial identity mismatch: {models}")
-        self.doc["models"] = models
+        model = self.verify_model()
         start = self.stats("before")
         self.reset(True)
         if self.args.depth is not None:
-            self.deep_replay(self.args.depth, models[0])
+            self.deep_replay(self.args.depth, model)
         else:
             self.short_replay()
         end = self.stats("after")

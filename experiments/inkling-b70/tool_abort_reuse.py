@@ -315,13 +315,7 @@ def main():
     trial.doc["source_sha256"] = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
     (trial.output / "tool-abort-client.py").write_bytes(Path(__file__).read_bytes())
     try:
-        ids = [item["id"] for item in trial.request("/v1/models")["data"]]
-        if (
-            ids != [args.model]
-            or "inkling" not in args.model.lower()
-            or "trial" not in args.model.lower()
-        ):
-            raise ValueError(f"Expected dedicated Inkling trial model, got {ids}")
+        trial.verify_model()
         if checkpoint(trial, None)["running"] != 0:
             raise ValueError("Other requests are already using this test server")
         tool_result(trial)

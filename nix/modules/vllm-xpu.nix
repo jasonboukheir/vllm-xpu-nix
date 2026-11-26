@@ -233,12 +233,14 @@ let
       };
 
       gpuMemoryUtilization = lib.mkOption {
-        type = lib.types.float;
+        type = lib.types.nullOr lib.types.float;
         default = 0.9;
         description = ''
           Pass `--gpu-memory-utilization <fraction>`. Fraction of XPU
           VRAM vLLM claims for weights, activations, KV pool, and graph
-          capture buffers combined. Higher values grow the KV pool but
+          capture buffers combined. Set to `null` to use vLLM's own
+          sizing. With extensible KV cache, vLLM measures free device
+          memory after warmup. Higher explicit values grow the KV pool but
           starve co-resident services. On a 32 GiB B70 sharing with a
           ~2.2 GiB embedding model and ~0.7 GiB whisper, 0.85 leaves
           ~1.9 GiB headroom; 0.93 over-commits.
@@ -555,6 +557,8 @@ let
         (lib.escapeShellArg inst.servedName)
         "--dtype"
         (lib.escapeShellArg inst.dtype)
+      ]
+      ++ lib.optionals (inst.gpuMemoryUtilization != null) [
         "--gpu-memory-utilization"
         (toString inst.gpuMemoryUtilization)
       ]

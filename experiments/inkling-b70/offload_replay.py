@@ -25,6 +25,7 @@ SERIES = {
 }
 CODE = "ORCHID482"
 BUDGET = 8 * 1024**3
+OUTPUT_TOKENS = 32
 MODEL_ID = "thinkingmachines/Inkling-2-Mini"
 MODEL_REVISION = "ed40e7da625f594fc9c4990f5f66be24873c22d7"
 SNAPSHOT_ROOT = f"/var/cache/huggingface/hub/models--{MODEL_ID.replace('/', '--')}/snapshots/{MODEL_REVISION}"
@@ -143,7 +144,9 @@ class Trial:
         count = n // 24 if varied else 0
         pad = 0 if varied else n - 80
         commodities = ("pencils", "valves", "tiles", "belts", "caps", "gears", "bolts")
-        for _ in range(10):
+        # Each pass renders the complete document once. Fit the estimated row
+        # count in bulk and use a small exact padding adjustment.
+        for attempt in range(1, 11):
             text = (
                 f"The station identifier in this shipping record is {code}. The following are bulk filler notes.\n"
                 + "".join(
@@ -176,6 +179,7 @@ class Trial:
                     "prompt_ids": tokens,
                     "shipping_records": count,
                     "padding_words": pad,
+                    "tokenization_passes": attempt,
                 }
             delta = n - len(tokens)
             if varied and (delta < -pad or delta > 256):
@@ -194,7 +198,7 @@ class Trial:
             "prompt": f["prompt_ids"],
             "temperature": 0,
             "seed": 42,
-            "max_tokens": 32,
+            "max_tokens": OUTPUT_TOKENS,
             "return_token_ids": True,
         }
         if self.args.depth is not None:
@@ -388,12 +392,7 @@ class Trial:
             and (diff(after, before, "host_hit_tokens") or 0) > 0,
         )
 
-    def deep_replay(self, depth, model):
-        limit = model.get("max_model_len")
-        if limit is not None and depth + 32 > limit:
-            raise ValueError(
-                f"{depth} prompt + 32 output tokens exceed served max_model_len {limit}"
-            )
+    def deep_replay(self, depth):
         fixture = self.fixture(depth, code="SABLE471", varied=True)
         other = self.fixture(1024, code="WILLOW286", varied=True)
         (self.output / "fixtures.json").write_text(json.dumps([fixture, other]) + "\n")
@@ -423,10 +422,18 @@ class Trial:
 
     def run(self):
         model = self.verify_model()
+        if self.args.depth is not None:
+            limit = model.get("max_model_len")
+            if type(limit) is not int or self.args.depth + OUTPUT_TOKENS > limit:
+                raise ValueError(
+                    f"{self.args.depth} prompt + {OUTPUT_TOKENS} output tokens "
+                    f"require an advertised max_model_len of at least "
+                    f"{self.args.depth + OUTPUT_TOKENS}, got {limit!r}"
+                )
         start = self.stats("before")
         self.reset(True)
         if self.args.depth is not None:
-            self.deep_replay(self.args.depth, model)
+            self.deep_replay(self.args.depth)
         else:
             self.short_replay()
         end = self.stats("after")
@@ -525,7 +532,7 @@ if __name__ == "__main__":
         "--depth",
         type=int,
         metavar="TOKENS",
-        help="Run one long cold/distract/evict/warm comparison instead of the short suite (16384 to 65536 tokens)",
+        help="Run a long cold/distract/evict/warm comparison for at least 16384 prompt tokens; the served context must also fit 32 generated tokens",
     )
     ap.add_argument(
         "--timeout",
@@ -534,8 +541,8 @@ if __name__ == "__main__":
         help="Long completion socket timeout in seconds (default 1800)",
     )
     args = ap.parse_args()
-    if args.depth is not None and not 16384 <= args.depth <= 65536:
-        ap.error("--depth must be between 16384 and 65536")
+    if args.depth is not None and args.depth < 16384:
+        ap.error("--depth must be at least 16384 prompt tokens")
     if args.timeout <= 0:
         ap.error("--timeout must be positive")
     trial = Trial(args)

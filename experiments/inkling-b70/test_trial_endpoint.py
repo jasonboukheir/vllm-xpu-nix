@@ -50,6 +50,32 @@ class TrialEndpointTest(TestCase):
         with self.assertRaisesRegex(ValueError, "isolated loopback trial"):
             self.trial(port=8000)
 
+    def test_long_replay_requires_advertised_room_before_reset(self):
+        for limit in (None, 245791, "262144"):
+            with self.subTest(limit=limit):
+                trial = self.trial()
+                trial.args.depth = 245760
+                model = {
+                    "id": trial.args.model,
+                    "root": MODEL_ID,
+                    "max_model_len": limit,
+                }
+                trial.request = Mock(return_value={"data": [model]})
+                with self.assertRaisesRegex(ValueError, "at least 245792"):
+                    trial.run()
+                trial.request.assert_called_once_with("/v1/models")
+
+    def test_long_replay_at_advertised_boundary(self):
+        trial = self.trial()
+        trial.args.depth = 245760
+        model = {"id": trial.args.model, "root": MODEL_ID, "max_model_len": 245792}
+        trial.request = Mock(return_value={"data": [model]})
+        trial.deep_replay, trial.reset, trial.stats, trial.finish = (
+            Mock() for _ in range(4)
+        )
+        trial.run()
+        trial.deep_replay.assert_called_once_with(245760)
+
 
 if __name__ == "__main__":
     main()

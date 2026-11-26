@@ -5,6 +5,7 @@
   hostPath,
   hostRev,
   phasedDecode ? null,
+  mixedPrefill ? null,
 }:
 let
   trial = builtins.getFlake ("git+file://" + trialPath + "?rev=" + trialRev);
@@ -15,7 +16,9 @@ let
   runtime = trial.packages.x86_64-linux.vllm-xpu-inkling2-kvarn;
   recipePath = trial.outPath + "/experiments/inkling-b70/brutus-inkling2.nix";
   recipe = import recipePath (
-    { inherit runtime; } // lib.optionalAttrs (phasedDecode != null) { inherit phasedDecode; }
+    { inherit runtime; }
+    // lib.optionalAttrs (phasedDecode != null) { inherit phasedDecode; }
+    // lib.optionalAttrs (mixedPrefill != null) { inherit mixedPrefill; }
   );
   normal = trial.inputs.nixpkgs.lib.nixosSystem {
     system = "x86_64-linux";
@@ -31,9 +34,14 @@ let
   cfg = preview.config;
   manifest = config: config.environment.etc."huggingface/cache-roots.json".source;
   command = config: config.systemd.services.vllm-xpu-chat.serviceConfig.ExecStart;
+  readerEnvironment =
+    config:
+    builtins.intersectAttrs recipe.instance.extraEnvironment config.systemd.services.vllm-xpu-chat.environment;
   catalog = cfg.services.local-inference.models.chat;
 in
 assert command normal.config == command cfg;
+assert readerEnvironment normal.config == recipe.instance.extraEnvironment;
+assert readerEnvironment cfg == recipe.instance.extraEnvironment;
 pkgs.writeText "brutus-inkling-recipe-preview.json" (
   builtins.toJSON {
     runtime = toString runtime;

@@ -21,6 +21,12 @@ def main():
         default=None,
         help="override the recipe's phasedDecode flag for this preview",
     )
+    parser.add_argument(
+        "--mixed",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="override the recipe's mixedPrefill flag for this preview",
+    )
     parser.add_argument("--output", type=Path, required=True, help="new JSON receipt")
     args = parser.parse_args()
     if args.output.exists():
@@ -62,6 +68,8 @@ def main():
     ]
     if args.phased is not None:
         cmd += ["--arg", "phasedDecode", "true" if args.phased else "false"]
+    if args.mixed is not None:
+        cmd += ["--arg", "mixedPrefill", "true" if args.mixed else "false"]
     preview_file = Path(subprocess.check_output(cmd, text=True).strip())
     record = json.loads(preview_file.read_text())
     unit = Path(record["unit"])
@@ -102,6 +110,10 @@ def main():
         "INK2_KVARN_PHASED_DECODE"
     ] != str(int(args.phased)):
         raise ValueError("Unexpected phased reader setting")
+    if args.mixed is not None and record["environment"][
+        "INK2_KVARN_MIXED_PREFILL"
+    ] != str(int(args.mixed)):
+        raise ValueError("Unexpected mixed prefill setting")
     for name, source in record["manifests"].copy().items():
         contents = json.loads(Path(source).read_text())
         root = {

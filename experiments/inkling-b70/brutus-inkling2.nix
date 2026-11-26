@@ -12,6 +12,7 @@
   gpuMemoryUtilization ? 0.95,
   flashPrefill ? true,
   phasedDecode ? true,
+  mixedPrefill ? true,
 }:
 let
   revision = "ed40e7da625f594fc9c4990f5f66be24873c22d7";
@@ -43,6 +44,7 @@ let
       INK2_KVARN_K4V4 = "1";
       INK2_KVARN_FLASH_PREFILL = if flashPrefill then "1" else "0";
       INK2_KVARN_PHASED_DECODE = if phasedDecode then "1" else "0";
+      INK2_KVARN_MIXED_PREFILL = if mixedPrefill then "1" else "0";
       VLLM_KV_CACHE_LAYOUT = "BLNHC";
     };
     extraArgs = [

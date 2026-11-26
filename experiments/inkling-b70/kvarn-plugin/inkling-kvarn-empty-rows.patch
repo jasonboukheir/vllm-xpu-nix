@@ -1,0 +1,55 @@
+From 46c8b40c6f5e4179e220286f0ebc9b6176d092c8 Mon Sep 17 00:00:00 2001
+From: Jason Elie Bou Kheir <5115126+jasonboukheir@users.noreply.github.com>
+Date: Thu, 26 Nov 2026 02:45:04 -0800
+Subject: [PATCH] Initialize padded Inkling KVarN split results during graph
+ capture
+
+Signed-off-by: Jason Elie Bou Kheir <5115126+jasonboukheir@users.noreply.github.com>
+---
+ src/vllm_inkling2_xpu/ops/attention_triton.py | 6 ++++--
+ tests/test_kvarn_attention.py                 | 4 ++--
+ 2 files changed, 6 insertions(+), 4 deletions(-)
+
+diff --git a/src/vllm_inkling2_xpu/ops/attention_triton.py b/src/vllm_inkling2_xpu/ops/attention_triton.py
+index 583a751..f66a847 100644
+--- a/src/vllm_inkling2_xpu/ops/attention_triton.py
++++ b/src/vllm_inkling2_xpu/ops/attention_triton.py
+@@ -262,8 +262,6 @@ def _rel_attention_kernel(
+     req = tl.program_id(2)
+     if K4V4 and HAS_REQ_SLOTS:
+         owner = tl.load(ReqSlots + req)
+-        if owner < 0:
+-            return
+     else:
+         owner = 0
+     q_start = tl.load(CuSeqlensQ + req)
+@@ -272,6 +270,10 @@ def _rel_attention_kernel(
+     if first_tok >= q_len:
+         return
+     seqlen_k = tl.load(SeqLens + req)
++    if K4V4 and HAS_REQ_SLOTS:
++        # Full graph capture can have query rows but no admitted request.
++        # Emit neutral outputs and LSE for every split of these padded rows.
++        seqlen_k = tl.where(owner < 0, 0, seqlen_k)
+     past = seqlen_k - q_len
+ 
+     rows = tl.arange(0, BLOCK_M)
+diff --git a/tests/test_kvarn_attention.py b/tests/test_kvarn_attention.py
+index 2af9ace..7fa5eef 100644
+--- a/tests/test_kvarn_attention.py
++++ b/tests/test_kvarn_attention.py
+@@ -206,9 +206,9 @@ def test_kvarn_rehydrate_and_reordered_slots():
+         result,
+         block_table=table,
+         cache_seqlens=seq,
+-        cu_seqlens_q=cuq,
++        cu_seqlens_q=i32([0, 1, 6, 14, 16]),
+         max_query_len=8,
+-        num_actual_tokens=14,
++        num_actual_tokens=16,
+         req_slots=owners,
+         ring_pages=3,
+         **common,
+-- 
+2.54.0
+

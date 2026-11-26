@@ -49,6 +49,28 @@ def grades(content, expected):
         return False
 
 
+def retrieval_prompt(records, varied):
+    if not varied:
+        return (
+            "The archived catalogue has two authoritative updates. First tag is MANGO-793.\n"
+            + " Archive contains unchanged entries." * records
+            + "\nFinal tag is IVORY-284. Return only a JSON array with the first and final tags."
+        )
+    rows = ["Here is a shipment ledger. Each station record lists its unique seal."]
+    for index in range(records):
+        if index == records // 5:
+            station, seal = "Juniper Vault", "MANGO-793"
+        elif index == records * 4 // 5:
+            station, seal = "Willow Archive", "IVORY-284"
+        else:
+            station, seal = f"Depot {index:05d}", f"R{(index * 7919 + 43) % 999983:06d}"
+        rows.append(f"Shift {index:05d} | station: {station} | seal: {seal}")
+    rows.append(
+        "Return only a JSON array of the seals for Juniper Vault and Willow Archive, in that order."
+    )
+    return "\n".join(rows)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("model")
@@ -56,7 +78,14 @@ def main():
     parser.add_argument("--url", default="http://127.0.0.1:18001")
     parser.add_argument("--expect-draft", action="store_true")
     parser.add_argument("--only-long", type=int, metavar="MIN_PROMPT_TOKENS")
+    parser.add_argument(
+        "--varied-records",
+        action="store_true",
+        help="Embed two tagged records inside a varied ledger for the long retrieval probe.",
+    )
     args = parser.parse_args()
+    if args.varied_records and not args.only_long:
+        parser.error("--varied-records requires --only-long")
     out = args.output
     out.mkdir(parents=True, exist_ok=False)
     ids = [entry["id"] for entry in json.loads(get(args.url + "/v1/models"))["data"]]
@@ -88,12 +117,9 @@ def main():
     ]
     if args.only_long:
         # Calibrate with the active tokenizer and count chat-template overhead.
-        needle = "The archived catalogue has two authoritative updates. First tag is MANGO-793.\n"
-        tail = "\nFinal tag is IVORY-284. Return only a JSON array with the first and final tags."
-        unit = " Archive contains unchanged entries."
-        n = max(1, args.only_long // 4)
-        for _ in range(6):
-            prompt = needle + unit * n + tail
+        n = max(1, args.only_long // (40 if args.varied_records else 16))
+        for _ in range(8):
+            prompt = retrieval_prompt(n, args.varied_records)
             tokenized = post_json(
                 args.url,
                 "/tokenize",
@@ -105,7 +131,7 @@ def main():
             count = tokenized["count"]
             if args.only_long <= count <= args.only_long + 32:
                 break
-            n = max(1, round(n * (args.only_long + 8) / count))
+            n = max(1, round(n * (args.only_long + 16) / count))
         if not args.only_long <= count <= args.only_long + 32:
             raise ValueError(f"Calibration failed, got {count}")
         examples = [("long-retrieval", prompt, ["MANGO-793", "IVORY-284"])]
@@ -141,6 +167,11 @@ def main():
         row["grade"] = (
             grades(result["content"], expected) if expected is not None else None
         )
+        if args.only_long:
+            row["requested_minimum_prompt_tokens"] = args.only_long
+            row["grade"] = (
+                row["grade"] and row["usage"]["prompt_tokens"] >= args.only_long
+            )
         results.append(row)
     if not args.only_long:
         tool = {

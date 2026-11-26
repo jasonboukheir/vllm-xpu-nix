@@ -56,7 +56,17 @@ INKLING_CONTEXT=141312 INKLING_GPU_FRACTION=0.95 ./experiments/inkling-b70/serve
 ./experiments/inkling-b70/probe_inkling_b70.py inkling-trial /tmp/inkling-long --expect-draft --only-long 140000
 ```
 
+Add `--varied-records` to bury both target seals among distinct ledger entries at 20% and 80% of the prompt.
+
 For other long-context checks, set `INKLING_CONTEXT`, `INKLING_KV_DTYPE=fp8`, `INKLING_GPU_FRACTION` and `INKLING_BATCH_TOKENS` as needed. The probe's `--only-long N` calibrates a two-tag retrieval prompt using the server's tokenizer and sends it through the chat API. Allow room for chat formatting and generation above N. A successful startup alone only verifies the configured limit.
+
+## Measurements on Brutus
+
+The card ran at its configured 230 W limit. On an identical short chat prompt with a 1,024-token output budget, the two-run median decode rates were 21.0 tok/s eager, 55.2 with full decode graphs, 68.8 with graphs and DSpark, and 86.5 with CUTLASS and DSpark. The production Qwen INT4 stack with K4V2 and DFlash2 measured 53.7 tok/s. Both models spent this particular budget on reasoning. Each model served one client during these measurements.
+
+On the separate six-task low-effort screen with a 4,096-token limit, Inkling completed five correct JSON answers in 56.6 seconds total. Qwen took 136.1 seconds, returned two correct bare JSON answers, and returned two additional correct answers inside Markdown code fences. Both hit the generation cap on scheduling. The FP8 sparse configuration retrieved both tags from a 140,010-token prompt and both buried seals from a 245,781-token ledger. The latter took 129.8 seconds to first token and 135.9 seconds through the final answer. The 8K multimodal CUTLASS profile passed single- and two-image requests.
+
+Use the six-case client and logits comparison with the same cache format, prefix policy and generation parameters when reproducing compression results.
 
 ## KVarN port
 

@@ -4,6 +4,8 @@ The `vllm-xpu-inkling2-kvarn` package runs Mini with its bundled seven-token DSp
 
 ## Results on Brutus
 
+The autosized xpu-v2.1.0 service reported 328,134 shared tokens and decoded at 78.22 tok/s on the short probe. On the 245,760-token replay, time to first token fell from 129.25 s cold to 1.07 s after restoring 245,759 tokens from RAM with zero GPU-cache hits. Output token IDs matched. Four simultaneous clients, tool use and both vision probes also passed. The following table reports the fixed-budget comparison. [Release qualification](updates/inkling-xpu-v210-20261126/qualification.json)
+
 | Single-card workload | Brutus Qwen3.8-27B-INT4 + DFlash2 | Inkling 2 Mini + DSpark + K4V4 |
 | --- | ---: | ---: |
 | Short decode, median of two 1,024-token runs | 53.74 tok/s | 78.25 tok/s |
@@ -107,7 +109,7 @@ KVarN packs sealed 128-token pages of the eight full target-attention layer visi
 
 Block-outermost physical layout (`BLNHC`) lets the allocator reserve packed page sizes. At 141,312 tokens the matched one-sequence planner reports 1.7965 GiB for K4V4 and 2.8103 GiB for FP8 before bounded staging. The Xe2 virtual-memory backend supports the extensible allocator. For long prefill the full recipe enables `INK2_KVARN_FLASH_PREFILL=1` to gather bounded chunks for native flash attention and merge older and recent history using their log-sum-exp. The reference checks cover relative-only, single-window and multiple-window prefill.
 
-The host connector uses vLLM's `CPUOffloadingSpec` with active-only GPU retention. The RAM cache lives for the serving process. The replay tests exercise a live engine across requests and use the host-transfer and device-hit counters to establish where the prefix came from.
+The host connector uses vLLM's `CPUOffloadingSpec` with active-only GPU retention. The xpu-v2.1.0 KVarN package submits XPU cache loads and stores on the current model stream and tracks completion with events. The fixed-budget comparisons above used the same plugin and native kernels with separate transfer streams. The RAM cache lives for the serving process. The replay tests exercise a live engine across requests and use the host-transfer and device-hit counters to establish where the prefix came from.
 
 The two-phase decode reader (`INK2_KVARN_PHASED_DECODE=1`) scans the compact prefix in the rotated KVarN frame, changes basis once, and continues through the dense tail with the same FP32 softmax state. The B70 implementation uses 32-token tiles, eight warps and the normal split planner for queries up to eight tokens. Interleaved captured-graph measurements at 245,760 tokens reduced one full attention layer's median eight-token verification time from 9.09 to 5.37 ms. Shuffled pages and reordered request slots passed the independent dense-attention reference.
 

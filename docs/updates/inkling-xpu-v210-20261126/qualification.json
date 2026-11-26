@@ -1,0 +1,78 @@
+{
+  "model": "thinkingmachines/Inkling-2-Mini",
+  "alias": "sunny-chat",
+  "model_revision": "ed40e7da625f594fc9c4990f5f66be24873c22d7",
+  "unit": "/nix/store/532ip53x29acw6kxfhj45cjg5xfjw28b-unit-vllm-xpu-chat.service/vllm-xpu-chat.service",
+  "runtime": "/nix/store/01vzngwyvrzya8r1d4akwndr674fglz0-vllm-xpu-inkling2-kvarn",
+  "native_qualification_commit": "07975967dddb248bc2b811c2363f8b3c6c6ede71",
+  "test_overrides": {
+    "port": 18001,
+    "HOME_and_VLLM_CACHE_ROOT": "/tmp/brutus-inkling-recipe-compile-cache"
+  },
+  "gpu_memory_utilization": null,
+  "explicit_kv_cache_memory_bytes": null,
+  "extensible_kv_cache": true,
+  "configured_context": 262144,
+  "reported_capacity": 328134,
+  "post_warmup": "7.82 GiB free, 0.0 GiB committed to the KV cache, 2.27 GiB kept for transient activations (1.57 GiB allocated at peak, 2.27 GiB of torch reservation growth); 2817 KV cache blocks (4.38 GiB) fit within the requested 30.3 GiB. Torch may reserve up to 22.77 GiB.",
+  "short_chat_1024_token_runs": [
+    78.24012448374646,
+    78.19004163023457
+  ],
+  "median_short_decode_tok_s": 78.21508305699052,
+  "matched_qwen_int4_decode_tok_s": 53.73590257771971,
+  "draft_active": true,
+  "tool_use": true,
+  "vision": [
+    "image-a",
+    "two-images"
+  ],
+  "four_concurrent_answers_correct": true,
+  "replays": [
+    {
+      "prompt_tokens": 5314,
+      "restored_tokens": 5248,
+      "gpu_hit_tokens": 0,
+      "answer": "AMBER437"
+    },
+    {
+      "prompt_tokens": 3103,
+      "restored_tokens": 3072,
+      "gpu_hit_tokens": 0,
+      "answer": "INDIGO236"
+    },
+    {
+      "prompt_tokens": 3554,
+      "restored_tokens": 3456,
+      "gpu_hit_tokens": 0,
+      "answer": "PINE752"
+    },
+    {
+      "prompt_tokens": 11323,
+      "restored_tokens": 11264,
+      "gpu_hit_tokens": 0,
+      "answer": "ZEBRA673"
+    }
+  ],
+  "deep": {
+    "prompt_tokens": 245760,
+    "cold_first_token_seconds": 129.24799235002138,
+    "warm_first_token_seconds": 1.0717071510152891,
+    "host_restored_tokens": 245759.0,
+    "gpu_hit_tokens": 0.0,
+    "load_bytes": 3318939648.0,
+    "exact_output_ids_matched": true,
+    "cold_seconds": 129.57412277895492,
+    "warm_seconds": 1.380963571020402
+  },
+  "receipt_sha256": {
+    "replay-AMBER437.json": "c4f1e6e2df348f5e4c7d1358ec5f9c5bae94c28d8dffa66aefaec44eaf5e4c53",
+    "replay-INDIGO236.json": "384d36f5eab744762f1b2f14b32405c60b0aadcc0b57731aba5bf36f9d5b19b6",
+    "replay-PINE752.json": "5216d6be7850ed5fb3d9acf9156380fe019a06e6b8214b2a13efc5304a579f9d",
+    "replay-ZEBRA673.json": "55511c2413b7fb32b62d72495ef517c4a0761b729974bafc112842db9238b0ea",
+    "short/summary.json": "8d9a6a8393e9549bc7996b5a3d0e30c37eeb14d989c9c4061a48c0a3049f9eeb",
+    "vision.json": "665fb5dec1175342262e606cb0dce7f2d9372481f93082b6f731981926bd38b0",
+    "four-clients/summary.json": "26df08df5d061853db6ce0e3cb1a93a7ea1f3cbb363cc7b8fbd53a900ab0c9c9",
+    "245k/summary.json": "d5ac65216931b7e7fac5d63dbfcdc1ec652537d3db92d990cae8aabca59bf9ee"
+  }
+}

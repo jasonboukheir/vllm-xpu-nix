@@ -14,6 +14,7 @@ container, no host-managed `~/.local/lib/python*/site-packages`, no
 
 ## Documentation
 
+- [xpu-v2.1.0 coordinated release manifest](docs/releases/xpu-v2.1.0.json)
 - [Inkling 2 Mini on one B70, including KVarN, DSpark and RAM prefix caching](docs/inkling-b70.md)
 - [xpu-v1.12.2 manifest: KVarN prefix caching in system RAM](docs/releases/xpu-v1.12.2.json)
 - [Prefix-cache memory sizing and capacity](docs/kvarn-prefix-cache.md)

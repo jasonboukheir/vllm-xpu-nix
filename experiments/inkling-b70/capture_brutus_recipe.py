@@ -28,6 +28,12 @@ def main():
     trial = args.trial.resolve(strict=True)
     host = args.host.resolve(strict=True)
     expr = Path(__file__).with_name("evaluate-brutus-recipe.nix").resolve()
+
+    def revision(path):
+        return subprocess.check_output(
+            ["git", "-C", str(path), "rev-parse", "HEAD"], text=True
+        ).strip()
+
     cmd = [
         "nix",
         "build",
@@ -47,6 +53,12 @@ def main():
         "--argstr",
         "hostPath",
         str(host),
+        "--argstr",
+        "trialRev",
+        revision(trial),
+        "--argstr",
+        "hostRev",
+        revision(host),
     ]
     if args.phased is not None:
         cmd += ["--arg", "phasedDecode", "true" if args.phased else "false"]

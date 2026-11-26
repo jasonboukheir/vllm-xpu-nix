@@ -1,12 +1,14 @@
 # Realize only the store paths referenced by the selected unit and manifests.
 {
   trialPath,
+  trialRev,
   hostPath,
+  hostRev,
   phasedDecode ? null,
 }:
 let
-  trial = builtins.getFlake ("git+file://" + trialPath);
-  hostFlake = builtins.getFlake ("git+file://" + hostPath);
+  trial = builtins.getFlake ("git+file://" + trialPath + "?rev=" + trialRev);
+  hostFlake = builtins.getFlake ("git+file://" + hostPath + "?rev=" + hostRev);
   host = hostFlake.nixosConfigurations.brutus;
   pkgs = host.pkgs;
   inherit (pkgs) lib;
@@ -65,8 +67,8 @@ pkgs.writeText "brutus-inkling-recipe-preview.json" (
         supportedReasoningEfforts
         ;
     };
-    hostRevision = hostFlake.rev or hostFlake.dirtyRev;
-    trialRevision = trial.rev or trial.dirtyRev;
+    hostRevision = hostFlake.rev;
+    trialRevision = trial.rev;
     recipeSha256 = builtins.hashFile "sha256" recipePath;
   }
 )

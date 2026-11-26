@@ -1,0 +1,183 @@
+diff --git a/src/vllm_inkling2_xpu/ops/kvarn_prefill.py b/src/vllm_inkling2_xpu/ops/kvarn_prefill.py
+new file mode 100644
+index 0000000..49325d8
+--- /dev/null
++++ b/src/vllm_inkling2_xpu/ops/kvarn_prefill.py
+@@ -0,0 +1,177 @@
++# SPDX-License-Identifier: Apache-2.0
++"""Chunked flash prefill from compact K4V4 pages using one bounded BF16 window."""
++
++import torch
++import triton
++import triton.language as tl
++
++from .attention import gate_sink
++from .attention_prefill import rel_attention
++from .attention_triton import MODE_OUT_LSE, _kvarn_key, _kvarn_value
++from .kvarn_encode import _rotate_heads
++
++
++@triton.jit
++def _gather_pages(
++    Staging,
++    Packed,
++    Table,
++    Owners,
++    DestK,
++    DestV,
++    start_page,
++    sealed_pages,
++    ring: tl.constexpr,
++    s_slot: tl.constexpr,
++    s_page: tl.constexpr,
++    s_token: tl.constexpr,
++    s_head: tl.constexpr,
++    p_page: tl.constexpr,
++    p_head: tl.constexpr,
++    t_page: tl.constexpr,
++    out_page: tl.constexpr,
++    out_token: tl.constexpr,
++    out_head: tl.constexpr,
++    IS_V: tl.constexpr,
++):
++    local_page = tl.program_id(0)
++    page = local_page + start_page
++    head = tl.program_id(1)
++    i = tl.arange(0, 128)
++    if page < sealed_pages:
++        physical = tl.load(Table + page * t_page)
++        record = Packed + physical.to(tl.int64) * p_page + head * p_head
++        if IS_V:
++            rotated = _kvarn_value(record, i, i)
++        else:
++            rotated = tl.trans(_kvarn_key(record, i, i))
++        values = _rotate_heads(rotated)
++    else:
++        slot = tl.load(Owners)
++        base = slot.to(tl.int64) * s_slot + (page % ring) * s_page + head * s_head
++        if IS_V:
++            base += 128
++        values = tl.load(Staging + base + i[:, None] * s_token + i[None, :]).to(
++            tl.float32
++        )
++    linear = (
++        local_page * out_page + head * out_head + i[:, None] * out_token + i[None, :]
++    )
++    if IS_V:
++        tl.store(DestV + linear, values)
++    else:
++        tl.store(DestK + linear, values)
++
++
++def _gather(stage, packed, md, start, sealed, dest_k, dest_v):
++    count = dest_k.shape[0]
++    for value in (False, True):
++        _gather_pages[(count, 8)](
++            stage,
++            packed,
++            md.block_table,
++            md.kvarn_req_slots,
++            dest_k,
++            dest_v,
++            start,
++            sealed,
++            stage.shape[1],
++            *stage.stride()[:4],
++            packed.stride(0),
++            packed.stride(1),
++            md.block_table.stride(1),
++            *dest_k.stride()[:3],
++            value,
++            num_warps=8,
++        )
++
++
++def packed_flash_prefill(
++    md, stage, packed, q, rel_logits, gate, sinks, output, scale, extent
++):
++    """Return True when all real rows were handled with the single-request prefill path."""
++    from ..attention import _merge_lse, _sdpa_flash, _sdpa_prefill_scratch
++
++    seq = getattr(md, "single_prefill_seq_len", None)
++    nt = md.num_actual_tokens
++    if seq is None or len(md.seq_lens) != 1 or nt < 128 or md.max_query_len != nt:
++        return False
++    page = 128
++    pages = triton.cdiv(seq, page)
++    if pages > md.block_table.shape[1]:
++        return False
++    scratch = _sdpa_prefill_scratch(q.device, 8, page, 128)
++    if scratch is None:
++        return False
++    # All older prefix windows are causally visible and outside the relative bias.
++    past = seq - nt
++    sealed = past // page
++    prefix_pages = max(0, past - extent + 1) // page
++    win = scratch.shape[2] // page
++    sk, sv = scratch.unbind()
++    q5 = q[:nt].permute(1, 0, 2).view(8, 3, nt, 128)
++    out = torch.empty((nt, 24, 128), dtype=torch.float32, device=q.device)
++    lse = torch.empty((24, nt), dtype=torch.float32, device=q.device)
++    tmp = torch.empty_like(out)
++    tmp_lse = torch.empty_like(lse)
++    have_output = False
++
++    for start in range(0, prefix_pages, win):
++        count = min(win, prefix_pages - start)
++        k, v = (
++            buf[:, : count * page].view(8, count, page, 128).permute(1, 2, 0, 3)
++            for buf in (sk, sv)
++        )
++        _gather(stage, packed, md, start, sealed, k, v)
++        o5, l5 = _sdpa_flash(
++            q5,
++            sk[:, : count * page].unsqueeze(1),
++            sv[:, : count * page].unsqueeze(1),
++            scale,
++        )
++        partial = o5.reshape(24, nt, 128).permute(1, 0, 2)
++        plse = l5.reshape(24, nt)
++        if have_output:
++            _merge_lse(out, lse, partial, plse, nt)
++        else:
++            out.copy_(partial)
++            lse.copy_(plse)
++            have_output = True
++
++    # Reinterpret the same scratch as interleaved K/V pages to enable the
++    # plugin's native Xe2 relative-attention prefill kernel on the recent tail.
++    interleaved = scratch.view(win, 8, page, 256)
++    for start in range(prefix_pages, pages, win):
++        count = min(win, pages - start)
++        k, v = interleaved[:count].transpose(1, 2).split(128, dim=-1)
++        _gather(stage, packed, md, start, sealed, k, v)
++        table = (
++            torch.arange(start + count, dtype=torch.int32, device=q.device).unsqueeze(0)
++            - start
++        )
++        target, target_lse = (tmp, tmp_lse) if have_output else (out, lse)
++        rel_attention(
++            q[:nt],
++            k,
++            v,
++            target,
++            target_lse,
++            rel_logits,
++            block_table=table,
++            cache_seqlens=md.seq_lens,
++            cu_seqlens_q=md.query_start_loc,
++            max_query_len=nt,
++            softmax_scale=scale,
++            window=0,
++            num_splits=1,
++            mode=MODE_OUT_LSE,
++            k_lo_tok=start * page,
++            k_hi_tok=(start + count) * page,
++        )
++        if have_output:
++            _merge_lse(out, lse, tmp, tmp_lse, nt)
++        have_output = True
++    gate_sink(out, gate[:nt], lse.t(), sinks[:nt], output[:nt])
++    if output.shape[0] > nt:
++        output[nt:].zero_()
++    return True

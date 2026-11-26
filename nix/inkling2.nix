@@ -175,6 +175,8 @@ let
     patches = (old.patches or [ ]) ++ [
       ../experiments/inkling-b70/kvarn-plugin/inkling-kvarn-encoder.patch
       ../experiments/inkling-b70/kvarn-plugin/inkling-kvarn-k4v4.patch
+      ../experiments/inkling-b70/kvarn-plugin/inkling-kvarn-flash-prefill.patch
+      ../experiments/inkling-b70/kvarn-plugin/inkling-kvarn-flash-hook.patch
     ];
     postInstall = (old.postInstall or "") + ''
       ln -s ${(plugin true)}/${python312.sitePackages}/vllm_inkling2_xpu/ops/_inkling_nvfp4_xe2*.so \

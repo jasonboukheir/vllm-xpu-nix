@@ -1,0 +1,91 @@
+From da4f86706ecebb3342225ea9b43c2df59ca0df1a Mon Sep 17 00:00:00 2001
+From: Jason Elie Bou Kheir <5115126+jasonboukheir@users.noreply.github.com>
+Date: Thu, 26 Nov 2026 02:40:35 -0800
+Subject: [PATCH] Route eligible KVarN prefills to the optional flash reader
+ and retain sealed prompt pages
+
+Signed-off-by: Jason Elie Bou Kheir <5115126+jasonboukheir@users.noreply.github.com>
+---
+ src/vllm_inkling2_xpu/attention.py            | 17 +++++++++++++++++
+ src/vllm_inkling2_xpu/ops/attention_triton.py |  4 +++-
+ tests/test_kvarn_attention.py                 | 14 ++++++++++++++
+ 3 files changed, 34 insertions(+), 1 deletion(-)
+
+diff --git a/src/vllm_inkling2_xpu/attention.py b/src/vllm_inkling2_xpu/attention.py
+index d8fd644..a0fd373 100644
+--- a/src/vllm_inkling2_xpu/attention.py
++++ b/src/vllm_inkling2_xpu/attention.py
+@@ -235,6 +235,7 @@ class Inkling2AttentionBackend(FlashAttentionBackend):
+ 
+ 
+ _KVARN = os.environ.get("INK2_KVARN_K4V4", "0") == "1"
++_KVARN_FLASH_PREFILL = os.environ.get("INK2_KVARN_FLASH_PREFILL", "0") == "1"
+ _KVARN_RECORD = 17920  # D128/G128, canonical K4V4 payload plus six fp16 vectors.
+ _logger = init_logger(__name__)
+ 
+@@ -777,6 +778,22 @@ class Inkling2Attention(nn.Module, AttentionLayerBase):
+                     md.kvarn_req_slots,
+                     preserve_pages,
+                 )
++                if _KVARN_FLASH_PREFILL:
++                    from .ops.kvarn_prefill import packed_flash_prefill
++
++                    if packed_flash_prefill(
++                        md,
++                        staging,
++                        kv_cache,
++                        clipped_q,
++                        rel_logits,
++                        gate,
++                        sinks,
++                        output,
++                        self.scaling,
++                        self.rel_extent,
++                    ):
++                        return
+                 rel_decode_attention(
+                     clipped_q,
+                     key_cache,
+diff --git a/src/vllm_inkling2_xpu/ops/attention_triton.py b/src/vllm_inkling2_xpu/ops/attention_triton.py
+index 7bd7a8a..583a751 100644
+--- a/src/vllm_inkling2_xpu/ops/attention_triton.py
++++ b/src/vllm_inkling2_xpu/ops/attention_triton.py
+@@ -157,7 +157,9 @@ def _rehydrate_partial(
+     head = tl.program_id(1)
+     # Native whole-page prefix hits can replay the final matched token to
+     # produce logits. Keep those canonical sealed bytes across repeated hits.
+-    if head == 0 and tl.program_id(2) == 0 and past % 128 == 127 and qlen == 1:
++    # A one-real-token prompt replay can include seven draft placeholders
++    # in its query length. They belong to the next page.
++    if head == 0 and tl.program_id(2) == 0 and past % 128 == 127:
+         if tl.load(IsPrefill + req):
+             tl.store(Preserve + req, page)
+     token = tl.program_id(2) * N + tl.arange(0, N)
+diff --git a/tests/test_kvarn_attention.py b/tests/test_kvarn_attention.py
+index fac7d50..2af9ace 100644
+--- a/tests/test_kvarn_attention.py
++++ b/tests/test_kvarn_attention.py
+@@ -149,6 +149,20 @@ def test_kvarn_rehydrate_and_reordered_slots():
+         staging, packed, table, seq, cuq, owners, cookies, tags, h, prefill
+     )
+     assert preserve.cpu().tolist() == [7, -1, -1, -1]
++    # DSpark may schedule seven dummy draft rows after the final prompt token.
++    padded_preserve = kvarn_rehydrate(
++        staging,
++        packed,
++        table,
++        i32([1031, 8, 137, 0]),
++        i32([0, 8, 13, 21, 21]),
++        owners,
++        cookies,
++        tags,
++        h,
++        prefill,
++    )
++    assert padded_preserve.cpu().tolist() == [7, -1, -1, -1]
+     # Cold 1023-token prefix reload, and a different request at offset 1.
+     for owner, page, end, physical in ((2, 7, 127, 2), (3, 1, 1, 3)):
+         restored = staging[owner, page % 3]
+-- 
+2.54.0
+

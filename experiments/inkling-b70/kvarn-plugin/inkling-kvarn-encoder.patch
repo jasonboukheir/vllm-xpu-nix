@@ -1,9 +1,9 @@
 diff --git a/src/vllm_inkling2_xpu/ops/kvarn_encode.py b/src/vllm_inkling2_xpu/ops/kvarn_encode.py
 new file mode 100644
-index 0000000..8e98188
+index 0000000..9c3c1de
 --- /dev/null
 +++ b/src/vllm_inkling2_xpu/ops/kvarn_encode.py
-@@ -0,0 +1,174 @@
+@@ -0,0 +1,220 @@
 +# SPDX-License-Identifier: Apache-2.0
 +# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 +"""Encode completed D128/G128 target pages in the released compact K4V4 format."""
@@ -79,6 +79,12 @@ index 0000000..8e98188
 +    BlockTable,
 +    SeqLens,
 +    CuQLens,
++    ReqSlots,
++    PreservePages,
++    HAS_PRESERVED: tl.constexpr,
++    src_slot: tl.constexpr,
++    num_slots: tl.constexpr,
++    table_row: tl.constexpr,
 +    ring_pages: tl.constexpr,
 +    src_page: tl.constexpr,
 +    src_token: tl.constexpr,
@@ -88,18 +94,32 @@ index 0000000..8e98188
 +    table_stride: tl.constexpr,
 +    IS_VALUE: tl.constexpr,
 +):
-+    seq_len = tl.load(SeqLens)
-+    past = seq_len - (tl.load(CuQLens + 1) - tl.load(CuQLens))
++    req = tl.program_id(2)
++    slot = tl.load(ReqSlots + req)
++    if (slot < 0) | (slot >= num_slots):
++        return
++    seq_len = tl.load(SeqLens + req)
++    qlen = tl.load(CuQLens + req + 1) - tl.load(CuQLens + req)
++    if (qlen <= 0) | (qlen > seq_len):
++        return
++    past = seq_len - qlen
 +    page = past // 128 + tl.program_id(0)
 +    # Handles padding, speculative rollback and graph replay without host reads.
 +    if page >= seq_len // 128:
 +        return
-+    physical = tl.load(BlockTable + page * table_stride)
++    if HAS_PRESERVED:
++        if page == tl.load(PreservePages + req):
++            return
++    physical = tl.load(BlockTable + req * table_row + page * table_stride)
 +    if physical <= 0:
 +        return
 +    head = tl.program_id(1)
 +    i = tl.arange(0, 128)
-+    offset = (page % ring_pages).to(tl.int64) * src_page + head * src_head
++    offset = (
++        slot.to(tl.int64) * src_slot
++        + (page % ring_pages).to(tl.int64) * src_page
++        + head * src_head
++    )
 +    if IS_VALUE:
 +        offset += 128
 +    values = tl.load(Staging + offset + i[:, None] * src_token + i[None, :]).to(
@@ -142,9 +162,15 @@ index 0000000..8e98188
 +    seq_lens: torch.Tensor,
 +    cu_query_lens: torch.Tensor,
 +    max_query_len: int,
++    req_slots: torch.Tensor,
++    preserve_pages: torch.Tensor | None = None,
 +):
 +    """Pack physical pages completed in this XPU forward, including verification."""
-+    if staging.shape[1:] != (128, 8, 256) or packed.shape[1:] != (8, 1, 17920):
++    if (
++        staging.ndim != 5
++        or staging.shape[2:] != (128, 8, 256)
++        or packed.shape[1:] != (8, 1, 17920)
++    ):
 +        raise ValueError(f"Unexpected K4V4 geometry: {staging.shape}, {packed.shape}")
 +    if staging.stride(-1) != 1 or packed.stride(-1) != 1:
 +        raise ValueError(
@@ -152,15 +178,29 @@ index 0000000..8e98188
 +        )
 +    if staging.dtype != torch.bfloat16 or packed.dtype != torch.uint8:
 +        raise ValueError("KVarN requires BF16 staging and byte-packed records")
++    n = seq_lens.numel()
 +    if (
-+        block_table.shape[0] != 1
-+        or seq_lens.shape != (1,)
-+        or cu_query_lens.shape != (2,)
++        block_table.ndim != 2
++        or block_table.shape[0] < n
++        or req_slots.shape != (n,)
++        or cu_query_lens.shape != (n + 1,)
 +    ):
-+        raise ValueError("KVarN single-sequence encoder received batched metadata")
-+    if max_query_len == 0:
++        raise ValueError("KVarN batch metadata shapes disagree")
++    if (
++        seq_lens.stride(0) != 1
++        or req_slots.stride(0) != 1
++        or cu_query_lens.stride(0) != 1
++    ):
++        raise ValueError("KVarN per-request metadata must be contiguous")
++    if preserve_pages is not None and (
++        preserve_pages.shape != (n,) or preserve_pages.stride(0) != 1
++    ):
++        raise ValueError(
++            "KVarN preserved-page metadata must be contiguous and per-request"
++        )
++    if max_query_len == 0 or n == 0:
 +        return
-+    grid = (triton.cdiv(max_query_len, 128), 8)
++    grid = (triton.cdiv(max_query_len, 128), 8, n)
 +    for is_value in (False, True):
 +        _encode_record[grid](
 +            staging,
@@ -168,10 +208,16 @@ index 0000000..8e98188
 +            block_table,
 +            seq_lens,
 +            cu_query_lens,
-+            staging.shape[0],
++            req_slots,
++            req_slots if preserve_pages is None else preserve_pages,
++            preserve_pages is not None,
 +            staging.stride(0),
++            staging.shape[0],
++            block_table.stride(0),
++            staging.shape[1],
 +            staging.stride(1),
 +            staging.stride(2),
++            staging.stride(3),
 +            packed.stride(0),
 +            packed.stride(1),
 +            block_table.stride(1),
@@ -180,10 +226,10 @@ index 0000000..8e98188
 +        )
 diff --git a/tests/test_kvarn_encode.py b/tests/test_kvarn_encode.py
 new file mode 100644
-index 0000000..148c01d
+index 0000000..6106ac2
 --- /dev/null
 +++ b/tests/test_kvarn_encode.py
-@@ -0,0 +1,120 @@
+@@ -0,0 +1,158 @@
 +# SPDX-License-Identifier: Apache-2.0
 +"""Compare physical Inkling K4V4 records with the released fork's CPU codec."""
 +
@@ -269,7 +315,7 @@ index 0000000..148c01d
 +        ).max() < 0.003
 +
 +
-+def test_completed_inkling_pages():
++def reference_device():
 +    fork = os.environ.get("KVARN_FORK_SOURCE")
 +    if not fork:
 +        raise SkipTest(
@@ -283,6 +329,11 @@ index 0000000..148c01d
 +    device = "cpu" if interpreter else "xpu"
 +    if not interpreter and not torch.xpu.is_available():
 +        raise SkipTest("Requires an XPU or TRITON_INTERPRET=1")
++    return device
++
++
++def test_completed_inkling_pages():
++    device = reference_device()
 +    rng = torch.Generator().manual_seed(1247)
 +    stages = torch.randn(3, 128, 8, 256, generator=rng).to(torch.bfloat16)
 +    stages[1, :, 0] = 0
@@ -291,10 +342,11 @@ index 0000000..148c01d
 +        :, ::2
 +    ]
 +    dst = torch.full((5, 8, 1, 17952), 173, dtype=torch.uint8, device=device)
-+    kv = stages.to(device)
++    req_slots = torch.tensor([0], dtype=torch.int32, device=device)
++    kv = stages.to(device).unsqueeze(0)
 +    seq = torch.tensor([128 * 3 + 2], dtype=torch.int32, device=device)
 +    qstart = torch.tensor([0, 128 * 2 + 7], dtype=torch.int32, device=device)
-+    encode_complete_pages(kv, dst[..., :17920], slots, seq, qstart, 263)
++    encode_complete_pages(kv, dst[..., :17920], slots, seq, qstart, 263, req_slots)
 +    actual = dst.cpu()
 +    assert_compatible(actual[3, :, 0, :17920], expected_record(stages[1]))
 +    assert_compatible(actual[1, :, 0, :17920], expected_record(stages[2]))
@@ -302,5 +354,37 @@ index 0000000..148c01d
 +    assert (actual[..., 17920:] == 173).all()
 +    seq.fill_(382)
 +    qstart[1] = 4
-+    encode_complete_pages(kv, dst[..., :17920], slots, seq, qstart, 8)
++    encode_complete_pages(kv, dst[..., :17920], slots, seq, qstart, 8, req_slots)
 +    assert torch.equal(dst.cpu(), actual)
++
++
++def test_shuffled_request_slots():
++    device = reference_device()
++    rng = torch.Generator().manual_seed(1849)
++    stages = torch.randn(4, 2, 128, 8, 256, generator=rng).to(torch.bfloat16)
++    packed = torch.full((9, 8, 1, 17920), 101, device=device, dtype=torch.uint8)
++    # GPU row order changes across steps. The first two active rows finish a
++    # page on distinct stable slots, row 2 only extends an incomplete page.
++    # A padded row carries a poison entry to catch accidental writes.
++    table = torch.tensor(
++        [[0, 4, 0, 0], [0, 0, 0, 7], [0, 0, 0, 1], [2, 2, 2, 2]],
++        device=device,
++        dtype=torch.int32,
++    )
++    slots = torch.tensor([3, 1, 0, -1], device=device, dtype=torch.int32)
++    seq = torch.tensor([260, 513, 470, 128], device=device, dtype=torch.int32)
++    cuq = torch.tensor([0, 8, 16, 24, 32], device=device, dtype=torch.int32)
++    encode_complete_pages(stages.to(device), packed, table, seq, cuq, 8, slots)
++    actual = packed.cpu()
++    assert_compatible(actual[4, :, 0], expected_record(stages[3, 1]))
++    assert_compatible(actual[7, :, 0], expected_record(stages[1, 1]))
++    assert (actual[[0, 1, 2, 3, 5, 6, 8]] == 101).all()
++    # Last-logit replay at an already sealed cached page must preserve every
++    # stored byte even when its staging ring has just been reconstructed.
++    packed.fill_(123)
++    preserve = torch.tensor([1, -1, -1, -1], dtype=torch.int32, device=device)
++    encode_complete_pages(
++        stages.to(device), packed, table, seq, cuq, 8, slots, preserve
++    )
++    assert (packed[4] == 123).all()
++    assert_compatible(packed[7, :, 0].cpu(), expected_record(stages[1, 1]))

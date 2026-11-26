@@ -1,13 +1,36 @@
+From eb3372707793743db73e972d661b0158ff0f9f6a Mon Sep 17 00:00:00 2001
+From: Jason Elie Bou Kheir <5115126+jasonboukheir@users.noreply.github.com>
+Date: Thu, 26 Nov 2026 02:39:01 -0800
+Subject: [PATCH] Serve Inkling full-attention history from compact KVarN pages
+
+Signed-off-by: Jason Elie Bou Kheir <5115126+jasonboukheir@users.noreply.github.com>
+---
+ src/vllm_inkling2_xpu/attention.py            | 230 +++++++++++++-
+ src/vllm_inkling2_xpu/ops/attention.py        |  20 +-
+ src/vllm_inkling2_xpu/ops/attention_triton.py | 286 +++++++++++++++++-
+ tests/test_kvarn_attention.py                 | 225 ++++++++++++++
+ 4 files changed, 743 insertions(+), 18 deletions(-)
+ create mode 100644 tests/test_kvarn_attention.py
+
 diff --git a/src/vllm_inkling2_xpu/attention.py b/src/vllm_inkling2_xpu/attention.py
-index aa3139c..9fa6a0f 100644
+index aa3139c..d8fd644 100644
 --- a/src/vllm_inkling2_xpu/attention.py
 +++ b/src/vllm_inkling2_xpu/attention.py
-@@ -233,12 +233,45 @@ class Inkling2AttentionBackend(FlashAttentionBackend):
+@@ -12,6 +12,7 @@ from torch import nn
+ from vllm.compilation.breakable_cudagraph import eager_break_during_capture
+ from vllm.config import VllmConfig, get_current_vllm_config
+ from vllm.forward_context import get_forward_context
++from vllm.logger import init_logger
+ from vllm.model_executor.layers.attention_layer_base import AttentionLayerBase
+ from vllm.model_executor.layers.linear import (
+     MergedColumnParallelLinear,
+@@ -233,12 +234,104 @@ class Inkling2AttentionBackend(FlashAttentionBackend):
          return Inkling2AttentionMetadataBuilder
  
  
 +_KVARN = os.environ.get("INK2_KVARN_K4V4", "0") == "1"
 +_KVARN_RECORD = 17920  # D128/G128, canonical K4V4 payload plus six fp16 vectors.
++_logger = init_logger(__name__)
 +
 +
 +class Inkling2KVarNAttentionBackend(Inkling2AttentionBackend):
@@ -18,6 +41,58 @@ index aa3139c..9fa6a0f 100644
 +    @classmethod
 +    def get_supported_kernel_block_sizes(cls, kv_cache_spec=None):
 +        return [128]
++
++    @staticmethod
++    def get_builder_cls():
++        return Inkling2KVarNMetadataBuilder
++
++
++class Inkling2KVarNMetadataBuilder(Inkling2AttentionMetadataBuilder):
++    def __init__(self, kv_cache_spec, layer_names, vllm_config, device):
++        super().__init__(kv_cache_spec, layer_names, vllm_config, device)
++        if kv_cache_spec.page_size_bytes >= kv_cache_spec.block_size * 8 * 256:
++            raise ValueError(
++                "Cache layout padding eliminates the KVarN saving. "
++                "Select VLLM_KV_CACHE_LAYOUT=BLNHC for the packed target pages."
++            )
++        self.req_slots = torch.empty(
++            vllm_config.scheduler_config.max_num_seqs, dtype=torch.int32, device=device
++        )
++        self.req_cookies = torch.empty_like(self.req_slots, dtype=torch.int64)
++        self.is_prefilling = torch.empty_like(self.req_slots, dtype=torch.bool)
++
++    def build(self, common_prefix_len, common_attn_metadata, fast_build=False):
++        md = super().build(common_prefix_len, common_attn_metadata, fast_build)
++        rows = md.seq_lens.shape[0]
++        indices = common_attn_metadata.req_idx
++        if not hasattr(common_attn_metadata, "req_generation"):
++            raise RuntimeError(
++                "KVarN needs Model Runner V2 request-generation metadata"
++            )
++        epochs = common_attn_metadata.req_generation
++        n = (
++            min(rows, len(indices), len(epochs))
++            if indices is not None and epochs is not None
++            else 0
++        )
++        slots = self.req_slots[:rows]
++        if n:
++            generation = torch.as_tensor(epochs[:n], dtype=torch.int64)
++            owners = torch.as_tensor(indices[:n], dtype=torch.int32).masked_fill(
++                generation == 0, -1
++            )
++            slots[:n].copy_(owners, non_blocking=True)
++            self.req_cookies[:n].copy_(generation, non_blocking=True)
++        slots[n:].fill_(-1)
++        self.req_cookies[n:rows].zero_()
++        prefill = common_attn_metadata.is_prefilling
++        self.is_prefilling[:rows].zero_()
++        if prefill is not None and n:
++            self.is_prefilling[:n].copy_(prefill[:n], non_blocking=True)
++        md.kvarn_req_slots = slots
++        md.kvarn_req_cookies = self.req_cookies[:rows]
++        md.kvarn_is_prefilling = self.is_prefilling[:rows]
++        return md
 +
 +
  def _kv_cache_layer_config(
@@ -32,23 +107,29 @@ index aa3139c..9fa6a0f 100644
 +            or head_dim != 128
 +            or vllm_config.cache_config.block_size != 128
 +            or vllm_config.cache_config.cache_dtype not in ("fp8", "fp8_e4m3")
-+            or vllm_config.scheduler_config.max_num_seqs != 1
++            or vllm_config.scheduler_config.max_num_seqs > 4
 +            or vllm_config.parallel_config.tensor_parallel_size != 1
++            or vllm_config.parallel_config.prefill_context_parallel_size != 1
++            or vllm_config.parallel_config.decode_context_parallel_size != 1
 +            or vllm_config.cache_config.prefix_match_unit not in (None, 128)
 +        ):
 +            raise ValueError(
-+                "INK2_KVARN_K4V4 needs a single sequence and TP rank, FP8 local/draft "
++                "INK2_KVARN_K4V4 needs at most four sequences and one TP rank, FP8 local/draft "
 +                "caches, 128-token pages and whole-page prefix matching."
 +            )
 +        spec = AttentionSpec(
-+            block_size=128, num_kv_heads=8, head_size=128, dtype=torch.uint8,
-+            state_content_bytes=_KVARN_RECORD, tokens_per_state=128,
++            block_size=128,
++            num_kv_heads=8,
++            head_size=128,
++            dtype=torch.uint8,
++            state_content_bytes=_KVARN_RECORD,
++            tokens_per_state=128,
 +        )
 +        return FullAttentionManager.layer_config(spec)
      spec = AttentionSpec(
          block_size=vllm_config.cache_config.block_size,
          num_kv_heads=num_kv_heads,
-@@ -278,6 +311,8 @@ class Inkling2AttentionPassCache(nn.Module, AttentionLayerBase):
+@@ -278,6 +371,8 @@ class Inkling2AttentionPassCache(nn.Module, AttentionLayerBase):
          forward_context.static_forward_context[prefix] = self
  
      def get_attn_backend(self) -> type[AttentionBackend]:
@@ -57,7 +138,7 @@ index aa3139c..9fa6a0f 100644
          return Inkling2AttentionBackend
  
      def get_kv_cache_config(self, vllm_config: VllmConfig) -> KVCacheLayerConfig:
-@@ -400,12 +435,28 @@ class Inkling2Attention(nn.Module, AttentionLayerBase):
+@@ -400,12 +495,63 @@ class Inkling2Attention(nn.Module, AttentionLayerBase):
          if cache_dtype not in supported:
              raise ValueError(f"Inkling2 KV cache dtype must be one of {supported}")
          self.fp8_kv = cache_dtype in ("fp8", "fp8_e4m3")
@@ -67,16 +148,51 @@ index aa3139c..9fa6a0f 100644
 +            # batch. The logical ring is private to each loop pass. Only its
 +            # current partial page survives between calls; all completed pages
 +            # are stored inline in the planner-owned physical KV buffers.
-+            ring_pages = (vllm_config.scheduler_config.max_num_batched_tokens + 127) // 128 + 2
++            ring_pages = (
++                vllm_config.scheduler_config.max_num_batched_tokens + 127
++            ) // 128 + 2
 +            device = self.rel_logits_proj.device
-+            self.register_buffer("kvarn_staging", torch.empty(
-+                (1 + len(self.pass_caches), ring_pages, 128, 8, 256),
-+                device=device, dtype=torch.bfloat16), persistent=False)
++            self.register_buffer(
++                "kvarn_staging",
++                torch.empty(
++                    (
++                        1 + len(self.pass_caches),
++                        vllm_config.scheduler_config.max_num_seqs,
++                        ring_pages,
++                        128,
++                        8,
++                        256,
++                    ),
++                    device=device,
++                    dtype=torch.bfloat16,
++                ),
++                persistent=False,
++            )
++            self.register_buffer(
++                "kvarn_tags",
++                torch.full(
++                    (*self.kvarn_staging.shape[:3], 3),
++                    -1,
++                    dtype=torch.int64,
++                    device=device,
++                ),
++                persistent=False,
++            )
 +            h = torch.ones(1, 1, dtype=torch.float32)
 +            while h.shape[0] < 128:
 +                h = torch.cat((torch.cat((h, h), 1), torch.cat((h, -h), 1)), 0)
-+            self.register_buffer("kvarn_hadamard", (h / (128 ** 0.5)).to(
-+                device=device, dtype=torch.bfloat16), persistent=False)
++            self.register_buffer(
++                "kvarn_hadamard",
++                (h / (128**0.5)).to(device=device, dtype=torch.bfloat16),
++                persistent=False,
++            )
++            _logger.info_once(
++                "Inkling2 KVarN K4V4 target history enabled: D128, Hkv8, "
++                "128-token pages, %d bytes per head record, %d bounded dense "
++                "staging pages per request and target pass.",
++                _KVARN_RECORD,
++                ring_pages,
++            )
          self.kv_cache = torch.tensor([])
          forward_context = vllm_config.compilation_config.static_forward_context
          if prefix in forward_context:
@@ -87,7 +203,7 @@ index aa3139c..9fa6a0f 100644
              # Reserve the shared BF16 prefill scratch during model load so
              # startup profiling counts it before KV cache sizing.
              _fp8_prefill_scratch(
-@@ -429,6 +480,8 @@ class Inkling2Attention(nn.Module, AttentionLayerBase):
+@@ -429,6 +575,8 @@ class Inkling2Attention(nn.Module, AttentionLayerBase):
          self.rel_proj_shifted = shift_rel_proj(self.rel_logits_proj, self.is_local)
  
      def get_attn_backend(self) -> type[AttentionBackend]:
@@ -96,29 +212,55 @@ index aa3139c..9fa6a0f 100644
          return Inkling2AttentionBackend
  
      def get_kv_cache_config(self, vllm_config: VllmConfig) -> KVCacheLayerConfig:
-@@ -546,7 +599,20 @@ class Inkling2Attention(nn.Module, AttentionLayerBase):
+@@ -546,7 +694,46 @@ class Inkling2Attention(nn.Module, AttentionLayerBase):
          if md is not None:
              conv_md = conv_metadata(conv_state)
              assert conv_md is not None
 -            key_cache, value_cache = self._split_kv_cache(kv_cache)
 +            if self.kvarn:
-+                if kv_cache.dtype != torch.uint8 or kv_cache.shape[1:] != (8, 1, _KVARN_RECORD):
-+                    raise ValueError(f"Invalid KVarN physical cache {kv_cache.shape} {kv_cache.dtype}")
++                if kv_cache.dtype != torch.uint8 or kv_cache.shape[1:] != (
++                    8,
++                    1,
++                    _KVARN_RECORD,
++                ):
++                    raise ValueError(
++                        f"Invalid KVarN physical cache {kv_cache.shape} {kv_cache.dtype}"
++                    )
 +                staging = self.kvarn_staging[pass_idx]
-+                key_cache, value_cache = staging.split(128, dim=-1)
-+                # md.slot_mapping marks padding. Use logical sequence positions
-+                # for the bounded ring, independently of physical page order.
-+                n = md.slot_mapping.shape[0]
-+                start = md.seq_lens[0] - (md.query_start_loc[1] - md.query_start_loc[0])
-+                logical = torch.arange(n, dtype=torch.int64, device=q.device) + start
-+                kv_slots = torch.where(md.slot_mapping >= 0, logical % (staging.shape[0] * 128), -1)
++                key_cache, value_cache = staging.flatten(0, 1).split(128, dim=-1)
++                from .ops.attention_triton import kvarn_rehydrate, kvarn_staging_slots
++
++                tags = self.kvarn_tags[pass_idx]
++                preserve_pages = kvarn_rehydrate(
++                    staging,
++                    kv_cache,
++                    md.block_table,
++                    md.seq_lens,
++                    md.query_start_loc,
++                    md.kvarn_req_slots,
++                    md.kvarn_req_cookies,
++                    tags,
++                    self.kvarn_hadamard,
++                    md.kvarn_is_prefilling,
++                )
++                kv_slots = kvarn_staging_slots(
++                    md.slot_mapping,
++                    md.seq_lens,
++                    md.query_start_loc,
++                    md.kvarn_req_slots,
++                    md.max_query_len,
++                    staging.shape[1],
++                    md.block_table,
++                    md.kvarn_req_cookies,
++                    tags,
++                )
 +            else:
 +                key_cache, value_cache = self._split_kv_cache(kv_cache)
 +                kv_slots = md.slot_mapping
              attention_prologue(
                  q,
                  r.view(num_tokens, self.num_heads, self.d_rel),
-@@ -568,7 +634,7 @@ class Inkling2Attention(nn.Module, AttentionLayerBase):
+@@ -568,7 +755,7 @@ class Inkling2Attention(nn.Module, AttentionLayerBase):
                  conv_md.query_start,
                  key_cache,
                  value_cache,
@@ -127,59 +269,88 @@ index aa3139c..9fa6a0f 100644
                  clipped_q,
                  rel_logits,
                  md.query_start_loc,
-@@ -577,6 +643,20 @@ class Inkling2Attention(nn.Module, AttentionLayerBase):
+@@ -577,6 +764,43 @@ class Inkling2Attention(nn.Module, AttentionLayerBase):
                  rel_threshold=self.rel_clip,
                  norm_eps=self.eps,
              )
 +            if self.kvarn:
 +                from .ops.kvarn_encode import encode_complete_pages
 +
-+                encode_complete_pages(staging, kv_cache, md.block_table, md.seq_lens,
-+                                      md.query_start_loc, md.max_query_len)
++                encode_complete_pages(
++                    staging,
++                    kv_cache,
++                    md.block_table,
++                    md.seq_lens,
++                    md.query_start_loc,
++                    md.max_query_len,
++                    md.kvarn_req_slots,
++                    preserve_pages,
++                )
 +                rel_decode_attention(
-+                    clipped_q, key_cache, value_cache, rel_logits, gate, sinks, output,
-+                    block_table=md.block_table, cache_seqlens=md.seq_lens,
-+                    cu_seqlens_q=md.query_start_loc, max_query_len=md.max_query_len,
-+                    num_actual_tokens=md.num_actual_tokens, softmax_scale=self.scaling,
-+                    is_local=False, num_splits=decode_splits or 1,
-+                    packed_cache=kv_cache, hadamard=self.kvarn_hadamard,
++                    clipped_q,
++                    key_cache,
++                    value_cache,
++                    rel_logits,
++                    gate,
++                    sinks,
++                    output,
++                    block_table=md.block_table,
++                    cache_seqlens=md.seq_lens,
++                    cu_seqlens_q=md.query_start_loc,
++                    max_query_len=md.max_query_len,
++                    num_actual_tokens=md.num_actual_tokens,
++                    softmax_scale=self.scaling,
++                    is_local=False,
++                    num_splits=decode_splits
++                    if num_decodes == md.seq_lens.shape[0]
++                    else 1,
++                    packed_cache=kv_cache,
++                    hadamard=self.kvarn_hadamard,
++                    req_slots=md.kvarn_req_slots,
++                    ring_pages=staging.shape[1],
 +                )
 +                return
          if decode_splits:
              assert md is not None
              self._decode_attention(
 diff --git a/src/vllm_inkling2_xpu/ops/attention.py b/src/vllm_inkling2_xpu/ops/attention.py
-index 052a4af..498f854 100644
+index 052a4af..22606b3 100644
 --- a/src/vllm_inkling2_xpu/ops/attention.py
 +++ b/src/vllm_inkling2_xpu/ops/attention.py
-@@ -207,6 +207,8 @@ def rel_decode_attention(
+@@ -207,6 +207,10 @@ def rel_decode_attention(
      softmax_scale: float,
      is_local: bool,
      num_splits: int,
 +    packed_cache: torch.Tensor | None = None,
 +    hadamard: torch.Tensor | None = None,
++    req_slots: torch.Tensor | None = None,
++    ring_pages: int | None = None,
  ) -> None:
      """Write the gated bf16 `(T, H * D)` attention output for small batches.
  
-@@ -235,6 +237,8 @@ def rel_decode_attention(
+@@ -235,6 +239,10 @@ def rel_decode_attention(
          softmax_scale,
          extent if is_local else 0,
          num_splits,
 +        packed_cache,
 +        hadamard,
++        req_slots,
++        ring_pages,
      )
  
  
-@@ -288,6 +292,8 @@ def _decode_attention(
+@@ -288,6 +296,10 @@ def _decode_attention(
      softmax_scale: float,
      window: int,
      num_splits: int,
 +    packed_cache: torch.Tensor | None = None,
 +    hadamard: torch.Tensor | None = None,
++    req_slots: torch.Tensor | None = None,
++    ring_pages: int | None = None,
  ) -> None:
      num_tokens, num_heads, head_dim = q.shape
      num_kv_heads = key_cache.shape[2]
-@@ -298,7 +304,7 @@ def _decode_attention(
+@@ -298,7 +310,7 @@ def _decode_attention(
          rel_logits = gate = sinks = out
      else:
          rel_logits, gate, sinks = rel_gate_sinks
@@ -188,7 +359,7 @@ index 052a4af..498f854 100644
      assert key_cache.stride() == value_cache.stride() and key_cache.stride(3) == 1
      assert q.stride(1) == head_dim and q.stride(2) == 1
      assert out.is_contiguous()
-@@ -327,8 +333,10 @@ def _decode_attention(
+@@ -327,8 +339,12 @@ def _decode_attention(
          window=window,
          num_splits=num_splits,
          mode=MODE_GATED if fuse_gate else MODE_PARTIAL,
@@ -197,17 +368,84 @@ index 052a4af..498f854 100644
          num_warps=8 if window else 4,
 +        packed_cache=packed_cache,
 +        hadamard=hadamard,
++        req_slots=req_slots,
++        ring_pages=ring_pages,
      )
      if fuse_gate:
          out[num_actual_tokens:].zero_()
 diff --git a/src/vllm_inkling2_xpu/ops/attention_triton.py b/src/vllm_inkling2_xpu/ops/attention_triton.py
-index d8247da..d08358b 100644
+index d8247da..7bd7a8a 100644
 --- a/src/vllm_inkling2_xpu/ops/attention_triton.py
 +++ b/src/vllm_inkling2_xpu/ops/attention_triton.py
-@@ -25,11 +25,37 @@ def _sigmoid(x):
+@@ -25,11 +25,192 @@ def _sigmoid(x):
      return 1.0 / (1.0 + tl.exp2(-x * 1.4426950408889634))
  
  
++@triton.jit
++def _kvarn_staging_slots(
++    Out,
++    Physical,
++    Seq,
++    CuQ,
++    Owners,
++    Table,
++    Cookies,
++    Tags,
++    N,
++    stride_table,
++    stride_table_page,
++    RING: tl.constexpr,
++):
++    req = tl.program_id(1)
++    start = tl.load(CuQ + req)
++    qlen = tl.load(CuQ + req + 1) - start
++    begin = tl.load(Seq + req) - qlen
++    slot = tl.load(Owners + req)
++    row = tl.program_id(0) * 32 + tl.arange(0, 32)
++    mask = (row < qlen) & (start + row < N)
++    physical = tl.load(Physical + start + row, mask=mask, other=-1)
++    idx = slot * RING + ((begin + row) % RING)
++    tl.store(
++        Out + start + row, tl.where((slot >= 0) & (physical >= 0), idx, -1), mask=mask
++    )
++    # One program stamps each touched logical page; pages form a shorter
++    # interval than the input-token grid. The first program also covers a
++    # boundary crossing by a query of less than 32 tokens.
++    for half in tl.static_range(2):
++        page = begin // 128 + tl.program_id(0) * 2 + half
++        if slot >= 0 and qlen > 0 and page * 128 < begin + qlen:
++            token = start + tl.maximum(page * 128 - begin, 0)
++            if tl.load(Physical + token) >= 0:
++                physical_page = tl.load(
++                    Table + req * stride_table + page * stride_table_page
++                )
++                tag = Tags + (slot * (RING // 128) + page % (RING // 128)) * 3
++                tl.store(tag, tl.load(Cookies + req))
++                tl.store(tag + 1, page)
++                tl.store(tag + 2, physical_page)
++
++
++def kvarn_staging_slots(
++    physical, seq, cuq, owners, max_query_len, ring_pages, block_table, cookies, tags
++):
++    result = torch.full_like(physical, -1)
++    _kvarn_staging_slots[(triton.cdiv(max_query_len, 32), seq.shape[0])](
++        result,
++        physical,
++        seq,
++        cuq,
++        owners,
++        block_table,
++        cookies,
++        tags,
++        physical.numel(),
++        block_table.stride(0),
++        block_table.stride(1),
++        RING=ring_pages * 128,
++    )
++    return result
++
++
 +@triton.jit
 +def _kvarn_key(record, token, d):
 +    # K rows are channels and pairs of token nibbles are adjacent.
@@ -232,6 +470,95 @@ index d8247da..d08358b 100644
 +    return (q * s_row[:, None] + zero[:, None]) * s_col[None, :]
 +
 +
++@triton.jit
++def _rehydrate_partial(
++    Staging,
++    Packed,
++    Table,
++    Seq,
++    CuQ,
++    Owners,
++    Cookies,
++    Tags,
++    H,
++    IsPrefill,
++    Preserve,
++    stride_page,
++    stride_head,
++    stride_table,
++    stride_table_page,
++    RING: tl.constexpr,
++    N: tl.constexpr,
++):
++    req = tl.program_id(0)
++    owner = tl.load(Owners + req)
++    qlen = tl.load(CuQ + req + 1) - tl.load(CuQ + req)
++    past = tl.load(Seq + req) - qlen
++    if owner < 0 or qlen <= 0 or past % 128 == 0:
++        return
++    page = past // 128
++    physical = tl.load(Table + req * stride_table + page * stride_table_page)
++    if physical <= 0:
++        return
++    ring = owner * RING + page % RING
++    tag = Tags + ring * 3
++    if (
++        tl.load(tag) == tl.load(Cookies + req)
++        and tl.load(tag + 1) == page
++        and tl.load(tag + 2) == physical
++    ):
++        return
++    # A cold or evicted partial prefix comes from a sealed planner-owned page.
++    # GPU/host APC can return one less token to recompute the final logits.
++    head = tl.program_id(1)
++    # Native whole-page prefix hits can replay the final matched token to
++    # produce logits. Keep those canonical sealed bytes across repeated hits.
++    if head == 0 and tl.program_id(2) == 0 and past % 128 == 127 and qlen == 1:
++        if tl.load(IsPrefill + req):
++            tl.store(Preserve + req, page)
++    token = tl.program_id(2) * N + tl.arange(0, N)
++    d = tl.arange(0, 128)
++    record = Packed + physical.to(tl.int64) * stride_page + head * stride_head
++    h = tl.load(H + d[:, None] * 128 + d[None, :])
++    k = tl.dot(tl.trans(_kvarn_key(record, token, d)).to(h.dtype), h)
++    v = tl.dot(_kvarn_value(record, token, d).to(h.dtype), h)
++    dst = (
++        Staging
++        + (((ring.to(tl.int64) * 128 + token[:, None]) * 8 + head) * 256)
++        + d[None, :]
++    )
++    mask = token[:, None] < past % 128
++    tl.store(dst, k, mask=mask)
++    tl.store(dst + 128, v, mask=mask)
++
++
++def kvarn_rehydrate(
++    staging, packed, table, seq, cuq, owners, cookies, tags, hadamard, is_prefilling
++):
++    assert staging.is_contiguous() and tags.is_contiguous()
++    preserve = torch.full_like(seq, -1)
++    _rehydrate_partial[(seq.shape[0], 8, 4)](
++        staging,
++        packed,
++        table,
++        seq,
++        cuq,
++        owners,
++        cookies,
++        tags,
++        hadamard,
++        is_prefilling,
++        preserve,
++        packed.stride(0),
++        packed.stride(1),
++        table.stride(0),
++        table.stride(1),
++        RING=staging.shape[1],
++        N=32,
++    )
++    return preserve
++
++
  @triton.jit
  def _rel_attention_kernel(
      Q,
@@ -239,10 +566,11 @@ index d8247da..d08358b 100644
      V,
 +    Packed,
 +    Hadamard,
++    ReqSlots,
      Rel,
      BlockTable,
      SeqLens,
-@@ -46,6 +72,8 @@ def _rel_attention_kernel(
+@@ -46,6 +227,8 @@ def _rel_attention_kernel(
      stride_kv_blk,
      stride_kv_slot,
      stride_kv_h,
@@ -251,16 +579,30 @@ index d8247da..d08358b 100644
      stride_rel_t,
      stride_bt,
      stride_out_t,
-@@ -64,6 +92,8 @@ def _rel_attention_kernel(
+@@ -64,6 +247,9 @@ def _rel_attention_kernel(
      MODE: tl.constexpr,
      BLOCK_M: tl.constexpr,
      BLOCK_N: tl.constexpr,
 +    K4V4: tl.constexpr,
 +    RING_PAGES: tl.constexpr,
++    HAS_REQ_SLOTS: tl.constexpr,
  ):
      TOKENS: tl.constexpr = BLOCK_M // G
      E_PAD: tl.constexpr = E + 256
-@@ -108,6 +138,10 @@ def _rel_attention_kernel(
+@@ -72,6 +258,12 @@ def _rel_attention_kernel(
+     kv_head = tl.program_id(1) // num_splits
+     split = tl.program_id(1) % num_splits
+     req = tl.program_id(2)
++    if K4V4 and HAS_REQ_SLOTS:
++        owner = tl.load(ReqSlots + req)
++        if owner < 0:
++            return
++    else:
++        owner = 0
+     q_start = tl.load(CuSeqlensQ + req)
+     q_len = tl.load(CuSeqlensQ + req + 1) - q_start
+     first_tok = m_tile * TOKENS
+@@ -108,6 +300,10 @@ def _rel_attention_kernel(
          mask=row_valid[:, None],
          other=0.0,
      )
@@ -271,7 +613,7 @@ index d8247da..d08358b 100644
      if not DRAFT:
          tile_end = tl.minimum((tok // _SHEAR_TILE + 1) * _SHEAR_TILE, q_len)
          rel_base = (past + tile_end + 127) // 128 * 128 - E_PAD
-@@ -123,16 +157,31 @@ def _rel_attention_kernel(
+@@ -123,16 +319,45 @@ def _rel_attention_kernel(
          n = n_lo + split + i * num_splits
          keys = n * BLOCK_N + tl.arange(0, BLOCK_N)
          key_valid = keys < seqlen_k
@@ -281,9 +623,17 @@ index d8247da..d08358b 100644
 +            # (possibly partial) page through its current batch are dense.
 +            logical_page = n * BLOCK_N // PAGE
 +            use_packed = logical_page < past // PAGE
-+            page = tl.full([BLOCK_N], 0, tl.int32) + logical_page % RING_PAGES
++            page = (
++                tl.full([BLOCK_N], 0, tl.int32)
++                + owner * RING_PAGES
++                + logical_page % RING_PAGES
++            )
 +            physical = tl.load(block_table + logical_page)
-+            record = Packed + physical.to(tl.int64) * stride_pack_page + kv_head * stride_pack_head
++            record = (
++                Packed
++                + physical.to(tl.int64) * stride_pack_page
++                + kv_head * stride_pack_head
++            )
 +        else:
 +            page = tl.load(block_table + keys // PAGE, mask=key_valid, other=0)
          kv_ptrs = (
@@ -300,17 +650,23 @@ index d8247da..d08358b 100644
 +                k = _kvarn_key(record, keys % PAGE, offs_d).to(q.dtype)
 +                s = tl.dot(q_rot, k) * qk_scale
 +            else:
-+                k = tl.load(K + kv_ptrs[None, :] + offs_d[:, None],
-+                            mask=key_valid[None, :], other=0.0).to(q.dtype)
++                k = tl.load(
++                    K + kv_ptrs[None, :] + offs_d[:, None],
++                    mask=key_valid[None, :],
++                    other=0.0,
++                ).to(q.dtype)
 +                s = tl.dot(q, k) * qk_scale
 +        else:
-+            k = tl.load(K + kv_ptrs[None, :] + offs_d[:, None],
-+                        mask=key_valid[None, :], other=0.0).to(q.dtype)
++            k = tl.load(
++                K + kv_ptrs[None, :] + offs_d[:, None],
++                mask=key_valid[None, :],
++                other=0.0,
++            ).to(q.dtype)
 +            s = tl.dot(q, k) * qk_scale
          dist = pos[:, None] - keys[None, :]
          visible = (dist >= 0) & key_valid[None, :]
          if WINDOW > 0:
-@@ -147,15 +196,25 @@ def _rel_attention_kernel(
+@@ -147,15 +372,31 @@ def _rel_attention_kernel(
          alpha = tl.exp2(m_i - m_safe)
          p = tl.exp2(s - m_safe[:, None])
          l_i = l_i * alpha + tl.sum(p, 1)
@@ -327,12 +683,18 @@ index d8247da..d08358b 100644
 +                v = _kvarn_value(record, keys % PAGE, offs_d).to(q.dtype)
 +                acc_rot += tl.dot(p.to(v.dtype), v)
 +            else:
-+                v = tl.load(V + kv_ptrs[:, None] + offs_d[None, :],
-+                            mask=key_valid[:, None], other=0.0).to(q.dtype)
++                v = tl.load(
++                    V + kv_ptrs[:, None] + offs_d[None, :],
++                    mask=key_valid[:, None],
++                    other=0.0,
++                ).to(q.dtype)
 +                acc += tl.dot(p.to(v.dtype), v)
 +        else:
-+            v = tl.load(V + kv_ptrs[:, None] + offs_d[None, :],
-+                        mask=key_valid[:, None], other=0.0).to(q.dtype)
++            v = tl.load(
++                V + kv_ptrs[:, None] + offs_d[None, :],
++                mask=key_valid[:, None],
++                other=0.0,
++            ).to(q.dtype)
 +            acc = acc * alpha[:, None] + tl.dot(p.to(v.dtype), v)
          m_i = m_new
  
@@ -342,16 +704,18 @@ index d8247da..d08358b 100644
      o = acc / tl.where(empty, 1.0, l_i)[:, None]
      lse2 = tl.where(empty, float("-inf"), m_i + tl.log2(tl.where(empty, 1.0, l_i)))
      if MODE == 0:
-@@ -219,6 +278,8 @@ def rel_attention(
+@@ -219,6 +460,10 @@ def rel_attention(
      mode: int,
      block_n: int | None = None,
      num_warps: int | None = None,
 +    packed_cache: torch.Tensor | None = None,
 +    hadamard: torch.Tensor | None = None,
++    req_slots: torch.Tensor | None = None,
++    ring_pages: int | None = None,
  ) -> None:
      """Launch `_rel_attention_kernel` over the requests of `cu_seqlens_q`.
  
-@@ -233,6 +294,11 @@ def rel_attention(
+@@ -233,6 +478,11 @@ def rel_attention(
      """
      num_tokens, num_heads, head_dim = q.shape
      page, num_kv_heads = key_cache.shape[1:3]
@@ -363,16 +727,17 @@ index d8247da..d08358b 100644
      group = num_heads // num_kv_heads
      assert key_cache.stride() == value_cache.stride() and key_cache.stride(3) == 1
      assert q.stride(2) == 1
-@@ -272,6 +338,8 @@ def rel_attention(
+@@ -272,6 +522,9 @@ def rel_attention(
          q,
          key_cache,
          value_cache,
 +        q if packed_cache is None else packed_cache,
 +        q if hadamard is None else hadamard,
++        q if req_slots is None else req_slots,
          rel,
          block_table,
          cache_seqlens,
-@@ -288,6 +356,8 @@ def rel_attention(
+@@ -288,6 +541,8 @@ def rel_attention(
          key_cache.stride(0),
          key_cache.stride(1),
          key_cache.stride(2),
@@ -381,12 +746,249 @@ index d8247da..d08358b 100644
          rel.stride(0),
          block_table.stride(0),
          *out_strides,
-@@ -303,6 +373,8 @@ def rel_attention(
+@@ -303,6 +558,11 @@ def rel_attention(
          MODE=mode,
          BLOCK_M=block_m,
          BLOCK_N=block_n if block_n is not None else (128 if block_m <= 32 else 64),
 +        K4V4=packed_cache is not None,
-+        RING_PAGES=key_cache.shape[0] if packed_cache is not None else 1,
++        RING_PAGES=(ring_pages or key_cache.shape[0])
++        if packed_cache is not None
++        else 1,
++        HAS_REQ_SLOTS=req_slots is not None,
          num_warps=num_warps if num_warps is not None else (8 if block_m >= 128 else 4),
          num_stages=2,
      )
+diff --git a/tests/test_kvarn_attention.py b/tests/test_kvarn_attention.py
+new file mode 100644
+index 0000000..fac7d50
+--- /dev/null
++++ b/tests/test_kvarn_attention.py
+@@ -0,0 +1,225 @@
++# SPDX-License-Identifier: Apache-2.0
++"""Direct compact K4V4 reads combined with Inkling's current dense tile."""
++
++import os
++from unittest import SkipTest
++
++import torch
++
++
++def test_kvarn_attention_pages():
++    from vllm_inkling2_xpu.ops.attention import rel_decode_attention
++
++    interpret = os.environ.get("TRITON_INTERPRET") == "1"
++    if not interpret and not torch.xpu.is_available():
++        raise SkipTest("Requires XPU or Triton's interpreter")
++    device = "cpu" if interpret else "xpu"
++    # The interpreter's dot handles fp16 in software. Hardware uses model BF16.
++    dtype = torch.float16 if interpret else torch.bfloat16
++    rng = torch.Generator().manual_seed(189)
++    h = torch.ones(1, 1)
++    for _ in range(7):
++        h = torch.kron(h, torch.tensor([[1.0, 1.0], [1.0, -1.0]]))
++    h /= 128**0.5
++    packed = torch.randint(0, 256, (5, 8, 1, 17952), dtype=torch.uint8, generator=rng)
++    db = packed[..., :17920]
++    # A physical page spans larger strides than its logical record.
++    raw = db[:, :, 0]
++    physical = 3
++    k = torch.randint(0, 16, (8, 128, 128), generator=rng, dtype=torch.uint8)
++    v = torch.randint(0, 16, (8, 128, 128), generator=rng, dtype=torch.uint8)
++    raw[physical, :, :8192] = (k[..., ::2] | k[..., 1::2] << 4).flatten(1)
++    raw[physical, :, 8960:17152] = (v[..., ::2] | v[..., 1::2] << 4).flatten(1)
++    # Distinct nontrivial row, column, and zero terms catch offset swaps.
++    scalars = []
++    for start, midpoint in (
++        (8192, 0.15),
++        (8448, -1.0),
++        (8704, 0.9),
++        (17152, 0.8),
++        (17408, 0.1),
++        (17664, -0.7),
++    ):
++        values = (torch.rand((8, 128), generator=rng) * 0.15 + midpoint).half()
++        raw[physical, :, start : start + 256] = values.view(torch.uint8)
++        scalars.append(values.float())
++    kc, kz, kr, vc, vr, vz = scalars
++    keys = (
++        ((k.float() * kc[:, :, None] + kz[:, :, None]) * kr[:, None, :]).transpose(1, 2)
++        @ h
++    ).transpose(0, 1)
++    values = (
++        ((v.float() * vr[:, :, None] + vz[:, :, None]) * vc[:, None, :]) @ h
++    ).transpose(0, 1)
++    staging = torch.randn((4, 128, 8, 256), generator=rng).to(dtype)
++    for qlen, past, splits in ((1, 131, 1), (8, 132, 3), (35, 129, 1)):
++        # Old logical page 0 is packed in physical page 3, page 1 lives
++        # in staging. The last two query rows are inert graph padding.
++        src = staging[1, : past + qlen - 128].float()
++        kd = torch.cat((keys, src[..., :128])).repeat_interleave(3, dim=1)
++        vd = torch.cat((values, src[..., 128:])).repeat_interleave(3, dim=1)
++        q = torch.randn((qlen + 2, 24, 128), generator=rng).to(dtype)
++        gate = torch.randn((qlen + 2, 24 * 128), generator=rng).to(dtype)
++        sink = (torch.randn((qlen + 2, 24), generator=rng) + 5).to(dtype)
++        logits = torch.randn((qlen, 24, 1024), generator=rng).to(dtype)
++        rel = torch.full((qlen + 2 + 128, 24, 1280), float("nan"), dtype=dtype)
++        pos = torch.arange(qlen) + past
++        key_pos = torch.arange(past + qlen)
++        dist = pos[:, None] - key_pos
++        bias = logits.gather(2, dist[:, None].expand(-1, 24, -1).clamp(0, 1023))
++        base = ((past + qlen + 127) // 128) * 128 - 1280
++        rel[:qlen, :, key_pos - base] = bias
++        scores = torch.einsum("qhd,khd->qhk", q[:qlen].float(), kd) / 128**0.5 + bias
++        scores.masked_fill_(dist[:, None] < 0, -torch.inf)
++        out = torch.einsum("qhk,khd->qhd", scores.softmax(-1), vd)
++        expected = out * gate[:qlen].reshape(qlen, 24, 128).float().sigmoid()
++        expected *= (scores.logsumexp(-1) - sink[:qlen].float()).sigmoid()[..., None]
++        st = staging.to(device)
++        result = torch.full(gate.shape, float("nan"), dtype=dtype, device=device)
++        rel_decode_attention(
++            q.to(device),
++            st[..., :128],
++            st[..., 128:],
++            rel.to(device),
++            gate.to(device),
++            sink.to(device),
++            result,
++            block_table=torch.tensor([[3, 1]], dtype=torch.int32, device=device),
++            cache_seqlens=torch.tensor([past + qlen], dtype=torch.int32, device=device),
++            cu_seqlens_q=torch.tensor([0, qlen], dtype=torch.int32, device=device),
++            max_query_len=qlen,
++            num_actual_tokens=qlen,
++            softmax_scale=128**-0.5,
++            is_local=False,
++            num_splits=splits,
++            packed_cache=packed.to(device)[..., :17920],
++            hadamard=h.to(device, dtype),
++        )
++        got = result.cpu().view(-1, 24, 128).float()
++        torch.testing.assert_close(got[:qlen], expected, rtol=0.02, atol=0.005)
++        assert (got[qlen:] == 0).all()
++
++
++def test_kvarn_rehydrate_and_reordered_slots():
++    from vllm_inkling2_xpu.ops.attention import rel_decode_attention
++    from vllm_inkling2_xpu.ops.attention_triton import (
++        kvarn_rehydrate,
++        kvarn_staging_slots,
++    )
++
++    interpret = os.environ.get("TRITON_INTERPRET") == "1"
++    if not interpret and not torch.xpu.is_available():
++        raise SkipTest("Requires XPU or Triton's interpreter")
++    device = "cpu" if interpret else "xpu"
++    dtype = torch.float16 if interpret else torch.bfloat16
++
++    def i32(t):
++        return torch.tensor(t, device=device, dtype=torch.int32)
++
++    rng = torch.Generator().manual_seed(341)
++    h = torch.ones(1, 1)
++    for _ in range(7):
++        h = torch.kron(h, torch.tensor([[1.0, 1.0], [1.0, -1.0]]))
++    h = (h / 128**0.5).to(device, dtype)
++    packed = torch.zeros(12, 8, 1, 17952, dtype=torch.uint8, device=device)[..., :17920]
++    for block in range(12):
++        rec = packed[block, :, 0]
++        for offset, val in (
++            (8192, 1),
++            (8448, block * 0.1),
++            (8704, 1),
++            (17152, 1),
++            (17408, 1),
++            (17664, block * 0.2),
++        ):
++            rec[:, offset : offset + 256].view(torch.float16).fill_(val)
++    staging = torch.randn((4, 3, 128, 8, 256), generator=rng).to(device, dtype)
++    tags = torch.full((4, 3, 3), -1, device=device, dtype=torch.int64)
++    owners = i32([2, 0, 3, -1])
++    cookies = torch.tensor([101, 102, 103, 0], device=device)
++    past = [1023, 3, 129, 0]
++    lens = [1, 5, 8, 0]
++    seq = i32([p + q for p, q in zip(past, lens)])
++    cuq = i32([0, 1, 6, 14, 14])
++    table = i32([[3, 5, 4, 6, 1, 7, 9, 2], [7] * 8, [5, 3, 8, 1, 7, 2, 9, 6], [0] * 8])
++    tags[0, 0] = torch.tensor([102, 0, 7], device=device)
++    before = staging.clone()
++    prefill = torch.tensor([True, False, True, False], device=device)
++    preserve = kvarn_rehydrate(
++        staging, packed, table, seq, cuq, owners, cookies, tags, h, prefill
++    )
++    assert preserve.cpu().tolist() == [7, -1, -1, -1]
++    # Cold 1023-token prefix reload, and a different request at offset 1.
++    for owner, page, end, physical in ((2, 7, 127, 2), (3, 1, 1, 3)):
++        restored = staging[owner, page % 3]
++        expected = torch.zeros((end, 8, 256), dtype=dtype, device=device)
++        expected[..., 0] = physical * 0.1 * 128**0.5
++        expected[..., 128] = physical * 0.2 * 128**0.5
++        torch.testing.assert_close(restored[:end], expected, rtol=0.012, atol=0.01)
++        torch.testing.assert_close(restored[end:], before[owner, page % 3, end:])
++    assert torch.equal(staging[0], before[0])
++    physical = torch.arange(16, device=device, dtype=torch.int64)
++    physical[4] = -1
++    slots = kvarn_staging_slots(physical, seq, cuq, owners, 8, 3, table, cookies, tags)
++    target = (
++        [2 * 384 + 1023 % 384, 3, 4, 5, -1, 7]
++        + [3 * 384 + 129 + i for i in range(8)]
++        + [-1, -1]
++    )
++    assert slots.cpu().tolist() == target
++    assert tags[2, 1].cpu().tolist() == [101, 7, 2]
++    assert tags[3, 1].cpu().tolist() == [103, 1, 3]
++    q = torch.randn((16, 24, 128), generator=rng).to(device, dtype)
++    gate = torch.randn((16, 24 * 128), generator=rng).to(device, dtype)
++    sink = torch.randn((16, 24), generator=rng).to(device, dtype)
++    rel = torch.zeros((16 + 128, 24, 1280), dtype=dtype, device=device)
++    result = torch.full_like(gate, float("nan"))
++    common = dict(
++        softmax_scale=128**-0.5,
++        is_local=False,
++        num_splits=2,
++        packed_cache=packed,
++        hadamard=h,
++    )
++    all_k, all_v = staging.flatten(0, 1).split(128, dim=-1)
++    rel_decode_attention(
++        q,
++        all_k,
++        all_v,
++        rel,
++        gate,
++        sink,
++        result,
++        block_table=table,
++        cache_seqlens=seq,
++        cu_seqlens_q=cuq,
++        max_query_len=8,
++        num_actual_tokens=14,
++        req_slots=owners,
++        ring_pages=3,
++        **common,
++    )
++    offset = 0
++    for n, owner in enumerate((2, 0, 3)):
++        count = lens[n]
++        part = slice(offset, offset + count)
++        expected = torch.empty_like(result[part])
++        k, v = staging[owner].split(128, dim=-1)
++        rel_decode_attention(
++            q[part],
++            k,
++            v,
++            rel,
++            gate[part],
++            sink[part],
++            expected,
++            block_table=table[n : n + 1],
++            cache_seqlens=seq[n : n + 1],
++            cu_seqlens_q=i32([0, count]),
++            max_query_len=8,
++            num_actual_tokens=count,
++            **common,
++        )
++        torch.testing.assert_close(result[part], expected, rtol=0, atol=0)
++        offset += count
++    assert (result[14:] == 0).all()
+-- 
+2.54.0
+

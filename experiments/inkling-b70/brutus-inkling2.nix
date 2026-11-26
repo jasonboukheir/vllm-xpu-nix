@@ -11,7 +11,7 @@
   maxModelLen ? 262144,
   gpuMemoryUtilization ? 0.95,
   flashPrefill ? true,
-  phasedDecode ? false,
+  phasedDecode ? true,
 }:
 let
   revision = "ed40e7da625f594fc9c4990f5f66be24873c22d7";

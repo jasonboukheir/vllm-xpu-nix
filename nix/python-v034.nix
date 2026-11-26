@@ -14,8 +14,9 @@ let
     };
 in
 {
-  # virtualenv is a build/test tool here. Its pinned 21.6.1 requires filelock <4.
-  inherit (pkgs.python312Packages) virtualenv;
+  # These test tools share filelock in-process. virtualenv 21.6.1 requires
+  # filelock <4, so keep tox and virtualenv in the same pinned tool scope.
+  inherit (pkgs.python312Packages) virtualenv tox;
   # NumPy has no Python runtime dependency. Reuse the already-qualified package
   # in Torch rather than introduce a second NumPy through pytest's filelock.
   numpy =

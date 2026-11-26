@@ -37,6 +37,10 @@ the target's cache reusable by the drafter.
 
 ## Size the GPU cache after warmup on vLLM 0.34
 
+vLLM 0.34 uses Model Runner V2. Remove `VLLM_USE_V2_MODEL_RUNNER=0`
+from older service environments before upgrading. An existing value of
+`1` is accepted and can also be removed.
+
 Add `"--enable-extensible-kv-cache"` to the instance's existing `extraArgs`.
 The B70 worker reserves virtual addresses for each physical cache pool before
 warmup, measures the remaining memory, then maps physical pages at those

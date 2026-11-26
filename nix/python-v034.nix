@@ -59,6 +59,16 @@ in
       export PYTHONPATH="$PYTHONPATH:$PWD"
     '';
   });
+  # Initialize the per-tensor scale in the upstream FP8 round-trip test.
+  compressed-tensors = prev.compressed-tensors.overridePythonAttrs (old: {
+    patches = (old.patches or [ ]) ++ [
+      (pkgs.fetchpatch {
+        url = "https://github.com/vllm-project/compressed-tensors/commit/ac8e2ba82f4e0d5eaa40069f8fc642738f124cd4.patch";
+        includes = [ "tests/test_compressors/test_fp8_quant.py" ];
+        hash = "sha256-YJ1Bp9GN+Mjm2IxzYy0BPPeOuRfk7jWzgTcrIUHO7T8=";
+      })
+    ];
+  });
   # Backport FastAPI's translation-test fixture for Typer's updated CliRunner.
   fastapi = prev.fastapi.overridePythonAttrs (old: {
     patches = (old.patches or [ ]) ++ [

@@ -203,6 +203,7 @@ class Trial:
         response = self.request("/v1/completions", body)
         c = response["choices"][0]
         return {
+            "request_id": response.get("id"),
             "seconds": time.monotonic() - start,
             "text": c.get("text"),
             "ids": c.get("token_ids"),

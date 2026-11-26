@@ -34,7 +34,7 @@ def checkpoint(trial, name):
     if name:
         (trial.output / f"{name}.prom").write_text(raw)
     metrics, _ = parse_metrics(raw)
-    for reason in ("abort", "error"):
+    for reason in ("abort", "error", "length", "stop"):
         values = re.findall(
             rf'^vllm:request_success_total\{{[^}}]*finished_reason="{reason}"[^}}]*\}} (\S+)',
             raw,
@@ -219,6 +219,13 @@ def abort_and_reuse(trial):
             "four-live-and-each-generating",
             peak >= 4 and all(e.is_set() for e in ready),
         )
+        trial.doc["scheduler_running"] = [
+            {
+                "phase": "before-disconnect",
+                "running": live["running"],
+                "at": time.monotonic(),
+            }
+        ]
         cancel.set()
         victim = jobs[0].result(timeout=45)
         trial.doc["victim"] = victim
@@ -231,20 +238,48 @@ def abort_and_reuse(trial):
         )
         # The remaining three requests hold their slots while this warm request
         # is admitted. Confirm their overlap using both the scheduler and HTTP.
-        after_cancel = None
-        deadline = time.monotonic() + 15
-        while time.monotonic() < deadline:
-            after_cancel = checkpoint(trial, None)
-            if (diff(after_cancel, before, "abort") or 0) >= 1:
+        # A disconnected async HTTP generator drops its output-processor state
+        # before the ordinary finish-reason metrics are recorded. Observe the
+        # actual scheduler slot while all three remaining streams are active.
+        admissions = trial.doc["scheduler_running"]
+
+        def observe(phase):
+            metrics = checkpoint(trial, None)
+            count = metrics["running"]
+            if not admissions or (
+                admissions[-1]["phase"],
+                admissions[-1]["running"],
+            ) != (phase, count):
+                admissions.append(
+                    {"phase": phase, "running": count, "at": time.monotonic()}
+                )
+            return count
+
+        deadline = time.monotonic() + 3
+        while observe("after-disconnect") != 3 and time.monotonic() < deadline:
+            if any(peer.done() for peer in jobs[1:]):
                 break
-            time.sleep(0.05)
+            time.sleep(0.01)
         trial.check(
-            "engine-counted-victim-abort", diff(after_cancel, before, "abort") == 1
+            "scheduler-released-one-slot",
+            admissions[-1]["running"] == 3
+            and all(not peer.done() for peer in jobs[1:]),
         )
         before_reuse = checkpoint(trial, "replacement-before")
         reuse_started = time.monotonic()
-        actual = trial.complete(replacement)
+        reuse = pool.submit(trial.complete, replacement)
+        while not reuse.done():
+            observe("replacement")
+            time.sleep(0.005)
+        actual = reuse.result()
         reuse_ended = time.monotonic()
+        trial.check(
+            "scheduler-reoccupied-fourth-slot",
+            any(
+                item["phase"] == "replacement" and item["running"] == 4
+                for item in admissions
+            ),
+        )
         trial.evidence("replacement", replacement, actual)
         trial.same("replacement-cold-exact", reference, actual)
         trial.doc["replacement"] = {
@@ -255,6 +290,10 @@ def abort_and_reuse(trial):
         survivors = [job.result(timeout=180) for job in jobs[1:]]
     trial.doc["survivors"] = survivors
     trial.doc["peak_running"] = peak
+    request_ids = [r.get("request_id") for r in [victim, *survivors, actual]]
+    trial.check(
+        "five-distinct-request-ids", all(request_ids) and len(set(request_ids)) == 5
+    )
     for i, survivor in enumerate(survivors, 1):
         trial.check(
             f"survivor-{i}-overlapped-replacement",
@@ -297,10 +336,14 @@ def abort_and_reuse(trial):
         >= len(replacement["prompt_ids"]) - 128,
     )
     trial.check("idle-after-abort-and-reuse", after["running"] == after["waiting"] == 0)
+    # The only completed requests in this interval must be the three forced-
+    # length peers and one naturally finished replacement. Keep the raw abort
+    # counter as evidence even when this frontend does not increment it.
     trial.check(
-        "one-abort-no-engine-errors",
-        diff(after, before, "abort") == 1 and diff(after, before, "error") == 0,
+        "only-three-peer-finishes-and-one-replacement",
+        diff(after, before, "length") == 3 and diff(after, before, "stop") == 1,
     )
+    trial.check("no-engine-errors", diff(after, before, "error") == 0)
     trial.check("DSpark-active", (diff(after, before, "accepted") or 0) > 0)
 
 

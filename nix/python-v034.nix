@@ -37,6 +37,26 @@ in
     };
     pythonImportsCheck = [ "click" ];
   };
+  # Typer 0.25's command suggestions are incompatible with Click 8.4.
+  # The 0.26 series vendors its Click implementation upstream.
+  typer = prev.typer.overridePythonAttrs (old: {
+    version = "0.26.8";
+    src = pkgs.fetchFromGitHub {
+      owner = "fastapi";
+      repo = "typer";
+      tag = "0.26.8";
+      hash = "sha256-VkqvlWLzmtbQPaplx/YRdSNN1xq/UMRl8EZVIEm97Lk=";
+    };
+    dependencies = with final; [
+      annotated-doc
+      rich
+      shellingham
+    ];
+    # test_binary_stderr starts a new Python process which imports tests.utils.
+    preCheck = (old.preCheck or "") + ''
+      export PYTHONPATH="$PYTHONPATH:$PWD"
+    '';
+  });
   filelock = final.buildPythonPackage {
     pname = "filelock";
     version = "4.2.4";

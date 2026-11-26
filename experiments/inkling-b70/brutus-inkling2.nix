@@ -1,7 +1,7 @@
-# In a Brutus host module with the experimental flake as inputs.inkling:
+# In a Brutus host module with the packaging release as inputs.vllm-xpu-release:
 #
-#   let recipe = import "${inputs.inkling}/experiments/inkling-b70/brutus-inkling2.nix" {
-#     runtime = inputs.inkling.packages.x86_64-linux.vllm-xpu-inkling2-kvarn;
+#   let recipe = import "${inputs.vllm-xpu-release}/experiments/inkling-b70/brutus-inkling2.nix" {
+#     runtime = inputs.vllm-xpu-release.packages.x86_64-linux.vllm-xpu-inkling2-kvarn;
 #   }; in { imports = [ recipe.brutusModule ]; }
 #
 # With the ordinary vllm-xpu NixOS module, use the same recipe and set
@@ -9,7 +9,7 @@
 {
   runtime,
   maxModelLen ? 262144,
-  gpuMemoryUtilization ? 0.93,
+  gpuMemoryUtilization ? null,
   flashPrefill ? true,
   phasedDecode ? true,
   mixedPrefill ? true,

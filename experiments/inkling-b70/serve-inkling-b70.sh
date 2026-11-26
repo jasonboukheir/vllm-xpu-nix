@@ -76,10 +76,14 @@ if [[ $profile == kvarn ]]; then
     cache_options+=("--enable-extensible-kv-cache")
   fi
 fi
+memory_options=()
+if [[ ${INKLING_GPU_FRACTION:-0.93} != auto ]]; then
+  memory_options=(--gpu-memory-utilization "${INKLING_GPU_FRACTION:-0.93}")
+fi
 exec "$runtime/bin/vllm" serve "$snapshot" \
   --host 127.0.0.1 --port "${INKLING_PORT:-18001}" --served-model-name inkling-trial \
   --dtype bfloat16 --kv-cache-dtype "${INKLING_KV_DTYPE:-auto}" --max-model-len "${INKLING_CONTEXT:-8192}" \
   --max-num-batched-tokens "${INKLING_BATCH_TOKENS:-2048}" --max-num-seqs "${INKLING_SEQUENCES:-1}" --block-size "$block_size" \
-  --gpu-memory-utilization "${INKLING_GPU_FRACTION:-0.93}" "${cache_options[@]}" \
+  "${memory_options[@]}" "${cache_options[@]}" \
   --reasoning-parser inkling --enable-auto-tool-choice --tool-call-parser inkling \
   "${modality[@]}" "${graphs[@]}" "${scheduling[@]}" "${draft[@]}"

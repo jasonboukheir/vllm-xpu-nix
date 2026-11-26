@@ -1,6 +1,6 @@
 # Inkling 2 Mini on one Arc Pro B70
 
-The `vllm-xpu-inkling2-kvarn` package runs Mini with its bundled seven-token DSpark drafter, KVarN K4V4 long-history KV, an 8 GiB RAM prefix cache, and extensible device memory. The Brutus recipe enables four concurrent sequences, two images per request, streaming, native reasoning and tool calls. Its 262,144-token per-request limit includes generation. The default uses the same 0.93 GPU-memory setting as Brutus’s Qwen service. These results were collected on one 30.3 GiB B70 at its configured 230 W.
+The `vllm-xpu-inkling2-kvarn` package runs Mini with its bundled seven-token DSpark drafter, KVarN K4V4 long-history KV, an 8 GiB RAM prefix cache, and extensible device memory. The Brutus recipe enables four concurrent sequences, two images per request, streaming, native reasoning and tool calls. Its 262,144-token per-request limit includes generation. The xpu-v2.1.0 Brutus recipe lets the extensible KV allocator size the cache from free VRAM at startup. The comparisons below used an explicit 0.93 GPU-memory setting on both models unless specified. These results were collected on one 30.3 GiB B70 at its configured 230 W.
 
 ## Results on Brutus
 
@@ -18,7 +18,7 @@ Qwen used its released 0.34 stack, K4V2 history and an 8 GiB RAM cache. Inkling 
 
 Every naturally finished MMLU-Pro answer on both arms matched the official answer. Four Qwen requests and two Inkling requests exhausted the shared 4,096-token budget before giving a final answer. Eleven items were correct on both, three only on Inkling and one only on Qwen. These are elapsed times through the final answer or cap. The two models tokenize and spend reasoning tokens differently.
 
-The device memory figures come from Intel xe resident-memory counters sampled every 0.5 seconds. The configured limits share the card across admissions. The default reported capacity for 282,887 shared tokens on two cold starts. Setting the recipe argument `gpuMemoryUtilization = 0.95;` yielded roughly 309K–324K, allowing more overlapping context. At ready, the default consumed 26.27 GiB and Qwen consumed 28.11 GiB. The engine's separate model-load measurement was 18.73 GiB for Qwen and 19.57 GiB for Inkling with vision. The same 659,752-byte ledger took 245,781 tokens including chat formatting for Inkling and 362,148 user-content tokens before formatting for Qwen.
+The device memory figures come from Intel xe resident-memory counters sampled every 0.5 seconds. The configured limits share the card across admissions. At 0.93 the allocator reported capacity for 282,887 shared tokens on two cold starts. Setting the recipe argument `gpuMemoryUtilization = 0.95;` yielded roughly 309K–324K, allowing more overlapping context. At ready, the 0.93 Inkling configuration consumed 26.27 GiB and Qwen consumed 28.11 GiB. The engine's separate model-load measurement was 18.73 GiB for Qwen and 19.57 GiB for Inkling with vision. The same 659,752-byte ledger took 245,781 tokens including chat formatting for Inkling and 362,148 user-content tokens before formatting for Qwen.
 
 - **Long retrieval.** At 0.95 with the two-phase packed reader, the full Inkling server recovered the two codes planted 20% and 80% through the 245,781-token ledger. Time to first token was 139.64 s and the answer finished in 144.61 s at 46.93 decode tok/s. The previous packed reader recovered the same codes at 31.86 tok/s. The separate FP8 text-only, single-slot control reached 52.10 tok/s with 129.83 s to first token. Each figure comes from one complete run and includes its own speculation acceptance.
 - **RAM prefix cache.** On a 245,760-token varied prompt, the cold request stored 3,333,980,160 bytes in RAM. After an unrelated request reused the staging slot and the device prefix was cleared, the warm request restored 3,318,939,648 bytes and 245,759 host tokens, with zero device hits. At 0.93 first token went from 128.37 s cold to 1.06 s warm, and the complete answer from 128.62 s to 1.29 s. The 0.95 profile reproduced the same answer in 129.84 s cold and 1.32 s warm. All six output IDs matched. At 65,536 tokens the two-phase reader gave 21.80 s cold and 0.32 s warm to first token. The short four-slot suite passed 140 checks, including partial-page restores. [Timing and qualification receipts](inkling-b70-results.json)
@@ -31,7 +31,7 @@ Brutus uses fixed seven-token DSpark verification. Shortening verification to th
 
 ## Run the qualified profile
 
-The pinned model is `thinkingmachines/Inkling-2-Mini@ed40e7da625f594fc9c4990f5f66be24873c22d7`. Brutus's Nix configuration declares this exact revision in `services.hf-cache.roots` with source `brutus.inkling2-mini-trial`. Every snapshot file was verified in the shared Hub cache. The 14 files occupy 20,191,643,294 bytes in total, including 19,526,019,168 bytes of target weights and 635,801,416 bytes of bundled drafter weights. The normal host rebuild registers the new retention manifest with the collector. [Pinned checkpoint](https://huggingface.co/thinkingmachines/Inkling-2-Mini/tree/ed40e7da625f594fc9c4990f5f66be24873c22d7)
+The pinned model is `thinkingmachines/Inkling-2-Mini@ed40e7da625f594fc9c4990f5f66be24873c22d7`. The service module registers this exact revision in `services.hf-cache.roots` as `vllm-xpu.chat`. Every snapshot file was verified in the shared Hub cache. The 14 files occupy 20,191,643,294 bytes in total, including 19,526,019,168 bytes of target weights and 635,801,416 bytes of bundled drafter weights. The normal host rebuild registers the new retention manifest with the collector. [Pinned checkpoint](https://huggingface.co/thinkingmachines/Inkling-2-Mini/tree/ed40e7da625f594fc9c4990f5f66be24873c22d7)
 
 Brutus already has the snapshot. To populate another identically configured host, use the same cache root and revision.
 
@@ -40,23 +40,33 @@ HF_HOME=/var/cache/huggingface hf download thinkingmachines/Inkling-2-Mini \
   --revision ed40e7da625f594fc9c4990f5f66be24873c22d7
 ```
 
-From this checkout on an idle B70, build and launch the full foreground server.
+From a checkout of the permanent `releases/xpu-v2.1.0` branch on an idle B70, build and launch the autosized foreground server. Set `INKLING_GPU_FRACTION=0.93` to reproduce the measured fixed-budget profile.
 
 ```sh
 nix build --no-link .#vllm-xpu-inkling2-kvarn
-INKLING_CONTEXT=262144 INKLING_GPU_FRACTION=0.93 INKLING_SEQUENCES=4 \
+INKLING_CONTEXT=262144 INKLING_GPU_FRACTION=auto INKLING_SEQUENCES=4 \
   INKLING_EXTENSIBLE=1 INK2_KVARN_FLASH_PREFILL=1 INK2_KVARN_PHASED_DECODE=1 \
   INK2_KVARN_MIXED_PREFILL=1 \
   ./experiments/inkling-b70/serve-inkling-b70.sh kvarn --vision
 ```
 
-The foreground launcher binds to `127.0.0.1:18001` and serves the alias `inkling-trial`. It resolves the pinned snapshot offline. For the system service, the Nix recipe preserves the host's `sunny-chat` alias, pins the target and the independent DSpark model lookups to the same revision, and uses Inkling's native chat template. The local Brutus checkout can be locked with `inputs.inkling.url = "git+file:///home/jasonbk/Projects/vllm-xpu-nix-inkling-trial";`. Import its recipe in the host module as shown below. Re-selecting the previous Brutus backend restores the Qwen configuration. [Nix recipe](../experiments/inkling-b70/brutus-inkling2.nix)
+The foreground launcher binds to `127.0.0.1:18001` and serves the alias `inkling-trial`. It resolves the pinned snapshot offline. For the system service, the Nix recipe preserves the host's `sunny-chat` alias, pins the target and the independent DSpark model lookups to the same revision, and uses Inkling's native chat template. Pin the packaging input to the permanent release branch in your host flake. Keep the release’s own nixpkgs pin. Re-selecting the previous Brutus backend restores the Qwen configuration. [Nix recipe](../experiments/inkling-b70/brutus-inkling2.nix)
+
+```nix
+inputs.vllm-xpu-release = {
+  type = "git";
+  url = "ssh://forgejo@git.sunnycareboo.com:2222/jasonbk/vllm-xpu-nix.git";
+  ref = "refs/heads/releases/xpu-v2.1.0";
+};
+```
+
+Import the recipe in the host module. To reproduce the 0.93 performance comparison, pass `gpuMemoryUtilization = 0.93;` alongside `runtime`.
 
 ```nix
 { inputs, ... }:
 let
-  recipe = import "${inputs.inkling}/experiments/inkling-b70/brutus-inkling2.nix" {
-    runtime = inputs.inkling.packages.x86_64-linux.vllm-xpu-inkling2-kvarn;
+  recipe = import "${inputs.vllm-xpu-release}/experiments/inkling-b70/brutus-inkling2.nix" {
+    runtime = inputs.vllm-xpu-release.packages.x86_64-linux.vllm-xpu-inkling2-kvarn;
   };
 in
 {
@@ -91,7 +101,7 @@ nix shell .#vllm-xpu-inkling2-kvarn -c python "$scripts/mmlu_pro_quality.py" \
 
 ## What the fork adds
 
-The experimental core pins post-0.34 vLLM `0085facc58` for Mini and per-layer KV configuration. The plugin pin is `677db18d`. The sparse variants include the two upstream commits for convolution-history allocation. The Xe2 CUTLASS MoE path reuses the Brutus vllm-xpu-kernels build at `65eb2861`. The release stays on vLLM 0.34 with the Qwen port. For isolated controls the flake also provides `vllm-xpu-inkling2`, `vllm-xpu-inkling2-cutlass` and `vllm-xpu-inkling2-sparse`. [Upstream Mini support](https://github.com/vllm-project/vllm/pull/69028) · [Sparse convolution history](https://github.com/vllm-project/vllm/pull/69444) · [Pinned plugin](https://github.com/mgaruccio/vllm-inkling2-xpu/tree/677db18d0129703b529270fe75052272f0e2834a)
+The Inkling package in xpu-v2.1.0 pins post-0.34 vLLM `0085facc58` for Mini and per-layer KV configuration. The plugin pin is `677db18d`. The sparse variants include the two upstream commits for convolution-history allocation. The Xe2 CUTLASS MoE path reuses the Brutus vllm-xpu-kernels build at `65eb2861`. The general-purpose fork and Qwen package use the released vLLM 0.34 base. For isolated controls the flake also provides `vllm-xpu-inkling2`, `vllm-xpu-inkling2-cutlass` and `vllm-xpu-inkling2-sparse`. [Upstream Mini support](https://github.com/vllm-project/vllm/pull/69028) · [Sparse convolution history](https://github.com/vllm-project/vllm/pull/69444) · [Pinned plugin](https://github.com/mgaruccio/vllm-inkling2-xpu/tree/677db18d0129703b529270fe75052272f0e2834a)
 
 KVarN packs sealed 128-token pages of the eight full target-attention layer visits using four bits per key and four per value. Mini has 128-dimensional heads, eight KV heads, and 24 query heads. A sealed head page occupies 17,920 bytes including scales and offsets. The 40 sliding-window visits and DSpark keep FP8 KV, convolution state uses sparse history, and the unfinished target page uses a bounded BF16 staging ring. The graph-compatible Triton writer and reader handle grouped-query attention, learned relative bias, gate/sink, speculation rollback, and partially filled pages restored from RAM. Each request admission has a generation number so a reused slot cannot inherit the previous request's staging contents.
 

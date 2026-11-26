@@ -132,6 +132,8 @@ let
   kvarnCore = (mkSparseCore ".sparse.kvarn").overrideAttrs (old: {
     patches = old.patches ++ [
       ../experiments/inkling-b70/kvarn-plugin/sycl-extensible-cache.patch
+      ../experiments/inkling-b70/kvarn-plugin/xpu-vmm-memory-baseline.patch
+      ../experiments/inkling-b70/kvarn-plugin/request-slot-generation.patch
       ../experiments/inkling-b70/kvarn-plugin/active-only-offload.patch
     ];
   });

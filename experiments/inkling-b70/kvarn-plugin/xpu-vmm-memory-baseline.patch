@@ -1,0 +1,121 @@
+From 2bceb4bafabc510bdbc6577de11aeec56206379a Mon Sep 17 00:00:00 2001
+From: Jason Elie Bou Kheir <5115126+jasonboukheir@users.noreply.github.com>
+Date: Thu, 26 Nov 2026 02:35:53 -0800
+Subject: [PATCH] Initialize the XPU free-memory baseline for post-warmup VMM
+ sizing
+
+Signed-off-by: Jason Elie Bou Kheir <5115126+jasonboukheir@users.noreply.github.com>
+---
+ tests/v1/worker/test_extensible_kv_cache.py   |  7 +--
+ .../v1/worker/test_worker_memory_snapshot.py  | 48 ++++++++++++++++++-
+ vllm/v1/worker/xpu_worker.py                  |  3 ++
+ 3 files changed, 54 insertions(+), 4 deletions(-)
+
+diff --git a/tests/v1/worker/test_extensible_kv_cache.py b/tests/v1/worker/test_extensible_kv_cache.py
+index f2930ccbfe..4c296c8b83 100644
+--- a/tests/v1/worker/test_extensible_kv_cache.py
++++ b/tests/v1/worker/test_extensible_kv_cache.py
+@@ -452,19 +452,20 @@ def test_measured_sizing_counts_reclaimable_memory_on_integrated_gpu(monkeypatch
+     assert measure() == 0
+ 
+ 
+-def test_freeing_the_cache_lifts_the_torch_memory_cap(monkeypatch):
++@pytest.mark.parametrize("device", [torch.device("cuda", 0), torch.device("xpu", 0)])
++def test_freeing_the_cache_lifts_the_torch_memory_cap(monkeypatch, device):
+     """The process may start another engine, which must not inherit the cap."""
+     fractions: list[float] = []
+     monkeypatch.setattr(
+         torch.accelerator, "get_memory_info", lambda *args: (0, 100 << 30)
+     )
+     monkeypatch.setattr(
+-        torch.cuda,
++        torch.get_device_module(device),
+         "set_per_process_memory_fraction",
+         lambda fraction, device: fractions.append(fraction),
+     )
+     kv_cache = object.__new__(ExtensibleKVCache)
+-    kv_cache.buffer = SimpleNamespace(device=torch.device("cpu"), free=lambda: None)
++    kv_cache.buffer = SimpleNamespace(device=device, free=lambda: None)
+     kv_cache.num_committed_blocks = 2
+     kv_cache.set_torch_memory_limit(25 << 30)
+     kv_cache.free()
+diff --git a/tests/v1/worker/test_worker_memory_snapshot.py b/tests/v1/worker/test_worker_memory_snapshot.py
+index 3232d3abcf..e1ec3a8b95 100644
+--- a/tests/v1/worker/test_worker_memory_snapshot.py
++++ b/tests/v1/worker/test_worker_memory_snapshot.py
+@@ -5,7 +5,7 @@ import multiprocessing as mp
+ import os
+ import tempfile
+ from multiprocessing.queues import Queue
+-from unittest.mock import patch
++from unittest.mock import Mock, patch
+ 
+ import pytest
+ import torch
+@@ -210,3 +210,49 @@ def test_init_distributed_is_called_before_memory_snapshot():
+ 
+     # Clean up
+     os.unlink(distributed_init_method.replace("file://", ""))
++
++
++@pytest.mark.parametrize("extensible", [True, False])
++def test_xpu_snapshot_for_extensible_cache(monkeypatch, extensible):
++    """Post-warmup sizing compares actual free bytes on this worker's device."""
++    from vllm.v1.worker import xpu_worker
++
++    worker = Mock(
++        local_rank=0,
++        rank=0,
++        parallel_config=Mock(
++            distributed_executor_backend="external_launcher",
++            assigned_physical_gpu_ids=None,
++            world_size=1,
++        ),
++        device_config=Mock(device=torch.device("xpu")),
++        cache_config=Mock(enable_extensible_kv_cache=extensible),
++    )
++    platform = Mock()
++    platform.logical_device_id_to_visible_device_id.return_value = 1
++    platform.free_device_memory.return_value = 23 << 30
++    monkeypatch.setattr(xpu_worker, "current_platform", platform)
++    monkeypatch.setattr(
++        torch.xpu, "get_device_properties", lambda i: Mock(total_memory=32 << 30)
++    )
++    monkeypatch.setattr(torch.accelerator, "device_count", lambda: 2)
++    monkeypatch.setattr(torch.accelerator, "set_device_index", Mock())
++    monkeypatch.setattr(torch.accelerator, "empty_cache", Mock())
++    for fn in (
++        "init_worker_distributed_environment",
++        "set_random_seed",
++        "freeze_gc_heap",
++    ):
++        monkeypatch.setattr(xpu_worker, fn, Mock())
++    monkeypatch.setattr(xpu_worker, "MemorySnapshot", Mock())
++    monkeypatch.setattr(xpu_worker, "request_memory", Mock(return_value=30 << 30))
++    with patch.dict(os.environ):
++        xpu_worker.XPUWorker.init_device(worker)
++
++    assert worker.init_gpu_memory == 32 << 30
++    assert worker.requested_memory == 30 << 30
++    if extensible:
++        platform.free_device_memory.assert_called_once_with(torch.device("xpu", 1))
++        assert worker.init_free_memory == 23 << 30
++    else:
++        platform.free_device_memory.assert_not_called()
+diff --git a/vllm/v1/worker/xpu_worker.py b/vllm/v1/worker/xpu_worker.py
+index a080cbeaa9..66a81d1abe 100644
+--- a/vllm/v1/worker/xpu_worker.py
++++ b/vllm/v1/worker/xpu_worker.py
+@@ -214,6 +214,9 @@ class XPUWorker(Worker):
+ 
+         # take current memory snapshot
+         self.init_snapshot = init_snapshot = MemorySnapshot(device=self.device)
++        if self.cache_config.enable_extensible_kv_cache:
++            # Measure with the same API as post-warmup cache sizing.
++            self.init_free_memory = current_platform.free_device_memory(self.device)
+         self.requested_memory = request_memory(init_snapshot, self.cache_config)
+         logger.debug("worker init memory snapshot: %r", self.init_snapshot)
+         logger.debug(
+-- 
+2.54.0
+

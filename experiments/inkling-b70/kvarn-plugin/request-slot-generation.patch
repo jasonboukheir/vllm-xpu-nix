@@ -1,0 +1,96 @@
+From fe16abffb01bb101096bf7304de3dc9b3131f132 Mon Sep 17 00:00:00 2001
+From: Codex <codex@openai.com>
+Date: Thu, 26 Nov 2026 02:35:37 -0800
+Subject: [PATCH] Track request-slot admissions in runner V2 attention metadata
+
+Signed-off-by: Codex <codex@openai.com>
+---
+ vllm/v1/attention/backend.py               | 7 +++++++
+ vllm/v1/worker/gpu/attn_utils.py           | 2 ++
+ vllm/v1/worker/gpu/model_states/default.py | 4 ++++
+ 3 files changed, 13 insertions(+)
+
+diff --git a/vllm/v1/attention/backend.py b/vllm/v1/attention/backend.py
+index 9a18576c7f..12fcf7e8b1 100644
+--- a/vllm/v1/attention/backend.py
++++ b/vllm/v1/attention/backend.py
+@@ -475,6 +475,12 @@ class CommonAttentionMetadata:
+     table. Rows of one request are adjacent, so equal neighbours are PCP
+     chunks sharing one KV context."""
+ 
++    req_generation: np.ndarray | None = None
++    """CPU int64 generation of each req_idx slot. Changes on every admission,
++    including preemption or streaming re-add with the same request ID. Ordinary
++    updates and speculative rollbacks keep the generation. Zero before admission.
++    """
++
+     mm_req_doc_ranges: dict[int, list[tuple[int, int]]] | None = None
+     """PrefixLM bidirectional ranges for multimodal tokens. Maps
+     request index to list of (start, end) token position ranges
+@@ -557,6 +563,7 @@ class CommonAttentionMetadata:
+             seq_lens_cpu_upper_bound=maybe_slice_reqs(self.seq_lens_cpu_upper_bound),
+             is_prefilling=maybe_slice_reqs(self.is_prefilling),
+             req_idx=maybe_slice_reqs(self.req_idx),
++            req_generation=maybe_slice_reqs(self.req_generation),
+             rswa_prefix_lens=maybe_slice_reqs(self.rswa_prefix_lens),
+         )
+ 
+diff --git a/vllm/v1/worker/gpu/attn_utils.py b/vllm/v1/worker/gpu/attn_utils.py
+index fbf56707be..0793d81d38 100644
+--- a/vllm/v1/worker/gpu/attn_utils.py
++++ b/vllm/v1/worker/gpu/attn_utils.py
+@@ -486,6 +486,7 @@ def build_attn_metadata(
+     ubatch_idx: int = 0,
+     fast_prefill: FastPrefillBatchMetadata | None = None,
+     req_idx: np.ndarray | None = None,
++    req_generation: np.ndarray | None = None,
+ ) -> dict[str, Any]:
+     seq_lens = seq_lens[:num_reqs]
+     if rswa_prefix_lens is not None and rswa_prefix_lens.shape[0] < num_reqs:
+@@ -556,6 +557,7 @@ def build_attn_metadata(
+             mm_req_doc_ranges=mm_req_doc_ranges,
+             rswa_prefix_lens=rswa_prefix_lens,
+             req_idx=req_idx,
++            req_generation=req_generation,
+             _token_to_req_indices_cache=token_to_req_indices,
+             **common_attn_metadata_extra_kwargs,
+         )
+diff --git a/vllm/v1/worker/gpu/model_states/default.py b/vllm/v1/worker/gpu/model_states/default.py
+index a66c58ec34..12369a2c96 100644
+--- a/vllm/v1/worker/gpu/model_states/default.py
++++ b/vllm/v1/worker/gpu/model_states/default.py
+@@ -2,6 +2,7 @@
+ # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+ from typing import Any
+ 
++import numpy as np
+ import torch
+ import torch.nn as nn
+ 
+@@ -42,6 +43,7 @@ class DefaultModelState(ModelState):
+     ):
+         super().__init__(vllm_config, model, encoder_cache, device)
+ 
++        self.req_generation = np.zeros(self.max_num_reqs, dtype=np.int64)
+         self.prompt_embeds_state: PromptEmbedsState | None = None
+         if self.model_config.enable_prompt_embeds:
+             self.prompt_embeds_state = PromptEmbedsState(
+@@ -83,6 +85,7 @@ class DefaultModelState(ModelState):
+             self.mm_prefix_ranges = {}
+ 
+     def add_request(self, req_index: int, new_req_data: NewRequestData) -> None:
++        self.req_generation[req_index] += 1
+         if self.mm_prefix_ranges is not None:
+             hf_text_config = self.model_config.hf_text_config
+             self.mm_prefix_ranges[new_req_data.req_id] = compute_mm_prefix_ranges(
+@@ -279,6 +282,7 @@ class DefaultModelState(ModelState):
+             for_cudagraph_capture=for_capture,
+             rswa_prefix_lens=input_batch.prompt_lens,
+             req_idx=input_batch.idx_mapping_np,
++            req_generation=self.req_generation[input_batch.idx_mapping_np],
+             ubatch_idx=ubatch_idx,
+             fast_prefill=input_batch.fast_prefill,
+             model_specific_attn_metadata=model_specific_attn_metadata,
+-- 
+2.54.0
+

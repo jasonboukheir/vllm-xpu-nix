@@ -11,12 +11,13 @@ profile=$1
 modality=("--language-model-only")
 if [[ $# -eq 2 ]]; then
   [[ $2 == --vision ]] || usage
-  modality=()
+  modality=("--limit-mm-per-prompt" '{"image":2}')
 fi
 
 package=vllm-xpu-inkling2
 graphs=("-cc.mode=none" "-cc.cudagraph_mode=FULL_DECODE_ONLY" "--cudagraph-metrics")
 draft=()
+scheduling=()
 case "$profile" in
   eager) graphs=("--enforce-eager") ;;
   graph) ;;
@@ -50,6 +51,8 @@ export INK2_CUTLASS_MOE=0 INK2_SPARSE_CONV_HISTORY=0
 if [[ $profile == cutlass || $profile == sparse ]]; then export INK2_CUTLASS_MOE=1; fi
 if [[ $profile == sparse ]]; then
   export INK2_SPARSE_CONV_HISTORY=1
+  scheduling=("--no-async-scheduling")
+  draft=("--speculative-config" '{"method":"dspark","num_speculative_tokens":7,"draft_sample_method":"probabilistic"}')
   INKLING_KV_DTYPE=${INKLING_KV_DTYPE:-fp8}
 fi
 exec "$runtime/bin/vllm" serve "$snapshot" \
@@ -58,4 +61,4 @@ exec "$runtime/bin/vllm" serve "$snapshot" \
   --max-num-batched-tokens "${INKLING_BATCH_TOKENS:-2048}" --max-num-seqs 1 --block-size 64 \
   --gpu-memory-utilization "${INKLING_GPU_FRACTION:-0.93}" --no-enable-prefix-caching \
   --reasoning-parser inkling --enable-auto-tool-choice --tool-call-parser inkling \
-  "${modality[@]}" "${graphs[@]}" "${draft[@]}"
+  "${modality[@]}" "${graphs[@]}" "${scheduling[@]}" "${draft[@]}"

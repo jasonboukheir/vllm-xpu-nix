@@ -4,11 +4,13 @@
 import argparse
 import json
 import re
+import sys
 import time
 import urllib.request
 from pathlib import Path
 
-from kvarn_vision_run import post_json, request_case
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from scripts.kvarn_vision_run import post_json, request_case
 
 PROMPT = (
     "Explain to a junior engineer how to test a cache with time-based expiry. "

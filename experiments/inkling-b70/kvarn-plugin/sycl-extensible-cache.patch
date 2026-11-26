@@ -1,0 +1,296 @@
+From 4e905c947367be197c4beb739fe4fd82fe06e3e9 Mon Sep 17 00:00:00 2001
+From: Jason Elie Bou Kheir <5115126+jasonboukheir@users.noreply.github.com>
+Date: Thu, 26 Nov 2026 02:25:15 -0800
+Subject: [PATCH] Port the in-process SYCL extensible cache to the Inkling core
+
+Backport the XPU config and virtual-memory driver from b18eee6e90c77a08b05d687cc9b47ebdd08cfc3e. Route the allocator-limit update through the device module used by this worker. Use only in-process connectors, and require an explicit request on XPU.
+
+Signed-off-by: Jason Elie Bou Kheir <5115126+jasonboukheir@users.noreply.github.com>
+---
+ tests/utils_/test_xpu_extensible_tensor.py | 53 ++++++++++++++++++++++
+ tests/v1/engine/test_engine_args.py        | 45 +++++++++++++++++-
+ vllm/config/vllm.py                        | 14 ++++--
+ vllm/utils/extensible_tensor.py            | 25 ++++++++--
+ vllm/utils/vmm_driver.py                   | 12 +++--
+ vllm/v1/worker/extensible_kv_cache.py      |  4 +-
+ 6 files changed, 137 insertions(+), 16 deletions(-)
+ create mode 100644 tests/utils_/test_xpu_extensible_tensor.py
+
+diff --git a/tests/utils_/test_xpu_extensible_tensor.py b/tests/utils_/test_xpu_extensible_tensor.py
+new file mode 100644
+index 0000000000..57d0f859d1
+--- /dev/null
++++ b/tests/utils_/test_xpu_extensible_tensor.py
+@@ -0,0 +1,53 @@
++# SPDX-License-Identifier: Apache-2.0
++# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
++
++import pytest
++import torch
++
++from tests.utils import create_new_process_for_each_test
++from vllm.utils.extensible_tensor import ExtensibleTensor, granule_size
++from vllm.utils.vmm_driver import (
++    MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR,
++    vmm_unavailable_reason,
++)
++
++
++@pytest.mark.skipif(not torch.xpu.is_available(), reason="requires XPU")
++@create_new_process_for_each_test("spawn")
++def test_xpu_reservation_survives_growth_and_remapping() -> None:
++    reason = vmm_unavailable_reason()
++    if reason and "does not support SYCL virtual memory" in reason:
++        pytest.skip(reason)
++    assert reason is None, reason
++    assert "does not export IPC handles" in (
++        vmm_unavailable_reason(MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR) or ""
++    )
++    g = granule_size(torch.xpu.current_device())
++    reservation = ExtensibleTensor(4 * g, device="xpu", num_segments=2)
++    try:
++        # The model runner creates its tensor views before committing pages.
++        full = reservation.full_view()
++        base = full.data_ptr()
++        assert full.device == reservation.device
++        assert reservation.physical_bytes == 0
++        reservation.resize_segments_([g, 64])
++        full[:g].fill_(37)
++        full[2 * g : 2 * g + 64].fill_(71)
++
++        reservation.resize_segments_([g + 64, 64], zero_new=True)
++        assert reservation.physical_bytes == 3 * g
++        assert full[g - 1].item() == 37
++        assert full[g].item() == 0
++        assert reservation.segment_view(1).data_ptr() == base + 2 * g
++        assert reservation.segment_view(1)[-1].item() == 71
++        full[g : g + 64].fill_(19)
++        assert reservation.segment_view(0)[-1].item() == 19
++
++        reservation.release_physical()
++        assert reservation.physical_bytes == 0
++        reservation.resize_segments_([64, 64], zero_new=True)
++        assert reservation.full_view().data_ptr() == base
++        assert full[0].item() == 0
++        assert full[2 * g].item() == 0
++    finally:
++        reservation.free()
+diff --git a/tests/v1/engine/test_engine_args.py b/tests/v1/engine/test_engine_args.py
+index d4e42b22ca..198b200009 100644
+--- a/tests/v1/engine/test_engine_args.py
++++ b/tests/v1/engine/test_engine_args.py
+@@ -421,7 +421,9 @@ def test_extensible_kv_cache_off_with_elastic_ep(monkeypatch, requested):
+     from vllm.config.vllm import VllmConfig
+ 
+     monkeypatch.setattr(
+-        vllm.platforms, "current_platform", SimpleNamespace(is_cuda_alike=lambda: True)
++        vllm.platforms,
++        "current_platform",
++        SimpleNamespace(is_cuda_alike=lambda: True, is_xpu=lambda: False),
+     )
+     config = SimpleNamespace(
+         cache_config=SimpleNamespace(
+@@ -601,7 +603,10 @@ def _nixl_config_for_extensible_kv_cache(
+         # MultiConnector builds each child's KVTransferConfig, whose
+         # kv_buffer_device defaults to the platform's device_type.
+         SimpleNamespace(
+-            device_type="cuda", is_cuda_alike=lambda: True, is_rocm=lambda: rocm
++            device_type="cuda",
++            is_cuda_alike=lambda: True,
++            is_rocm=lambda: rocm,
++            is_xpu=lambda: False,
+         ),
+     )
+     monkeypatch.setattr(
+@@ -620,6 +625,42 @@ def _nixl_config_for_extensible_kv_cache(
+     )
+ 
+ 
++@pytest.mark.parametrize("requested", [None, False, True])
++@pytest.mark.parametrize("external", [False, True])
++def test_xpu_extensible_cache_requires_opt_in_and_local_transfers(
++    monkeypatch, requested, external
++):
++    import vllm.platforms
++    from vllm.config.kv_transfer import KVCacheAccess
++    from vllm.config.vllm import VllmConfig
++
++    access = KVCacheAccess.REGISTERS if external else KVCacheAccess.IN_PROCESS
++    transfer = SimpleNamespace(
++        kv_cache_access=lambda: access,
++        uses_custom_mem_pool=lambda: False,
++    )
++    config = _nixl_config_for_extensible_kv_cache(
++        monkeypatch,
++        rocm=False,
++        requested=requested,
++        imex_channel=False,
++        transfer=transfer,
++    )
++    monkeypatch.setattr(
++        vllm.platforms,
++        "current_platform",
++        SimpleNamespace(
++            is_cuda_alike=lambda: False, is_xpu=lambda: True, is_rocm=lambda: False
++        ),
++    )
++    if requested and external:
++        with pytest.raises(ValueError, match="in-process"):
++            VllmConfig._resolve_extensible_kv_cache(config)
++    else:
++        VllmConfig._resolve_extensible_kv_cache(config)
++        assert config.cache_config.enable_extensible_kv_cache is bool(requested)
++
++
+ @pytest.mark.parametrize("rocm", [False, True])
+ @pytest.mark.parametrize("requested", [None, True])
+ def test_extensible_kv_cache_off_for_rocm_registering_connector(
+diff --git a/vllm/config/vllm.py b/vllm/config/vllm.py
+index 724c308290..fa8322daae 100644
+--- a/vllm/config/vllm.py
++++ b/vllm/config/vllm.py
+@@ -3413,8 +3413,10 @@ class VllmConfig:
+             else self.kv_transfer_config.kv_cache_access()
+         )
+         unsupported = None
+-        if not current_platform.is_cuda_alike():
+-            unsupported = "it is only supported on CUDA and ROCm"
++        if not (current_platform.is_cuda_alike() or current_platform.is_xpu()):
++            unsupported = "it requires a CUDA, ROCm or XPU virtual memory backend"
++        elif current_platform.is_xpu() and kv_cache_access != KVCacheAccess.IN_PROCESS:
++            unsupported = "XPU driver mappings support in-process KV transfers"
+         elif cache_config.kv_cache_memory_bytes is not None:
+             unsupported = (
+                 "it sizes the KV cache from measured memory, which "
+@@ -3465,9 +3467,13 @@ class VllmConfig:
+             and not imex_channel_available()
+         )
+         if requested is None:
+-            enabled = unsupported is None and (exports_fd or not fabric_unavailable)
++            enabled = (
++                unsupported is None
++                and not current_platform.is_xpu()
++                and (exports_fd or not fabric_unavailable)
++            )
+             cache_config.enable_extensible_kv_cache = enabled
+-            if unsupported is None and not enabled:
++            if unsupported is None and fabric_unavailable and not enabled:
+                 logger.info(
+                     "Extensible KV cache off: without an IMEX channel, KV transfers "
+                     "within a host (e.g. NIXL) would lose NVLink and fall back to "
+diff --git a/vllm/utils/extensible_tensor.py b/vllm/utils/extensible_tensor.py
+index f90eff57a1..01812a461a 100644
+--- a/vllm/utils/extensible_tensor.py
++++ b/vllm/utils/extensible_tensor.py
+@@ -221,6 +221,16 @@ def uint8_tensor_from_ptr(ptr: int, num_bytes: int, device_index: int) -> torch.
+     view is destroyed, which can be after this module's globals are cleared at
+     interpreter exit. Its deleter is NULL, so nothing calls back into Python.
+     """
++    device_type = get_vmm_driver().dlpack_device_type
++    if device_type == 14:  # kDLOneAPI
++        # DLPack asks the XPU driver which device owns the pointer. A new
++        # virtual reservation has no physical pages for that query yet.
++        device = torch.device("xpu", device_index)
++        storage = torch._C._construct_storage_from_data_pointer(ptr, device, num_bytes)
++        return torch.empty(0, dtype=torch.uint8, device=device).set_(
++            storage, 0, (num_bytes,), (1,)
++        )
++
+     managed_size = ctypes.sizeof(_DLManagedTensor)
+     addr = _malloc(managed_size + ctypes.sizeof(ctypes.c_int64))
+     if not addr:
+@@ -231,7 +241,6 @@ def uint8_tensor_from_ptr(ptr: int, num_bytes: int, device_index: int) -> torch.
+ 
+     managed = _DLManagedTensor.from_address(addr)
+     managed.dl_tensor.data = ctypes.c_void_p(ptr)
+-    device_type = get_vmm_driver().dlpack_device_type
+     managed.dl_tensor.device = _DLDevice(device_type, device_index)
+     managed.dl_tensor.ndim = 1
+     managed.dl_tensor.dtype = _DLDataType(_K_DL_UINT, _UINT8_BITS, 1)
+@@ -281,8 +290,16 @@ class ExtensibleTensor:
+         if device is None:
+             device = torch.accelerator.current_device_index()
+         dev = device if isinstance(device, torch.device) else torch.device(device)
+-        if dev.type != "cuda":
+-            raise ValueError(f"ExtensibleTensor requires a cuda device, got {dev}.")
++        accelerator = torch.accelerator.current_accelerator()
++        if (
++            accelerator is None
++            or dev.type not in ("cuda", "xpu")
++            or dev.type != accelerator.type
++        ):
++            raise ValueError(
++                f"ExtensibleTensor requires an active CUDA or XPU device, got {dev}."
++            )
++        self._device_type = dev.type
+         self._device_index: int = (
+             dev.index
+             if dev.index is not None
+@@ -421,7 +438,7 @@ class ExtensibleTensor:
+ 
+     @property
+     def device(self) -> torch.device:
+-        return torch.device("cuda", self._device_index)
++        return torch.device(self._device_type, self._device_index)
+ 
+     def free(self) -> None:
+         self._buffer.free()
+diff --git a/vllm/utils/vmm_driver.py b/vllm/utils/vmm_driver.py
+index aefe6e2db4..2fc804b3c2 100644
+--- a/vllm/utils/vmm_driver.py
++++ b/vllm/utils/vmm_driver.py
+@@ -1,8 +1,6 @@
+ # SPDX-License-Identifier: Apache-2.0
+ # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+-"""ctypes bindings for the CUDA (`cuMem*`) and HIP (`hipMem*`) virtual memory
+-management APIs, used by `vllm.utils.extensible_tensor.ExtensibleTensor`.
+-"""
++"""CUDA, ROCm and XPU virtual memory drivers for extensible tensors."""
+ 
+ from __future__ import annotations
+ 
+@@ -554,6 +552,10 @@ def get_vmm_driver() -> VmmDriver:
+ 
+     if torch.version.hip is not None:
+         return HipVmmDriver()
++    if getattr(torch.version, "xpu", None) is not None:
++        from vllm_xpu_kernels.xpumem_allocator import vmm
++
++        return vmm
+     return CudaVmmDriver()
+ 
+ 
+@@ -564,13 +566,13 @@ def vmm_unavailable_reason(export_handle_types: int = 0) -> str | None:
+     Checks library load, entry points, known runtime defects (by probing), and
+     one reserve/create/map/set-access/unmap/release round trip of a single
+     granule, created with `export_handle_types` (see `VmmDriver.create`).
+-    Covers WSL2 and non-CUDA/ROCm builds.
++    Covers CUDA, ROCm and XPU builds.
+     """
+     try:
+         import torch
+ 
+         if not torch.accelerator.is_available():
+-            return "no CUDA/ROCm device is available"
++            return "no accelerator device is available"
+         driver = get_vmm_driver()
+         device_index = torch.accelerator.current_device_index()
+         driver.ensure_context(device_index)
+diff --git a/vllm/v1/worker/extensible_kv_cache.py b/vllm/v1/worker/extensible_kv_cache.py
+index 079fffb171..fe341ef003 100644
+--- a/vllm/v1/worker/extensible_kv_cache.py
++++ b/vllm/v1/worker/extensible_kv_cache.py
+@@ -382,7 +382,9 @@ class ExtensibleKVCache:
+         total = torch.accelerator.get_memory_info(self.buffer.device)[1]
+         fraction = 1.0 if num_bytes is None else min(num_bytes / total, 1.0)
+         # torch.accelerator has no per-process memory fraction.
+-        torch.cuda.set_per_process_memory_fraction(fraction, self.buffer.device)
++        torch.get_device_module(self.buffer.device).set_per_process_memory_fraction(
++            fraction, self.buffer.device
++        )
+ 
+     def free(self) -> None:
+         # The process may start another engine, which must not inherit the cap.
+-- 
+2.54.0
+

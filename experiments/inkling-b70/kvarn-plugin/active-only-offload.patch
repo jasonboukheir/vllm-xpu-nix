@@ -1,0 +1,58 @@
+diff --git a/vllm/distributed/kv_transfer/kv_connector/v1/offloading_connector.py b/vllm/distributed/kv_transfer/kv_connector/v1/offloading_connector.py
+index 202a44262d..5ec11aeb69 100644
+--- a/vllm/distributed/kv_transfer/kv_connector/v1/offloading_connector.py
++++ b/vllm/distributed/kv_transfer/kv_connector/v1/offloading_connector.py
+@@ -43,6 +43,7 @@ from vllm.distributed.kv_transfer.kv_connector.v1.offloading.worker import (
+ )
+ from vllm.forward_context import ForwardContext
+ from vllm.v1.attention.backend import AttentionMetadata
++from vllm.v1.core.block_pool import BlockPool
+ from vllm.v1.core.kv_cache_coordinator import HybridKVCacheCoordinator
+ from vllm.v1.core.kv_cache_manager import KVCacheBlocks
+ from vllm.v1.core.sched.output import SchedulerOutput
+@@ -102,6 +103,15 @@ class OffloadingConnector(KVConnectorBase_V1, SupportsHMA):
+                 spec, vllm_config, kv_cache_config
+             )
+ 
++    def bind_gpu_block_pool(self, gpu_block_pool: BlockPool) -> None:
++        extra = self._kv_transfer_config.kv_connector_extra_config
++        if extra.get("gpu_cache_policy") == "active_only":
++            if extra.get("spec_name", "CPUOffloadingSpec") != "CPUOffloadingSpec":
++                raise ValueError("gpu_cache_policy=active_only requires CPUOffloadingSpec")
++            # Live sharers and outstanding host stores retain their normal pins.
++            # After the final release the next request must reload the CPU prefix.
++            gpu_block_pool.retain_idle_cache = False
++
+     def shutdown(self) -> None:
+         if self.connector_worker is not None:
+             self.connector_worker.shutdown()
+diff --git a/vllm/v1/core/block_pool.py b/vllm/v1/core/block_pool.py
+index 2dba4abc47..749f113672 100644
+--- a/vllm/v1/core/block_pool.py
++++ b/vllm/v1/core/block_pool.py
+@@ -144,6 +144,7 @@ class BlockPool:
+         self.num_gpu_blocks = num_gpu_blocks
+         self.medium = medium
+         self.enable_caching = enable_caching
++        self.retain_idle_cache = True
+         self.hash_block_size = hash_block_size
+         self.num_hash_lookahead_tokens = num_hash_lookahead_tokens
+         self._weak_self = weakref.ref(self)
+@@ -765,6 +766,8 @@ class BlockPool:
+             block.ref_cnt -= 1
+             self._reuse_watchers[block.block_id] = on_reuse
+             if block.ref_cnt == 0:
++                if not self.retain_idle_cache and block.block_hash is not None:
++                    self._maybe_evict_cached_block(block)
+                 released.append(block)
+         self.free_block_queue.append_n(released)
+ 
+@@ -857,6 +860,8 @@ class BlockPool:
+                 continue
+             block.ref_cnt -= 1
+             if block.ref_cnt == 0:
++                if not self.retain_idle_cache and block.block_hash is not None:
++                    self._maybe_evict_cached_block(block)
+                 if block.block_hash is None or not self.enable_caching or evict_first:
+                     # LIFO reuse of non-cached blocks for better GPU locality,
+                     # and of cached ones when asked to evict them first.

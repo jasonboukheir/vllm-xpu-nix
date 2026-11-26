@@ -85,7 +85,7 @@ let
   };
   coreRevision = "0085facc58dedeef757aca3f51d6508e2ef9b148";
   mkCore =
-    sparse:
+    suffix:
     (import ./mk-vllm.nix {
       inherit pkgs;
       inherit (current)
@@ -104,27 +104,35 @@ let
           rev = coreRevision;
           hash = "sha256-nO1prQYtSQnqPIJvz6kzu1q5hCGGwPTXYZXNYjdZ3L8=";
         };
-        version = "0.34.0.post1+g${
-          builtins.substring 0 10 coreRevision
-        }.inkling${lib.optionalString sparse ".sparse"}";
+        version = "0.34.0.post1+g${builtins.substring 0 10 coreRevision}.inkling${suffix}";
         kernels = base.kernelPackage;
         withTorchvision = true;
         mcpPackage = py.mcp-v2;
       };
 
-  core = mkCore false;
+  core = mkCore "";
   # The long-context recipe uses both commits of vllm-project/vllm#69444.
   # The second commit charges the reserved discard block in admission checks.
-  sparseCore = (mkCore true).overrideAttrs (old: {
-    patches = (old.patches or [ ]) ++ [
-      (pkgs.fetchurl {
-        url = "https://github.com/vllm-project/vllm/commit/0811005c59b750e63f9bd6658842fa7d529b8e21.patch";
-        hash = "sha256-CrJ3ws3gZOKZvCjsYLv0Kv3mrBLnc/4fHvdeY2JTcd8=";
-      })
-      (pkgs.fetchurl {
-        url = "https://github.com/vllm-project/vllm/commit/34a0975f5c9dcee1c88742aacb38de841c3eb7e2.patch";
-        hash = "sha256-ARAXzBQPUVVS4jShi0GZDakgJ68k2QNLW/zKEA/qzS4=";
-      })
+  mkSparseCore =
+    suffix:
+    (mkCore suffix).overrideAttrs (old: {
+      patches = (old.patches or [ ]) ++ [
+        (pkgs.fetchurl {
+          url = "https://github.com/vllm-project/vllm/commit/0811005c59b750e63f9bd6658842fa7d529b8e21.patch";
+          hash = "sha256-CrJ3ws3gZOKZvCjsYLv0Kv3mrBLnc/4fHvdeY2JTcd8=";
+        })
+        (pkgs.fetchurl {
+          url = "https://github.com/vllm-project/vllm/commit/34a0975f5c9dcee1c88742aacb38de841c3eb7e2.patch";
+          hash = "sha256-ARAXzBQPUVVS4jShi0GZDakgJ68k2QNLW/zKEA/qzS4=";
+        })
+      ];
+    });
+
+  sparseCore = mkSparseCore ".sparse";
+  kvarnCore = (mkSparseCore ".sparse.kvarn").overrideAttrs (old: {
+    patches = old.patches ++ [
+      ../experiments/inkling-b70/kvarn-plugin/sycl-extensible-cache.patch
+      ../experiments/inkling-b70/kvarn-plugin/active-only-offload.patch
     ];
   });
 
@@ -159,26 +167,52 @@ let
       passthru.revision = pluginRevision;
     };
 
+  # The KVarN additions are Python/Triton. Reuse the matching native extension
+  # from the exact plugin revision; Python-source adjustments do not rebuild it.
+  kvarnPlugin = (plugin false).overridePythonAttrs (old: {
+    patches = (old.patches or [ ]) ++ [
+      ../experiments/inkling-b70/kvarn-plugin/inkling-kvarn-encoder.patch
+      ../experiments/inkling-b70/kvarn-plugin/inkling-kvarn-k4v4.patch
+    ];
+    postInstall = (old.postInstall or "") + ''
+      ln -s ${(plugin true)}/${python312.sitePackages}/vllm_inkling2_xpu/ops/_inkling_nvfp4_xe2*.so \
+        "$out/${python312.sitePackages}/vllm_inkling2_xpu/ops/"
+    '';
+  });
+
   # The serving process, engine workers, and ModelRegistry inspection children
   # must discover the plugin using the same installed Python distribution.
   experiment =
-    withCutlass: sparse:
+    {
+      name,
+      withCutlass ? false,
+      sparse ? false,
+      kvarn ? false,
+    }:
     let
-      selectedCore = if sparse then sparseCore else core;
-      installedPlugin = plugin withCutlass;
+      selectedCore =
+        if kvarn then
+          kvarnCore
+        else if sparse then
+          sparseCore
+        else
+          core;
+      installedPlugin = if kvarn then kvarnPlugin else plugin withCutlass;
       python = python312.withPackages (_: [
         selectedCore
         installedPlugin
       ]);
       extra =
         lib.optionalString withCutlass "--set-default INK2_CUTLASS_MOE 1"
-        + lib.optionalString sparse " --set-default INK2_SPARSE_CONV_HISTORY 1 --set-default INK2_HYBRID_PREFIX_SDPA 1";
+        + lib.optionalString sparse " --set-default INK2_SPARSE_CONV_HISTORY 1 --set-default INK2_HYBRID_PREFIX_SDPA 1"
+        # Block-outermost layout packs the native records at their physical
+        # size instead of padding each global-attention page to FP8 width.
+        + lib.optionalString kvarn " --set-default INK2_KVARN_K4V4 1 --set-default VLLM_KV_CACHE_LAYOUT BLNHC";
       runtimeArgs = builtins.filter (
         arg: !(lib.hasPrefix "--prefix PYTHONPATH " arg)
       ) selectedCore.makeWrapperArgs;
     in
-    pkgs.runCommand
-      "vllm-xpu-inkling2${if sparse then "-sparse" else lib.optionalString withCutlass "-cutlass"}"
+    pkgs.runCommand "vllm-xpu-inkling2${name}"
       {
         nativeBuildInputs = [ pkgs.makeWrapper ];
         meta.mainProgram = "vllm";
@@ -198,7 +232,20 @@ let
       '';
 in
 {
-  vllm-xpu-inkling2 = experiment false false;
-  vllm-xpu-inkling2-cutlass = experiment true false;
-  vllm-xpu-inkling2-sparse = experiment true true;
+  vllm-xpu-inkling2 = experiment { name = ""; };
+  vllm-xpu-inkling2-cutlass = experiment {
+    name = "-cutlass";
+    withCutlass = true;
+  };
+  vllm-xpu-inkling2-sparse = experiment {
+    name = "-sparse";
+    withCutlass = true;
+    sparse = true;
+  };
+  vllm-xpu-inkling2-kvarn = experiment {
+    name = "-kvarn";
+    withCutlass = true;
+    sparse = true;
+    kvarn = true;
+  };
 }

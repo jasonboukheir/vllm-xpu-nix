@@ -1,0 +1,392 @@
+diff --git a/src/vllm_inkling2_xpu/attention.py b/src/vllm_inkling2_xpu/attention.py
+index aa3139c..9fa6a0f 100644
+--- a/src/vllm_inkling2_xpu/attention.py
++++ b/src/vllm_inkling2_xpu/attention.py
+@@ -233,12 +233,45 @@ class Inkling2AttentionBackend(FlashAttentionBackend):
+         return Inkling2AttentionMetadataBuilder
+ 
+ 
++_KVARN = os.environ.get("INK2_KVARN_K4V4", "0") == "1"
++_KVARN_RECORD = 17920  # D128/G128, canonical K4V4 payload plus six fp16 vectors.
++
++
++class Inkling2KVarNAttentionBackend(Inkling2AttentionBackend):
++    @staticmethod
++    def get_name() -> str:
++        return "INKLING2_KVARN_K4V4"
++
++    @classmethod
++    def get_supported_kernel_block_sizes(cls, kv_cache_spec=None):
++        return [128]
++
++
+ def _kv_cache_layer_config(
+     vllm_config: VllmConfig,
+     num_kv_heads: int,
+     head_dim: int,
+     sliding_window: int | None,
+ ) -> KVCacheLayerConfig:
++    if _KVARN and sliding_window is None:
++        if (
++            num_kv_heads != 8
++            or head_dim != 128
++            or vllm_config.cache_config.block_size != 128
++            or vllm_config.cache_config.cache_dtype not in ("fp8", "fp8_e4m3")
++            or vllm_config.scheduler_config.max_num_seqs != 1
++            or vllm_config.parallel_config.tensor_parallel_size != 1
++            or vllm_config.cache_config.prefix_match_unit not in (None, 128)
++        ):
++            raise ValueError(
++                "INK2_KVARN_K4V4 needs a single sequence and TP rank, FP8 local/draft "
++                "caches, 128-token pages and whole-page prefix matching."
++            )
++        spec = AttentionSpec(
++            block_size=128, num_kv_heads=8, head_size=128, dtype=torch.uint8,
++            state_content_bytes=_KVARN_RECORD, tokens_per_state=128,
++        )
++        return FullAttentionManager.layer_config(spec)
+     spec = AttentionSpec(
+         block_size=vllm_config.cache_config.block_size,
+         num_kv_heads=num_kv_heads,
+@@ -278,6 +311,8 @@ class Inkling2AttentionPassCache(nn.Module, AttentionLayerBase):
+         forward_context.static_forward_context[prefix] = self
+ 
+     def get_attn_backend(self) -> type[AttentionBackend]:
++        if _KVARN and self.sliding_window is None:
++            return Inkling2KVarNAttentionBackend
+         return Inkling2AttentionBackend
+ 
+     def get_kv_cache_config(self, vllm_config: VllmConfig) -> KVCacheLayerConfig:
+@@ -400,12 +435,28 @@ class Inkling2Attention(nn.Module, AttentionLayerBase):
+         if cache_dtype not in supported:
+             raise ValueError(f"Inkling2 KV cache dtype must be one of {supported}")
+         self.fp8_kv = cache_dtype in ("fp8", "fp8_e4m3")
++        self.kvarn = _KVARN and not is_local
++        if self.kvarn:
++            # Include the leading partial page and room for an entire scheduler
++            # batch. The logical ring is private to each loop pass. Only its
++            # current partial page survives between calls; all completed pages
++            # are stored inline in the planner-owned physical KV buffers.
++            ring_pages = (vllm_config.scheduler_config.max_num_batched_tokens + 127) // 128 + 2
++            device = self.rel_logits_proj.device
++            self.register_buffer("kvarn_staging", torch.empty(
++                (1 + len(self.pass_caches), ring_pages, 128, 8, 256),
++                device=device, dtype=torch.bfloat16), persistent=False)
++            h = torch.ones(1, 1, dtype=torch.float32)
++            while h.shape[0] < 128:
++                h = torch.cat((torch.cat((h, h), 1), torch.cat((h, -h), 1)), 0)
++            self.register_buffer("kvarn_hadamard", (h / (128 ** 0.5)).to(
++                device=device, dtype=torch.bfloat16), persistent=False)
+         self.kv_cache = torch.tensor([])
+         forward_context = vllm_config.compilation_config.static_forward_context
+         if prefix in forward_context:
+             raise ValueError(f"Duplicate layer name: {prefix}")
+         forward_context[prefix] = self
+-        if self.fp8_kv:
++        if self.fp8_kv and not self.kvarn:
+             # Reserve the shared BF16 prefill scratch during model load so
+             # startup profiling counts it before KV cache sizing.
+             _fp8_prefill_scratch(
+@@ -429,6 +480,8 @@ class Inkling2Attention(nn.Module, AttentionLayerBase):
+         self.rel_proj_shifted = shift_rel_proj(self.rel_logits_proj, self.is_local)
+ 
+     def get_attn_backend(self) -> type[AttentionBackend]:
++        if self.kvarn:
++            return Inkling2KVarNAttentionBackend
+         return Inkling2AttentionBackend
+ 
+     def get_kv_cache_config(self, vllm_config: VllmConfig) -> KVCacheLayerConfig:
+@@ -546,7 +599,20 @@ class Inkling2Attention(nn.Module, AttentionLayerBase):
+         if md is not None:
+             conv_md = conv_metadata(conv_state)
+             assert conv_md is not None
+-            key_cache, value_cache = self._split_kv_cache(kv_cache)
++            if self.kvarn:
++                if kv_cache.dtype != torch.uint8 or kv_cache.shape[1:] != (8, 1, _KVARN_RECORD):
++                    raise ValueError(f"Invalid KVarN physical cache {kv_cache.shape} {kv_cache.dtype}")
++                staging = self.kvarn_staging[pass_idx]
++                key_cache, value_cache = staging.split(128, dim=-1)
++                # md.slot_mapping marks padding. Use logical sequence positions
++                # for the bounded ring, independently of physical page order.
++                n = md.slot_mapping.shape[0]
++                start = md.seq_lens[0] - (md.query_start_loc[1] - md.query_start_loc[0])
++                logical = torch.arange(n, dtype=torch.int64, device=q.device) + start
++                kv_slots = torch.where(md.slot_mapping >= 0, logical % (staging.shape[0] * 128), -1)
++            else:
++                key_cache, value_cache = self._split_kv_cache(kv_cache)
++                kv_slots = md.slot_mapping
+             attention_prologue(
+                 q,
+                 r.view(num_tokens, self.num_heads, self.d_rel),
+@@ -568,7 +634,7 @@ class Inkling2Attention(nn.Module, AttentionLayerBase):
+                 conv_md.query_start,
+                 key_cache,
+                 value_cache,
+-                md.slot_mapping,
++                kv_slots,
+                 clipped_q,
+                 rel_logits,
+                 md.query_start_loc,
+@@ -577,6 +643,20 @@ class Inkling2Attention(nn.Module, AttentionLayerBase):
+                 rel_threshold=self.rel_clip,
+                 norm_eps=self.eps,
+             )
++            if self.kvarn:
++                from .ops.kvarn_encode import encode_complete_pages
++
++                encode_complete_pages(staging, kv_cache, md.block_table, md.seq_lens,
++                                      md.query_start_loc, md.max_query_len)
++                rel_decode_attention(
++                    clipped_q, key_cache, value_cache, rel_logits, gate, sinks, output,
++                    block_table=md.block_table, cache_seqlens=md.seq_lens,
++                    cu_seqlens_q=md.query_start_loc, max_query_len=md.max_query_len,
++                    num_actual_tokens=md.num_actual_tokens, softmax_scale=self.scaling,
++                    is_local=False, num_splits=decode_splits or 1,
++                    packed_cache=kv_cache, hadamard=self.kvarn_hadamard,
++                )
++                return
+         if decode_splits:
+             assert md is not None
+             self._decode_attention(
+diff --git a/src/vllm_inkling2_xpu/ops/attention.py b/src/vllm_inkling2_xpu/ops/attention.py
+index 052a4af..498f854 100644
+--- a/src/vllm_inkling2_xpu/ops/attention.py
++++ b/src/vllm_inkling2_xpu/ops/attention.py
+@@ -207,6 +207,8 @@ def rel_decode_attention(
+     softmax_scale: float,
+     is_local: bool,
+     num_splits: int,
++    packed_cache: torch.Tensor | None = None,
++    hadamard: torch.Tensor | None = None,
+ ) -> None:
+     """Write the gated bf16 `(T, H * D)` attention output for small batches.
+ 
+@@ -235,6 +237,8 @@ def rel_decode_attention(
+         softmax_scale,
+         extent if is_local else 0,
+         num_splits,
++        packed_cache,
++        hadamard,
+     )
+ 
+ 
+@@ -288,6 +292,8 @@ def _decode_attention(
+     softmax_scale: float,
+     window: int,
+     num_splits: int,
++    packed_cache: torch.Tensor | None = None,
++    hadamard: torch.Tensor | None = None,
+ ) -> None:
+     num_tokens, num_heads, head_dim = q.shape
+     num_kv_heads = key_cache.shape[2]
+@@ -298,7 +304,7 @@ def _decode_attention(
+         rel_logits = gate = sinks = out
+     else:
+         rel_logits, gate, sinks = rel_gate_sinks
+-    assert max_query_len <= _DECODE_BLOCK_M // group
++    assert packed_cache is not None or max_query_len <= _DECODE_BLOCK_M // group
+     assert key_cache.stride() == value_cache.stride() and key_cache.stride(3) == 1
+     assert q.stride(1) == head_dim and q.stride(2) == 1
+     assert out.is_contiguous()
+@@ -327,8 +333,10 @@ def _decode_attention(
+         window=window,
+         num_splits=num_splits,
+         mode=MODE_GATED if fuse_gate else MODE_PARTIAL,
+-        block_n=32,
++        block_n=64 if packed_cache is not None and max_query_len > 32 else 32,
+         num_warps=8 if window else 4,
++        packed_cache=packed_cache,
++        hadamard=hadamard,
+     )
+     if fuse_gate:
+         out[num_actual_tokens:].zero_()
+diff --git a/src/vllm_inkling2_xpu/ops/attention_triton.py b/src/vllm_inkling2_xpu/ops/attention_triton.py
+index d8247da..d08358b 100644
+--- a/src/vllm_inkling2_xpu/ops/attention_triton.py
++++ b/src/vllm_inkling2_xpu/ops/attention_triton.py
+@@ -25,11 +25,37 @@ def _sigmoid(x):
+     return 1.0 / (1.0 + tl.exp2(-x * 1.4426950408889634))
+ 
+ 
++@triton.jit
++def _kvarn_key(record, token, d):
++    # K rows are channels and pairs of token nibbles are adjacent.
++    b = tl.load(record + d[:, None] * 64 + token[None, :] // 2)
++    q = ((b >> ((token[None, :] & 1) * 4)) & 15).to(tl.float32)
++    scales = record.to(tl.pointer_type(tl.float16))
++    s_col = tl.load(scales + 8192 // 2 + d).to(tl.float32)
++    zero = tl.load(scales + 8448 // 2 + d).to(tl.float32)
++    s_row = tl.load(scales + 8704 // 2 + token).to(tl.float32)
++    return (q * s_col[:, None] + zero[:, None]) * s_row[None, :]
++
++
++@triton.jit
++def _kvarn_value(record, token, d):
++    # V rows are tokens and pairs of channel nibbles are adjacent.
++    b = tl.load(record + 8960 + token[:, None] * 64 + d[None, :] // 2)
++    q = ((b >> ((d[None, :] & 1) * 4)) & 15).to(tl.float32)
++    scales = record.to(tl.pointer_type(tl.float16))
++    s_col = tl.load(scales + 17152 // 2 + d).to(tl.float32)
++    s_row = tl.load(scales + 17408 // 2 + token).to(tl.float32)
++    zero = tl.load(scales + 17664 // 2 + token).to(tl.float32)
++    return (q * s_row[:, None] + zero[:, None]) * s_col[None, :]
++
++
+ @triton.jit
+ def _rel_attention_kernel(
+     Q,
+     K,
+     V,
++    Packed,
++    Hadamard,
+     Rel,
+     BlockTable,
+     SeqLens,
+@@ -46,6 +72,8 @@ def _rel_attention_kernel(
+     stride_kv_blk,
+     stride_kv_slot,
+     stride_kv_h,
++    stride_pack_page,
++    stride_pack_head,
+     stride_rel_t,
+     stride_bt,
+     stride_out_t,
+@@ -64,6 +92,8 @@ def _rel_attention_kernel(
+     MODE: tl.constexpr,
+     BLOCK_M: tl.constexpr,
+     BLOCK_N: tl.constexpr,
++    K4V4: tl.constexpr,
++    RING_PAGES: tl.constexpr,
+ ):
+     TOKENS: tl.constexpr = BLOCK_M // G
+     E_PAD: tl.constexpr = E + 256
+@@ -108,6 +138,10 @@ def _rel_attention_kernel(
+         mask=row_valid[:, None],
+         other=0.0,
+     )
++    if K4V4:
++        rotation = tl.load(Hadamard + offs_d[:, None] * D + offs_d[None, :])
++        q_rot = tl.dot(q, rotation).to(q.dtype)
++        acc_rot = tl.full([BLOCK_M, D], 0.0, tl.float32)
+     if not DRAFT:
+         tile_end = tl.minimum((tok // _SHEAR_TILE + 1) * _SHEAR_TILE, q_len)
+         rel_base = (past + tile_end + 127) // 128 * 128 - E_PAD
+@@ -123,16 +157,31 @@ def _rel_attention_kernel(
+         n = n_lo + split + i * num_splits
+         keys = n * BLOCK_N + tl.arange(0, BLOCK_N)
+         key_valid = keys < seqlen_k
+-        page = tl.load(block_table + keys // PAGE, mask=key_valid, other=0)
++        if K4V4:
++            # BLOCK_N divides PAGE. All keys from a request's first touched
++            # (possibly partial) page through its current batch are dense.
++            logical_page = n * BLOCK_N // PAGE
++            use_packed = logical_page < past // PAGE
++            page = tl.full([BLOCK_N], 0, tl.int32) + logical_page % RING_PAGES
++            physical = tl.load(block_table + logical_page)
++            record = Packed + physical.to(tl.int64) * stride_pack_page + kv_head * stride_pack_head
++        else:
++            page = tl.load(block_table + keys // PAGE, mask=key_valid, other=0)
+         kv_ptrs = (
+             page.to(tl.int64) * stride_kv_blk + (keys % PAGE) * stride_kv_slot + kv_off
+         )
+-        k = tl.load(
+-            K + kv_ptrs[None, :] + offs_d[:, None],
+-            mask=key_valid[None, :],
+-            other=0.0,
+-        ).to(q.dtype)
+-        s = tl.dot(q, k) * qk_scale
++        if K4V4:
++            if use_packed:
++                k = _kvarn_key(record, keys % PAGE, offs_d).to(q.dtype)
++                s = tl.dot(q_rot, k) * qk_scale
++            else:
++                k = tl.load(K + kv_ptrs[None, :] + offs_d[:, None],
++                            mask=key_valid[None, :], other=0.0).to(q.dtype)
++                s = tl.dot(q, k) * qk_scale
++        else:
++            k = tl.load(K + kv_ptrs[None, :] + offs_d[:, None],
++                        mask=key_valid[None, :], other=0.0).to(q.dtype)
++            s = tl.dot(q, k) * qk_scale
+         dist = pos[:, None] - keys[None, :]
+         visible = (dist >= 0) & key_valid[None, :]
+         if WINDOW > 0:
+@@ -147,15 +196,25 @@ def _rel_attention_kernel(
+         alpha = tl.exp2(m_i - m_safe)
+         p = tl.exp2(s - m_safe[:, None])
+         l_i = l_i * alpha + tl.sum(p, 1)
+-        v = tl.load(
+-            V + kv_ptrs[:, None] + offs_d[None, :],
+-            mask=key_valid[:, None],
+-            other=0.0,
+-        ).to(q.dtype)
+-        acc = acc * alpha[:, None] + tl.dot(p.to(v.dtype), v)
++        if K4V4:
++            acc = acc * alpha[:, None]
++            acc_rot = acc_rot * alpha[:, None]
++            if use_packed:
++                v = _kvarn_value(record, keys % PAGE, offs_d).to(q.dtype)
++                acc_rot += tl.dot(p.to(v.dtype), v)
++            else:
++                v = tl.load(V + kv_ptrs[:, None] + offs_d[None, :],
++                            mask=key_valid[:, None], other=0.0).to(q.dtype)
++                acc += tl.dot(p.to(v.dtype), v)
++        else:
++            v = tl.load(V + kv_ptrs[:, None] + offs_d[None, :],
++                        mask=key_valid[:, None], other=0.0).to(q.dtype)
++            acc = acc * alpha[:, None] + tl.dot(p.to(v.dtype), v)
+         m_i = m_new
+ 
+     empty = l_i == 0.0
++    if K4V4:
++        acc += tl.dot(acc_rot.to(q.dtype), rotation)
+     o = acc / tl.where(empty, 1.0, l_i)[:, None]
+     lse2 = tl.where(empty, float("-inf"), m_i + tl.log2(tl.where(empty, 1.0, l_i)))
+     if MODE == 0:
+@@ -219,6 +278,8 @@ def rel_attention(
+     mode: int,
+     block_n: int | None = None,
+     num_warps: int | None = None,
++    packed_cache: torch.Tensor | None = None,
++    hadamard: torch.Tensor | None = None,
+ ) -> None:
+     """Launch `_rel_attention_kernel` over the requests of `cu_seqlens_q`.
+ 
+@@ -233,6 +294,11 @@ def rel_attention(
+     """
+     num_tokens, num_heads, head_dim = q.shape
+     page, num_kv_heads = key_cache.shape[1:3]
++    if packed_cache is not None:
++        assert hadamard is not None and hadamard.shape == (128, 128)
++        assert packed_cache.dtype == torch.uint8 and packed_cache.stride(-1) == 1
++        assert packed_cache.shape[1:] == (8, 1, 17920) and page == 128
++        assert block_n is not None and 128 % block_n == 0
+     group = num_heads // num_kv_heads
+     assert key_cache.stride() == value_cache.stride() and key_cache.stride(3) == 1
+     assert q.stride(2) == 1
+@@ -272,6 +338,8 @@ def rel_attention(
+         q,
+         key_cache,
+         value_cache,
++        q if packed_cache is None else packed_cache,
++        q if hadamard is None else hadamard,
+         rel,
+         block_table,
+         cache_seqlens,
+@@ -288,6 +356,8 @@ def rel_attention(
+         key_cache.stride(0),
+         key_cache.stride(1),
+         key_cache.stride(2),
++        0 if packed_cache is None else packed_cache.stride(0),
++        0 if packed_cache is None else packed_cache.stride(1),
+         rel.stride(0),
+         block_table.stride(0),
+         *out_strides,
+@@ -303,6 +373,8 @@ def rel_attention(
+         MODE=mode,
+         BLOCK_M=block_m,
+         BLOCK_N=block_n if block_n is not None else (128 if block_m <= 32 else 64),
++        K4V4=packed_cache is not None,
++        RING_PAGES=key_cache.shape[0] if packed_cache is not None else 1,
+         num_warps=num_warps if num_warps is not None else (8 if block_m >= 128 else 4),
+         num_stages=2,
+     )

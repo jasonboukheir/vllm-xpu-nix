@@ -1,0 +1,306 @@
+diff --git a/src/vllm_inkling2_xpu/ops/kvarn_encode.py b/src/vllm_inkling2_xpu/ops/kvarn_encode.py
+new file mode 100644
+index 0000000..8e98188
+--- /dev/null
++++ b/src/vllm_inkling2_xpu/ops/kvarn_encode.py
+@@ -0,0 +1,174 @@
++# SPDX-License-Identifier: Apache-2.0
++# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
++"""Encode completed D128/G128 target pages in the released compact K4V4 format."""
++
++import torch
++
++import triton
++import triton.language as tl
++
++
++@triton.jit
++def _rotate_heads(values):
++    # Sylvester FWHT on each token's 128 components, before tiling K or V.
++    cols = tl.arange(0, 128)
++    for shift in tl.static_range(7):
++        bit = 1 << shift
++        index = tl.broadcast_to((cols ^ bit)[None, :], (128, 128))
++        peer = tl.gather(values, index, 1)
++        values = tl.where((cols[None, :] & bit) == 0, values + peer, peer - values)
++    return values * 0.08838834764831845  # 1 / sqrt(128)
++
++
++@triton.jit
++def _std(values, axis: tl.constexpr):
++    # Sample standard deviation with centered FP32 values, including flat rows.
++    mean = tl.sum(values, axis) / 128.0
++    if axis == 0:
++        centered = values - mean[None, :]
++    else:
++        centered = values - mean[:, None]
++    return tl.sqrt(tl.sum(centered * centered, axis) / 127.0)
++
++
++@triton.jit
++def _imbalance(col_std, row_std):
++    return tl.max(col_std, 0) / tl.maximum(tl.min(col_std, 0), 1.0e-8) + tl.max(
++        row_std, 0
++    ) / tl.maximum(tl.min(row_std, 0), 1.0e-8)
++
++
++@triton.jit
++def _balance(tile):
++    # Same log-domain balance and best-iterate criterion as KVarNConfig's
++    # released 8-iteration codec. Keep all reductions in FP32.
++    col_log = tl.full((128,), 0.0, tl.float32)
++    row_log = tl.full((128,), 0.0, tl.float32)
++    best_col = tl.full((128,), 1.0, tl.float32)
++    best_row = tl.full((128,), 1.0, tl.float32)
++    col_std = _std(tile, 0)
++    best = _imbalance(col_std, _std(tile, 1))
++    for _ in range(8):
++        col_log = tl.clamp(col_log + tl.log(tl.clamp(col_std, 1e-3, 1e3)), -0.3, 10.0)
++        col = tl.exp(col_log)
++        cur = tile / col[None, :] / tl.exp(row_log)[:, None]
++        row_log = tl.clamp(
++            row_log + tl.log(tl.clamp(_std(cur, 1), 1e-3, 1e3)), -0.3, 10.0
++        )
++        row = tl.exp(row_log)
++        cur = tile / col[None, :] / row[:, None]
++        col_std = _std(cur, 0)
++        imbalance = _imbalance(col_std, _std(cur, 1))
++        improved = imbalance <= best
++        best_col = tl.where(improved, col, best_col)
++        best_row = tl.where(improved, row, best_row)
++        best = tl.where(improved, imbalance, best)
++    return tile / best_col[None, :] / best_row[:, None], best_col, best_row
++
++
++@triton.jit
++def _encode_record(
++    Staging,
++    Packed,
++    BlockTable,
++    SeqLens,
++    CuQLens,
++    ring_pages: tl.constexpr,
++    src_page: tl.constexpr,
++    src_token: tl.constexpr,
++    src_head: tl.constexpr,
++    dst_page: tl.constexpr,
++    dst_head: tl.constexpr,
++    table_stride: tl.constexpr,
++    IS_VALUE: tl.constexpr,
++):
++    seq_len = tl.load(SeqLens)
++    past = seq_len - (tl.load(CuQLens + 1) - tl.load(CuQLens))
++    page = past // 128 + tl.program_id(0)
++    # Handles padding, speculative rollback and graph replay without host reads.
++    if page >= seq_len // 128:
++        return
++    physical = tl.load(BlockTable + page * table_stride)
++    if physical <= 0:
++        return
++    head = tl.program_id(1)
++    i = tl.arange(0, 128)
++    offset = (page % ring_pages).to(tl.int64) * src_page + head * src_head
++    if IS_VALUE:
++        offset += 128
++    values = tl.load(Staging + offset + i[:, None] * src_token + i[None, :]).to(
++        tl.float32
++    )
++    rotated = _rotate_heads(values)
++    if IS_VALUE:
++        tile = rotated
++    else:
++        tile = tl.trans(rotated)
++    balanced, col, row = _balance(tile)
++    lo = tl.min(balanced, 1)
++    scale = tl.maximum((tl.max(balanced, 1) - lo) / 15.0, 1.0e-10)
++    levels = tl.clamp((balanced - lo[:, None]) / scale[:, None], 0.0, 15.0)
++    lower = tl.floor(levels).to(tl.int32)
++    frac = levels - lower.to(tl.float32)
++    q = (lower + ((frac > 0.5) | ((frac == 0.5) & ((lower & 1) != 0))).to(tl.int32)).to(
++        tl.uint8
++    )
++    even, odd = tl.split(tl.reshape(q, (128, 64, 2)))
++    record = Packed + physical.to(tl.int64) * dst_page + head * dst_head
++    half = record.to(tl.pointer_type(tl.float16))
++    payload = i[:, None] * 64 + tl.arange(0, 64)[None, :]
++    if IS_VALUE:
++        tl.store(record + 8960 + payload, even | (odd << 4))
++        tl.store(half + 17152 // 2 + i, col)
++        tl.store(half + 17408 // 2 + i, row * scale)
++        tl.store(half + 17664 // 2 + i, row * lo)
++    else:
++        tl.store(record + payload, even | (odd << 4))
++        tl.store(half + 8192 // 2 + i, row * scale)
++        tl.store(half + 8448 // 2 + i, row * lo)
++        tl.store(half + 8704 // 2 + i, col)
++
++
++def encode_complete_pages(
++    staging: torch.Tensor,
++    packed: torch.Tensor,
++    block_table: torch.Tensor,
++    seq_lens: torch.Tensor,
++    cu_query_lens: torch.Tensor,
++    max_query_len: int,
++):
++    """Pack physical pages completed in this XPU forward, including verification."""
++    if staging.shape[1:] != (128, 8, 256) or packed.shape[1:] != (8, 1, 17920):
++        raise ValueError(f"Unexpected K4V4 geometry: {staging.shape}, {packed.shape}")
++    if staging.stride(-1) != 1 or packed.stride(-1) != 1:
++        raise ValueError(
++            "KVarN input components and output record bytes must be contiguous"
++        )
++    if staging.dtype != torch.bfloat16 or packed.dtype != torch.uint8:
++        raise ValueError("KVarN requires BF16 staging and byte-packed records")
++    if (
++        block_table.shape[0] != 1
++        or seq_lens.shape != (1,)
++        or cu_query_lens.shape != (2,)
++    ):
++        raise ValueError("KVarN single-sequence encoder received batched metadata")
++    if max_query_len == 0:
++        return
++    grid = (triton.cdiv(max_query_len, 128), 8)
++    for is_value in (False, True):
++        _encode_record[grid](
++            staging,
++            packed,
++            block_table,
++            seq_lens,
++            cu_query_lens,
++            staging.shape[0],
++            staging.stride(0),
++            staging.stride(1),
++            staging.stride(2),
++            packed.stride(0),
++            packed.stride(1),
++            block_table.stride(1),
++            is_value,
++            num_warps=16,
++        )
+diff --git a/tests/test_kvarn_encode.py b/tests/test_kvarn_encode.py
+new file mode 100644
+index 0000000..148c01d
+--- /dev/null
++++ b/tests/test_kvarn_encode.py
+@@ -0,0 +1,120 @@
++# SPDX-License-Identifier: Apache-2.0
++"""Compare physical Inkling K4V4 records with the released fork's CPU codec."""
++
++import os
++from pathlib import Path
++
++from unittest import SkipTest
++import torch
++from vllm.model_executor.layers import quantization
++from vllm.v1.attention import ops
++from vllm_inkling2_xpu.ops.kvarn_encode import encode_complete_pages
++
++
++def expected_record(staging):
++    from vllm.model_executor.layers.quantization.kvarn.sinkhorn import (
++        variance_normalize_batched,
++    )
++    from vllm.v1.attention.ops.kvarn_store import (
++        kvarn_store_tile_k_batch_from_sinkhorn,
++        kvarn_store_tile_v_batch_from_sinkhorn,
++    )
++
++    hadamard = torch.ones(1, 1)
++    for _ in range(7):
++        hadamard = torch.kron(hadamard, torch.tensor([[1.0, 1.0], [1.0, -1.0]]))
++    hadamard /= 128**0.5
++    k, v = (x.float() @ hadamard for x in staging.split(128, dim=-1))
++    arrays = []
++    for value, tile in enumerate((k.permute(1, 2, 0), v.permute(1, 0, 2))):
++        balanced, col, row = variance_normalize_batched(tile.contiguous(), 8)
++        if value:
++            fields = kvarn_store_tile_v_batch_from_sinkhorn(
++                balanced, col.squeeze(1), row.squeeze(2), 4
++            )
++            names = ("q_packed_uint8", "s_col_V", "s_row_V", "zp_V")
++        else:
++            fields = kvarn_store_tile_k_batch_from_sinkhorn(
++                balanced, col.squeeze(1), row.squeeze(2), 4
++            )
++            names = ("q_packed_uint8", "s_col_K", "zp_K", "s_row_K")
++        arrays.extend(
++            fields[name].contiguous().view(torch.uint8).reshape(8, -1) for name in names
++        )
++    return torch.cat(arrays, dim=1)
++
++
++def assert_compatible(got, expected):
++    assert got.shape == expected.shape == (8, 17920)
++    for start in (0, 8960):
++        actual = got[:, start : start + 8192]
++        reference = expected[:, start : start + 8192]
++        for shift in (0, 4):
++            delta = ((actual >> shift) & 15).short() - (
++                (reference >> shift) & 15
++            ).short()
++            # FP32 reduction order may move a quantizer tie into the adjacent bin.
++            assert delta.abs().max() <= 1
++            assert (delta != 0).float().mean() < 0.0005
++
++        def decode(record, bins):
++            scales = (
++                record[:, start + 8192 : start + 8960]
++                .contiguous()
++                .view(torch.float16)
++                .float()
++            )
++            a, b, c = scales.split(128, dim=-1)
++            rs, zp, cs = (b, c, a) if start else (a, b, c)
++            packed = bins[:, start : start + 8192]
++            q = torch.stack((packed & 15, packed >> 4), dim=-1).reshape(8, 128, 128)
++            return (q * rs[:, :, None] + zp[:, :, None]) * cs[:, None, :], scales
++
++        actual_values, actual_scales = decode(got, got)
++        ref_values, ref_scales = decode(expected, got)
++        # Adjacent best Sinkhorn iterations can redistribute a small common
++        # scale between the row and column factors. Check their product in
++        # addition to the individual half-precision fields, with identical
++        # codes to isolate this from the separately bounded rounding ties.
++        torch.testing.assert_close(actual_scales, ref_scales, rtol=0.003, atol=0.00002)
++        errors = (actual_values - ref_values).flatten(1).norm(dim=1)
++        assert (
++            errors / ref_values.flatten(1).norm(dim=1).clamp_min(1e-8)
++        ).max() < 0.003
++
++
++def test_completed_inkling_pages():
++    fork = os.environ.get("KVARN_FORK_SOURCE")
++    if not fork:
++        raise SkipTest(
++            "Set KVARN_FORK_SOURCE to the released KVarN fork for record parity"
++        )
++    for package in (quantization, ops):
++        package.__path__.insert(
++            0, str(Path(fork).joinpath(*package.__name__.split(".")))
++        )
++    interpreter = os.environ.get("TRITON_INTERPRET") == "1"
++    device = "cpu" if interpreter else "xpu"
++    if not interpreter and not torch.xpu.is_available():
++        raise SkipTest("Requires an XPU or TRITON_INTERPRET=1")
++    rng = torch.Generator().manual_seed(1247)
++    stages = torch.randn(3, 128, 8, 256, generator=rng).to(torch.bfloat16)
++    stages[1, :, 0] = 0
++    # Non-unit metadata and page strides exercise padding and physical indirection.
++    slots = torch.tensor([[0, 0, 3, 0, 1, 0, 0, 0]], dtype=torch.int32, device=device)[
++        :, ::2
++    ]
++    dst = torch.full((5, 8, 1, 17952), 173, dtype=torch.uint8, device=device)
++    kv = stages.to(device)
++    seq = torch.tensor([128 * 3 + 2], dtype=torch.int32, device=device)
++    qstart = torch.tensor([0, 128 * 2 + 7], dtype=torch.int32, device=device)
++    encode_complete_pages(kv, dst[..., :17920], slots, seq, qstart, 263)
++    actual = dst.cpu()
++    assert_compatible(actual[3, :, 0, :17920], expected_record(stages[1]))
++    assert_compatible(actual[1, :, 0, :17920], expected_record(stages[2]))
++    assert (actual[[0, 2, 4]] == 173).all()
++    assert (actual[..., 17920:] == 173).all()
++    seq.fill_(382)
++    qstart[1] = 4
++    encode_complete_pages(kv, dst[..., :17920], slots, seq, qstart, 8)
++    assert torch.equal(dst.cpu(), actual)

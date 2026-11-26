@@ -84,7 +84,8 @@ let
     };
   };
   coreRevision = "0085facc58dedeef757aca3f51d6508e2ef9b148";
-  core =
+  mkCore =
+    sparse:
     (import ./mk-vllm.nix {
       inherit pkgs;
       inherit (current)
@@ -103,11 +104,29 @@ let
           rev = coreRevision;
           hash = "sha256-nO1prQYtSQnqPIJvz6kzu1q5hCGGwPTXYZXNYjdZ3L8=";
         };
-        version = "0.34.0.post1+g${builtins.substring 0 10 coreRevision}.inkling";
+        version = "0.34.0.post1+g${
+          builtins.substring 0 10 coreRevision
+        }.inkling${lib.optionalString sparse ".sparse"}";
         kernels = base.kernelPackage;
         withTorchvision = true;
         mcpPackage = py.mcp-v2;
       };
+
+  core = mkCore false;
+  # The long-context recipe uses both commits of vllm-project/vllm#69444.
+  # The second commit charges the reserved discard block in admission checks.
+  sparseCore = (mkCore true).overrideAttrs (old: {
+    patches = (old.patches or [ ]) ++ [
+      (pkgs.fetchurl {
+        url = "https://github.com/vllm-project/vllm/commit/0811005c59b750e63f9bd6658842fa7d529b8e21.patch";
+        hash = "sha256-CrJ3ws3gZOKZvCjsYLv0Kv3mrBLnc/4fHvdeY2JTcd8=";
+      })
+      (pkgs.fetchurl {
+        url = "https://github.com/vllm-project/vllm/commit/34a0975f5c9dcee1c88742aacb38de841c3eb7e2.patch";
+        hash = "sha256-ARAXzBQPUVVS4jShi0GZDakgJ68k2QNLW/zKEA/qzS4=";
+      })
+    ];
+  });
 
   syclHome = "${current.intel-oneapi}/compiler/latest";
   # Upstream invokes icpx directly. Supply the same GCC and glibc paths as the
@@ -143,31 +162,35 @@ let
   # The serving process, engine workers, and ModelRegistry inspection children
   # must discover the plugin using the same installed Python distribution.
   experiment =
-    withCutlass:
+    withCutlass: sparse:
     let
+      selectedCore = if sparse then sparseCore else core;
       installedPlugin = plugin withCutlass;
       python = python312.withPackages (_: [
-        core
+        selectedCore
         installedPlugin
       ]);
-      extra = lib.optionalString withCutlass "--set-default INK2_CUTLASS_MOE 1";
+      extra =
+        lib.optionalString withCutlass "--set-default INK2_CUTLASS_MOE 1"
+        + lib.optionalString sparse " --set-default INK2_SPARSE_CONV_HISTORY 1 --set-default INK2_HYBRID_PREFIX_SDPA 1";
       runtimeArgs = builtins.filter (
         arg: !(lib.hasPrefix "--prefix PYTHONPATH " arg)
-      ) core.makeWrapperArgs;
+      ) selectedCore.makeWrapperArgs;
     in
-    pkgs.runCommand "vllm-xpu-inkling2${lib.optionalString withCutlass "-cutlass"}"
+    pkgs.runCommand
+      "vllm-xpu-inkling2${if sparse then "-sparse" else lib.optionalString withCutlass "-cutlass"}"
       {
         nativeBuildInputs = [ pkgs.makeWrapper ];
         meta.mainProgram = "vllm";
         passthru = {
-          inherit core;
+          core = selectedCore;
           plugin = installedPlugin;
           kernelPackage = base.kernelPackage;
         };
       }
       ''
         mkdir -p "$out/bin"
-        makeWrapper ${core}/bin/vllm "$out/bin/vllm" \
+        makeWrapper ${selectedCore}/bin/vllm "$out/bin/vllm" \
           --prefix PYTHONPATH : ${installedPlugin}/${python312.sitePackages} ${extra}
         makeWrapper ${python}/bin/python "$out/bin/python" \
           --prefix PYTHONPATH : ${python}/${python312.sitePackages} ${extra} \
@@ -175,6 +198,7 @@ let
       '';
 in
 {
-  vllm-xpu-inkling2 = experiment false;
-  vllm-xpu-inkling2-cutlass = experiment true;
+  vllm-xpu-inkling2 = experiment false false;
+  vllm-xpu-inkling2-cutlass = experiment true false;
+  vllm-xpu-inkling2-sparse = experiment true true;
 }

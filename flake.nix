@@ -400,7 +400,7 @@
               vllm-xpu-kvarn-validation
               vllm-xpu-kvarn-validation-env
               ;
-            inherit (inkling2) vllm-xpu-inkling2 vllm-xpu-inkling2-cutlass;
+            inherit (inkling2) vllm-xpu-inkling2 vllm-xpu-inkling2-cutlass vllm-xpu-inkling2-sparse;
             inherit (stableLibs)
               attn-kernels-xe-2
               gdn-attn-kernels-xe-2

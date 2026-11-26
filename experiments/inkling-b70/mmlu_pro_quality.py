@@ -115,43 +115,56 @@ def parse_letter(text, options):
     lines = [s.strip() for s in cleaned.splitlines() if s.strip()]
     if not lines:
         return None
-    label = r"(?:the\s+)?(?:final\s+answer|correct\s+(?:answer|option|choice)|answer)\s*(?::|=|\bis\b)\s*"
-    choice = r"(?:option\s+|choice\s+)?[\[(]?([A-J])[\])]?\b"
-    # A standalone final line is explicit even after a paragraph of reasoning.
-    direct = re.fullmatch(
-        r"(?:" + label + r")?(?:option\s+|choice\s+)?[\[(]?([A-J])[\])]?[.!]?",
-        lines[-1],
-        re.IGNORECASE,
+    label = (
+        r"(?:the\s+)?(?:final\s+answer|correct\s+(?:answer|option|choice)|answer|my\s+choice)"
+        r"\s*(?::|=|\bis\b)\s*|I\s+(?:choose|select|pick)\s+"
     )
-    if direct:
-        candidate = direct[1].upper()
-    else:
-        # Some models echo the selected letter and its option on the last line.
-        choice_text = re.fullmatch(
-            r"[\[(]?([A-J])[\])]?\s*[.):-]\s*(.+)", lines[-1], re.IGNORECASE
+    choice = r"(?:option\s+|choice\s+)?[\[(]?([A-J])\b[\])]?"
+    direct = re.compile(r"(?:(?:" + label + r"))?" + choice + r"[.!]?", re.IGNORECASE)
+    candidates = set()
+    if any(
+        re.fullmatch(
+            choice + r"\s*(?:/|or|and)\s*" + choice + r"[.!]?", line, re.IGNORECASE
         )
-        if (
-            choice_text
-            and choice_text[1].upper() in LETTERS[: len(options)]
-            and choice_text[2].strip().rstrip(".").casefold()
-            == options[LETTERS.index(choice_text[1].upper())]
-            .strip()
-            .rstrip(".")
-            .casefold()
+        for line in lines
+    ):
+        return None
+    # Either edge may contain the answer with explanatory prose on the other.
+    # Collect all explicit selections before accepting any of them.
+    for line in (lines[0], lines[-1]):
+        if match := direct.fullmatch(line):
+            candidates.add(match[1].upper())
+        elif echo := re.fullmatch(
+            r"[\[(]?([A-J])[\])]?\s*[.):-]\s*(.+)", line, re.IGNORECASE
         ):
-            return choice_text[1].upper()
-        matches = list(re.finditer(r"\b" + label + choice, cleaned, re.IGNORECASE))
-        candidates = {m[1].upper() for m in matches}
-        if len(candidates) != 1 or any(
-            re.match(
-                r"^[\])]?\s*(?:/|,\s*[A-J]\b|(?:or|and)\s+(?:option\s+)?[\[(]?[A-J]\b)",
-                cleaned[m.end() :],
-                re.IGNORECASE,
-            )
-            for m in matches
+            index = LETTERS.index(echo[1].upper())
+            if (
+                index < len(options)
+                and echo[2].strip().rstrip(".").casefold()
+                == options[index].strip().rstrip(".").casefold()
+            ):
+                candidates.add(LETTERS[index])
+
+    for match in re.finditer(r"\b(?:" + label + r")" + choice, cleaned, re.IGNORECASE):
+        suffix = cleaned[match.end() :]
+        if re.match(
+            r"^\s*(?:/|,\s*[A-J]\b|(?:or|and)\s+(?:option\s+)?[\[(]?[A-J]\b)",
+            suffix,
+            re.IGNORECASE,
         ):
             return None
-        candidate = candidates.pop()
+        # The lower-case article in "the answer is a positive number" is prose.
+        if match[1] == "a" and re.match(r"^[ \t]+[a-z]", suffix):
+            continue
+        candidates.add(match[1].upper())
+    for match in re.finditer(
+        r"\b(?:[Oo]ption\s+)?([A-J])\)?\s+is\s+(?:the\s+)?(?:correct|right)(?:[.!]|\s+(?:choice|option|answer)\b)",
+        cleaned,
+    ):
+        candidates.add(match[1])
+    if len(candidates) != 1:
+        return None
+    candidate = candidates.pop()
     return candidate if candidate in LETTERS[: len(options)] else None
 
 
@@ -162,6 +175,7 @@ def parser_self_test():
             f"({letter})",
             f"**Final answer: ({letter})**.",
             f"Thinking.\nThe answer is {letter}.",
+            f"**{letter}**\n\nA calculation gives the stated result.",
             rf"\boxed{{{letter}}}",
         ):
             assert parse_letter(final, list(LETTERS)) == letter
@@ -170,12 +184,94 @@ def parser_self_test():
         "A or B",
         "The answer is (A) or B.",
         "Answer: C. Answer: D.",
+        "**C**\n\nThe final answer is D.",
+        "**C**\n\nI choose D.",
+        "C\nD",
+        "C\nOption D is correct.",
+        "C\nMy choice is D or E.",
+        "C\nC or D.",
         "I considered F for some time.",
         "K",
     ):
         assert parse_letter(final, list(LETTERS)) is None
     assert parse_letter("J", ["one", "two"]) is None
     assert parse_letter("B. two", ["one", "two"]) == "B"
+
+
+def grade(row, item):
+    row["parsed_answer"] = parse_letter(row["answer"], item["options"])
+    row["scored_pass"] = (
+        row["natural_stop"]
+        and row["error"] is None
+        and row["parsed_answer"] == item["expected"]
+    )
+
+
+def summary(rows):
+    return {
+        "all": summarize(rows),
+        **{c: summarize([r for r in rows if r["category"] == c]) for c in SELECTED},
+    }
+
+
+def regrade(source, output, cases):
+    raw = source.read_bytes()
+    doc = json.loads(raw)
+    if (
+        not doc["complete"]
+        or doc["source"] != SOURCE
+        or doc["seed"] != SEED
+        or doc["manifest_sha256"] != MANIFEST_SHA256
+        or doc["settings"] != GENERATION
+    ):
+        raise ValueError(
+            "Regrading requires a complete run with the frozen data and generation settings"
+        )
+    changes = []
+    for row, item in zip(doc["results"], cases, strict=True):
+        if (
+            any(
+                row[k] != item[k]
+                for k in ("question_id", "category", "messages_sha256", "expected")
+            )
+            or row["id"] != f"mmlu-pro-test-{item['question_id']}"
+            or row["error"] is not None
+            or not row["stream_done"]
+            or not row["usage"]
+            or row["natural_stop"] != (row["finish_reason"] == "stop")
+            or row["capped"] != (row["finish_reason"] == "length")
+        ):
+            raise ValueError(
+                f"Source result does not match the frozen item or streaming receipt: {row['id']}"
+            )
+        original = {
+            "parsed_answer": row["parsed_answer"],
+            "scored_pass": row["scored_pass"],
+        }
+        grade(row, item)
+        if any(row[k] != v for k, v in original.items()):
+            changes.append(
+                {
+                    "question_id": row["question_id"],
+                    "original": original,
+                    "regraded": {k: row[k] for k in original},
+                }
+            )
+    doc["regrade"] = {
+        "source_file": source.name,
+        "source_sha256": hashlib.sha256(raw).hexdigest(),
+        "source_grader_sha256": doc["grader_sha256"],
+        "changes": changes,
+    }
+    doc["grader_sha256"] = file_sha(Path(__file__))
+    doc["summary"] = summary(doc["results"])
+    with output.open("x") as f:
+        f.write(json.dumps(doc, indent=2, allow_nan=False) + "\n")
+    print(
+        json.dumps(
+            {"regrade": doc["regrade"], "summary": doc["summary"]["all"]}, indent=2
+        )
+    )
 
 
 def main():
@@ -186,7 +282,13 @@ def main():
         type=Path,
         help="Directory holding pinned test.parquet and README.md",
     )
-    ap.add_argument("--verify-only", action="store_true")
+    modes = ap.add_mutually_exclusive_group()
+    modes.add_argument("--verify-only", action="store_true")
+    modes.add_argument(
+        "--regrade",
+        type=Path,
+        help="Grade a completed local receipt offline into a new --output file",
+    )
     ap.add_argument("--base-url")
     ap.add_argument("--model")
     ap.add_argument("--output", type=Path)
@@ -204,6 +306,11 @@ def main():
         print(
             f"Verified official split, card license, {len(manifest)} ranked IDs, prompt hashes, answer indices and scorer. Manifest {sha(manifest)}"
         )
+        return 0
+    if args.regrade:
+        if args.output is None:
+            ap.error("--regrade requires a new --output file")
+        regrade(args.regrade, args.output, cases)
         return 0
     if not args.base_url or not args.model or not args.output or args.timeout <= 0:
         ap.error("Supply --base-url, --model, --output and a positive timeout")
@@ -238,18 +345,10 @@ def main():
         if row["messages_sha256"] != item["messages_sha256"]:
             raise ValueError("Client sent a different prompt than the frozen item")
         row.pop("strict_answer_match")
-        row["parsed_answer"] = parse_letter(row["answer"], item["options"])
-        row["scored_pass"] = (
-            row["natural_stop"]
-            and row["error"] is None
-            and row["parsed_answer"] == item["expected"]
-        )
+        grade(row, item)
         row.update(question_id=item["question_id"], category=item["category"])
         rows.append(row)
-        doc["summary"] = {
-            "all": summarize(rows),
-            **{c: summarize([r for r in rows if r["category"] == c]) for c in SELECTED},
-        }
+        doc["summary"] = summary(rows)
         doc["complete"] = len(rows) == len(cases) and row["error"] is None
         tmp = args.output.with_suffix(args.output.suffix + ".partial")
         tmp.write_text(json.dumps(doc, indent=2, allow_nan=False) + "\n")

@@ -179,6 +179,7 @@ let
       ../experiments/inkling-b70/kvarn-plugin/inkling-kvarn-flash-hook.patch
       ../experiments/inkling-b70/kvarn-plugin/inkling-kvarn-empty-rows.patch
       ../experiments/inkling-b70/kvarn-plugin/inkling-kvarn-phased-decode.patch
+      ../experiments/inkling-b70/kvarn-plugin/inkling-kvarn-mixed-prefill.patch
     ];
     postInstall = (old.postInstall or "") + ''
       ln -s ${(plugin true)}/${python312.sitePackages}/vllm_inkling2_xpu/ops/_inkling_nvfp4_xe2*.so \

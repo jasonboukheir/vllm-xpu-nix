@@ -1,0 +1,395 @@
+From 39e55b93e1fc964fb9e131c267baddf6e1d2f649 Mon Sep 17 00:00:00 2001
+From: Jason Elie Bou Kheir <5115126+jasonboukheir@users.noreply.github.com>
+Date: Thu, 26 Nov 2026 03:20:41 -0800
+Subject: [PATCH] Split eager KVarN verify rows from a single chunked prefill
+
+Signed-off-by: Jason Elie Bou Kheir <5115126+jasonboukheir@users.noreply.github.com>
+---
+ src/vllm_inkling2_xpu/attention.py       |  29 +++
+ src/vllm_inkling2_xpu/ops/kvarn_mixed.py |  96 ++++++++++
+ tests/test_kvarn_mixed.py                | 216 +++++++++++++++++++++++
+ 3 files changed, 341 insertions(+)
+ create mode 100644 src/vllm_inkling2_xpu/ops/kvarn_mixed.py
+ create mode 100644 tests/test_kvarn_mixed.py
+
+diff --git a/src/vllm_inkling2_xpu/attention.py b/src/vllm_inkling2_xpu/attention.py
+index a0fd373..645c573 100644
+--- a/src/vllm_inkling2_xpu/attention.py
++++ b/src/vllm_inkling2_xpu/attention.py
+@@ -11,6 +11,7 @@ from torch import nn
+ 
+ from vllm.compilation.breakable_cudagraph import eager_break_during_capture
+ from vllm.config import VllmConfig, get_current_vllm_config
++from vllm.config.compilation import CUDAGraphMode
+ from vllm.forward_context import get_forward_context
+ from vllm.logger import init_logger
+ from vllm.model_executor.layers.attention_layer_base import AttentionLayerBase
+@@ -235,6 +236,7 @@ class Inkling2AttentionBackend(FlashAttentionBackend):
+ 
+ 
+ _KVARN = os.environ.get("INK2_KVARN_K4V4", "0") == "1"
++_KVARN_MIXED_PREFILL = os.environ.get("INK2_KVARN_MIXED_PREFILL", "0") == "1"
+ _KVARN_FLASH_PREFILL = os.environ.get("INK2_KVARN_FLASH_PREFILL", "0") == "1"
+ _KVARN_RECORD = 17920  # D128/G128, canonical K4V4 payload plus six fp16 vectors.
+ _logger = init_logger(__name__)
+@@ -781,6 +783,33 @@ class Inkling2Attention(nn.Module, AttentionLayerBase):
+                 if _KVARN_FLASH_PREFILL:
+                     from .ops.kvarn_prefill import packed_flash_prefill
+ 
++                    if _KVARN_MIXED_PREFILL and 0 < num_decodes < len(md.seq_lens):
++                        from .ops.kvarn_mixed import packed_mixed_attention
++
++                        if packed_mixed_attention(
++                            md,
++                            staging,
++                            kv_cache,
++                            clipped_q,
++                            rel_logits,
++                            gate,
++                            sinks,
++                            output,
++                            self.scaling,
++                            self.rel_extent,
++                            self.kvarn_hadamard,
++                            min(
++                                self.max_decode_query_len,
++                                num_decode_tokens - num_decodes + 1,
++                            ),
++                            decode_splits,
++                            eager=get_forward_context().cudagraph_runtime_mode
++                            == CUDAGraphMode.NONE,
++                        ):
++                            _logger.info_once(
++                                "KVarN dispatched mixed decode and flash prefill"
++                            )
++                            return
+                     if packed_flash_prefill(
+                         md,
+                         staging,
+diff --git a/src/vllm_inkling2_xpu/ops/kvarn_mixed.py b/src/vllm_inkling2_xpu/ops/kvarn_mixed.py
+new file mode 100644
+index 0000000..516229f
+--- /dev/null
++++ b/src/vllm_inkling2_xpu/ops/kvarn_mixed.py
+@@ -0,0 +1,96 @@
++# SPDX-License-Identifier: Apache-2.0
++"""Split a mixed eager KVarN batch into decode rows and one prefill."""
++
++from types import SimpleNamespace
++
++from .attention import rel_decode_attention
++from .kvarn_prefill import packed_flash_prefill
++
++
++def packed_mixed_attention(
++    md,
++    stage,
++    packed,
++    q,
++    rel,
++    gate,
++    sinks,
++    output,
++    scale,
++    extent,
++    hadamard,
++    max_decode_len,
++    splits,
++    *,
++    eager,
++):
++    """Return False without writes when a batch cannot use both fast paths."""
++    num_decodes = md.num_decode_reqs
++    decode_tokens = md.num_decode_tokens
++    total = md.num_actual_tokens
++    chunk = total - decode_tokens
++    if (
++        not eager
++        or splits < 1
++        or md.num_prefill_reqs != 1
++        or num_decodes < 1
++        or num_decodes + 1 != len(md.seq_lens)
++        or not num_decodes <= decode_tokens <= 8 * num_decodes
++        or not 1 <= max_decode_len <= 8
++        or md.single_prefill_seq_len is None
++        or chunk != md.num_prefill_tokens
++        or chunk != md.max_query_len
++        or chunk < 128
++        or q.shape[0] != total
++    ):
++        return False
++    # The prologue and encoder have already written every row once. The two
++    # attention readers operate on disjoint outputs and never mutate KV state.
++    trailing = slice(num_decodes, num_decodes + 1)
++    prefill = SimpleNamespace(
++        num_actual_tokens=chunk,
++        max_query_len=chunk,
++        single_prefill_seq_len=md.single_prefill_seq_len,
++        seq_lens=md.seq_lens[trailing],
++        block_table=md.block_table[trailing],
++        kvarn_req_slots=md.kvarn_req_slots[trailing],
++        query_start_loc=md.query_start_loc[num_decodes:] - decode_tokens,
++    )
++    # Attempt this first. packed_flash_prefill reports ineligibility before
++    # writing, so the caller can still use its whole-batch fallback.
++    if not packed_flash_prefill(
++        prefill,
++        stage,
++        packed,
++        q[decode_tokens:],
++        rel[decode_tokens:],
++        gate[decode_tokens:],
++        sinks[decode_tokens:],
++        output[decode_tokens:],
++        scale,
++        extent,
++    ):
++        return False
++    k, v = stage.flatten(0, 1).split(128, dim=-1)
++    rel_decode_attention(
++        q[:decode_tokens],
++        k,
++        v,
++        rel,
++        gate[:decode_tokens],
++        sinks[:decode_tokens],
++        output[:decode_tokens],
++        block_table=md.block_table[:num_decodes],
++        cache_seqlens=md.seq_lens[:num_decodes],
++        cu_seqlens_q=md.query_start_loc[: num_decodes + 1],
++        max_query_len=max_decode_len,
++        num_actual_tokens=decode_tokens,
++        softmax_scale=scale,
++        is_local=False,
++        num_splits=splits,
++        packed_cache=packed,
++        hadamard=hadamard,
++        req_slots=md.kvarn_req_slots[:num_decodes],
++        ring_pages=stage.shape[1],
++    )
++    return True
+diff --git a/tests/test_kvarn_mixed.py b/tests/test_kvarn_mixed.py
+new file mode 100644
+index 0000000..eee47ad
+--- /dev/null
++++ b/tests/test_kvarn_mixed.py
+@@ -0,0 +1,216 @@
++# SPDX-License-Identifier: Apache-2.0
++"""Check the eager mixed dispatch against original-frame attention per request."""
++
++import os
++from contextlib import ExitStack
++from types import SimpleNamespace
++from unittest import SkipTest
++from unittest.mock import patch
++
++import torch
++
++
++def _scores(q, k, rel, positions, key_positions, past):
++    length = len(q)
++    scores = (
++        torch.einsum("thd,khd->thk", q.float(), k.float().repeat_interleave(3, dim=1))
++        * 128**-0.5
++    )
++    distance = positions[:, None] - key_positions
++    tile_ends = ((torch.arange(length) // 128 + 1) * 128).clamp_max(length)
++    bases = (tile_ends + past + 127) // 128 * 128 - 1280
++    indices = (key_positions[None, :] - bases[:, None]).clamp(0, 1279)
++    bias = rel[:length].float().gather(2, indices[:, None, :].expand(-1, 24, -1))
++    scores += bias.masked_fill((distance >= 1024)[:, None, :], 0)
++    return scores.masked_fill((distance < 0)[:, None, :], -torch.inf)
++
++
++def _cpu_relative_window(q, key, value, output, lse, rel, **kwargs):
++    # Intel's 2-D block descriptor instruction requires the GPU. This CPU
++    # replacement reads the actual gathered window, physical table and offsets.
++    seq = int(kwargs["cache_seqlens"][0])
++    nt = len(q)
++    assert kwargs["cu_seqlens_q"].tolist() == [0, nt]
++    ix = torch.arange(kwargs["k_lo_tok"], min(seq, kwargs["k_hi_tok"]))
++    physical = kwargs["block_table"][0, ix // 128].long()
++    scores = _scores(
++        q, key[physical, ix % 128], rel, seq - nt + torch.arange(nt), ix, seq - nt
++    )
++    result = torch.einsum(
++        "thk,khd->thd",
++        scores.softmax(-1),
++        value[physical, ix % 128].float().repeat_interleave(3, dim=1),
++    )
++    output.copy_(result)
++    lse.copy_(scores.logsumexp(-1).T)
++
++
++def _cpu_flash_window(q, k, v, scale):
++    scores = q.float() @ k.float().transpose(-1, -2) * scale
++    return (scores.softmax(-1) @ v.float()), scores.logsumexp(-1)
++
++
++def check_case(lens, past, owners, seed):
++    from vllm_inkling2_xpu.ops import kvarn_mixed
++
++    interp = os.getenv("TRITON_INTERPRET") == "1"
++    if not interp and not torch.xpu.is_available():
++        raise SkipTest("Requires XPU or Triton's interpreter")
++    dev, dtype = ("cpu", torch.float16) if interp else ("xpu", torch.bfloat16)
++    rng = torch.Generator().manual_seed(seed)
++
++    def rand(*shape):
++        return torch.randn(shape, generator=rng).to(dtype)
++
++    def i32(data):
++        return torch.as_tensor(data, dtype=torch.int32, device=dev)
++
++    seq = [p + n for p, n in zip(past, lens)]
++    blocks = (max(seq) + 127) // 128
++    n_phys = blocks + 4
++    table = torch.stack(
++        [torch.randperm(n_phys - 1, generator=rng)[:blocks] + 1 for _ in lens]
++    )
++    h = torch.ones(1, 1)
++    for _ in range(7):
++        h = torch.kron(h, torch.tensor([[1.0, 1.0], [1.0, -1.0]]))
++    h /= 128**0.5
++    kc, vc = (
++        torch.randint(0, 16, (n_phys, 8, 128, 128), generator=rng, dtype=torch.uint8)
++        for _ in range(2)
++    )
++    rec = torch.zeros(n_phys, 8, 1, 17952, dtype=torch.uint8)
++    for codes, off in ((kc, 0), (vc, 8960)):
++        rec[:, :, 0, off : off + 8192] = (
++            codes[..., ::2] | codes[..., 1::2] << 4
++        ).flatten(2)
++    for off, val in (
++        (8192, 0.125),
++        (8448, -0.875),
++        (8704, 1),
++        (17152, 1),
++        (17408, 0.125),
++        (17664, -0.875),
++    ):
++        rec[..., off : off + 256].view(torch.float16).fill_(val)
++    # Row-wise unrotation in PyTorch provides an independent compact-page oracle.
++    keys = ((kc.float() * 0.125 - 0.875).transpose(-1, -2) @ h).transpose(1, 2)
++    vals = ((vc.float() * 0.125 - 0.875) @ h).transpose(1, 2)
++    hist = rand(4, 4, 128, 8, 256)
++    nt = sum(lens)
++    q = rand(nt, 24, 128)
++    gate = rand(nt, 24 * 128)
++    sinks = rand(nt, 24) + 5
++    rel = rand(nt + 128, 24, 1280) * 0.25
++    starts = [0]
++    outputs = []
++    for row, (n, p, owner) in enumerate(zip(lens, past, owners)):
++        off = starts[-1]
++        starts.append(off + n)
++        pages = p // 128
++        count = n + p % 128
++        tail = hist[owner, (torch.arange((count + 127) // 128) + pages) % 4].flatten(
++            0, 1
++        )[:count]
++        k = torch.cat((keys[table[row, :pages]].flatten(0, 1), tail[..., :128]))
++        v = torch.cat((vals[table[row, :pages]].flatten(0, 1), tail[..., 128:]))
++        scores = _scores(
++            q[off : off + n], k, rel[off:], p + torch.arange(n), torch.arange(p + n), p
++        )
++        attn = torch.einsum(
++            "thk,khd->thd", scores.softmax(-1), v.repeat_interleave(3, dim=1)
++        )
++        attn *= (scores.logsumexp(-1) - sinks[off : off + n].float()).sigmoid()[
++            ..., None
++        ]
++        outputs.append(attn.flatten(1) * gate[off : off + n].float().sigmoid())
++    expected = torch.cat(outputs)
++    packed = rec.to(dev)[..., :17920]
++    stage = hist.to(dev)
++    before = (packed.clone(), stage.clone())
++    ndec = len(lens) - 1
++    md = SimpleNamespace(
++        num_actual_tokens=nt,
++        num_prefill_reqs=1,
++        num_decode_reqs=ndec,
++        num_prefill_tokens=lens[-1],
++        num_decode_tokens=starts[-2],
++        max_query_len=lens[-1],
++        single_prefill_seq_len=seq[-1],
++        block_table=i32(table),
++        seq_lens=i32(seq),
++        query_start_loc=i32(starts),
++        kvarn_req_slots=i32(owners),
++    )
++    out = torch.full_like(gate, float("nan"), device=dev)
++    args = (
++        md,
++        stage,
++        packed,
++        q.to(dev),
++        rel.to(dev),
++        gate.to(dev),
++        sinks.to(dev),
++        out,
++        128**-0.5,
++        1024,
++        h.to(dev, dtype),
++        max(lens[:-1]),
++        3,
++    )
++    assert not kvarn_mixed.packed_mixed_attention(*args, eager=False)
++    for field, value in (
++        ("num_prefill_reqs", 2),
++        ("num_decode_tokens", 0),
++        ("single_prefill_seq_len", None),
++        ("num_actual_tokens", nt + 8),
++    ):
++        old = getattr(md, field)
++        setattr(md, field, value)
++        assert not kvarn_mixed.packed_mixed_attention(*args, eager=True)
++        setattr(md, field, old)
++    assert out.isnan().all()
++    with ExitStack() as stack:
++        if interp:
++            stack.enter_context(
++                patch("vllm_inkling2_xpu.attention._sdpa_flash", _cpu_flash_window)
++            )
++            stack.enter_context(
++                patch(
++                    "vllm_inkling2_xpu.ops.kvarn_prefill.rel_attention",
++                    _cpu_relative_window,
++                )
++            )
++        assert kvarn_mixed.packed_mixed_attention(*args, eager=True)
++    assert torch.equal(before[0], packed) and torch.equal(before[1], stage)
++    got = out.float().cpu()
++    delta = got - expected
++    eps = torch.finfo(torch.bfloat16).eps
++    assert delta.norm() / expected.norm() < eps
++    torch.testing.assert_close(got, expected, rtol=2 * eps, atol=eps)
++    print(
++        f"PASS lens={lens} past={past} owners={owners} max_abs={delta.abs().max():.6f}, rel_l2={delta.norm() / expected.norm():.6f}",
++        flush=True,
++    )
++
++
++def test_mixed_pages():
++    # Two verified rows and a windowed relative+flash prefill at a partial
++    # boundary. Three decodes and an exactly page-aligned fresh chunk.
++    check_case([1, 8, 137], [128, 131, 1399], [2, 0, 3], 615)
++    check_case([8, 1, 3, 128], [127, 256, 1023, 128], [3, 2, 0, 1], 247)
++
++
++if __name__ == "__main__":
++    import sys
++    from pathlib import Path
++
++    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
++    if os.getenv("TRITON_INTERPRET") == "1":
++        import triton
++        import triton.language as tl
++        import vllm.triton_utils as ut
++
++        ut.triton, ut.tl = triton, tl
++    torch.set_num_threads(1)
++    test_mixed_pages()
+-- 
+2.54.0
+

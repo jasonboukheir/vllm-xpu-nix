@@ -59,6 +59,15 @@ in
       export PYTHONPATH="$PYTHONPATH:$PWD"
     '';
   });
+  # Backport FastAPI's translation-test fixture for Typer's updated CliRunner.
+  fastapi = prev.fastapi.overridePythonAttrs (old: {
+    patches = (old.patches or [ ]) ++ [
+      (pkgs.fetchurl {
+        url = "https://github.com/fastapi/fastapi/commit/57535ef85b97d95862ec3de443c648e1c6aee139.patch";
+        hash = "sha256-0+PzT+sw6rVoBzXctgGdE7+9Sqlk1aKATHX1LPTZjwU=";
+      })
+    ];
+  });
   filelock = final.buildPythonPackage {
     pname = "filelock";
     version = "4.2.4";

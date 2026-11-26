@@ -2,11 +2,12 @@
 { pkgs }:
 final: prev:
 let
+  otelBetaVersion = "0.66b1";
   exporter =
     pname: dependencies:
     final.buildPythonPackage {
       inherit pname dependencies;
-      version = "0.66b1";
+      version = otelBetaVersion;
       inherit (final.opentelemetry-api) src;
       sourceRoot = "${final.opentelemetry-api.src.name}/exporter/${pname}";
       pyproject = true;
@@ -132,7 +133,10 @@ in
     };
   };
   opentelemetry-semantic-conventions = prev.opentelemetry-semantic-conventions.overridePythonAttrs {
-    version = "0.66b1";
+    version = otelBetaVersion;
+  };
+  opentelemetry-test-utils = prev.opentelemetry-test-utils.overridePythonAttrs {
+    version = otelBetaVersion;
   };
   opentelemetry-exporter-http-transport = exporter "opentelemetry-exporter-http-transport" [
     final.opentelemetry-api
@@ -144,6 +148,7 @@ in
   opentelemetry-exporter-otlp-proto-http =
     prev.opentelemetry-exporter-otlp-proto-http.overridePythonAttrs
       (old: {
+        nativeCheckInputs = (old.nativeCheckInputs or [ ]) ++ [ pkgs.python312Packages.mocket ];
         dependencies = old.dependencies ++ [
           final.opentelemetry-exporter-http-transport
           final.opentelemetry-exporter-otlp-common

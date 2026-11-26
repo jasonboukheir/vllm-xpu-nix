@@ -9,7 +9,7 @@
 {
   runtime,
   maxModelLen ? 262144,
-  gpuMemoryUtilization ? 0.95,
+  gpuMemoryUtilization ? 0.93,
   flashPrefill ? true,
   phasedDecode ? true,
   mixedPrefill ? true,

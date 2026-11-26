@@ -143,6 +143,10 @@ def score(item, answer):
         for s in candidates:
             s = s.replace("**", "").replace("$", "").removeprefix("####").strip()
             s = s.removesuffix(".").strip()
+            # A final equality explicitly identifies the result even when the
+            # same line contains intermediate operands (e.g. "Total: 27+18=45").
+            if "=" in s and "\n" not in s:
+                s = s.rsplit("=", 1)[1].strip()
             if s.startswith(r"\boxed{") and s.endswith("}"):
                 s = s[len(r"\boxed{") : -1].strip()
             s = re.sub(
@@ -185,12 +189,64 @@ def summarize(rows):
     }
 
 
+def grade_row(row, item):
+    row.pop("strict_answer_match", None)
+    row["dataset"] = item["dataset"]
+    row["answer_match"] = score(item, row["answer"])
+    row["scored_pass"] = (
+        row["error"] is None and row["natural_stop"] and row["answer_match"]
+    )
+
+
+def summarize_domains(rows):
+    return {
+        **{d: summarize([r for r in rows if r["dataset"] == d]) for d in SOURCES},
+        "all": summarize(rows),
+    }
+
+
+def regrade(source, output, corpus):
+    raw = source.read_bytes()
+    doc = json.loads(raw)
+    if (
+        not doc["complete"]
+        or doc["sample_sha256"] != digest(SAMPLE.read_bytes())
+        or doc["settings"] != SETTINGS
+    ):
+        raise ValueError(
+            "Regrading requires a complete run of this sample and generation configuration"
+        )
+    for row, item in zip(doc["results"], corpus["items"], strict=True):
+        messages = [{"role": "user", "content": prompt(item)}]
+        if (row["id"], row["expected"], row["messages_sha256"]) != (
+            item["id"],
+            item["expected"],
+            sha(messages),
+        ):
+            raise ValueError(
+                f"Source row does not match the frozen sample: {row['id']}"
+            )
+        grade_row(row, item)
+    doc["summary"] = summarize_domains(doc["results"])
+    doc["original_grader_sha256"] = doc["grader_sha256"]
+    doc["grader_sha256"] = digest(Path(__file__).read_bytes())
+    doc["original_results_sha256"] = digest(raw)
+    with output.open("x") as f:
+        f.write(json.dumps(doc, indent=2, allow_nan=False) + "\n")
+    print(json.dumps(doc["summary"], indent=2))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-url")
     parser.add_argument("--model")
     parser.add_argument("--output", type=Path)
     parser.add_argument("--timeout", type=float, default=360)
+    parser.add_argument(
+        "--regrade",
+        type=Path,
+        help="Rescore a saved run offline into a new --output file",
+    )
     parser.add_argument(
         "--verify-data-dir",
         type=Path,
@@ -203,6 +259,11 @@ def main():
             raise SystemExit("Pinned sample and the original dataset disagree")
         print("Verified all 32 selected rows against both pinned official files.")
         return
+    if args.regrade:
+        if args.output is None:
+            parser.error("--regrade requires --output")
+        regrade(args.regrade, args.output, corpus)
+        return 0
     if not args.base_url or not args.model or not args.output:
         parser.error("supply --base-url, --model and --output")
     endpoint = local_url(args.base_url)
@@ -231,17 +292,9 @@ def main():
             (item["id"], prompt(item), item["expected"]),
             args.timeout,
         )
-        row.pop("strict_answer_match")
-        row["dataset"] = item["dataset"]
-        row["answer_match"] = score(item, row["answer"])
-        row["scored_pass"] = (
-            row["error"] is None and row["natural_stop"] and row["answer_match"]
-        )
+        grade_row(row, item)
         rows.append(row)
-        doc["summary"] = {
-            d: summarize([r for r in rows if r["dataset"] == d]) for d in SOURCES
-        }
-        doc["summary"]["all"] = summarize(rows)
+        doc["summary"] = summarize_domains(rows)
         doc["complete"] = len(rows) == len(corpus["items"]) and not row["error"]
         temp.write_text(json.dumps(doc, indent=2, allow_nan=False) + "\n")
         temp.replace(args.output)

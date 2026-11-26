@@ -328,6 +328,16 @@
             '';
           };
 
+          inkling2 = import ./nix/inkling2.nix {
+            inherit
+              pkgs
+              current
+              vllm-xpu-unstable
+              sycl-tla-unstable-src
+              vllm-xpu-kernels-unstable-src
+              ;
+          };
+
           kv-kernel-ab = pkgs.callPackage ./nix/kv-kernel-ab.nix { };
 
           # ---- shells, checks, and misc helpers ----
@@ -390,6 +400,7 @@
               vllm-xpu-kvarn-validation
               vllm-xpu-kvarn-validation-env
               ;
+            inherit (inkling2) vllm-xpu-inkling2 vllm-xpu-inkling2-cutlass;
             inherit (stableLibs)
               attn-kernels-xe-2
               gdn-attn-kernels-xe-2

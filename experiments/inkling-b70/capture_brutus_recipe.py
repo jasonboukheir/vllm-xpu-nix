@@ -53,11 +53,22 @@ def main():
     preview_file = Path(subprocess.check_output(cmd, text=True).strip())
     record = json.loads(preview_file.read_text())
     unit = Path(record["unit"])
+    lines = unit.read_text().splitlines()
     (argv,) = [
         shlex.split(line.removeprefix("ExecStart="))
-        for line in unit.read_text().splitlines()
+        for line in lines
         if line.startswith("ExecStart=")
     ]
+    unit_env = {}
+    for line in lines:
+        if line.startswith("Environment="):
+            for assignment in shlex.split(line.removeprefix("Environment=")):
+                key, value = assignment.split("=", 1)
+                unit_env[key] = value
+    if any(unit_env.get(k) != v for k, v in record["environment"].items()):
+        raise ValueError(
+            "Realized service environment differs from its selected recipe"
+        )
     if argv != shlex.split(record.pop("command")):
         raise ValueError("Generated unit differs from the evaluated service command")
     if argv[:3] != [record["runtime"] + "/bin/vllm", "serve", record["model"]]:

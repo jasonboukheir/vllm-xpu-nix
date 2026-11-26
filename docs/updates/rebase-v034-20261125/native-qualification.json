@@ -1,0 +1,117 @@
+{
+  "schema": 1,
+  "host": "brutus",
+  "device": "Intel(R) Arc(TM) Pro B70 Graphics",
+  "scope": "Installed-package native and dependency qualification. Foreground Qwen performance, release publication and deployment have separate evidence.",
+  "source_revision": "b18eee6e90c77a08b05d687cc9b47ebdd08cfc3e",
+  "kernel_revision": "65eb2861dd3a885be0850e459b51562832a65bfb",
+  "build_inputs": {
+    "qualification_packaging_revision": "d3c750fc6c5b3135fe9f3890a7598b7c0aa4af9e",
+    "equivalent_local_prebuild_revision": "01bcdd9b4ae6455bb9d3fd70ed1343e8701fa5e7",
+    "brutus_package_drv": "/nix/store/9nnjz1n5w0yhh9zjw8gxrvdad4kay6gh-python3.12-vllm-xpu-0.34.0+unstable.2026.11.25.gb18eee6.drv",
+    "brutus_package_output": "/nix/store/dnfw57y3q63l6hd21gcr3k8a5pf8bmv4-python3.12-vllm-xpu-0.34.0+unstable.2026.11.25.gb18eee6",
+    "kernel_drv": "/nix/store/8zz9dpj1z9km4jvvzi9vl9cf4b7wjms4-vllm-xpu-kernels-0.1.17+unstable.2026.11.25.g65eb286.drv",
+    "kernel_output": "/nix/store/llvj537qyzqj7vbaklgyz0ryaxnga81f-vllm-xpu-kernels-0.1.17+unstable.2026.11.25.g65eb286",
+    "kernel_build_start_utc": "2026-11-25T23:58:06.300731+00:00",
+    "kernel_build_end_utc": "2026-11-26T02:17:16.340170+00:00",
+    "package_build_log_sha256": "c61a72499212bef63a79c78d0d79e82a2fb11045205fd2d6f1fecd884c0c1d6f"
+  },
+  "installed_versions": {
+    "torch": "2.15.0+xpu",
+    "triton": "3.9.0+xpu",
+    "compressed-tensors": "0.17.1",
+    "fastapi": "0.136.3",
+    "filelock": "4.2.4",
+    "huggingface-hub": "2.0.0",
+    "mistral-common": "1.13.1",
+    "opentelemetry-api": "1.45.1",
+    "transformers": "5.20.1",
+    "torchvision": "0.29.2+xpu",
+    "triton-xpu": "3.9.0",
+    "click": "8.4.2",
+    "typer": "0.26.8",
+    "vllm": "0.34.0+unstable.2026.11.25.gb18eee6"
+  },
+  "host_checks": {
+    "cli_help_exit": 0,
+    "registered_xpu_kvarn_operators": 10,
+    "allocator_exports": [
+      "Allocation",
+      "create",
+      "dlpack_device_type",
+      "ensure_context",
+      "free_reserved",
+      "granularity",
+      "map",
+      "release",
+      "reserve",
+      "set_access",
+      "unmap",
+      "unusable_runtime_reason"
+    ],
+    "runtime_graph_nodes_checked_for_obsolete_typer_api": 189,
+    "obsolete_typer_api_calls": 0
+  },
+  "physical_device_suites": {
+    "vmm": {
+      "passed": 1,
+      "sha256": "2efdb3368b2f7dfbd4131528c5c9b9cfc179d1bd780a5badbeb47fbca2a55fc9"
+    },
+    "offload": {
+      "passed": 2,
+      "sha256": "1d9a2bc2c331a9a2185c82408bafe1a620902d988b65a515c7c6ed79bd579989"
+    },
+    "k4v2": {
+      "passed": 17,
+      "sha256": "f5f239e19419e55c40a7f6e8f8159b35e0e6c60c906a55795f53f47d4df10203"
+    },
+    "dtype": {
+      "passed": 10,
+      "sha256": "716ae4ab7c481058cd145c228f6c5be0db187917d156ad209eab29ca781375fa"
+    },
+    "gdn": {
+      "passed": 18,
+      "sha256": "263642ff682ccfcd34cfc35e1042b25389321ac04b68a81ce96afba91d1e65e2"
+    },
+    "rmsnorm": {
+      "passed": 7,
+      "sha256": "85301356b3fcefd4bdda818652dbe219b42e047797baa91b67e9016663d5c321"
+    }
+  },
+  "scoped_dependency_changes": [
+    {
+      "component": "Typer",
+      "reason": "The pinned Typer failed six Click 8.4 option diagnostics. Typer 0.26.8 uses its upstream vendored implementation.",
+      "passed_tests": 1346
+    },
+    {
+      "component": "tox and virtualenv",
+      "reason": "Both test tools require the same filelock version in one process. Reused the pinned test-tool scope.",
+      "evaluated_python_derivations": 709,
+      "remaining_mixed_filelock_ancestries": 0
+    },
+    {
+      "component": "OpenTelemetry",
+      "reason": "Aligned the test helper with the 0.66b1 source label and added mocket as the HTTP exporter test fixture.",
+      "http_tests": 117,
+      "http_subtests": 139,
+      "grpc_tests": 65,
+      "common_tests": 20,
+      "umbrella_tests": 1
+    },
+    {
+      "component": "FastAPI",
+      "reason": "Applied the upstream translation-test fixture for Typer 0.26.",
+      "upstream": "https://github.com/fastapi/fastapi/commit/57535ef85b97d95862ec3de443c648e1c6aee139",
+      "passed_tests": 1865
+    },
+    {
+      "component": "compressed-tensors",
+      "reason": "Applied upstream per-tensor calibration to the previously uninitialized FP8 test fixture.",
+      "upstream": "https://github.com/vllm-project/compressed-tensors/commit/ac8e2ba82f4e0d5eaa40069f8fc642738f124cd4",
+      "passed_tests": 644
+    }
+  ],
+  "independent_device_check": "The final kernel package also passed virtual memory release and recommit at a stable address and K4V2/K4V4 packed writes, materialization, and qlen=1 attention against independent references.",
+  "raw_evidence_directory": "benchmark-results/rebase-v034-20261125"
+}

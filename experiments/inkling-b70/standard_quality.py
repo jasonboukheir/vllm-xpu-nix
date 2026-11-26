@@ -17,6 +17,7 @@ from quality import SETTINGS, NoRedirect, local_url, request, sha
 HERE = Path(__file__).resolve().parent
 SAMPLE = HERE / "standard_quality_sample.json"
 SEED = "brutus-inkling-20261126"
+EFFORTS = ("low", "medium")
 SOURCES = {
     "gsm8k": {
         "repo": "openai/grade-school-math",
@@ -205,13 +206,16 @@ def summarize_domains(rows):
     }
 
 
-def regrade(source, output, corpus):
+def regrade(source, output, corpus, reasoning_effort=None):
     raw = source.read_bytes()
     doc = json.loads(raw)
+    recorded_effort = doc["settings"].get("reasoning_effort")
     if (
-        not doc["complete"]
+        recorded_effort not in EFFORTS
+        or (reasoning_effort is not None and recorded_effort != reasoning_effort)
+        or not doc["complete"]
         or doc["sample_sha256"] != digest(SAMPLE.read_bytes())
-        or doc["settings"] != SETTINGS
+        or doc["settings"] != {**SETTINGS, "reasoning_effort": recorded_effort}
     ):
         raise ValueError(
             "Regrading requires a complete run of this sample and generation configuration"
@@ -243,6 +247,11 @@ def main():
     parser.add_argument("--output", type=Path)
     parser.add_argument("--timeout", type=float, default=360)
     parser.add_argument(
+        "--reasoning-effort",
+        choices=EFFORTS,
+        help="Request reasoning effort (default low). Regrading uses the recorded effort unless specified.",
+    )
+    parser.add_argument(
         "--regrade",
         type=Path,
         help="Rescore a saved run offline into a new --output file",
@@ -262,18 +271,22 @@ def main():
     if args.regrade:
         if args.output is None:
             parser.error("--regrade requires --output")
-        regrade(args.regrade, args.output, corpus)
+        regrade(args.regrade, args.output, corpus, args.reasoning_effort)
         return 0
     if not args.base_url or not args.model or not args.output:
         parser.error("supply --base-url, --model and --output")
     endpoint = local_url(args.base_url)
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
+    settings = {
+        **SETTINGS,
+        "reasoning_effort": args.reasoning_effort or SETTINGS["reasoning_effort"],
+    }
     rows = []
     doc = {
         "schema": 1,
         "model": args.model,
         "endpoint": endpoint,
-        "settings": SETTINGS,
+        "settings": settings,
         "started_utc": datetime.now(timezone.utc).isoformat(),
         "sample_sha256": digest(SAMPLE.read_bytes()),
         "grader_sha256": digest(Path(__file__).read_bytes()),
@@ -291,6 +304,7 @@ def main():
             args.model,
             (item["id"], prompt(item), item["expected"]),
             args.timeout,
+            settings=settings,
         )
         grade_row(row, item)
         rows.append(row)

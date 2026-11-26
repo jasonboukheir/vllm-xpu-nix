@@ -287,12 +287,12 @@ def local_url(option):
     return f"{parsed.scheme}://{parsed.netloc}/v1/chat/completions"
 
 
-def request(opener, endpoint, model, case, timeout):
+def request(opener, endpoint, model, case, timeout, *, settings=None):
     name, prompt, expected = case
     body = {
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
-        **SETTINGS,
+        **(SETTINGS if settings is None else settings),
     }
     req = urllib.request.Request(
         endpoint,

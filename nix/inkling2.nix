@@ -135,6 +135,7 @@ let
       ../experiments/inkling-b70/kvarn-plugin/xpu-vmm-memory-baseline.patch
       ../experiments/inkling-b70/kvarn-plugin/request-slot-generation.patch
       ../experiments/inkling-b70/kvarn-plugin/active-only-offload.patch
+      ../experiments/inkling-b70/kvarn-plugin/offload-model-stream.patch
     ];
   });
 

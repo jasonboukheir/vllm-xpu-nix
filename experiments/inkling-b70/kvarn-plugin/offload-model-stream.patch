@@ -1,0 +1,143 @@
+diff --git a/tests/v1/kv_offload/cpu/test_gpu_worker.py b/tests/v1/kv_offload/cpu/test_gpu_worker.py
+index 1289649..4cce0d6 100644
+--- a/tests/v1/kv_offload/cpu/test_gpu_worker.py
++++ b/tests/v1/kv_offload/cpu/test_gpu_worker.py
+@@ -249,6 +249,57 @@ def _submit(handler, job_id: int) -> bool:
+     return handler.transfer_async(job_id, device_ptrs, cpu_spec)
+ 
+ 
++@pytest.mark.parametrize("gpu_to_cpu", [False, True])
++def test_xpu_transfer_uses_model_stream(monkeypatch, gpu_to_cpu):
++    platform = MagicMock()
++    platform.is_xpu.return_value = True
++    platform.stream.return_value = contextlib.nullcontext()
++    monkeypatch.setattr(gpu_worker, "current_platform", platform)
++    copy = MagicMock()
++    monkeypatch.setattr(ops, "swap_blocks_batch", copy)
++    handler = gpu_worker.SingleDirectionOffloadingHandler(
++        [torch.zeros((1, 128), dtype=torch.int8)],
++        1,
++        [[CanonicalKVCacheRef(tensor_idx=0, page_size_bytes=128)]],
++        gpu_to_cpu,
++    )
++    handler._buffer_pool = [
++        tuple(torch.zeros(1, dtype=torch.uint64) for _ in range(3)) for _ in range(3)
++    ]
++    handler._event_pool = [MagicMock() for _ in range(6)]
++    first_stream, next_stream = MagicMock(), MagicMock()
++    platform.current_stream.side_effect = [first_stream, first_stream, next_stream]
++    for job_id in range(3):
++        assert _submit(handler, job_id)
++
++    assert [t.stream for t in handler._transfers] == [
++        first_stream,
++        first_stream,
++        next_stream,
++    ]
++    platform.Stream.assert_not_called()
++    first_stream.wait_stream.assert_not_called()
++    first_stream.wait_event.assert_not_called()
++    next_stream.wait_event.assert_called_once_with(handler._transfer_events[1])
++    assert copy.call_count == 3
++    # A borrowed stream must never be returned to the pool. Event completion
++    # still protects the descriptors and drives transfer-byte accounting.
++    handler._transfer_events[0].query.return_value = False
++    assert not handler.get_finished()
++    assert len(handler._transfers) == 3
++    handler._transfer_events[0].query.return_value = True
++    for transfer in handler._transfers:
++        transfer.start_event.elapsed_time.return_value = 1.0
++        transfer.end_event.record.assert_called_once_with(transfer.stream)
++    finished = handler.get_finished()
++    assert [(t.job_id, t.transfer_size) for t in finished] == [
++        (j, 128) for j in range(3)
++    ]
++    assert len(handler._buffer_pool) == 3
++    assert handler._stream_pool is None
++    handler.shutdown()
++
++
+ def test_submit_failure_is_not_reported_until_stream_drains(
+     monkeypatch: pytest.MonkeyPatch,
+ ) -> None:
+diff --git a/vllm/v1/kv_offload/cpu/gpu_worker.py b/vllm/v1/kv_offload/cpu/gpu_worker.py
+index 9cca2fc..f7b7236 100644
+--- a/vllm/v1/kv_offload/cpu/gpu_worker.py
++++ b/vllm/v1/kv_offload/cpu/gpu_worker.py
+@@ -314,8 +314,8 @@ def _new_descriptor_buffers(
+ class SingleDirectionOffloadingHandler:
+     """Handles transfers for a single direction, either CPU->GPU or GPU->CPU.
+     Transfers are guaranteed to be executed in order of their submission.
+-    Each transfer uses a unique CUDA stream, and its stream will start
+-    executing only after the streams of previous transfers have finished.
++    CUDA uses ordered auxiliary streams. XPU submits on the current model
++    stream so subsequent graph replays and copies share one in-order queue.
+     """
+ 
+     def __init__(
+@@ -377,8 +377,10 @@ class SingleDirectionOffloadingHandler:
+         self._transfer_events: dict[int, torch.Event] = {}
+         # queue of transfers (job_id, stream, event)
+         self._transfers: deque[Transfer] = deque()
+-        # list of CUDA streams available for re-use
+-        self._stream_pool: list[torch.cuda.Stream] = []
++        # XPU borrows the caller's stream for each job. Never pool that stream.
++        self._stream_pool: list[torch.cuda.Stream] | None = (
++            None if current_platform.is_xpu() else []
++        )
+         # list of CUDA events available for re-use
+         self._event_pool: list[torch.Event] = []
+         # list of pinned descriptor buffer sets available for re-use
+@@ -616,9 +618,15 @@ class SingleDirectionOffloadingHandler:
+         dst = dst[:op_idx]
+         sizes = sizes[:op_idx]
+ 
+-        stream = (
+-            self._stream_pool.pop() if self._stream_pool else current_platform.Stream()
+-        )
++        model_stream = current_platform.current_stream()
++        if self._stream_pool is None:
++            stream = model_stream
++        else:
++            stream = (
++                self._stream_pool.pop()
++                if self._stream_pool
++                else current_platform.Stream()
++            )
+         start_event = (
+             self._event_pool.pop()
+             if self._event_pool
+@@ -636,8 +644,11 @@ class SingleDirectionOffloadingHandler:
+         # the step that allocates it for the load and cannot retract zeroing
+         # shipped in an earlier step for a since-reallocated block; with async
+         # scheduling nothing else orders that zeroing against this copy.
+-        stream.wait_stream(current_platform.current_stream())
+-        if self._transfers:
++        if self._stream_pool is not None:
++            stream.wait_stream(model_stream)
++        if self._transfers and (
++            self._stream_pool is not None or stream != self._transfers[-1].stream
++        ):
+             last_transfer: Transfer = self._transfers[-1]
+             last_event = last_transfer.end_event
+             # assure job will start only after the previous one completes
+@@ -740,7 +751,8 @@ class SingleDirectionOffloadingHandler:
+                     transfer_time=transfer_time,
+                 )
+             )
+-            self._stream_pool.append(transfer.stream)
++            if self._stream_pool is not None:
++                self._stream_pool.append(transfer.stream)
+             self._event_pool.append(transfer.end_event)
+             self._event_pool.append(transfer.start_event)
+             self._buffer_pool.append(
+@@ -780,7 +792,8 @@ class SingleDirectionOffloadingHandler:
+             self._transfers.popleft()
+ 
+         self._transfer_events.clear()
+-        self._stream_pool.clear()
++        if self._stream_pool is not None:
++            self._stream_pool.clear()
+         self._event_pool.clear()
+         self._buffer_pool.clear()
+         self.cpu_tensors.clear()

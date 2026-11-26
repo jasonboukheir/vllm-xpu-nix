@@ -41,7 +41,15 @@ def main():
     cli.add_argument("output", type=Path)
     cli.add_argument("--url", default="http://127.0.0.1:18001")
     cli.add_argument("--rows", type=int, default=160)
+    cli.add_argument(
+        "--arrival-stagger-ms",
+        type=int,
+        default=0,
+        help="Space submissions by desk index to reproduce their arrival order",
+    )
     args = cli.parse_args()
+    if args.arrival_stagger_ms < 0:
+        cli.error("--arrival-stagger-ms must be nonnegative")
     args.output.mkdir(parents=True, exist_ok=False)
     ready = threading.Barrier(len(KEYS) + 1)
 
@@ -55,6 +63,8 @@ def main():
             "reasoning_effort": "low",
         }
         ready.wait()
+        if args.arrival_stagger_ms:
+            time.sleep(index * args.arrival_stagger_ms / 1000)
         started = time.monotonic()
         response = json.loads(query(args.url + "/v1/chat/completions", body))
         elapsed = time.monotonic() - started
@@ -67,6 +77,7 @@ def main():
             correct = False
         return {
             "desk": index,
+            "submitted_monotonic": started,
             "answer": answer,
             "correct": correct,
             "stop": choice["finish_reason"],
@@ -98,6 +109,7 @@ def main():
     total = sum(row.get("usage", {}).get("completion_tokens", 0) for row in results)
     receipt = {
         "rows": args.rows,
+        "arrival_stagger_ms": args.arrival_stagger_ms,
         "results": results,
         "peak_running": max(peaks, default=0),
         "wave_seconds": elapsed,

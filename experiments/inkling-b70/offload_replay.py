@@ -114,11 +114,18 @@ class Trial:
                 raise RuntimeError(f"Could not reset isolated engine cache: {reset}")
             time.sleep(0.25)
 
-    def fixture(self, n, code=CODE):
-        pad = n - 80
+    def fixture(self, n, code=CODE, varied=False):
+        count = n // 24 if varied else 0
+        pad = 0 if varied else n - 80
+        commodities = ("pencils", "valves", "tiles", "belts", "caps", "gears", "bolts")
         for _ in range(10):
             text = (
                 f"The station identifier in this shipping record is {code}. The following are bulk filler notes.\n"
+                + "".join(
+                    f"Docket {i:05d}: bay {(i * 7) % 83}, {commodities[i % len(commodities)]}, "
+                    f"{(19 * i + 21) % 239 + 1} units; shelf {(i * 11 + 3) % 31}.\n"
+                    for i in range(count)
+                )
                 + " neutral" * pad
                 + "\nIdentify the station. Finish the answer with its exact identifier and nothing else."
             )
@@ -138,23 +145,37 @@ class Trial:
             )
             tokens = result["tokens"]
             if len(tokens) == n:
-                return {"code": code, "messages": messages, "prompt_ids": tokens}
-            pad += n - len(tokens)
+                return {
+                    "code": code,
+                    "messages": messages,
+                    "prompt_ids": tokens,
+                    "shipping_records": count,
+                    "padding_words": pad,
+                }
+            delta = n - len(tokens)
+            if varied and (delta < -pad or delta > 256):
+                # Refit the record count to within a few rows, then make the
+                # exact offset using a short run of single-token padding.
+                avg = max(1, (len(tokens) - pad - 50) / max(1, count))
+                count = max(1, count + int((delta + pad) / avg) - 3)
+                pad = 0
+            else:
+                pad += delta
         raise ValueError(f"Could not produce {n} native prompt tokens")
 
     def complete(self, f):
+        body = {
+            "model": self.args.model,
+            "prompt": f["prompt_ids"],
+            "temperature": 0,
+            "seed": 42,
+            "max_tokens": 32,
+            "return_token_ids": True,
+        }
+        if self.args.depth is not None:
+            return self.stream_completion(f, body)
         start = time.monotonic()
-        response = self.request(
-            "/v1/completions",
-            {
-                "model": self.args.model,
-                "prompt": f["prompt_ids"],
-                "temperature": 0,
-                "seed": 42,
-                "max_tokens": 32,
-                "return_token_ids": True,
-            },
-        )
+        response = self.request("/v1/completions", body)
         c = response["choices"][0]
         return {
             "seconds": time.monotonic() - start,
@@ -166,6 +187,70 @@ class Trial:
             )
             == f["prompt_ids"],
             "finish_reason": c["finish_reason"],
+        }
+
+    def stream_completion(self, fixture, body):
+        body = json.dumps(
+            dict(body, stream=True, stream_options={"include_usage": True})
+        ).encode()
+        connection = http.client.HTTPConnection(
+            "127.0.0.1", self.args.port, timeout=self.args.timeout
+        )
+        started = time.monotonic()
+        first_token = None
+        first_visible = None
+        ids = []
+        text = []
+        prompt_match = False
+        usage = None
+        finish_reason = None
+        done = False
+        try:
+            connection.request(
+                "POST", "/v1/completions", body, {"Content-Type": "application/json"}
+            )
+            response = connection.getresponse()
+            if response.status != 200:
+                raise ValueError(f"HTTP {response.status}: {response.read(4096)!r}")
+            for raw_line in response:
+                if not raw_line.startswith(b"data:"):
+                    continue
+                received = time.monotonic() - started
+                data = raw_line[5:].strip()
+                if data == b"[DONE]":
+                    done = True
+                    break
+                item = json.loads(data)
+                if "error" in item:
+                    raise RuntimeError(item["error"])
+                usage = item.get("usage") or usage
+                for choice in item["choices"]:
+                    if choice.get("prompt_token_ids") is not None:
+                        prompt_match = (
+                            choice["prompt_token_ids"] == fixture["prompt_ids"]
+                        )
+                    chunk_ids = choice.get("token_ids") or []
+                    chunk_text = choice.get("text") or ""
+                    if first_token is None and chunk_ids:
+                        first_token = received
+                    if first_visible is None and chunk_text.strip():
+                        first_visible = received
+                    ids.extend(chunk_ids)
+                    text.append(chunk_text)
+                    finish_reason = choice.get("finish_reason") or finish_reason
+        finally:
+            connection.close()
+        if not done or usage is None or first_token is None:
+            raise ValueError("Incomplete SSE stream, token IDs, or final usage")
+        return {
+            "seconds": time.monotonic() - started,
+            "first_output_token_seconds": first_token,
+            "first_visible_text_seconds": first_visible,
+            "text": "".join(text),
+            "ids": ids,
+            "usage": usage,
+            "actual_prompt_ids_equal": prompt_match,
+            "finish_reason": finish_reason,
         }
 
     def evidence(self, label, f, r):
@@ -277,6 +362,39 @@ class Trial:
             and (diff(after, before, "host_hit_tokens") or 0) > 0,
         )
 
+    def deep_replay(self, depth, model):
+        limit = model.get("max_model_len")
+        if limit is not None and depth + 32 > limit:
+            raise ValueError(
+                f"{depth} prompt + 32 output tokens exceed served max_model_len {limit}"
+            )
+        fixture = self.fixture(depth, code="SABLE471", varied=True)
+        other = self.fixture(1024, code="WILLOW286", varied=True)
+        (self.output / "fixtures.json").write_text(json.dumps([fixture, other]) + "\n")
+        self.doc["depth_tokens"] = depth
+        self.doc["latency_definition"] = (
+            "Loopback SSE wall time from submitting the completion to the first chunk with generated token IDs, first visible text, and [DONE]."
+        )
+        self.check(
+            "varied-records",
+            fixture["shipping_records"] > 100 and fixture["padding_words"] <= 256,
+        )
+        cold = self.case("deep-cold", fixture, "cold")
+        self.case("unrelated-before-reset", other, "cold")
+        self.reset(False)
+        warm = self.case("deep-warm-after-device-reset", fixture, "warm")
+        self.same("deep-output-identical", cold, warm)
+        delta = self.doc["cases"]["deep-warm-after-device-reset"]["delta"]
+        self.check(
+            "deep-host-hit-within-one-scheduler-block",
+            (delta["host_hit_tokens"] or 0) >= depth - 256,
+        )
+        self.doc["warm_to_cold_ratios"] = {
+            key: warm[key] / cold[key]
+            for key in ("seconds", "first_output_token_seconds")
+            if cold[key] > 0
+        }
+
     def run(self):
         models = self.request("/v1/models")["data"]
         if (
@@ -288,6 +406,14 @@ class Trial:
         self.doc["models"] = models
         start = self.stats("before")
         self.reset(True)
+        if self.args.depth is not None:
+            self.deep_replay(self.args.depth, models[0])
+        else:
+            self.short_replay()
+        end = self.stats("after")
+        return self.finish(start, end)
+
+    def short_replay(self):
         aligned = self.fixture(1024)
         short = self.fixture(1023, "JUNIPER739")
         growing = self.fixture(1537)
@@ -343,7 +469,8 @@ class Trial:
         if self.args.four:
             self.reset(True)
             self.wave()
-        end = self.stats("after")
+
+    def finish(self, start, end):
         self.check(
             "DSpark-acceptance",
             (diff(end, start, "draft") or 0) > 0
@@ -369,8 +496,30 @@ if __name__ == "__main__":
     ap.add_argument("--port", type=int, default=18002)
     ap.add_argument("--model", default="inkling-offload-trial")
     ap.add_argument("--output", type=Path, required=True)
-    ap.add_argument("--four", action="store_true")
-    trial = Trial(ap.parse_args())
+    modes = ap.add_mutually_exclusive_group()
+    modes.add_argument(
+        "--four",
+        action="store_true",
+        help="Include four overlapping clients in the short suite",
+    )
+    modes.add_argument(
+        "--depth",
+        type=int,
+        metavar="TOKENS",
+        help="Run one long cold/distract/evict/warm comparison instead of the short suite (16384 to 65536 tokens)",
+    )
+    ap.add_argument(
+        "--timeout",
+        type=float,
+        default=1800,
+        help="Long completion socket timeout in seconds (default 1800)",
+    )
+    args = ap.parse_args()
+    if args.depth is not None and not 16384 <= args.depth <= 65536:
+        ap.error("--depth must be between 16384 and 65536")
+    if args.timeout <= 0:
+        ap.error("--timeout must be positive")
+    trial = Trial(args)
     try:
         ok = trial.run()
     except Exception as exc:
